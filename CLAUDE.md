@@ -21,6 +21,10 @@ Layered layout under `src/aistack/` (see `docs/DESIGN.md` §8): MCP tool handler
 - Tests: pytest under `tests/`, mirroring `src/aistack/`.
 - Trust boundaries are not optional: validate skill names and file paths at push exactly as the schema in `docs/DESIGN.md` specifies.
 - Skill versions are immutable — never update a `SKILL_VERSION` row; a change is a new revision.
+- Async all the way down: `create_async_engine`, `async_sessionmaker(expire_on_commit=False)`, `AsyncSession` in services. No lazy loading — pull relationships with `selectinload`.
+- The session factory lives in `db/`; `bootstrap/context/` holds the singleton. A tool opens one session per call and passes it down; services never open their own. One MCP call is one transaction.
+- Services raise domain exceptions from `commons/exceptions/`; the MCP layer converts them to `ToolError` in one place. Never return an error payload from a tool — at the protocol level it reads as success.
+- Error text is agent-facing UX: say what to fix and what was received, not what class was raised.
 
 ## Agent skills
 

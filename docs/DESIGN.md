@@ -24,7 +24,7 @@ Settled:
 ```text
 Python
 Poetry
-SQLAlchemy
+SQLAlchemy       async throughout (aiosqlite / asyncpg); FastMCP handlers are async
 FastMCP          (the entire MVP server)
 SQLite           default; DATABASE_URL switches to Postgres (ADR-0002)
 FastAPI          post-MVP, arrives with the dashboard
@@ -68,7 +68,7 @@ sync(actual: {name: hash})    → server compares against this machine's enabled
 
 **Adding a machine**: on an already-registered machine — "add my Windows PC". `add_machine` returns the full MCP-config command with the new machine's token; the user pastes it on the other computer. No redeem step; the invite code is only for new users.
 
-**Push**: "push my wizard skill to aistack" — the agent reads the local skill directory and calls `push_skill` with a manifest of `{relative_path: text_content}`. Binary files are rejected at push with a clear error. Pushing an existing name creates a new revision. Any member may push a new revision of any skill (trusted team; `created_by` gives attribution).
+**Push**: "push my wizard skill to aistack" — the agent reads the local skill directory and calls `push_skill` with a manifest: a list of files, each with `path`, `content`, and `executable`. Not a flat `{path: content}` map — that cannot carry the executable bit `SKILL_FILE` stores and the proof requires. `get_skill` and `sync` hand back the same shape. Binary files are rejected at push with a clear error. Pushing an existing name creates a new revision. Any member may push a new revision of any skill (trusted team; `created_by` gives attribution).
 
 **Bulk import** ("move to AIStack"): not a tool. A documented prompt — "push all my skills" — makes the agent loop `push_skill` over the local skills directory.
 
@@ -150,7 +150,7 @@ No dashboard, no FastAPI, no CLI/daemon, no archive/delete, no version pinning (
 Push `wizard` and `domain-modeling` (both multi-file: a script, reference files) from machine A. Install on machine B via chat. Verify:
 
 1. `diff -r` between source and installed copy is clean;
-2. the script's executable bit survives (or the manifest design compensates);
+2. the script's executable bit survives the round trip;
 3. one real run of each skill behaves identically to a native install.
 
 ## 5. Post-MVP roadmap (decided order of interest, not committed)
@@ -208,7 +208,7 @@ tests/
 
 The schema and sync semantics are settled (see §4). What remains is implementation-level:
 
-1. Exact tool input/output shapes (FastMCP schemas) for the six tools.
+1. Exact tool input/output shapes (FastMCP schemas) for the six tools. The file manifest is settled (see **Push** above); the rest are not.
 2. What machine metadata beyond `name`/`os` ever matters — collect only when a feature needs it.
 3. Invite-code lifecycle: rotation, and whether it's env-var or generated at first boot.
 4. Token revocation story (regenerate a machine token when a laptop is lost).
