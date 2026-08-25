@@ -72,7 +72,7 @@ Deliberately not in the MVP: dashboard, CLI, version pinning, project-scoped ins
 
 ## Stack
 
-Python 3.14, Poetry, SQLAlchemy, FastMCP. SQLite by default so the whole thing is one container, with Postgres available through `DATABASE_URL` for larger teams ([ADR-0002](docs/adr/0002-sqlite-default-postgres-optional.md)). FastAPI joins later, with the dashboard.
+Python 3.13, Poetry, SQLAlchemy, FastMCP. SQLite by default so the whole thing is one container, with Postgres available through `DATABASE_URL` for larger teams ([ADR-0002](docs/adr/0002-sqlite-default-postgres-optional.md)). FastAPI joins later, with the dashboard.
 
 ## Documentation
 

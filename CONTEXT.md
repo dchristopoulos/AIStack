@@ -21,7 +21,7 @@ A full local copy of a canonical skill, materialized into a harness's skill dire
 _Avoid_: Clone, stub, proxy
 
 **Sync**:
-Reconciling a machine's actual local state (what's on disk) with its desired state on the server (what's enabled for that machine). Installs the missing, updates the stale, asks the user about local modifications or deletions. See ADR-0004.
+Reconciling a machine's actual local state (what's on disk) with its desired state on the server (what's enabled for that machine). Installs the missing, updates the stale, asks the user about everything else. Never deletes local files, never flips enabled silently, and is not discovery (that's `list_skills`). See ADR-0004, ADR-0006.
 _Avoid_: Pull, update-all
 
 **Name**:
@@ -36,8 +36,8 @@ _Avoid_: Version number (ambiguous)
 The shared pool of canonical skills on an AIStack server. One copy of each skill; every user installs from the same pool.
 _Avoid_: Registry, library, marketplace
 
-**Workspace**:
-The ownership and collaboration boundary. Every user gets a personal workspace; teams share a team workspace.
+**Workspace** _(post-MVP — the term is reserved, the concept does not exist yet)_:
+The ownership and collaboration boundary. The MVP has exactly one implicit vault shared by everyone on the server; personal and team workspaces arrive with real scoping (roadmap item 8). Don't write code or docs that assume workspaces today.
 _Avoid_: Org, tenant, account
 
 **Machine**:
@@ -45,5 +45,25 @@ A registered computer belonging to one user, authenticating with its own permane
 _Avoid_: Device, host
 
 **Enabled**:
-Desired state: this skill should exist on this machine. Set by install ("install X" = enable + materialize), cleared by remove. Sync enforces it.
+Desired state: this skill should exist on this machine. Set by install ("install X" = enable + materialize), cleared by remove. Sync enforces it. A row with `enabled = false` means explicitly disabled; no row means no decision — the sync contract treats these differently.
 _Avoid_: Installed (that's actual state on disk), active
+
+**Pushed by**:
+The AIStack user who uploaded a skill or revision into the vault. Pure provenance — it never claims authorship, because the vault holds third-party skills.
+_Avoid_: Author, created by, uploaded by
+
+**Origin**:
+Optional source URL on a canonical skill (GitHub repo, marketplace page), recorded at push when known. Used to warn when a push to an existing name looks like an unrelated skill sharing the name.
+_Avoid_: Upstream, remote
+
+**Orphan**:
+A skill on disk that the vault doesn't know. Sync reports orphans and offers to push; it never auto-pushes.
+_Avoid_: Untracked skill, local-only skill (as a term of art)
+
+**Adopt**:
+Enabling a skill on this machine that already exists both on disk and in the vault, so future revisions flow to it. Always a question, never silent — adoption means future pushes overwrite that folder.
+_Avoid_: Auto-enable, link
+
+**Admin**:
+The first user to join (`is_admin`). The server can only observe join order, not who deployed it — in practice the operator joins first, alone, before sharing the invite code. In the MVP, admin powers are documented DB operations (revoke a machine, recover a locked-out user); granting admin and admin UI arrive with the dashboard.
+_Avoid_: Owner, superuser
