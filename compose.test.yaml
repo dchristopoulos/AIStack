@@ -1,0 +1,21 @@
+# PostgreSQL for the tests that SQLite cannot run — the concurrent-admin race (ADR-0008).
+# Start it with:  docker compose -f compose.test.yaml up -d
+# Then:           TEST_DATABASE_URL=postgresql+psycopg://aistack:aistack@localhost:5433/aistack_test poetry run pytest
+#
+# Port 5433 so it never collides with a Postgres the developer already runs on 5432. The data
+# lives in the container only: this database is disposable by design, and a volume would let a
+# stale schema survive a change to the models.
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aistack
+      POSTGRES_PASSWORD: aistack
+      POSTGRES_DB: aistack_test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aistack -d aistack_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

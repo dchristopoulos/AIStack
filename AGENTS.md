@@ -19,7 +19,7 @@ Layered layout under `src/aistack/` (see `docs/DESIGN.md` §8): MCP tool handler
 ## Conventions
 
 - Tests: pytest under `tests/`, mirroring `src/aistack/`. Services directly for rejection matrices; one in-process HTTP test per auth-bearing flow, because the in-memory transport does not exercise bearer verification. SQLite tests use a temp file, never `:memory:` — WAL and any two-connection test need a real file. Postgres tests read `TEST_DATABASE_URL` (never `DATABASE_URL`, so a test cannot reach a real database), skip locally with a message naming the variable, and CI fails setup when it is unset.
-- `[project].dependencies` takes PEP 508 ranges, not Poetry carets; dev tools live in `[dependency-groups]`. `fastmcp` is pinned exactly — the ticket #1 spike results are statements about one release, and a silent minor bump invalidates them. Everything else gets a compatible range and the lock file does the pinning.
+- `[project].dependencies` takes PEP 508 ranges, not Poetry carets; dev tools live in `[dependency-groups]`. `requires-python` carries a `<4.0` upper bound because a transitive dependency does and Poetry cannot resolve against an open floor. `fastmcp` is pinned exactly — the ticket #1 spike results are statements about one release, and a silent minor bump invalidates them. Everything else gets a compatible range and the lock file does the pinning.
 - Trust boundaries are not optional: validate skill names and file paths at push exactly as the schema in `docs/DESIGN.md` specifies.
 - Skill versions are immutable — never update a `SKILL_VERSION` row; a change is a new revision.
 - Synchronous SQLAlchemy (ADR-0005): plain `def` tools — FastMCP threadpools them. Never write an `async def` tool that calls a blocking driver; that serializes every caller. Where an async signature is forced on you (the `TokenVerifier`), push the database work through `asyncio.to_thread`.
@@ -39,6 +39,10 @@ Layered layout under `src/aistack/` (see `docs/DESIGN.md` §8): MCP tool handler
 - Services raise domain exceptions from `commons/exceptions/`; the MCP layer converts them to `ToolError` in one place, with `mask_error_details=True` always on — never env-gated. Never return an error payload from a tool: at the protocol level it reads as success.
 - `AIStackError`, `ValidationError`, and `Conflict` are the exception types that exist. Add one when a rejection needs it, not in advance.
 - Error text is agent-facing UX: say what to fix and what was received, not what class was raised. "What was received" covers non-secret validation values only — never a bearer, token, or invite code.
+- The invite code is a pydantic `SecretStr`, and it is validated by a plain function called during context assembly, never by a pydantic validator: pydantic embeds the rejected input in its `ValidationError`, so a field validator on that value writes the secret into startup output.
+- Third-party loggers that print raw protocol payloads (`mcp.client`, `mcp.server.streamable_http`, `sse_starlette`, `httpcore`, `httpx`) are floored at INFO in `bootstrap/__main__.py`. A tool result carrying a machine token goes over the wire in plaintext by definition, so at DEBUG those libraries write the token to the log file. Add to that list, never remove from it.
+- Successful authentication logs at DEBUG, rejection at INFO: verification runs on every request, so a success is the unremarkable case.
+- A test that pins a race proves nothing unless it fails without the enforcement. Drive concurrency with a `threading.Barrier` at the exact window, not with hope that N threads collide.
 
 ## Agent skills
 

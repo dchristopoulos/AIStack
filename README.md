@@ -4,7 +4,7 @@ Keep your AI development setup in sync across every developer, machine, and codi
 
 Self-hosted. Open source. Driven entirely from chat, through MCP.
 
-> Status: design complete, implementation starting. The architecture, MVP scope, and database schema are settled and documented in [`docs/`](docs/). Code is being written now.
+> Status: in progress. The architecture, MVP scope, and database schema are settled and documented in [`docs/`](docs/). The server runs and `join` works; the skill vault is next.
 
 ## The problem
 
@@ -69,6 +69,30 @@ Six MCP tools, one harness (Claude Code), skills only.
 Sync never overwrites a locally modified skill. It asks whether to restore the vault copy, push your edit as a new revision, or leave it alone.
 
 Deliberately not in the MVP: dashboard, CLI, version pinning, project-scoped installs, rules, hooks, agents, MCP gateway. The roadmap in the design document has the order they arrive in.
+
+## Running it
+
+```bash
+cp .env.example .env      # then set AISTACK_INVITE_CODE to a secret of your own
+poetry install
+poetry run python -m aistack.bootstrap
+```
+
+The server refuses to start on the placeholder invite code, and it never prints the one you
+set. Share it with your team over something private; each person redeems it once, with `join`.
+
+### Tests
+
+```bash
+poetry run pytest
+```
+
+The concurrent-admin test needs real PostgreSQL and skips without it. To run it:
+
+```bash
+docker compose -f compose.test.yaml up -d
+TEST_DATABASE_URL=postgresql+psycopg://aistack:aistack@localhost:5433/aistack_test poetry run pytest
+```
 
 ## Stack
 
