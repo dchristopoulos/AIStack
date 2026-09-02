@@ -20,10 +20,13 @@ class Machine(Base):
     machine_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user.user_id"), nullable=False)
     name: Mapped[str] = mapped_column(String(MACHINE_NAME_MAX_LENGTH), nullable=False)
-    # native_enum=False keeps this a VARCHAR + CHECK on both dialects. A native Postgres enum
-    # would need a migration to add a value, which SQLite would not, breaking "runs identically".
+    # native_enum=False keeps this a VARCHAR on both dialects — a native Postgres enum would
+    # need a migration to add a value, which SQLite would not, breaking "runs identically".
+    # create_constraint is what emits the CHECK, and it has defaulted to False since SQLAlchemy
+    # 1.4: without it the column is a bare VARCHAR and the database enforces nothing.
     os: Mapped[OperatingSystem] = mapped_column(
-        Enum(OperatingSystem, native_enum=False, length=16, validate_strings=True),
+        Enum(OperatingSystem, native_enum=False, create_constraint=True, length=16,
+             validate_strings=True, name="ck_machine_os"),
         nullable=False
     )
     # Only the sha256 of the bearer token is ever stored. Unique so that authentication is one

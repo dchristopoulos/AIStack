@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import Engine, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -36,8 +38,6 @@ def test_savepoint_rollback_preserves_the_outer_transaction(session_factory: ses
 
 
 def test_foreign_keys_are_enforced(engine: Engine):
-    import uuid
-
     with engine.connect() as connection:
         with connection.begin():
             try:
@@ -50,3 +50,26 @@ def test_foreign_keys_are_enforced(engine: Engine):
             except IntegrityError:
                 return
     raise AssertionError("A machine referencing a missing user was accepted.")
+
+
+def test_the_os_column_is_a_varchar_with_a_check_constraint(engine: Engine):
+    """docs/DESIGN.md §4: the OS enum is VARCHAR + CHECK, not a native enum.
+
+    SQLAlchemy's Enum(native_enum=False) emits no CHECK unless create_constraint is set, so
+    without this the column silently accepts any string on both dialects.
+    """
+
+    with engine.connect() as connection, connection.begin():
+        connection.execute(text("INSERT INTO user (user_id, username, is_admin, created_on) "
+                                "VALUES (:user_id, 'u', 0, '2026-01-01 00:00:00')"),
+                           {"user_id": uuid.uuid4().hex})
+        try:
+            connection.execute(
+                text("INSERT INTO machine (machine_id, user_id, name, os, token_hash, "
+                     "created_on) SELECT :machine_id, user_id, 'm', 'SOLARIS', 'hash', "
+                     "'2026-01-01 00:00:00' FROM user LIMIT 1"),
+                {"machine_id": uuid.uuid4().hex},
+            )
+        except IntegrityError:
+            return
+    raise AssertionError("The database accepted an OS outside the enum.")

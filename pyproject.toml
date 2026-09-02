@@ -21,6 +21,10 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.1.1,<10.0.0",
+    # The suite's own pytest plugin, for the async HTTP tests. It arrives transitively through
+    # fastmcp, but an undeclared plugin means fastmcp moving off anyio silently stops those
+    # tests being collected rather than failing.
+    "anyio>=4.12.0,<5.0.0",
 ]
 
 [build-system]

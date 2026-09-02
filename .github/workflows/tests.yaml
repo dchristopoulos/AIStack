@@ -1,0 +1,58 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    services:
+      # The concurrent-admin race (ADR-0008) cannot be reproduced on SQLite, and the test that
+      # covers it skips when TEST_DATABASE_URL is unset. CI supplies it, so that skip is a
+      # local convenience and never a hole in the build.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aistack
+          POSTGRES_PASSWORD: aistack
+          POSTGRES_DB: aistack_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U aistack -d aistack_test"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+
+    env:
+      # Never DATABASE_URL: a test that reads the server's own variable could drop the tables
+      # of whatever it happens to point at.
+      TEST_DATABASE_URL: postgresql+psycopg://aistack:aistack@localhost:5433/aistack_test
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - run: pipx install poetry
+
+      - run: poetry install
+
+      # Fail setup rather than the assertions: a suite that skipped its only real concurrency
+      # test still reports green, and "0 skipped" is the only way to notice from the summary.
+      - name: Require the PostgreSQL-backed tests to actually run
+        run: |
+          if [ -z "${TEST_DATABASE_URL}" ]; then
+            echo "TEST_DATABASE_URL is unset: the concurrent-admin race would silently skip."
+            exit 1
+          fi
+          poetry run python -c "
+          import os, psycopg
+          psycopg.connect(os.environ['TEST_DATABASE_URL'].replace('postgresql+psycopg://', 'postgresql://')).close()
+          print('PostgreSQL reachable.')
+          "
+
+      - run: poetry run pytest -q -p no:cacheprovider --no-header -rs

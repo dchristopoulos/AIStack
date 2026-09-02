@@ -3,6 +3,7 @@ import logging
 from time import perf_counter
 
 from fastmcp.server.auth import AccessToken, TokenVerifier
+from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -20,7 +21,7 @@ class AIStackTokenVerifier(TokenVerifier):
     returns carry `machine_id` and `user_id`, which means no tool re-queries identity.
     """
 
-    def __init__(self, invite_code: str, session_factory: sessionmaker[Session]):
+    def __init__(self, invite_code: SecretStr, session_factory: sessionmaker[Session]):
         super().__init__()
         self._invite_code = invite_code
         self._session_factory = session_factory

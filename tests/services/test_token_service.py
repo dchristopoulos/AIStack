@@ -1,3 +1,5 @@
+from pydantic import SecretStr
+
 from aistack.services.token_service import (TOKEN_PREFIX, generate_machine_token, hash_token,
                                             matches_invite_code)
 
@@ -24,7 +26,9 @@ def test_hash_is_stable_lowercase_hex_of_the_whole_token():
 
 
 def test_invite_code_comparison_accepts_only_the_exact_code():
-    assert matches_invite_code("s3cret-code", "s3cret-code")
-    assert not matches_invite_code("s3cret-cod", "s3cret-code")
-    assert not matches_invite_code("s3cret-code ", "s3cret-code")
-    assert not matches_invite_code("", "s3cret-code")
+    configured = SecretStr("s3cret-code")
+
+    assert matches_invite_code("s3cret-code", configured)
+    assert not matches_invite_code("s3cret-cod", configured)
+    assert not matches_invite_code("s3cret-code ", configured)
+    assert not matches_invite_code("", configured)

@@ -35,8 +35,7 @@ def build_application_context(settings: Settings) -> None:
     from aistack.mcp.auth.aistack_token_verifier import AIStackTokenVerifier
     from aistack.mcp.mcp import mcp
 
-    mcp.auth = AIStackTokenVerifier(settings.invite_code.get_secret_value(),
-                                    _session_factory)
+    mcp.auth = AIStackTokenVerifier(settings.invite_code, _session_factory)
 
     # Confirms an invite code is configured without revealing anything about it. Its length is
     # as sensitive as its value here — it is the one hint that narrows a brute force.

@@ -2,6 +2,8 @@ import hashlib
 import hmac
 import secrets
 
+from pydantic import SecretStr
+
 # Prefixed so a leaked string is recognizable as an AIStack credential by a secret scanner,
 # and so a user pasting the wrong value into their MCP config gets an obvious mismatch.
 TOKEN_PREFIX = "aist_"
@@ -28,12 +30,17 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def matches_invite_code(presented: str, configured: str) -> bool:
+def matches_invite_code(presented: str, configured: SecretStr) -> bool:
     """Compare a presented bearer against the configured invite code in constant time.
+
+    The configured code stays a SecretStr right up to this comparison. Unwrapping it earlier —
+    into a plain attribute on the verifier, say — would put it back in every repr and traceback
+    frame that touches the object, which is what SecretStr was chosen to prevent.
 
     Digests rather than the raw strings: compare_digest leaks length, and the invite code's
     length is operator-chosen. Machine tokens deliberately do NOT go through this — they are
     resolved by a unique index on token_hash, where nothing is compared in Python at all, and
     turning that into a constant-time scan of every row would be strictly worse.
     """
-    return hmac.compare_digest(hash_token(presented), hash_token(configured))
+    return hmac.compare_digest(hash_token(presented),
+                               hash_token(configured.get_secret_value()))

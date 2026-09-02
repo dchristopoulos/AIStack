@@ -53,9 +53,8 @@ def join(session: Session, username: str, machine_name: str, os: str) -> JoinedM
 
     _claim_admin(session, user)
 
-    logger.info(f"Join completed. Username: '{username}'. Machine: '{machine_name}'. "
-                f"OS: '{operating_system.value}'. Admin: '{user.is_admin}'. "
-                f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
+    logger.debug(f"Join persisted. Username: '{username}'. Machine: '{machine_name}'. "
+                 f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
     return JoinedMachine(user=user, machine=machine, token=token)
 
 

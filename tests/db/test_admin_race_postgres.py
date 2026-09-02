@@ -9,6 +9,7 @@ from aistack.db.engine import build_engine, build_session_factory, create_schema
 from aistack.db.models import Base
 from aistack.db.models.machine import Machine
 from aistack.db.models.user import User
+from aistack.services import onboarding_service
 from aistack.services.onboarding_service import _claim_admin
 from aistack.services.token_service import generate_machine_token, hash_token
 
@@ -74,4 +75,28 @@ def test_concurrent_joins_produce_exactly_one_admin(postgres_session_factory):
         # Every join committed, every machine survived its savepoint, and one user holds admin.
         assert len(session.scalars(select(User)).all()) == JOINER_COUNT
         assert len(session.scalars(select(Machine)).all()) == JOINER_COUNT
+        assert len(session.scalars(select(User).where(User.is_admin.is_(True))).all()) == 1
+
+
+def test_concurrent_calls_to_join_itself_leave_one_admin(postgres_session_factory):
+    """The same race through the real entry point, rather than at the claim.
+
+    The barrier can only line the threads up before join() starts, so this does not pin the
+    window the way the test above does — it is here because the criterion is about join, and a
+    guard that only holds when called directly is not the guarantee the vault needs.
+    """
+    at_the_join = threading.Barrier(JOINER_COUNT)
+
+    def join_once(index: int) -> None:
+        with postgres_session_factory.begin() as session:
+            at_the_join.wait(timeout=30)
+            onboarding_service.join(session, f"racer-{index}", f"box-{index}", "MACOS")
+
+    with ThreadPoolExecutor(max_workers=JOINER_COUNT) as pool:
+        for outcome in [pool.submit(join_once, index) for index in range(JOINER_COUNT)]:
+            outcome.result()
+
+    with postgres_session_factory() as session:
+        assert len(session.scalars(select(User).where(User.username.like("racer-%"))).all()) \
+            == JOINER_COUNT
         assert len(session.scalars(select(User).where(User.is_admin.is_(True))).all()) == 1

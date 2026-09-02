@@ -3,10 +3,20 @@ import logging
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from aistack.bootstrap.__main__ import WIRE_LOGGERS
+from aistack.bootstrap.__main__ import WIRE_LOGGERS, configure_logging
 from aistack.bootstrap.configuration.settings.settings_config import (PLACEHOLDER_INVITE_CODE,
                                                                       Settings,
                                                                       validate_invite_code)
+
+
+@pytest.fixture(autouse=True)
+def restore_logging():
+    """configure_logging() reconfigures the root logger globally, so put it back afterwards."""
+    root = logging.getLogger()
+    level, handlers = root.level, list(root.handlers)
+    yield
+    root.setLevel(level)
+    root.handlers = handlers
 
 
 def _settings(**overrides) -> Settings:
@@ -58,8 +68,20 @@ def test_the_log_level_is_normalized_and_validated():
         _settings(aistack_log_level="chatty")
 
 
-def test_the_wire_loggers_that_would_print_a_token_are_named():
-    # A rename upstream would silently reopen the leak, so the names are asserted, not trusted.
+@pytest.mark.parametrize("log_level", ["DEBUG", "INFO", "WARNING"])
+def test_the_wire_loggers_never_drop_below_info(log_level):
+    """DEBUG on those loggers writes the machine token, in a payload, to the log file."""
+    configure_logging(log_level)
+
     for wire_logger in WIRE_LOGGERS:
-        assert logging.getLogger(wire_logger) is not None
-    assert {"sse_starlette", "httpx"}.issubset(set(WIRE_LOGGERS))
+        assert logging.getLogger(wire_logger).level >= logging.INFO
+
+    # AIStack's own loggers still follow the operator's choice.
+    assert logging.getLogger("aistack").getEffectiveLevel() == logging.getLevelName(log_level)
+
+
+def test_every_library_that_prints_the_wire_payload_is_floored():
+    # A library added to the stack, or renamed upstream, silently reopens the leak. These are
+    # the ones observed printing a full tool result at DEBUG.
+    assert {"mcp.client", "mcp.server.streamable_http",
+            "sse_starlette", "httpcore", "httpx"}.issubset(set(WIRE_LOGGERS))

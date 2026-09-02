@@ -65,5 +65,6 @@ def join(username: str, machine_name: str, os: Literal["MACOS", "WINDOWS", "LINU
     # above is the only place it exists after this call returns.
     logger.info(f"Join completed. Username: '{joined.user.username}'. "
                 f"Machine: '{joined.machine.name}'. OS: '{joined.machine.os.value}'. "
+                f"Admin: '{joined.user.is_admin}'. "
                 f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
     return to_return

@@ -16,12 +16,16 @@ LOG_FORMAT = "%(asctime)s %(levelname)-8s [%(name)s.%(funcName)s] %(message)s"
 WIRE_LOGGERS = ("mcp.client", "mcp.server.streamable_http", "sse_starlette", "httpcore", "httpx")
 
 
-async def main() -> None:
-    settings = Settings.get_settings()
-    logging.basicConfig(level=settings.log_level, format=LOG_FORMAT, force=True)
+def configure_logging(log_level: str) -> None:
+    logging.basicConfig(level=log_level, format=LOG_FORMAT, force=True)
     for wire_logger in WIRE_LOGGERS:
         logging.getLogger(wire_logger).setLevel(max(logging.INFO,
-                                                    logging.getLevelName(settings.log_level)))
+                                                    logging.getLevelName(log_level)))
+
+
+async def main() -> None:
+    settings = Settings.get_settings()
+    configure_logging(settings.log_level)
 
     build_application_context(settings)
 

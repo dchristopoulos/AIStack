@@ -15,7 +15,6 @@ T = TypeVar("T")
 # otherwise have it written to the log by a decorator nobody remembered to check.
 SUBJECT_ARGUMENTS = (("username", "Username"),
                      ("machine_name", "Machine"),
-                     ("name", "Name"),
                      ("os", "OS"))
 
 
