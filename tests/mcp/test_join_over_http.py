@@ -89,16 +89,24 @@ async def test_a_machine_token_cannot_call_join(server_url, session_factory):
         assert session.scalars(select(Machine.name)).all() == ["one"]
 
 
-@pytest.mark.parametrize("bearer", ["", "wrong-invite-code", "aist_not-a-real-token"])
-async def test_an_unrecognized_bearer_is_rejected_before_any_tool_runs(server_url, bearer):
+@pytest.mark.parametrize("bearer", ["wrong-invite-code", "aist_not-a-real-token",
+                                    INVITE_CODE[:-1], INVITE_CODE + "x"])
+async def test_an_unrecognized_bearer_is_rejected_before_any_tool_runs(server_url,
+                                                                      session_factory,
+                                                                      bearer):
     with pytest.raises(Exception) as rejection:
         async with _client(server_url, bearer) as client:
             await client.call_tool("join", {"username": "x", "machine_name": "y", "os": "LINUX"})
 
-    # Neither the presented bearer nor the configured invite code is echoed back.
     reported = str(rejection.value)
-    assert bearer not in reported or bearer == ""
+    assert "401" in reported
+    # Neither the presented bearer nor the configured invite code is echoed back.
+    assert bearer not in reported
     assert INVITE_CODE not in reported
+
+    # Rejected at the auth layer, so the tool never ran and wrote nothing.
+    with session_factory() as session:
+        assert session.scalars(select(Machine)).all() == []
 
 
 async def test_a_rejected_join_reports_what_to_fix_without_leaking_internals(server_url):
