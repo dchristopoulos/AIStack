@@ -1,3 +1,4 @@
+import httpx
 import pytest
 from fastmcp.exceptions import ToolError
 from sqlalchemy import select
@@ -93,3 +94,32 @@ async def test_the_join_result_carries_the_token_and_no_aistack_log_line_does(se
                               if record.name.startswith("aistack."))
     assert joined["token"] not in aistack_lines
     assert INVITE_CODE not in aistack_lines
+
+
+@pytest.mark.parametrize(("label", "headers"), [
+    ("no Authorization header", {}),
+    ("bare scheme", {"Authorization": "Bearer"}),
+    ("wrong scheme", {"Authorization": "Basic abc123"}),
+    ("garbage", {"Authorization": "!!!not-a-header!!!"}),
+])
+async def test_a_missing_or_malformed_authorization_header_is_rejected(server_url,
+                                                                       session_factory,
+                                                                       label, headers):
+    """Absent and malformed, not merely wrong — those take a different path through the stack.
+
+    The parametrized test above covers bearers that are well-formed and unrecognized. A request
+    carrying no Authorization header at all never reaches the verifier, so it is the transport
+    that has to reject it, and nothing in the suite proved that it does.
+    """
+    request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+    async with httpx.AsyncClient() as http:
+        response = await http.post(
+            server_url, json=request,
+            headers={"Accept": "application/json, text/event-stream", **headers})
+
+    assert response.status_code == 401, label
+    assert INVITE_CODE not in response.text
+
+    # Rejected before dispatch, so nothing was written.
+    with session_factory() as session:
+        assert session.scalars(select(Machine)).all() == []
