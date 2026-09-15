@@ -1,4 +1,5 @@
 import pytest
+from fastmcp.exceptions import AuthorizationError
 from fastmcp.server.auth import AuthContext
 from fastmcp.tools import FunctionTool
 
@@ -52,27 +53,86 @@ async def test_a_tool_that_declares_nothing_requires_a_machine_token(server_url)
         mcp.local_provider.remove_tool("declared_nothing")
 
 
-@pytest.mark.parametrize(("tags", "scopes", "allowed"), [
-    ({ONBOARDING_TAG}, [BOOTSTRAP_SCOPE], True),
-    ({ONBOARDING_TAG}, [MACHINE_SCOPE], False),
-    (set(), [MACHINE_SCOPE], True),
-    (set(), [BOOTSTRAP_SCOPE], False),
-    (set(), [], False),
-    ({ONBOARDING_TAG}, [], False),
-])
-def test_the_policy_branches_on_the_tag(tags, scopes, allowed):
-    """Both halves of the branch, including the crossed pairs that must not pass."""
+def _context(tags, scopes):
     component = FunctionTool.from_function(lambda: None, name="component", tags=tags)
-    token = type("Token", (), {"scopes": scopes})()
+    token = None if scopes is None else type("Token", (), {"scopes": scopes})()
+    return AuthContext(token=token, component=component)
 
-    assert authorize(AuthContext(token=token, component=component)) is allowed
+
+async def test_the_denial_an_agent_reads_names_its_next_move_and_no_secret(server_url):
+    """The message over the wire, from both principals.
+
+    A richer denial is a new place for a credential to leak: it is written on the rejection
+    path, where the caller is by definition holding a bearer the server just refused.
+    """
+    def machine_only() -> dict:
+        return {}
+
+    mcp.add_tool(FunctionTool.from_function(machine_only, name="machine_only"))
+    try:
+        async with client_for(server_url, INVITE_CODE) as bootstrap:
+            joined = (await bootstrap.call_tool("join", {"username": "reviewer",
+                                                         "machine_name": "laptop",
+                                                         "os": "LINUX"})).structured_content
+            refused = await bootstrap.call_tool("machine_only", {}, raise_on_error=False)
+        to_bootstrap = refused.content[0].text
+
+        async with client_for(server_url, joined["token"]) as machine:
+            refused = await machine.call_tool("join", {"username": "second",
+                                                       "machine_name": "two",
+                                                       "os": "LINUX"}, raise_on_error=False)
+        to_machine = refused.content[0].text
+    finally:
+        mcp.local_provider.remove_tool("machine_only")
+
+    # Each principal is told what that tool wants and what to do about it, not a scope name.
+    assert "machine token" in to_bootstrap and "Call 'join'" in to_bootstrap
+    assert "invite code" in to_machine and "add_machine" in to_machine
+
+    for message in (to_bootstrap, to_machine):
+        assert INVITE_CODE not in message
+        assert joined["token"] not in message
 
 
-def test_an_unauthenticated_caller_is_denied_whatever_the_tag():
-    """`ctx.token` is None on any transport without a bearer; `in None.scopes` would raise."""
-    for tags in (set(), {ONBOARDING_TAG}):
-        component = FunctionTool.from_function(lambda: None, name="component", tags=tags)
-        assert authorize(AuthContext(token=None, component=component)) is False
+@pytest.mark.parametrize(("tags", "scopes"), [
+    ({ONBOARDING_TAG}, [BOOTSTRAP_SCOPE]),
+    (set(), [MACHINE_SCOPE]),
+])
+def test_the_policy_admits_the_principal_the_tag_calls_for(tags, scopes):
+    assert authorize(_context(tags, scopes)) is True
+
+
+@pytest.mark.parametrize(("tags", "scopes"), [
+    ({ONBOARDING_TAG}, [MACHINE_SCOPE]),
+    (set(), [BOOTSTRAP_SCOPE]),
+    (set(), []),
+    ({ONBOARDING_TAG}, []),
+    (set(), None),
+    ({ONBOARDING_TAG}, None),
+])
+def test_the_policy_denies_every_other_pairing(tags, scopes):
+    """The crossed pairs, the empty scope list, and the unauthenticated caller.
+
+    `scopes=None` stands for no token at all: `required in None.scopes` would raise, and
+    `run_auth_checks` masks an unexpected exception into a plain denial — so a regression
+    there would deny correctly and silently, and no other assertion would notice.
+    """
+    with pytest.raises(AuthorizationError):
+        authorize(_context(tags, scopes))
+
+
+@pytest.mark.parametrize(("tags", "scopes", "expected"), [
+    (set(), [BOOTSTRAP_SCOPE], "Call 'join'"),
+    ({ONBOARDING_TAG}, [MACHINE_SCOPE], "add_machine"),
+    (set(), None, "has none"),
+])
+def test_a_denial_says_what_to_present_instead(tags, scopes, expected):
+    """Error text is agent-facing UX: the bearer the tool wants, and the next move."""
+    with pytest.raises(AuthorizationError) as denial:
+        authorize(_context(tags, scopes))
+
+    assert expected in str(denial.value)
+    assert "component" in str(denial.value)
 
 
 def test_the_two_scopes_are_distinct():
