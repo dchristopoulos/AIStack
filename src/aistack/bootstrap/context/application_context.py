@@ -3,25 +3,21 @@ import logging
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from aistack.bootstrap.configuration.settings.settings_config import (Settings,
-                                                                      validate_invite_code)
+from aistack.bootstrap.configuration.settings.settings_config import (
+    Settings,
+    validate_invite_code,
+)
 from aistack.db.engine import build_engine, build_session_factory, create_schema
 
 logger = logging.getLogger(__name__)
 
-# Application-wide singletons. Nothing here touches a database at import time: the engine is
-# built during assembly, so importing a tool module never opens a connection or creates a
-# schema as a side effect.
+# Assembly owns these singletons; importing modules never connects to the database.
 _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
 
 
 def build_application_context(settings: Settings) -> None:
-    """Assemble the application: engine, schema, session factory, and MCP authentication.
-
-    Takes settings rather than reading the singleton so a test can assemble a context against
-    a temporary database without touching the process environment.
-    """
+    """Assemble the database and MCP authentication from explicit settings."""
     global _engine, _session_factory
 
     validate_invite_code(settings.invite_code)
@@ -30,15 +26,13 @@ def build_application_context(settings: Settings) -> None:
     create_schema(_engine)
     _session_factory = build_session_factory(_engine)
 
-    # Imported here rather than at module scope: mcp.mcp imports the tool modules, which import
-    # this module for get_session_factory(), and at module scope that is a circular import.
+    # Tools import this module; defer MCP imports to avoid a circular import.
     from aistack.mcp.auth.aistack_token_verifier import AIStackTokenVerifier
     from aistack.mcp.mcp import mcp
 
     mcp.auth = AIStackTokenVerifier(settings.invite_code, _session_factory)
 
-    # Confirms an invite code is configured without revealing anything about it. Its length is
-    # as sensitive as its value here — it is the one hint that narrows a brute force.
+    # Confirm configuration without revealing the invite code or its length.
     logger.info("Application context built. Invite code: 'configured'.")
 
 

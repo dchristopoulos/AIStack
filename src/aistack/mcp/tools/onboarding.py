@@ -5,6 +5,7 @@ from typing import Literal, TypedDict
 from fastmcp.server.auth import require_scopes
 
 from aistack.bootstrap.context.application_context import get_session_factory
+from aistack.commons.text import loggable
 from aistack.mcp.auth.scopes import BOOTSTRAP_SCOPE
 from aistack.mcp.mcp import mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
@@ -47,24 +48,28 @@ class JoinResult(TypedDict):
                     tell the user to restart their harness once. It is shown exactly here and
                     never again — the server stores only a hash of it.
     """)
-@handle_mcp_errors()
+@handle_mcp_errors
 def join(username: str, machine_name: str, os: Literal["MACOS", "WINDOWS", "LINUX"]) -> JoinResult:
     started_at = perf_counter()
-    logger.debug(f"Joining. Username: '{username}'. Machine: '{machine_name}'. OS: '{os}'.")
+    logger.debug(
+        f"Joining. Username: '{loggable(username)}'. "
+        f"Machine: '{loggable(machine_name)}'. OS: '{loggable(os)}'."
+    )
 
-    # One MCP call is one transaction: the user, the machine, and the admin claim land
-    # together or not at all. The session is opened here and passed down; services never open
-    # one of their own.
+    # Commit the user, machine, and admin claim together before returning the token.
     with get_session_factory().begin() as session:
         joined = onboarding_service.join(session, username, machine_name, os)
-        to_return = JoinResult(username=joined.user.username,
-                               machine_name=joined.machine.name,
-                               token=joined.token)
+        result = JoinResult(
+            username=joined.user.username,
+            machine_name=joined.machine.name,
+            token=joined.token,
+        )
 
-    # The token is absent from this line by design, and from every other line: the tool result
-    # above is the only place it exists after this call returns.
-    logger.info(f"Join completed. Username: '{joined.user.username}'. "
-                f"Machine: '{joined.machine.name}'. OS: '{joined.machine.os.value}'. "
-                f"Admin: '{joined.user.is_admin}'. "
-                f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
-    return to_return
+    # Log identities explicitly; result contains the plaintext token.
+    logger.info(
+        f"Join completed. Username: '{loggable(joined.user.username)}'. "
+        f"Machine: '{loggable(joined.machine.name)}'. OS: '{joined.machine.os.value}'. "
+        f"Admin: '{joined.user.is_admin}'. "
+        f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
+    )
+    return result

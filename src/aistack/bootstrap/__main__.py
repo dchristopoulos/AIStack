@@ -24,7 +24,7 @@ def configure_logging(log_level: str) -> None:
 
 
 async def main() -> None:
-    settings = Settings.get_settings()
+    settings = Settings()
     configure_logging(settings.log_level)
 
     build_application_context(settings)

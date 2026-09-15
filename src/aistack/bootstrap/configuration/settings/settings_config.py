@@ -1,11 +1,9 @@
-from functools import lru_cache
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# The value `.env.example` ships. An operator who copied the file and never edited it would
-# otherwise run an internet-reachable server whose invite code is published in the repository.
+# Reject the public placeholder shipped in .env.example.
 PLACEHOLDER_INVITE_CODE = "change-me"
 
 MINIMUM_INVITE_CODE_LENGTH = 16
@@ -16,30 +14,24 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        hide_input_in_errors=True,
         extra="ignore"
     )
 
-    # DATABASE SETTINGS
-
-    # Unprefixed on purpose: `DATABASE_URL` is the name every hosting platform injects.
+    # Keep DATABASE_URL unprefixed for hosting platforms.
     database_url: str = Field(
         default="sqlite:///./aistack.db",
+        repr=False,
         description="SQLAlchemy URL. SQLite by default (ADR-0002); a postgresql+psycopg:// "
                     "URL switches to Postgres. Synchronous drivers only (ADR-0005)."
     )
 
-    # AUTH SETTINGS
-
-    # SecretStr, not str: pydantic embeds the rejected input in a ValidationError, and this
-    # field's whole purpose is a value that must never reach startup output. SecretStr renders
-    # as asterisks there and in any repr of the settings object.
+    # Mask the invite code in object representations as well as validation output.
     invite_code: SecretStr = Field(
         validation_alias="aistack_invite_code",
         description="Team invite code, presented by new users as a bootstrap bearer token "
                     "(ADR-0003). Operator-supplied; never generated, printed, or logged."
     )
-
-    # MCP SERVER SETTINGS
 
     host: str = Field(
         default="0.0.0.0",
@@ -61,8 +53,6 @@ class Settings(BaseSettings):
         description="HTTP path the streamable-HTTP transport is mounted at."
     )
 
-    # LOGGING SETTINGS
-
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="INFO",
         validation_alias="aistack_log_level",
@@ -74,21 +64,11 @@ class Settings(BaseSettings):
     def normalize_log_level(cls, value: str) -> str:
         return value.upper() if isinstance(value, str) else value
 
-    @staticmethod
-    @lru_cache(maxsize=1)
-    def get_settings() -> "Settings":
-        return Settings()
-
 
 def validate_invite_code(invite_code: SecretStr) -> None:
-    """Reject an unusable invite code at startup, without ever printing it.
+    """Reject an unusable invite code during context assembly, without echoing it.
 
-    Deliberately not a pydantic validator: pydantic reports the offending *input* alongside
-    any error it raises, and for this field the input is the secret. A validator here would
-    write the invite code into the very startup output the secrets rule forbids it from.
-
-    Startup is also the only moment this can be caught. A weak or placeholder code is not an
-    error at any later point — it is simply a server that anyone who read the README can join.
+    Keep this outside Pydantic validators so rejected secrets never enter their errors.
     """
     value = invite_code.get_secret_value()
 

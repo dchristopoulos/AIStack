@@ -14,13 +14,18 @@ def restore_logging():
     """configure_logging() reconfigures the root logger globally, so put it back afterwards."""
     root = logging.getLogger()
     level, handlers = root.level, list(root.handlers)
+    wire_levels = {name: logging.getLogger(name).level for name in WIRE_LOGGERS}
     yield
     root.setLevel(level)
     root.handlers = handlers
+    for name, wire_level in wire_levels.items():
+        logging.getLogger(name).setLevel(wire_level)
 
 
 def _settings(**overrides) -> Settings:
-    return Settings(aistack_invite_code="a-real-invite-code", **overrides)
+    # _env_file=None or these read whatever .env the developer happens to have in the working
+    # directory, and a test named "defaults are documented" then asserts against their config.
+    return Settings(_env_file=None, aistack_invite_code="a-real-invite-code", **overrides)
 
 
 def test_defaults_are_documented_and_sqlite_backed():
@@ -59,6 +64,17 @@ def test_the_configured_invite_code_is_masked_in_any_repr():
 
     assert "a-real-invite-code" not in repr(settings)
     assert "a-real-invite-code" not in str(settings.invite_code)
+
+
+@pytest.mark.parametrize("url", ["postgresql://u:abc@h/d", "postgresql://h/d?password=abc"])
+def test_database_credentials_are_hidden_in_settings_errors_and_repr(url):
+    with pytest.raises(ValidationError) as rejection:
+        Settings(_env_file=None, database_url=url)
+    assert "aistack_invite_code" in str(rejection.value)
+    assert "abc" not in str(rejection.value)
+    settings = _settings(database_url=url)
+    assert "abc" not in repr(settings)
+    assert settings.database_url == url
 
 
 def test_the_log_level_is_normalized_and_validated():

@@ -1,102 +1,48 @@
-import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import false, select
 
-from aistack.db.engine import build_engine, build_session_factory, create_schema
-from aistack.db.models import Base
+from aistack.db.engine import build_session_factory
 from aistack.db.models.machine import Machine
 from aistack.db.models.user import User
 from aistack.services import onboarding_service
-from aistack.services.onboarding_service import _claim_admin
-from aistack.services.token_service import generate_machine_token, hash_token
-
-# Never DATABASE_URL: a test that falls back to the server's own variable can drop the tables
-# of a real deployment. The absence of TEST_DATABASE_URL is a skip locally and a setup failure
-# in CI, which is what keeps this from quietly never running.
-TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
-
-pytestmark = pytest.mark.skipif(
-    not TEST_DATABASE_URL,
-    reason="Set TEST_DATABASE_URL to a PostgreSQL URL to run the concurrent-admin race. "
-           "Start one with: docker compose -f compose.test.yaml up -d"
-)
-
-
-@pytest.fixture(name="postgres_session_factory")
-def postgres_session_factory_fixture():
-    engine = build_engine(TEST_DATABASE_URL)
-    Base.metadata.drop_all(engine)
-    create_schema(engine)
-    yield build_session_factory(engine)
-    Base.metadata.drop_all(engine)
-    engine.dispose()
-
 
 JOINER_COUNT = 8
 
 
-def test_concurrent_joins_produce_exactly_one_admin(postgres_session_factory):
-    """The race SQLite cannot reproduce, and the reason the partial index is the enforcer.
-
-    Under READ COMMITTED every transaction evaluates the guard's NOT EXISTS against committed
-    rows only, so none of them sees the others' uncommitted writes and all of them would set
-    is_admin. The unique partial index rejects all but one; each loser's savepoint absorbs that
-    rejection, so the user and machine it inserted beforehand still commit.
-
-    A barrier drives the claims into the same instant rather than hoping eight threads collide:
-    a race reproduced by luck is a test that passes for the wrong reason on a quiet machine.
-    That is also why this reaches for the claim directly instead of calling join() — the window
-    being pinned is between the guard and the commit, and nothing else can aim at it.
-    """
+@pytest.mark.parametrize("force_contenders", [False, True], ids=["real-guard", "all-contend"])
+def test_concurrent_join_keeps_every_machine_and_one_admin(postgres_engine, monkeypatch,
+                                                           caplog, force_contenders):
+    session_factory = build_session_factory(postgres_engine)
     at_the_claim = threading.Barrier(JOINER_COUNT)
+    claim_admin = onboarding_service._claim_admin
 
-    def join_once(index: int) -> None:
-        with postgres_session_factory.begin() as session:
-            user = User(username=f"user-{index}")
-            session.add(user)
-            session.flush()
+    def claim_together(session, user):
+        at_the_claim.wait(timeout=30)
+        claim_admin(session, user)
 
-            token = generate_machine_token()
-            session.add(Machine(user_id=user.user_id, name=f"machine-{index}", os="LINUX",
-                                token_hash=hash_token(token)))
-            session.flush()
+    monkeypatch.setattr(onboarding_service, "_claim_admin", claim_together)
+    if force_contenders:
+        # Reproduce every contender observing no committed admin, regardless of scheduling.
+        # The real UPDATE, unique index, savepoint, and outer transaction still decide the result.
+        monkeypatch.setattr(onboarding_service, "exists", lambda query: false())
 
-            at_the_claim.wait(timeout=30)
-            _claim_admin(session, user)
+    def join_once(index):
+        with session_factory.begin() as session:
+            return onboarding_service.join(session, f"racer-{index}\nline", f"box-{index}", "MACOS")
 
-    with ThreadPoolExecutor(max_workers=JOINER_COUNT) as pool:
-        for outcome in [pool.submit(join_once, index) for index in range(JOINER_COUNT)]:
-            outcome.result()  # Re-raises: a join that failed outright is the failure to catch.
+    with caplog.at_level("INFO"), ThreadPoolExecutor(max_workers=JOINER_COUNT) as pool:
+        joined = list(pool.map(join_once, range(JOINER_COUNT)))
 
-    with postgres_session_factory() as session:
-        # Every join committed, every machine survived its savepoint, and one user holds admin.
+    assert sum(result.user.is_admin for result in joined) == 1
+    with session_factory() as session:
         assert len(session.scalars(select(User)).all()) == JOINER_COUNT
         assert len(session.scalars(select(Machine)).all()) == JOINER_COUNT
         assert len(session.scalars(select(User).where(User.is_admin.is_(True))).all()) == 1
 
-
-def test_concurrent_calls_to_join_itself_leave_one_admin(postgres_session_factory):
-    """The same race through the real entry point, rather than at the claim.
-
-    The barrier can only line the threads up before join() starts, so this does not pin the
-    window the way the test above does — it is here because the criterion is about join, and a
-    guard that only holds when called directly is not the guarantee the vault needs.
-    """
-    at_the_join = threading.Barrier(JOINER_COUNT)
-
-    def join_once(index: int) -> None:
-        with postgres_session_factory.begin() as session:
-            at_the_join.wait(timeout=30)
-            onboarding_service.join(session, f"racer-{index}", f"box-{index}", "MACOS")
-
-    with ThreadPoolExecutor(max_workers=JOINER_COUNT) as pool:
-        for outcome in [pool.submit(join_once, index) for index in range(JOINER_COUNT)]:
-            outcome.result()
-
-    with postgres_session_factory() as session:
-        assert len(session.scalars(select(User).where(User.username.like("racer-%"))).all()) \
-            == JOINER_COUNT
-        assert len(session.scalars(select(User).where(User.is_admin.is_(True))).all()) == 1
+    if force_contenders:
+        losers = [r.getMessage() for r in caplog.records if "Admin already claimed concurrently" in r.getMessage()]
+        assert len(losers) == JOINER_COUNT - 1
+        assert all("\n" not in message and "\\nline" in message for message in losers)

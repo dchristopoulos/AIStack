@@ -1,6 +1,6 @@
 # AIStack
 
-A cloud control plane for AI development configuration: skills, rules, agents, hooks, and MCP servers, kept in sync across users, projects, machines, and harnesses.
+A self-hosted, open-source control plane for AI development configuration. AIStack keeps skills in sync across users, machines, and harnesses. Rules, agents, hooks, and MCP server definitions are planned after the skills MVP.
 
 ## Language
 

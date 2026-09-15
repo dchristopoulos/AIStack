@@ -4,7 +4,7 @@ Keep your AI development setup in sync across every developer, machine, and codi
 
 Self-hosted. Open source. Driven entirely from chat, through MCP.
 
-> Status: in progress. The architecture, MVP scope, and database schema are settled and documented in [`docs/`](docs/). The server runs and `join` works; the skill vault is next.
+> Status: feature one is implemented. The server starts, authenticates bootstrap access, and `join` registers a user and first machine. The remaining MVP tools are planned.
 
 ## The problem
 
@@ -16,7 +16,7 @@ AIStack gives a team one server that holds the canonical copies, and each machin
 
 ## How it works
 
-You run one container. Everyone connects their coding agent to it as an MCP server, then works in plain language:
+The planned MVP runs in one container. Feature one currently runs from source using the commands below. Once the skill tools are implemented, everyone connects their harness to the server and works in plain language:
 
 ```text
 "push my wizard skill to aistack"
@@ -55,16 +55,17 @@ Each machine authenticates with its own token, so the server knows both who you 
 
 ## MVP
 
-Six MCP tools, one harness (Claude Code), skills only.
+The MVP supports Claude Code and seven MCP tools for skills. Feature one delivers `join`; the other six are planned.
 
 | Tool | What it does |
 |---|---|
-| `join` | Redeem the team invite code, register your first machine, get its token |
-| `add_machine` | Register another computer, returns a ready MCP command to paste there |
-| `list_skills` | Browse the team vault |
-| `get_skill` | Fetch a skill's files for install |
-| `push_skill` | Upload a skill, a new push of an existing name creates a new revision |
-| `sync` | Compare local state against what the server says this machine should have |
+| `join` | **Implemented.** Redeem the team invite code, register your first machine, get its token |
+| `add_machine` | Planned. Register another computer and return a ready MCP command to paste there |
+| `list_skills` | Planned. Browse the team vault |
+| `get_skill` | Planned. Fetch a skill's files for install and enable it on this machine |
+| `push_skill` | Planned. Upload a skill, where a repeated name creates a new revision |
+| `sync` | Planned. Compare local state against the server's desired state for this machine |
+| `disable_skill` | Planned. Disable a skill for this machine; the harness then removes its local folder |
 
 Sync never overwrites a locally modified skill. It asks whether to restore the vault copy, push your edit as a new revision, or leave it alone.
 
@@ -81,13 +82,25 @@ poetry run python -m aistack.bootstrap
 The server refuses to start on the placeholder invite code, and it never prints the one you
 set. Share it with your team over something private; each person redeems it once, with `join`.
 
+## Reviewing feature one
+
+Read the current implementation in this order:
+
+1. [`docs/DESIGN.md`](docs/DESIGN.md) and [`CONTEXT.md`](CONTEXT.md) define the seven-tool MVP and its terms.
+2. [`src/aistack/mcp/tools/onboarding.py`](src/aistack/mcp/tools/onboarding.py) is the thin `join` tool. It opens one transaction and calls the service.
+3. [`src/aistack/services/onboarding_service.py`](src/aistack/services/onboarding_service.py), [`src/aistack/mcp/auth/`](src/aistack/mcp/auth/), and [`src/aistack/db/engine.py`](src/aistack/db/engine.py) contain the join flow, authorization, and database rules.
+4. [`tests/services/test_onboarding_service.py`](tests/services/test_onboarding_service.py), [`tests/mcp/`](tests/mcp/), and [`tests/db/`](tests/db/) cover rejection paths, bearer verification, and database behaviour.
+
+The historical [builder notes](docs/reviews/ticket-1.md) and [review](docs/reviews/ticket-1-codex.md) record the baseline findings and their follow-up verification.
+
 ### Tests
 
 ```bash
 poetry run pytest
 ```
 
-The concurrent-admin test needs real PostgreSQL and skips without it. To run it:
+The concurrent-admin tests need real PostgreSQL and skip without it. Setting `TEST_DATABASE_URL`
+also runs the service, HTTP, and shared constraint tests against PostgreSQL. To run them:
 
 ```bash
 docker compose -f compose.test.yaml up -d

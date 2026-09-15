@@ -3,7 +3,7 @@ import logging
 from time import perf_counter
 
 from fastmcp.server.auth import AccessToken, TokenVerifier
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -14,11 +14,16 @@ from aistack.services.token_service import hash_token, matches_invite_code
 logger = logging.getLogger(__name__)
 
 
-class AIStackTokenVerifier(TokenVerifier):
-    """Resolves a bearer token to one of the two AIStack principals.
+class AIStackAccessToken(AccessToken):
+    """Keep the SDK token contract without exposing the bearer in object representations."""
 
-    Runs before tool dispatch, so an invalid bearer never reaches a tool. The claims it
-    returns carry `machine_id` and `user_id`, which means no tool re-queries identity.
+    token: str = Field(repr=False)
+
+
+class AIStackTokenVerifier(TokenVerifier):
+    """Resolve the bearer before tool dispatch.
+
+    Machine claims carry machine_id and user_id so tools need no identity lookup.
     """
 
     def __init__(self, invite_code: SecretStr, session_factory: sessionmaker[Session]):
@@ -27,33 +32,32 @@ class AIStackTokenVerifier(TokenVerifier):
         self._session_factory = session_factory
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        """Verify a bearer. Returns None for anything unrecognized.
-
-        FastMCP forces an async signature here, so the one blocking database call is pushed to
-        a thread rather than stalling the event loop for every other in-flight request
-        (ADR-0005 covers tools; this is the one place that cannot be a plain `def`).
-        """
+        """Return a scoped principal, or None when the bearer is unrecognized."""
         started_at = perf_counter()
 
         if matches_invite_code(token, self._invite_code):
-            # Debug, not info: this runs on every request of every session, and a
-            # successful authentication is the unremarkable case. Rejections stay at info.
-            logger.debug(f"Bearer authenticated. Principal: 'bootstrap'. "
-                        f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
-            return AccessToken(token=token, client_id="bootstrap", scopes=[BOOTSTRAP_SCOPE])
+            logger.debug(
+                "Bearer authenticated. Principal: 'bootstrap'. "
+                f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
+            )
+            return AIStackAccessToken(token=token, client_id="bootstrap", scopes=[BOOTSTRAP_SCOPE])
 
+        # FastMCP requires async here; keep the blocking driver off the event loop.
         machine = await asyncio.to_thread(self._find_machine, hash_token(token))
         if machine is None:
-            # The presented bearer is deliberately absent from this line and from the 401 that
-            # follows it: a bad token in a log is still a token, and the next one might be good.
-            logger.info(f"Bearer rejected: not the invite code and no machine holds it. "
-                        f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
+            # Rejections must never echo the presented bearer.
+            logger.info(
+                "Bearer rejected: not the invite code and no machine holds it. "
+                f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
+            )
             return None
 
-        logger.debug(f"Bearer authenticated. Principal: 'machine'. "
-                    f"Machine: '{machine.machine_id}'. User: '{machine.user_id}'. "
-                    f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
-        return AccessToken(
+        logger.debug(
+            "Bearer authenticated. Principal: 'machine'. "
+            f"Machine: '{machine.machine_id}'. User: '{machine.user_id}'. "
+            f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
+        )
+        return AIStackAccessToken(
             token=token,
             client_id=str(machine.machine_id),
             scopes=[MACHINE_SCOPE],
@@ -61,10 +65,9 @@ class AIStackTokenVerifier(TokenVerifier):
         )
 
     def _find_machine(self, token_hash: str) -> Machine | None:
-        """One indexed lookup on the unique token_hash — nothing is compared in Python.
+        """Look up the token hash through its unique index.
 
-        The single place outside a tool that opens its own session: verification runs before
-        tool dispatch, so there is no tool transaction to join.
+        Auth owns a short read session because no tool transaction exists yet.
         """
         with self._session_factory() as session:
             return session.scalar(select(Machine).where(Machine.token_hash == token_hash))

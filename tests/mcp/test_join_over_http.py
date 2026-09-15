@@ -1,14 +1,45 @@
+import logging
+
 import httpx
 import pytest
 from fastmcp.exceptions import ToolError
 from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
 
 from aistack.db.models.machine import Machine
+from aistack.commons.text import loggable
 from tests.conftest import INVITE_CODE
 from tests.mcp.conftest import client_for
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize("level", ["INFO", "DEBUG"])
+@pytest.mark.parametrize("field", ["username", "machine_name"])
+@pytest.mark.parametrize("value", ["x\nFORGED\x1b[2J", "A" * 100_000],
+                         ids=["controls", "oversized"])
+async def test_join_logs_escape_and_bound_names(server_url, caplog, level, field, value):
+    arguments = {"username": "review", "machine_name": "laptop", "os": "LINUX", field: value}
+    with caplog.at_level(level):
+        async with client_for(server_url, INVITE_CODE) as client:
+            result = await client.call_tool("join", arguments, raise_on_error=False)
+    assert result.is_error == (len(value) > 64)
+    records = [r for r in caplog.records if r.name.startswith("aistack.")]
+    assert records
+    for record in records:
+        rendered = logging.Formatter().format(record)
+        assert "\n" not in rendered and "\x1b" not in rendered
+        assert len(rendered) < 1000
+    if len(value) <= 64 or level == "DEBUG":
+        assert any(loggable(value) in r.getMessage() for r in records)
+
+
+async def test_invalid_os_is_rejected_by_the_http_schema(server_url, session_factory):
+    async with client_for(server_url, INVITE_CODE) as client:
+        with pytest.raises(ToolError):
+            await client.call_tool("join", {"username": "review", "machine_name": "box",
+                                            "os": "macos"})
+    with session_factory() as session:
+        assert session.scalars(select(Machine)).all() == []
 
 
 async def test_the_invite_code_joins_and_the_returned_token_authenticates(server_url,

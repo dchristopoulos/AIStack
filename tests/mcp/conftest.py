@@ -8,6 +8,7 @@ from fastmcp.client import BearerAuth, Client, StreamableHttpTransport
 
 from aistack.bootstrap.configuration.settings.settings_config import Settings
 from aistack.bootstrap.context import application_context
+from aistack.db.engine import build_session_factory
 from aistack.mcp.mcp import mcp
 from tests.conftest import INVITE_CODE
 
@@ -18,32 +19,47 @@ def anyio_backend_fixture():
 
 
 @pytest.fixture(name="server_url")
-async def server_url_fixture(sqlite_url: str):
-    """The real server, on a real socket, against a temporary database.
+async def server_url_fixture(portable_engine):
+    """Use real HTTP so tests exercise bearer verification before tool dispatch."""
+    try:
+        application_context.build_application_context(
+            Settings(
+                _env_file=None,
+                database_url=portable_engine.url.render_as_string(hide_password=False),
+                aistack_invite_code=INVITE_CODE,
+            )
+        )
+        # Pass the bound socket to Uvicorn so no other process can take its port.
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(
+                mcp.http_app(path="/mcp", transport="http"),
+                log_config=None,
+            ))
+            serving = asyncio.create_task(server.serve(sockets=[listener]))
+            try:
+                async with asyncio.timeout(5):
+                    while not server.started:
+                        if serving.done():
+                            await serving
+                            raise RuntimeError("HTTP test server stopped before startup.")
+                        await asyncio.sleep(0.01)
 
-    The in-memory transport skips the HTTP layer, and the HTTP layer is where the bearer is read
-    and verified — so every auth-bearing flow gets one real request over a real port.
-    """
-    application_context.build_application_context(
-        Settings(database_url=sqlite_url, aistack_invite_code=INVITE_CODE)
-    )
+                yield f"http://127.0.0.1:{port}/mcp"
+            finally:
+                server.should_exit = True
+                if not server.started:
+                    serving.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await serving
+    finally:
+        application_context.dispose_application_context()
 
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
 
-    server = uvicorn.Server(uvicorn.Config(mcp.http_app(path="/mcp", transport="http"),
-                                           host="127.0.0.1", port=port, log_config=None))
-    serving = asyncio.create_task(server.serve())
-    while not server.started:
-        await asyncio.sleep(0.01)
-
-    yield f"http://127.0.0.1:{port}/mcp"
-
-    server.should_exit = True
-    with contextlib.suppress(asyncio.CancelledError):
-        await serving
-    application_context.dispose_application_context()
+@pytest.fixture(name="session_factory")
+def session_factory_fixture(portable_engine):
+    return build_session_factory(portable_engine)
 
 
 def client_for(server_url: str, bearer: str) -> Client:

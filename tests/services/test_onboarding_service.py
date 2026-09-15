@@ -3,11 +3,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from aistack.commons.exceptions import Conflict, ValidationError
+from aistack.db.engine import build_session_factory
 from aistack.db.models.machine import Machine
 from aistack.db.models.operating_system import OperatingSystem
 from aistack.db.models.user import User
 from aistack.services import onboarding_service
 from aistack.services.token_service import TOKEN_PREFIX, hash_token
+
+
+@pytest.fixture(name="session_factory")
+def session_factory_fixture(portable_engine):
+    return build_session_factory(portable_engine)
 
 
 def _join(session_factory, username="dimitris", machine_name="macbook", os="MACOS"):
@@ -22,6 +28,7 @@ def test_join_creates_the_user_and_their_first_machine(session_factory: sessionm
     assert joined.machine.name == "macbook"
     assert joined.machine.os is OperatingSystem.MACOS
     assert joined.token.startswith(TOKEN_PREFIX)
+    assert joined.token not in repr(joined)
 
     with session_factory() as session:
         machine = session.scalar(select(Machine))
@@ -43,17 +50,6 @@ def test_the_first_user_to_join_becomes_the_admin(session_factory: sessionmaker[
         assert admins == ["first"]
 
 
-def test_a_second_join_survives_losing_the_admin_claim(session_factory: sessionmaker[Session]):
-    """The savepoint absorbs the failed claim; the user and machine it inserted stay."""
-    _join(session_factory, username="first", machine_name="one")
-
-    second = _join(session_factory, username="second", machine_name="two")
-
-    with session_factory() as session:
-        assert session.get(User, second.user.user_id) is not None
-        assert session.get(Machine, second.machine.machine_id) is not None
-
-
 def test_duplicate_username_is_rejected(session_factory: sessionmaker[Session]):
     _join(session_factory, username="dimitris", machine_name="macbook")
 
@@ -72,7 +68,7 @@ def test_the_same_machine_name_is_free_for_a_different_user(session_factory: ses
     assert second.machine.name == "macbook"
 
 
-@pytest.mark.parametrize("os", ["", "mac", "SOLARIS", "MACOS;", None])
+@pytest.mark.parametrize("os", ["", "mac", "SOLARIS", "MACOS;", None, "macos", "  Windows  "])
 def test_an_unsupported_os_is_rejected_naming_what_arrived(session_factory, os):
     with pytest.raises(ValidationError) as rejection:
         _join(session_factory, os=os)
@@ -81,11 +77,21 @@ def test_an_unsupported_os_is_rejected_naming_what_arrived(session_factory, os):
     assert str(os) in str(rejection.value)
 
 
-@pytest.mark.parametrize("os", ["macos", "  Windows  ", "linux"])
-def test_the_os_is_matched_case_insensitively(session_factory, os):
+@pytest.mark.parametrize("os", ["MACOS", "WINDOWS", "LINUX"])
+def test_the_exact_supported_os_is_stored(session_factory, os):
     joined = _join(session_factory, os=os)
 
-    assert joined.machine.os.value == os.strip().upper()
+    assert joined.machine.os.value == os
+
+
+@pytest.mark.parametrize("field", ["username", "machine_name"])
+def test_nul_in_a_name_is_rejected_before_any_write(session_factory, field):
+    with pytest.raises(ValidationError, match="NUL") as rejection:
+        _join(session_factory, **{field: "x\x00y"})
+    assert "\\x00" in str(rejection.value)
+    with session_factory() as session:
+        assert session.scalars(select(User)).all() == []
+        assert session.scalars(select(Machine)).all() == []
 
 
 @pytest.mark.parametrize("field", ["username", "machine_name"])
