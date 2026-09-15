@@ -2,11 +2,9 @@ import logging
 from time import perf_counter
 from typing import Literal, TypedDict
 
-from fastmcp.server.auth import require_scopes
-
 from aistack.bootstrap.context.application_context import get_session_factory
 from aistack.commons.text import loggable
-from aistack.mcp.auth.scopes import BOOTSTRAP_SCOPE
+from aistack.mcp.auth.policy import ONBOARDING_TAG
 from aistack.mcp.mcp import mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.services import onboarding_service
@@ -21,9 +19,8 @@ class JoinResult(TypedDict):
 
 
 @mcp.tool(
-    # Authorization is FastMCP's own, evaluated before the handler runs and again when tools
-    # are listed — so a machine token does not merely fail to call `join`, it never sees it.
-    auth=require_scopes(BOOTSTRAP_SCOPE),
+    # The only tool the invite code may reach; the policy reads this tag, not the name.
+    tags={ONBOARDING_TAG},
     description="""Register a new user and their first machine on this AIStack server.
 
     Call this once per person, from the machine they are setting up, while connected with the

@@ -3,7 +3,6 @@ from contextlib import suppress
 import httpx
 import pytest
 from fastmcp.exceptions import ToolError
-from fastmcp.server.auth import require_scopes
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.tools import FunctionTool
 from pydantic import SecretStr
@@ -70,17 +69,19 @@ async def test_an_unrecognized_bearer_resolves_to_nothing(verifier, joined):
 
 @pytest.fixture(name="claims_probe")
 def claims_probe_fixture():
-    """Register a machine-scope tool that reports its caller, then take it away again.
+    """Register a tool that reports its caller, then take it away again.
 
     A later ticket's first machine-scope tool is the real consumer of the claims. This stands in
     for it so the path is proven now, and is removed afterwards because
     test_join_over_http.py asserts the server offers exactly one tool.
+
+    It declares no scope of its own: untagged means machine scope, which is what a real
+    machine-scope tool will look like once the middleware carries the rule.
     """
     def claims_probe() -> dict:
         return dict(get_access_token().claims)
 
-    mcp.add_tool(FunctionTool.from_function(claims_probe, name=PROBE_TOOL_NAME,
-                                            auth=require_scopes(MACHINE_SCOPE)))
+    mcp.add_tool(FunctionTool.from_function(claims_probe, name=PROBE_TOOL_NAME))
     yield
     mcp.local_provider.remove_tool(PROBE_TOOL_NAME)
 

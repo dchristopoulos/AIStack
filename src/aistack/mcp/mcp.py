@@ -2,11 +2,19 @@ import logging
 
 import uvicorn
 from fastmcp import FastMCP
+from fastmcp.server.middleware import AuthMiddleware
+
+from aistack.mcp.auth.policy import authorize
 
 logger = logging.getLogger(__name__)
 
 # Only deliberate ToolError messages reach callers; unexpected details stay masked.
-mcp = FastMCP("aistack", mask_error_details=True)
+# Authorization is attached once, here, so a tool is covered whether or not it says so.
+mcp = FastMCP(
+    "aistack",
+    mask_error_details=True,
+    middleware=[AuthMiddleware(auth=authorize)],
+)
 
 # Register tools before building the HTTP app.
 from aistack.mcp.tools import onboarding  # noqa: F401, E402

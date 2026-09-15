@@ -1,16 +1,16 @@
 import pytest
+from fastmcp.server.auth import AuthContext
 from fastmcp.tools import FunctionTool
 
+from aistack.mcp.auth.policy import ONBOARDING_TAG, authorize
 from aistack.mcp.auth.scopes import BOOTSTRAP_SCOPE, MACHINE_SCOPE
 from aistack.mcp.mcp import mcp
 from tests.conftest import INVITE_CODE
 from tests.mcp.conftest import client_for
 
-# FastMCP's per-component authorization is opt-in: a tool registered without `auth=` carries no
-# check at all, so it is listed and callable for every authenticated principal — including the
-# bootstrap one, whose bearer is a static code shared with the whole team. AGENTS.md says
-# `machine` on everything except `join`, and one forgotten keyword is all it takes to break
-# that. Nothing else in the suite fails when a tool omits it.
+# One AuthMiddleware carries the whole rule, so a tool cannot opt out of authorization by
+# omitting a keyword. What can still go wrong is the rule itself: a policy that reads the wrong
+# half of the branch, or a default that admits instead of denies. That is what this file pins.
 
 pytestmark = pytest.mark.anyio
 
@@ -19,46 +19,62 @@ pytestmark = pytest.mark.anyio
 BOOTSTRAP_ONLY_TOOLS = {"join"}
 
 
-async def test_every_registered_tool_declares_an_authorization_check():
-    unguarded = [tool.name for tool in await mcp.local_provider.list_tools() if tool.auth is None]
-
-    assert not unguarded, (
-        f"These tools carry no auth check, so any authenticated principal can list and call "
-        f"them: {unguarded}. Declare auth=require_scopes(MACHINE_SCOPE) on the tool, or "
-        f"BOOTSTRAP_SCOPE if it is genuinely part of onboarding."
-    )
-
-
 async def test_only_the_onboarding_tools_are_reachable_with_the_invite_code(server_url):
-    """The scope rule from the caller's side, which is the side that matters.
-
-    The test above proves a check exists. This proves the check is the right one: a bearer that
-    is only the invite code sees onboarding and nothing else, whatever the tool modules grow to.
-    """
+    """The scope rule from the caller's side, which is the side that matters."""
     async with client_for(server_url, INVITE_CODE) as client:
         reachable = {tool.name for tool in await client.list_tools()}
 
     assert reachable == BOOTSTRAP_ONLY_TOOLS
 
 
-async def test_a_tool_that_forgets_its_scope_is_caught(server_url):
-    """The guard above is only worth having if it fails on the mistake it describes."""
-    def forgot_its_scope() -> dict:
+async def test_a_tool_that_declares_nothing_requires_a_machine_token(server_url):
+    """The reason the rule sits in middleware: forgetting is safe, and provably so.
+
+    Under per-component `auth=`, this tool would carry no check and the invite code would list
+    and call it. The assertion is the inverse of that: untagged falls to the scope the invite
+    code does not hold, and the machine token does.
+    """
+    def declared_nothing() -> dict:
         return {}
 
-    mcp.add_tool(FunctionTool.from_function(forgot_its_scope, name="forgot_its_scope"))
+    mcp.add_tool(FunctionTool.from_function(declared_nothing, name="declared_nothing"))
     try:
-        unguarded = [tool.name for tool in await mcp.local_provider.list_tools()
-                     if tool.auth is None]
-        assert unguarded == ["forgot_its_scope"]
+        async with client_for(server_url, INVITE_CODE) as bootstrap:
+            joined = (await bootstrap.call_tool("join", {"username": "reviewer",
+                                                         "machine_name": "laptop",
+                                                         "os": "LINUX"})).structured_content
+            assert "declared_nothing" not in {tool.name for tool in await bootstrap.list_tools()}
 
-        # And it really is reachable with nothing but the invite code, which is why the guard
-        # is a build failure rather than a note.
-        async with client_for(server_url, INVITE_CODE) as client:
-            assert "forgot_its_scope" in {tool.name for tool in await client.list_tools()}
+        async with client_for(server_url, joined["token"]) as machine:
+            assert "declared_nothing" in {tool.name for tool in await machine.list_tools()}
+            assert (await machine.call_tool("declared_nothing", {})).structured_content == {}
     finally:
-        mcp.local_provider.remove_tool("forgot_its_scope")
+        mcp.local_provider.remove_tool("declared_nothing")
+
+
+@pytest.mark.parametrize(("tags", "scopes", "allowed"), [
+    ({ONBOARDING_TAG}, [BOOTSTRAP_SCOPE], True),
+    ({ONBOARDING_TAG}, [MACHINE_SCOPE], False),
+    (set(), [MACHINE_SCOPE], True),
+    (set(), [BOOTSTRAP_SCOPE], False),
+    (set(), [], False),
+    ({ONBOARDING_TAG}, [], False),
+])
+def test_the_policy_branches_on_the_tag(tags, scopes, allowed):
+    """Both halves of the branch, including the crossed pairs that must not pass."""
+    component = FunctionTool.from_function(lambda: None, name="component", tags=tags)
+    token = type("Token", (), {"scopes": scopes})()
+
+    assert authorize(AuthContext(token=token, component=component)) is allowed
+
+
+def test_an_unauthenticated_caller_is_denied_whatever_the_tag():
+    """`ctx.token` is None on any transport without a bearer; `in None.scopes` would raise."""
+    for tags in (set(), {ONBOARDING_TAG}):
+        component = FunctionTool.from_function(lambda: None, name="component", tags=tags)
+        assert authorize(AuthContext(token=None, component=component)) is False
 
 
 def test_the_two_scopes_are_distinct():
+    """Collapse these to one string and every check passes for every principal, silently."""
     assert BOOTSTRAP_SCOPE != MACHINE_SCOPE
