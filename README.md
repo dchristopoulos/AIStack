@@ -53,6 +53,28 @@ flowchart TD
 
 Each machine authenticates with its own token, so the server knows both who you are and which computer you are on. That is what lets a MacBook and a Windows PC hold different sets of enabled skills.
 
+## Why MCP
+
+The configuration has to arrive inside the tool that consumes it, and the agent is
+already the thing editing skills, so a channel the agent can drive itself is the one
+that fits.
+
+A CLI would mean a second tool to install, update and remember, run from a terminal
+next to the agent rather than by it. A git repo synced to `~/.claude/skills/` handles
+distribution but not per-machine enablement, and it asks every user to resolve merge
+conflicts in their own configuration directory. A web dashboard alone cannot write to
+your disk at all.
+
+MCP already runs where the work happens. Claude Code and Codex both speak it, both
+hold a per-server config, and an agent that can call `push_skill` can also read the
+skill you just wrote and push it without being told the file path. That last part is
+the actual argument: "push my wizard skill to aistack" is a complete instruction only
+if the thing receiving it is already sitting in the session that wrote the skill.
+
+The cost is that MCP gives no UI for anything needing many typed parameters. That is
+why bulk operations and per-machine toggles wait for the dashboard rather than being
+forced into chat.
+
 ## MVP
 
 The MVP supports Claude Code and seven MCP tools for skills. Feature one delivers `join`; the other six are planned.
@@ -90,8 +112,6 @@ Read the current implementation in this order:
 2. [`src/aistack/mcp/tools/onboarding.py`](src/aistack/mcp/tools/onboarding.py) is the thin `join` tool. It opens one transaction and calls the service.
 3. [`src/aistack/services/onboarding_service.py`](src/aistack/services/onboarding_service.py), [`src/aistack/mcp/auth/`](src/aistack/mcp/auth/), and [`src/aistack/db/engine.py`](src/aistack/db/engine.py) contain the join flow, authorization, and database rules.
 4. [`tests/services/test_onboarding_service.py`](tests/services/test_onboarding_service.py), [`tests/mcp/`](tests/mcp/), and [`tests/db/`](tests/db/) cover rejection paths, bearer verification, and database behaviour.
-
-The historical [builder notes](docs/reviews/ticket-1.md) and [review](docs/reviews/ticket-1-codex.md) record the baseline findings and their follow-up verification.
 
 ### Tests
 

@@ -21,6 +21,11 @@ htmlcov/
 .env.*
 !.env.example
 
+# Agent tooling
+.claude/
+.codex/
+.overnight/
+
 # Editors / OS
 .DS_Store
 .idea/
