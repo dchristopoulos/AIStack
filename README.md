@@ -4,7 +4,9 @@ Keep your AI development setup in sync across every developer, machine, and codi
 
 Self-hosted. Open source. Driven entirely from chat, through MCP.
 
-> Status: feature one is implemented. The server starts, authenticates bootstrap access, and `join` registers a user and first machine. The remaining MVP tools are planned.
+> Status: early. One of the seven MVP tools is built. The server starts, authenticates
+> bootstrap access, and `join` registers a user and their first machine. The other six tools
+> are designed but not yet written.
 
 ## The problem
 
@@ -16,7 +18,7 @@ AIStack gives a team one server that holds the canonical copies, and each machin
 
 ## How it works
 
-The planned MVP runs in one container. Feature one currently runs from source using the commands below. Once the skill tools are implemented, everyone connects their harness to the server and works in plain language:
+The planned MVP runs in one container. What exists today runs from source, using the commands below. Once the skill tools are implemented, everyone connects their harness to the server and works in plain language:
 
 ```text
 "push my wizard skill to aistack"
@@ -77,7 +79,7 @@ forced into chat.
 
 ## MVP
 
-The MVP supports Claude Code and seven MCP tools for skills. Feature one delivers `join`; the other six are planned.
+The MVP supports Claude Code and seven MCP tools for skills. `join` is built; the other six are planned.
 
 | Tool | What it does |
 |---|---|
@@ -104,9 +106,9 @@ poetry run python -m aistack.bootstrap
 The server refuses to start on the placeholder invite code, and it never prints the one you
 set. Share it with your team over something private; each person redeems it once, with `join`.
 
-## Reviewing feature one
+## Reading the code
 
-Read the current implementation in this order:
+Only the join flow exists so far. It is worth reading in this order:
 
 1. [`docs/DESIGN.md`](docs/DESIGN.md) and [`CONTEXT.md`](CONTEXT.md) define the seven-tool MVP and its terms.
 2. [`src/aistack/mcp/tools/onboarding.py`](src/aistack/mcp/tools/onboarding.py) is the thin `join` tool. It opens one transaction and calls the service.
