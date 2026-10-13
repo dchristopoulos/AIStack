@@ -6,7 +6,7 @@ Self-hosted. Open source. Driven entirely from chat, through MCP.
 
 > Status: the seven MVP tools are built and tested against SQLite and PostgreSQL. A skill
 > pushed from one machine can be listed, installed, kept current, and removed on another.
-> It ships as one container. The first-run setup is what remains.
+> It ships as one container, and a new machine joins with one paste.
 
 ## The problem
 
@@ -91,11 +91,24 @@ The MVP supports Claude Code and seven MCP tools for skills. All seven are built
 | `sync` | **Implemented.** Compare local state against the server's desired state for this machine |
 | `disable_skill` | **Implemented.** Disable a skill for this machine; the harness then removes its local folder |
 
-Sync when you start work, the way you would `git pull`. Nothing runs in the background: saying "sync aistack" is the whole mechanism, and the [`sync-aistack`](skills/sync-aistack/SKILL.md) skill is what teaches the agent to do it.
+Sync when you start work, the way you would `git pull`. Nothing runs in the background: saying "sync aistack" is the whole mechanism, and the [`sync-aistack`](src/aistack/bundled/skills/sync-aistack/SKILL.md) skill is what teaches the agent to do it.
 
 Sync never overwrites a locally modified skill. It asks whether to restore the vault copy, push your edit as a new revision, or leave it alone.
 
 Deliberately not in the MVP: dashboard, CLI, version pinning, project-scoped installs, rules, hooks, agents, MCP gateway. The roadmap in the design document has the order they arrive in.
+
+## Joining a server
+
+Paste this into Claude Code, with your server's address and the invite code your admin gave you:
+
+```text
+Set up AIStack: fetch https://aistack.example.com/setup and follow it.
+Invite code: <the invite code>. Call me <your name>.
+```
+
+The agent registers this computer, installs the `sync-aistack` skill, and connects Claude Code to the server. Restart Claude Code once when it says so. That restart is the only one: Claude Code reads its server list at startup, and skills installed afterwards load live.
+
+For a second computer, say "add my other computer to aistack" on one that is already connected, and paste the command it gives you on the new one.
 
 ## Running it
 

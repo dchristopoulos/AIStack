@@ -17,7 +17,7 @@ mcp = FastMCP(
 )
 
 # Register tools and routes before building the HTTP app.
-from aistack.mcp.routes import health, transfer  # noqa: F401, E402
+from aistack.mcp.routes import health, setup, transfer  # noqa: F401, E402
 from aistack.mcp.tools import onboarding, skills, sync  # noqa: F401, E402
 
 
@@ -36,7 +36,10 @@ def http_server_config(path: str, log_level: str, **bind) -> uvicorn.Config:
         )
 
     return uvicorn.Config(
-        mcp.http_app(path=path, transport="http"),
+        # Stateless, with plain JSON responses (ADR-0013): every request stands alone, so a
+        # restart or a second replica never strands a client on a session that is gone, and
+        # a new machine can call `join` with one HTTP request before it has an MCP client.
+        mcp.http_app(path=path, transport="http", stateless_http=True, json_response=True),
         log_level=log_level.lower(),
         # Use the root logger's timestamp and logger-name format.
         log_config=None,

@@ -50,6 +50,7 @@ Still open: frontend framework (blocked on nothing — decide when the dashboard
 - **ADR-0009 — Length-prefixed canonical content hash.** Reverses the JSON canonicalization above before implementation: the bytes that are hashed must be unambiguous, and that cannot rest on two JSON serializers matching. Length-prefixed framing needs no library.
 - **ADR-0010 — Skill bytes travel over signed transfer URLs.** `push_skill` and `get_skill` return a short-lived signed URL; the agent moves a gzipped tar with `curl` and `tar`. File content never passes through the model, which is slow, inexact, and capped by the client.
 - **ADR-0011 — The server alone computes the content hash.** `sync` receives a sha256 per local file and the server applies the ADR-0009 framing. No hashing script ships to any machine.
+- **ADR-0013 — The MCP endpoint is stateless.** No session is kept, so a restart strands no client and a new machine can call `join` with one HTTP request, which is what makes setup a single paste.
 - **ADR-0012 — Sync returns its questions as data.** Claude Code supports elicitation, and sync does not use it: returned data works in every harness, and the agent asks better questions in chat than a form does.
 
 ## 4. MVP
@@ -104,7 +105,7 @@ disable_skill(name)           → enabled = false for this machine; the agent th
 
 **Onboarding (admin)**: set `AISTACK_INVITE_CODE` in env, run the container, share the code with the team over something private. The admin already knows the code because they set it — it is never printed. Startup logs confirm an invite code is configured without echoing its value. The admin joins first and becomes admin.
 
-**Onboarding (user)**: run the documented `setup-aistack` snippet (README copy-paste — it cannot come from the vault it sets up). It creates the skills directory if missing, connects with the invite code, calls `join`, writes the returned machine token into the MCP config, and tells the user to restart Claude Code once. After that restart, installed skills load live, mid-session, no further restarts (Claude Code watches the skills directory — verified against its docs; the one exception is a directory created after session start, which this flow handles by creating it first).
+**Onboarding (user)**: paste one sentence into Claude Code — "Set up AIStack: fetch `<server>/setup` and follow it. Invite code: …". The server serves those instructions itself, with its own address filled in, because they cannot come from the vault they set up. The agent creates the skills directory if missing, fetches the `sync-aistack` skill from the server, calls `join` with one HTTP request carrying the invite code as its bearer (ADR-0013), writes the returned machine token into the MCP config at user scope, and tells the user to restart Claude Code once. After that restart, installed skills load live, mid-session, no further restarts (Claude Code watches the skills directory — verified against its docs; the one exception is a directory created after session start, which this flow handles by creating it first).
 
 **Adding a machine**: on an already-registered machine — "add my Windows PC". `add_machine` returns the full MCP-config command with the new machine's token; the user pastes it on the other computer. No redeem step; the invite code is only for new users.
 
@@ -343,6 +344,8 @@ Deliberately pre-structured for scale (owner's choice over a flat MVP layout). R
 ```text
 src/aistack/
   api/                     # FastAPI — EMPTY until the dashboard (post-MVP); do not fill early
+  bundled/                 # files served as they are: the setup instructions and the
+                           # sync-aistack skill a new machine needs before it has a vault
   bootstrap/               # app assembly & entrypoint
     __main__.py            #   python -m aistack.bootstrap
     configuration/
@@ -355,7 +358,8 @@ src/aistack/
     models/                # SQLAlchemy models for the six tables
   mcp/                     # FastMCP server + auth
     tools/                 # the seven MCP tools (onboarding, skills, sync)
-    routes/                # the two transfer routes (ADR-0010); as thin as the tools
+    routes/                # plain HTTP beside MCP: the two transfer routes (ADR-0010),
+                           # setup, and health; as thin as the tools
   services/                # business logic: push validation, sync reconciliation,
                            # token and ticket issuing — tools and routes stay thin,
                            # logic lives here

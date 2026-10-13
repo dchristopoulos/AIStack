@@ -12,7 +12,8 @@ from tests.mcp.conftest import client_for
 
 pytestmark = pytest.mark.anyio
 
-SYNC_SKILL = pathlib.Path(__file__).parents[2] / "skills" / "sync-aistack"
+SYNC_SKILL = (pathlib.Path(__file__).parents[2] / "src" / "aistack" / "bundled" / "skills"
+              / "sync-aistack")
 
 
 async def _join(server_url, username="dimitris", machine_name="macbook") -> str:

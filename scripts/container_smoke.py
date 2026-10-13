@@ -35,6 +35,14 @@ async def call(base_url: str, bearer: str, tool: str, **arguments) -> dict:
 
 async def fresh(base_url: str, invite_code: str, state_file: pathlib.Path) -> None:
     """Machine A joins and pushes; machine B joins, lists, and installs the same bytes."""
+    # The setup page and the sync skill are package data: this is what proves the image
+    # actually carries them.
+    async with httpx.AsyncClient() as http:
+        setup = await http.get(f"{base_url}/setup")
+        sync_skill = await http.get(f"{base_url}/setup/sync-aistack/SKILL.md")
+    assert setup.status_code == 200 and "claude mcp add" in setup.text, setup.text[:200]
+    assert sync_skill.text.startswith("---\nname: sync-aistack\n"), sync_skill.text[:200]
+
     machine_a = (await call(base_url, invite_code, "join", username="ci-a",
                             machine_name="runner-a", os="LINUX"))["token"]
     machine_b = (await call(base_url, invite_code, "join", username="ci-b",
