@@ -207,7 +207,11 @@ SQLite is the default because one container is easier to run than two, and the w
 
 ## Upgrading
 
-Pull, rebuild, restart. The server creates any table that is missing at startup. It does not yet alter existing tables, so an upgrade that changes a table's shape will say so in its release notes and ship a migration step. Back up first.
+Back up, then pull, rebuild, and restart. At startup the server brings the database to the schema its release expects, before it accepts a request. Every pending change is applied in one transaction: either all of it lands or the database is exactly as it was.
+
+If an upgrade fails, the server does not start and the log says which step failed. Nothing has been changed, so starting the previous image again is safe. A database created before this mechanism existed is recognized and carried forward without a manual step.
+
+There is no downgrade. The way back from an upgrade you regret is the backup you took before it.
 
 ## What is in the logs
 

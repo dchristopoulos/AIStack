@@ -8,7 +8,8 @@ from aistack.bootstrap.configuration.settings.settings_config import (
     Settings,
     validate_invite_code,
 )
-from aistack.db.engine import build_engine, build_session_factory, create_schema
+from aistack.db.engine import build_engine, build_session_factory
+from aistack.db.schema import migrate_schema
 from aistack.services.transfer_ticket import SIGNING_KEY_BYTES, TicketSigner
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ def build_application_context(settings: Settings) -> None:
 
     _settings = settings
     _engine = build_engine(settings.database_url)
-    create_schema(_engine)
+    migrate_schema(_engine)
     _session_factory = build_session_factory(_engine)
     # A fresh key per process (ADR-0010): a restart invalidates every outstanding transfer
     # URL, and there is no key to store, leak, or rotate.

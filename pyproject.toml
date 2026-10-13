@@ -20,6 +20,7 @@ dependencies = [
     # directly: frontmatter parsing and transfer tickets must not vanish with a transitive.
     "PyYAML>=6.0.3,<7.0.0",
     "PyJWT>=2.13.0,<3.0.0",
+    "alembic>=1.16,<2.0",
 ]
 
 [dependency-groups]

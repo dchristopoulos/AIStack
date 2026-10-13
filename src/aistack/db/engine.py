@@ -5,8 +5,6 @@ from time import perf_counter
 from sqlalchemy import Connection, Engine, create_engine, event, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
-from aistack.db.models import Base
-
 logger = logging.getLogger(__name__)
 
 # Explicit policy, independent of sqlite3 defaults.
@@ -36,14 +34,6 @@ def build_engine(database_url: str) -> Engine:
 def build_session_factory(engine: Engine) -> sessionmaker[Session]:
     """Keep loaded fields readable after the tool's transaction commits and closes."""
     return sessionmaker(bind=engine, expire_on_commit=False)
-
-
-def create_schema(engine: Engine) -> None:
-    """Create missing tables and indexes; existing schemas require a future migration."""
-    started_at = perf_counter()
-    Base.metadata.create_all(engine)
-    logger.info(f"Database schema created. Tables: '{len(Base.metadata.tables)}'. "
-                f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
 
 
 def _configure_sqlite_connection(connection: sqlite3.Connection, _connection_record) -> None:

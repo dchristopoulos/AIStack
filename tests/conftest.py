@@ -4,8 +4,8 @@ import pytest
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from aistack.db.engine import build_engine, build_session_factory, create_schema
-from aistack.db.models import Base
+from aistack.db.engine import build_engine, build_session_factory
+from aistack.db.schema import migrate_schema
 
 INVITE_CODE = "test-invite-code-long-enough"
 
@@ -24,7 +24,7 @@ def sqlite_url_fixture(tmp_path) -> str:
 @pytest.fixture(name="engine")
 def engine_fixture(sqlite_url: str) -> Engine:
     engine = build_engine(sqlite_url)
-    create_schema(engine)
+    migrate_schema(engine)
     yield engine
     engine.dispose()
 
@@ -44,12 +44,19 @@ def postgres_engine_fixture():
         engine.dispose()
         pytest.fail("TEST_DATABASE_URL must point to a disposable PostgreSQL database.")
     try:
-        Base.metadata.drop_all(engine)
-        create_schema(engine)
+        _drop_everything(engine)
+        migrate_schema(engine)
         yield engine
     finally:
-        Base.metadata.drop_all(engine)
+        _drop_everything(engine)
         engine.dispose()
+
+
+def _drop_everything(engine: Engine) -> None:
+    """Empty the disposable database, including tables no current model describes."""
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DROP SCHEMA public CASCADE")
+        connection.exec_driver_sql("CREATE SCHEMA public")
 
 
 @pytest.fixture(name="portable_engine", params=(
