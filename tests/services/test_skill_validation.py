@@ -46,6 +46,18 @@ def test_a_name_outside_the_pattern_is_rejected_showing_what_arrived(name):
     assert "\n" not in str(rejection.value)
 
 
+@pytest.mark.parametrize("name", ["synced", "con", "prn", "aux", "nul", "com1", "com9", "lpt1"])
+def test_a_name_no_machine_may_use_as_a_folder_is_rejected(name):
+    """The name becomes a folder in every skills directory, so it meets the folder rules."""
+    with pytest.raises(ValidationError, match=f"'{name}'"):
+        validated_skill_name(name)
+
+
+@pytest.mark.parametrize("name", ["synced-notes", "console", "com10", "nul-check", "aux1"])
+def test_a_name_that_only_resembles_a_reserved_one_is_accepted(name):
+    assert validated_skill_name(name) == name
+
+
 def test_an_over_length_name_is_rejected_with_the_limit():
     with pytest.raises(ValidationError, match="65 characters long, and the limit is 64"):
         validated_skill_name("x" * 65)

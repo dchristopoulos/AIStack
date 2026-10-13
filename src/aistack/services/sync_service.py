@@ -16,6 +16,7 @@ from aistack.db.models.user import User
 from aistack.services.content_hash import canonical_content_hash, normalized_path
 from aistack.services.reconciliation import Desired, Observed, Option, Step, reconcile
 from aistack.services.skill_archive import is_filesystem_noise
+from aistack.services.skill_validation import CLAUDE_CODE_FOLDER
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +25,6 @@ logger = logging.getLogger(__name__)
 MAX_LOCAL_SKILLS = 1000
 MAX_LOCAL_FILES = 20_000
 
-# Claude Code downloads claude.ai skills into this folder and overwrites edits to it. It is
-# not the user's to push and not AIStack's to manage.
-_RESERVED_FOLDER = "synced"
 
 
 @dataclass(frozen=True)
@@ -154,7 +152,7 @@ def _local_hashes(local: Mapping[str, Mapping[str, str]]) -> dict[str, str | Non
     return {
         name: _canonical_hash(files)
         for name, files in local.items()
-        if name != _RESERVED_FOLDER and not name.startswith(".")
+        if name != CLAUDE_CODE_FOLDER and not name.startswith(".")
     }
 
 

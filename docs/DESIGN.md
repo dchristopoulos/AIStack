@@ -203,6 +203,8 @@ Push is the trust boundary: everything below is enforced by the server on the up
 
 **`SKILL.md`.** Must exist at the archive root with exactly that name. Its frontmatter must be a YAML mapping between `---` lines (lines end at a line feed and nothing else), parsed with every scalar kept as a string so a `version: 1.10` is stored as `1.10` and not as the number `1.1`. A key may appear once, every string must be valid Unicode, and nesting and size are bounded. `name` must equal the pushed name. `description` is required, stored as one printable line, and at most 1024 characters. `version` is optional and at most 32. Unknown fields are kept.
 
+**Reserved names.** A skill may not be named `synced` (Claude Code's folder for claude.ai skills, which an install would replace) or after a Windows device (`con`, `nul`, `com1`, …): the name is a folder on every machine.
+
 **`origin`.** Optional, at most 255 characters, no control characters.
 
 ### Schema (final for MVP)

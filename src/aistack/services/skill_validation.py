@@ -32,6 +32,10 @@ MAX_PATH_DEPTH = 8
 # The Agent Skills specification's rule, so a valid name is a valid folder in every harness.
 _SKILL_NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 
+# Claude Code downloads claude.ai skills into this folder and overwrites edits to it. It is
+# not the user's to push and not AIStack's to manage.
+CLAUDE_CODE_FOLDER = "synced"
+
 # Characters Windows cannot put in a filename. A skill pushed from macOS must still install.
 _WINDOWS_FORBIDDEN = frozenset('<>:"|?*')
 _WINDOWS_DEVICE_NAMES = frozenset(
@@ -89,6 +93,18 @@ def validated_skill_name(name: str) -> str:
             "A skill name is lowercase letters and digits in groups joined by single hyphens, "
             f"like 'code-review'. Received: '{loggable(name)}'. Use the 'name' from the "
             "skill's SKILL.md frontmatter."
+        )
+    # The name becomes a folder in every machine's skills directory, and installing replaces
+    # whatever folder is already there.
+    if name == CLAUDE_CODE_FOLDER:
+        raise ValidationError(
+            f"A skill cannot be named '{name}': Claude Code keeps claude.ai skills in a folder "
+            "of that name, and installing this one would replace them. Rename the skill."
+        )
+    if name in _WINDOWS_DEVICE_NAMES:
+        raise ValidationError(
+            f"A skill cannot be named '{name}': Windows reserves it for a device, so the "
+            "skill's folder could not exist there. Rename the skill."
         )
     return name
 
