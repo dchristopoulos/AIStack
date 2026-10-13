@@ -1,0 +1,19 @@
+# Skill bytes travel over signed transfer URLs, not through the model
+
+Status: accepted (replaces the inline file manifest in `docs/DESIGN.md` §4 Push and Install before it was implemented)
+
+`push_skill` and `get_skill` exchange metadata over MCP and file bytes over plain HTTP. Each tool returns a short-lived signed URL on the same server. The agent pipes a gzipped tar of the skill directory to the upload URL, or pipes the download URL into `tar`. No file content appears in a tool argument or a tool result.
+
+Why: a tool argument is text the model generates token by token, and a tool result is text the model must then retype into `Write` calls. The largest skill in the reference corpus is 19,000 characters, roughly a minute of generation in each direction, and "push all my skills" over 25 skills is a quarter of an hour of the model copying files it has no reason to read. Copying is also not exact: one dropped character produces a revision that differs from disk, and the next sync reports the user's own skill as locally modified. Claude Code separately caps a tool result at 25,000 tokens and diverts text over 50,000 characters to a file, so an inline manifest also has a ceiling the vault would have to enforce. `curl` and `tar` ship with macOS, Linux, and Windows 10 and later, and they move bytes exactly, in well under a second.
+
+**The URL is the credential.** It carries a ticket: a JSON payload naming the purpose, the machine, the user, the skill, and an expiry, followed by an HMAC-SHA256 over that payload. The route recomputes the MAC with `hmac.compare_digest` before it reads anything else. A ticket is minted only inside an authorized MCP tool call, so the bearer rule in ADR-0003 still decides who may push or install; the ticket narrows that authority to one skill, one direction, and five minutes.
+
+The signing key is 32 random bytes generated when the process starts and held only in memory. Restarting the server invalidates every outstanding ticket, which costs a retry and removes key storage and rotation from the MVP.
+
+**Tickets are stateless, so they are not single-use.** Replaying a download URL returns a revision any member can already read. Replaying an upload URL inside its five minutes pushes to that one skill name as that machine, and an identical upload is a no-op. Whoever can do that has read the agent's transcript within the last five minutes, where the machine token itself already appears once (accepted in §4 Auth). Single use needs a table and a write on every transfer, and buys nothing against that reader.
+
+The upload route is the trust boundary push validation always was, and now parses an archive as well. It never extracts to disk: members are read in memory, anything that is not a regular file or a directory is rejected by name, and size limits apply to the compressed body while it streams and to each member as it is read. `docs/DESIGN.md` §4 Push validation has the limits.
+
+**Consequences.** The server answers two unauthenticated-by-bearer routes, so uvicorn's access log stays off (it would record the ticket). A deployment with more than one server process would need a shared signing key; one container has one process, and a setting can supply the key when that changes. Binary skill files stay rejected: the transport could now carry them, but `SKILL_FILE.content` is text and nothing in the corpus needs them.
+
+Rejected: the inline manifest (above); a bearer-authenticated HTTP route (the agent does not hold the machine token after `join`, and reading it back out of the MCP config puts it in every transcript); MCP resources (the client attaches them to context, which is the same copy through the model); a companion CLI (a second thing to install, which the chat-only MVP exists to avoid).

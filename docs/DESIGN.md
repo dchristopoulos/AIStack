@@ -1,6 +1,6 @@
 # AIStack design
 
-Scope, architecture, and schema for the MVP, settled 2026-08-21, revised 2026-08-24 after two external design reviews. Vocabulary lives in `CONTEXT.md`. Decisions and their reasoning live in `docs/adr/`. This document is the current plan, so where anything else disagrees with it, this wins.
+Scope, architecture, and schema for the MVP, settled 2026-08-21, revised 2026-08-24 after two external design reviews, and 2026-10-13 after research into what the client can carry (ADR-0010 to ADR-0012). Vocabulary lives in `CONTEXT.md`. Decisions and their reasoning live in `docs/adr/`. This document is the current plan, so where anything else disagrees with it, this wins.
 
 ## 1. What AIStack is
 
@@ -47,11 +47,14 @@ Still open: frontend framework (blocked on nothing — decide when the dashboard
 - **ADR-0006 — Explicit disable; sync never deletes.** Local deletion is never inferred as intent. Sync acts silently only where no data can be lost, and only `disable_skill` may cause a local file deletion.
 - **ADR-0007 — Skill-specific tables; the generic resource model is deferred.** A single `RESOURCE` family serving skills, rules, hooks, agents, and MCP definitions was designed and rejected for now: those types don't share a materialization lifecycle, and generic tools would make chat carry architecture vocabulary for no user benefit. Trigger conditions for revisiting it are named in the ADR.
 - **ADR-0008 — One admin, enforced by a partial unique index.** Amends the `is_admin` schema comment: the guarded UPDATE is safe on SQLite and wrong on Postgres, so the index is the enforcer, the update is the fast path, and a savepoint absorbs the loser. SQLite engines take `connect_args={"autocommit": False}` so savepoints work at all.
-- **ADR-0009 — Length-prefixed canonical content hash.** Reverses the JSON canonicalization above before implementation: agent and server must agree byte for byte, and that agreement cannot rest on two JSON serializers matching. Length-prefixed framing is unambiguous with no library on either side.
+- **ADR-0009 — Length-prefixed canonical content hash.** Reverses the JSON canonicalization above before implementation: the bytes that are hashed must be unambiguous, and that cannot rest on two JSON serializers matching. Length-prefixed framing needs no library.
+- **ADR-0010 — Skill bytes travel over signed transfer URLs.** `push_skill` and `get_skill` return a short-lived signed URL; the agent moves a gzipped tar with `curl` and `tar`. File content never passes through the model, which is slow, inexact, and capped by the client.
+- **ADR-0011 — The server alone computes the content hash.** `sync` receives a sha256 per local file and the server applies the ADR-0009 framing. No hashing script ships to any machine.
+- **ADR-0012 — Sync returns its questions as data.** Claude Code supports elicitation, and sync does not use it: returned data works in every harness, and the agent asks better questions in chat than a form does.
 
 ## 4. MVP
 
-One Docker container. One volume (SQLite file + config). FastMCP served over streamable HTTP. Chat is the entire interface: no dashboard, no CLI, no daemon. Claude Code is the only supported harness.
+One Docker container. One volume (SQLite file + config). FastMCP served over streamable HTTP, plus two plain HTTP routes on the same port that carry skill archives (ADR-0010). Chat is the entire interface: no dashboard, no CLI, no daemon. Claude Code is the only supported harness.
 
 ### State model (ADR-0004)
 
@@ -81,13 +84,16 @@ add_machine(name, os)         → registers another machine for this user; retur
                                 paste-ready MCP command with that machine's token
 list_skills                   → browse the vault (name + description; this is also the
                                 search — and the only discovery mechanism, sync is not)
-get_skill(name)               → full manifest of the latest revision; enables the skill
-                                for the calling machine. The one "enable + give me the
-                                files" verb — install, restore, re-enable, adopt all
+get_skill(name)               → enables the skill for the calling machine and returns the
+                                latest revision's metadata, its file list, and a signed
+                                download URL for the archive. The one "enable + give me
+                                the files" verb — install, restore, re-enable, adopt all
                                 resolve to it
-push_skill(...)               → upload a skill; existing name = new revision; enables
-                                the skill for the calling machine
-sync(actual: {name: hash})    → reconcile desired vs actual; see the sync contract
+push_skill(name, origin?)     → returns a signed upload URL for that skill name. The
+                                upload itself creates the revision (existing name = new
+                                revision) and enables the skill for the calling machine
+sync(local: {name: {path: sha256}})
+                              → reconcile desired vs actual; see the sync contract
 disable_skill(name)           → enabled = false for this machine; the agent then
                                 deletes the local folder
 ```
@@ -102,13 +108,13 @@ disable_skill(name)           → enabled = false for this machine; the agent th
 
 **Adding a machine**: on an already-registered machine — "add my Windows PC". `add_machine` returns the full MCP-config command with the new machine's token; the user pastes it on the other computer. No redeem step; the invite code is only for new users.
 
-**Push**: "push my wizard skill to aistack" — the agent reads the local skill directory and calls `push_skill` with a manifest: a list of files, each with `path`, `content`, and `executable`. Pushing an existing name creates a new revision and the response says so loudly: who pushed the previous revision and, when origins differ or are unknown, a warning that this may be an unrelated skill sharing the name. Push records an optional `origin` URL (GitHub repo, marketplace page) when the agent knows it. Any member may push a new revision of any skill (trusted team; `pushed_by` gives provenance, and it means exactly that — AIStack never claims authorship). Push enables the skill for the calling machine.
+**Push**: "push my wizard skill to aistack" — the agent calls `push_skill` with the skill's name and gets back a signed upload URL, then pipes a gzipped tar of the skill directory to it (`tar -czf - -C <dir> . | curl -sS --fail-with-body -X PUT --data-binary @- <url>`). The server validates the archive, stores the revision, and answers the upload with the result the agent reports; a rejection comes back as the same kind of sentence a tool error would carry. Uploading content identical to the latest revision creates nothing and says so, so repeating "push all my skills" does not mint a revision per skill per run. Pushing an existing name creates a new revision and the response says so loudly: who pushed the previous revision and, when origins differ or are unknown, a warning that this may be an unrelated skill sharing the name. Push records an optional `origin` URL (GitHub repo, marketplace page) when the agent knows it. Any member may push a new revision of any skill (trusted team; `pushed_by` gives provenance, and it means exactly that — AIStack never claims authorship). Push enables the skill for the calling machine.
 
-**Gathering rules (agent-side, documented with the push prompt)**: walk the skill directory with `lstat`; reject symlinks, sockets, devices, and FIFOs; verify every resolved path stays inside the skill root; reject duplicate paths after Unicode/case normalization. A symlink to `~/.ssh/id_rsa` inside a skill folder must never be uploaded as content.
+**Gathering rules**: `tar` archives a symlink as a symlink, not as its target, so a link to `~/.ssh/id_rsa` inside a skill folder arrives as a link entry and the server rejects the push by naming it. The same goes for sockets, devices, FIFOs, and hard links. The push prompt tells the agent to set `COPYFILE_DISABLE=1` on macOS so `tar` does not synthesize `._*` AppleDouble entries, and to leave `.git` out. The server enforces all of it regardless (§4 Push validation); the prompt only makes the first attempt succeed.
 
 **Bulk import** ("move to AIStack"): not a tool. A documented prompt — "push all my skills" — makes the agent loop `push_skill` over the local skills directory.
 
-**Install**: "install wizard from aistack" — `get_skill`, agent writes the files to the global skills directory (write to a temporary sibling, then rename), and the server marks the skill enabled for this machine. Install = enable + materialize; "remove wizard" = `disable_skill` + the agent deletes the local folder. After install the skill is a plain native skill, usable immediately in the same session. (Sync manages only the global directory in the MVP; a project-local copy is a manual chat action the server doesn't track.)
+**Install**: "install wizard from aistack" — `get_skill` marks the skill enabled for this machine and returns a signed download URL. The agent extracts the archive into a temporary sibling of the target (`curl -sS --fail <url> | tar -xzf - -C <tmp>`), then renames it into the global skills directory, so a failed download never leaves half a skill where Claude Code is watching. Install = enable + materialize; "remove wizard" = `disable_skill` + the agent deletes the local folder. After install the skill is a plain native skill, usable immediately in the same session. (Sync manages only the global directory in the MVP; a project-local copy is a manual chat action the server doesn't track.)
 
 ### The sync contract
 
@@ -145,7 +151,9 @@ A prompt that leads to overwriting local content must say so. "Adopt?" on its ow
 
 Every answer maps to an existing tool: restore / re-enable / adopt → `get_skill`; push → `push_skill`; remove → the flag is already false, the agent just deletes the folder; skip → nothing. No hidden verbs.
 
-**Wire contract**: `sync` returns *action metadata only* — for each entry, the skill name, the action, the target revision, and who pushed it. It never returns file content. The agent then calls `get_skill` per install or update. This keeps a sync of fifty skills small, and makes `get_skill` the single materialization path rather than a second one hiding inside sync.
+**Wire contract**: the agent sends, for every skill folder in the global skills directory, each file's relative path and the sha256 of its bytes. The server derives the canonical hash from those (ADR-0011) and returns *action metadata only*: skills to install, skills to update, and questions. For each entry that is the skill name, the target revision, and who pushed it; a question also carries the state that was found, the options the user may choose, and for each option whether it replaces local files and whether it discards local edits (ADR-0012). It never returns file content. The agent then calls `get_skill` per install or update. This keeps a sync of fifty skills small, and makes `get_skill` the single materialization path rather than a second one hiding inside sync.
+
+Two folders are never reported: `synced`, which Claude Code reserves for skills it downloads from claude.ai, and anything starting with a dot. The `sync-aistack` skill leaves them out of what it sends, along with `.DS_Store` files.
 
 Two invariants:
 
@@ -158,9 +166,9 @@ Known, accepted quirks: a renamed local folder shows up as one missing skill plu
 
 Every push creates a `skill_version` with a server-side auto-incrementing `revision` (always present, orders history) and the author's optional frontmatter `version` string (preserved, displayed when present — never invented). Sync compares content hashes, not version numbers.
 
-**Canonical content hash.** Agent and server compute this independently and must agree byte for byte, so the procedure is exact:
+**Canonical content hash.** Only the server computes this (ADR-0011): at push from the bytes it received, at sync from the per-file digests the agent sent. Both feed the same function, so the procedure is exact:
 
-1. **Path form.** Relative and `/`-separated; convert `\` to `/` before validation. NFC-normalize once, before validation, storage, sorting, and hashing. Reject paths containing control characters.
+1. **Path form.** Relative and `/`-separated; convert `\` to `/` and strip a leading `./` before validation. NFC-normalize once, before validation, storage, sorting, and hashing. Push rejects paths that fail §4 Push validation; sync hashes whatever it was sent, because an unrecognized path can only make the result "unknown", which is the safe answer.
 2. **Order.** Sort by the unsigned UTF-8 *bytes* of the normalized path. Never a locale-aware sort.
 3. **Content digest.** sha256 of the file's exact bytes — never text mode, never CRLF translation, never BOM stripping, never Unicode normalization of content.
 4. **Framing.** For each file in order, feed the outer sha256: the path's byte length as an unsigned 8-byte big-endian integer, then the path's UTF-8 bytes, then the raw 32-byte content digest.
@@ -169,6 +177,30 @@ Every push creates a `skill_version` with a server-side auto-incrementing `revis
 Length-prefixed framing rather than JSON (ADR-0009): what must match is the bytes, not the data structure, and two conforming JSON serializers can legitimately differ in escaping and representation. Length prefixing needs no library, no separator, and no escaping — a field cannot be misread as part of the next one.
 
 **The executable bit is deliberately NOT hashed.** It is stored per file and applied on materialization, but excluded from the hash: Windows filesystems cannot carry it, so a Windows machine would recompute a different bit than the vault holds and see a permanent phantom conflict on every sync of every skill with a script. The cost is that a chmod-only revision is invisible to sync and needs a content change to propagate. Measured against the real corpus that costs nothing — zero of 75 files across 26 installed skills are executable, including `wizard`'s own `template.sh`, because skills invoke scripts as `bash template.sh`. Git avoids the same problem with an index; an index is not worth building for a bit that is currently always false.
+
+### Push validation
+
+Push is the trust boundary: everything below is enforced by the server on the uploaded archive, before any row is written, and every rejection says what to fix and what was received. Limits are sized against the reference corpus (25 skills, 75 files, largest skill 19 KB) with two orders of magnitude of headroom.
+
+**Archive.** A gzipped tar, at most 1 MiB compressed, counted while the request body streams so an oversized upload is cut off rather than buffered. Members are read in memory and never extracted to disk. A directory entry is skipped. A regular file is taken. Any other member type (symlink, hard link, device, FIFO) rejects the whole push, naming the member. `._*` AppleDouble entries and `.DS_Store` are skipped: the first is an artifact of macOS `tar` that never existed on disk, the second is never part of a skill.
+
+**Size.** At most 100 files, 256 KiB per file, 1 MiB in total uncompressed. The per-file and total limits are applied as each member is read, so a decompression bomb stops at the limit and not at the end.
+
+**Name.** `^[a-z0-9]+(-[a-z0-9]+)*$`, at most 64 characters. This is the Agent Skills specification's rule, so a valid name here is a valid directory name in every harness.
+
+**Paths**, after the normalization in §4 Versions:
+
+- relative, at most 255 characters and 8 segments deep
+- no empty, `.`, or `..` segment, and no leading `/`
+- no control characters, and none of `< > : " | ? *` (Windows cannot create them)
+- no segment ending in a dot or a space, and no segment whose stem is a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, in any case)
+- no two paths equal after case folding, and no path that is also a directory prefix of another (macOS and Windows would silently merge them)
+
+**Content.** Valid UTF-8 with no NUL character. Bytes are stored and returned exactly; nothing is normalized, so CRLF and a BOM survive the round trip.
+
+**`SKILL.md`.** Must exist at the archive root with exactly that name. Its frontmatter must be a YAML mapping between `---` lines, parsed with every scalar kept as a string so a `version: 1.10` is stored as `1.10` and not as the number `1.1`. `name` must equal the pushed name. `description` is required and at most 1024 characters. `version` is optional and at most 32. Unknown fields are kept.
+
+**`origin`.** Optional, at most 255 characters, no control characters.
 
 ### Schema (final for MVP)
 
@@ -276,9 +308,9 @@ Push `wizard` and `domain-modeling` (both multi-file: a script, reference files)
 
 ## 5. Post-MVP roadmap (decided order of interest, not committed)
 
-1. **Dashboard** — FastAPI joins the stack; login sessions on top of tokens; admin management (grant admin, revoke machines, recover locked-out users — the `is_admin` column already exists); per-machine enable toggles; version pinning; archive skills and `delete_skill` (preview-confirm, per-revision, tombstones so sync can say "deleted on purpose"); GitHub-link skill import; display names rendered from skill names.
-2. **Rules** — the second resource type. Canonical rules projected into `CLAUDE.md` / `AGENTS.md` / `.cursor/rules/` by adapters.
-3. **Second harness** — Codex is the likely candidate; adapters translate canonical resources into native form.
+1. **Second harness** — Codex first. Moved to the front on 2026-10-13: Claude Code now syncs a user's claude.ai skills on its own and has git-backed plugin marketplaces (§7), so one vault feeding several harnesses is where AIStack is not duplicated. The Agent Skills format is shared, so the adapter is mostly a target directory.
+2. **Dashboard** — FastAPI joins the stack; login sessions on top of tokens; admin management (grant admin, revoke machines, recover locked-out users — the `is_admin` column already exists); per-machine enable toggles; version pinning; archive skills and `delete_skill` (preview-confirm, per-revision, tombstones so sync can say "deleted on purpose"); GitHub-link skill import; display names rendered from skill names.
+3. **Rules** — the second resource type. Canonical rules projected into `CLAUDE.md` / `AGENTS.md` / `.cursor/rules/` by adapters.
 4. **Background sync** — opportunistic (check on any MCP call) vs daemon; compare cost after the MVP.
 5. **Hooks, agents** — same adapter approach; harness support varies.
 6. **MCP gateway** — one AIStack MCP endpoint proxying enabled remote MCPs with central auth/policy.
@@ -295,6 +327,9 @@ Things deliberately not overbuilt, ever, until demand is proven: a public market
 
 ## 7. Competitive landscape (why this and not an existing tool)
 
+- **Claude Code's own sync** (checked 2026-10-13): a session signed in to claude.ai downloads that account's skills, including ones an organization provides, into `~/.claude/skills/synced/` and keeps them current. It is download-only, edited on claude.ai, and tied to an Anthropic account. This covers "one developer, one harness, several machines" well enough that AIStack should not lead with it.
+- **Claude Code plugin marketplaces**: a git repository as a team catalog, with auto-update off by default, git credentials required on every machine, and skills namespaced as `/plugin:skill`. Publishing is a commit, not a sentence in chat, and there is no per-machine state.
+- **skillshare** (`runkids/skillshare`): a CLI with git as the source of truth, symlinking skills into several harnesses. Validates the multi-harness need; has no server, no per-machine desired state, and no handling of local edits.
 - **MCP Gateway & Registry** (`agentic-community/mcp-gateway-registry`): gateway + registry + auth + virtual servers. AIStack differentiates on the developer/team synchronization experience across harnesses, machines, and projects — not on being "an MCP gateway".
 - **AutoVault**: canonical skills synced into agents; validates the model and the need for a local write path (a cloud service cannot touch local skill directories — in AIStack, the agent itself is that write path). Broader than AIStack (profiles, signing, approval); borrow revision provenance thinking, not the architecture.
 - **skills-mcp**: skills over MCP with progressive disclosure. Its metadata/body split informed the proxy idea — which we then killed (ADR-0001).
@@ -320,21 +355,20 @@ src/aistack/
     models/                # SQLAlchemy models for the six tables
   mcp/                     # FastMCP server + auth
     tools/                 # the seven MCP tools (onboarding, skills, sync)
+    routes/                # the two transfer routes (ADR-0010); as thin as the tools
   services/                # business logic: push validation, sync reconciliation,
-                           # token issuing — tools stay thin, logic lives here
+                           # token and ticket issuing — tools and routes stay thin,
+                           # logic lives here
 tests/
 ```
 
 ## 9. Open questions for the next phase
 
-Facts to verify in ticket #1 (spikes — decisions do not depend on them, only which variant gets built):
+Still open:
 
-1. **Elicitation end to end**: does Claude Code + the pinned FastMCP version complete the current MCP elicitation flow? If yes, sync asks inside one call; if no, sync returns questions as data and the agent asks in chat. Both are designed above.
-2. **Threadpool default**: confirm the pinned FastMCP version threadpools `def` tools (a sleeping tool called twice concurrently: ~1× the sleep means threads).
+1. What machine metadata beyond `name`/`os` ever matters — collect only when a feature needs it.
+2. Whether `/mcp` reconnect picks up a changed bearer without restarting Claude Code. The onboarding flow says "restart once" until someone has watched it work without.
 
-Implementation-level, still open:
-
-3. What machine metadata beyond `name`/`os` ever matters — collect only when a feature needs it.
-4. Exact FastMCP schemas for the seven tools (the file manifest shape is settled: a list of `{path, content, executable}`; `sync` returns action metadata only, never file content).
+Resolved by the ticket #1 spikes: the pinned FastMCP threadpools plain `def` tools (ADR-0005 holds), and Claude Code completes elicitation — which sync then does not use (ADR-0012).
 
 Resolved: the invite code is operator-supplied via env only, never generated at boot and never printed — rotation is changing the env var and restarting. The generic-vs-specific resource model is settled by ADR-0007.

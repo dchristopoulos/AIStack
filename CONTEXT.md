@@ -56,6 +56,14 @@ _Avoid_: Author, created by, uploaded by
 Optional source URL on a canonical skill (GitHub repo, marketplace page), recorded at push when known. Used to warn when a push to an existing name looks like an unrelated skill sharing the name.
 _Avoid_: Upstream, remote
 
+**Transfer URL**:
+A short-lived signed URL on the AIStack server that carries one skill archive in one direction. `push_skill` returns an upload URL and `get_skill` a download URL; the agent moves the bytes with `curl` and `tar`. See ADR-0010.
+_Avoid_: Presigned link, download link (as a term of art), manifest (the inline form was replaced)
+
+**Ticket**:
+The signed payload inside a transfer URL: purpose, machine, user, skill, expiry, and a MAC. A credential for five minutes.
+_Avoid_: Token (that means a machine token), session, nonce
+
 **Orphan**:
 A skill on disk that the vault doesn't know. Sync reports orphans and offers to push; it never auto-pushes.
 _Avoid_: Untracked skill, local-only skill (as a term of art)

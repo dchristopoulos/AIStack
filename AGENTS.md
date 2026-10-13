@@ -4,9 +4,9 @@ AIStack: a self-hosted, open-source control plane for AI dev configuration (skil
 
 ## Read before designing or implementing anything
 
-- `docs/DESIGN.md` — the plan: MVP scope, seven MCP tools, flows, final DB schema, project structure, roadmap. Where anything conflicts with it, this document wins.
+- `docs/DESIGN.md` — the plan: MVP scope, seven MCP tools, flows, push validation, final DB schema, project structure, roadmap. Where anything conflicts with it, this document wins.
 - `CONTEXT.md` — domain glossary. Use these terms exactly; respect the `_Avoid_` lists.
-- `docs/adr/` — decisions already made (full sync not proxy, SQLite default, token auth, server-side desired state). Do not relitigate them; write a new ADR to reverse one.
+- `docs/adr/` — decisions already made (full sync not proxy, SQLite default, token auth, server-side desired state, signed transfer URLs, server-side hashing). Do not relitigate them; write a new ADR to reverse one.
 
 ## Tech stack
 
@@ -14,7 +14,7 @@ Python 3.13, Poetry, SQLAlchemy, FastMCP. SQLite by default, Postgres via `DATAB
 
 ## Structure
 
-Layered layout under `src/aistack/` (see `docs/DESIGN.md` §8): MCP tool handlers in `mcp/tools/` stay thin; business logic goes in `services/`; models in `db/models/`. Put code in its layer even while layers are thin.
+Layered layout under `src/aistack/` (see `docs/DESIGN.md` §8): MCP tool handlers in `mcp/tools/` and the transfer routes in `mcp/routes/` stay thin; business logic goes in `services/`; models in `db/models/`. Put code in its layer even while layers are thin.
 
 ## Conventions
 
@@ -24,7 +24,7 @@ Layered layout under `src/aistack/` (see `docs/DESIGN.md` §8): MCP tool handler
 - Trust boundaries are not optional: validate skill names and file paths at push exactly as the schema in `docs/DESIGN.md` specifies.
 - Skill versions are immutable — never update a `SKILL_VERSION` row; a change is a new revision.
 - Synchronous SQLAlchemy (ADR-0005): plain `def` tools — FastMCP threadpools them. Never write an `async def` tool that calls a blocking driver; that serializes every caller. Where an async signature is forced on you (the `TokenVerifier`), push the database work through `asyncio.to_thread`.
-- The session factory lives in `db/`; `bootstrap/context/` holds the singleton. A tool opens exactly one session per call as `with session_factory.begin() as session:` and passes it down; services never open their own. One MCP call is one transaction. The single exception is the auth token verifier, which owns a short-lived read session because it runs before tool dispatch.
+- The session factory lives in `db/`; `bootstrap/context/` holds the singleton. A tool opens exactly one session per call as `with session_factory.begin() as session:` and passes it down; services never open their own. One MCP call is one transaction, and one transfer request is one transaction. The single exception is the auth token verifier, which owns a short-lived read session because it runs before tool dispatch.
 - SQLite engines pass `connect_args={"autocommit": False}` (ADR-0008) so savepoints participate in the outer transaction. The connect hook then applies WAL, an explicit 5s busy timeout, and `PRAGMA foreign_keys=ON` (cascades silently don't fire without it), flipping autocommit on for the duration — those pragmas are no-ops inside an open transaction.
 - The engine module branches on dialect internally and exposes one `build_engine(database_url)`. Callers never learn which database they are on. No engine, connection, or `create_schema` at import time; `application_context` calls them during assembly.
 - Tools declare no authorization of their own. One `AuthMiddleware` holds the whole rule, so a new tool is covered by default and forgetting falls closed — FastMCP's per-component `auth=` is opt-in, and a tool registered without it carries no check at all, which makes it listed and callable by any authenticated principal, including the bootstrap one whose bearer is a static code the whole team holds. Reaching the invite-code half is `tags={ONBOARDING_TAG}` on the tool, and adding a name to `BOOTSTRAP_ONLY_TOOLS` in `tests/mcp/test_tool_authorization.py` is the decision that a tool is reachable with nothing but the invite code.
@@ -35,6 +35,11 @@ Layered layout under `src/aistack/` (see `docs/DESIGN.md` §8): MCP tool handler
 - Tool results are flat facts in a TypedDict, and FastMCP structures them. No preformatted `message` field — the agent writes better chat prose than we can, and a second copy of the UX drifts. `add_machine` is the one exception: its paste-ready command is consumed by a human on a different computer.
 - Constrain a tool parameter in the schema only when the agent benefits from seeing the options, as `os` does with three legal values. Length and format limits are validated in the service, where the message can say what was received.
 - `mcp/tools/` holds three modules by area: `onboarding.py`, `skills.py`, `sync.py`.
+- File content never crosses MCP (ADR-0010). A tool that moves skill bytes returns a signed transfer URL, and the route behind it does the work. Do not add a `content` field to a tool argument or result.
+- A transfer route is an `async def` Starlette handler, because FastMCP's `custom_route` requires one. It reads the body, then runs everything else — ticket verification aside — in one `asyncio.to_thread` call that opens one session, exactly as a tool would. Its rejections are JSON `{"error": ...}` with the same agent-facing sentence a `ToolError` would carry.
+- A transfer ticket is a credential for five minutes. It is never logged, and uvicorn's access log stays off because the ticket is in the URL. The MAC is checked with `hmac.compare_digest` before any field of the payload is trusted.
+- Push validation is pure: `services/` functions that take bytes and return values or raise `ValidationError`, with no session. The archive is read in memory and never extracted to disk.
+- The canonical content hash has one implementation, `services/content_hash.py` (ADR-0011). Push and sync both call it; nothing else frames a hash.
 - Provenance columns are `pushed_by` and mean exactly that — never render them as "author" or "created by".
 - Trust-boundary work gets a diff review, not just a plan review: auth, push validation and hashing, sync, and anything destructive. Plans cannot reveal a missing authorization check, a path traversal, or a secret in a log line.
 - Enforce column lengths in the application. SQLite accepts oversized `VARCHAR(n)`, Postgres rejects it, so unenforced lengths break "runs identically on both".
