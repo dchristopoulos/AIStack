@@ -17,7 +17,7 @@ mcp = FastMCP(
 )
 
 # Register tools and routes before building the HTTP app.
-from aistack.mcp.routes import transfer  # noqa: F401, E402
+from aistack.mcp.routes import health, transfer  # noqa: F401, E402
 from aistack.mcp.tools import onboarding, skills, sync  # noqa: F401, E402
 
 

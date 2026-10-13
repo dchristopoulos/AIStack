@@ -1,0 +1,23 @@
+# AIStack, one container. Start it with:
+#
+#   AISTACK_INVITE_CODE="$(openssl rand -base64 24)" docker compose up -d
+#
+# or put AISTACK_INVITE_CODE in a .env file next to this one. See docs/OPERATING.md.
+services:
+  aistack:
+    build: .
+    image: aistack:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Required. The team's shared secret for joining; the server never prints it.
+      AISTACK_INVITE_CODE: ${AISTACK_INVITE_CODE:?Set AISTACK_INVITE_CODE to a secret of your own}
+      # Set when clients reach the server through a reverse proxy or a hostname.
+      AISTACK_PUBLIC_URL: ${AISTACK_PUBLIC_URL:-}
+      AISTACK_LOG_LEVEL: ${AISTACK_LOG_LEVEL:-INFO}
+    volumes:
+      - aistack-data:/data
+
+volumes:
+  aistack-data:

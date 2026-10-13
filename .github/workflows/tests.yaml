@@ -54,3 +54,81 @@ jobs:
           "
 
       - run: poetry run pytest -q -p no:cacheprovider --no-header -rs
+
+  container:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aistack
+          POSTGRES_PASSWORD: aistack
+          POSTGRES_DB: aistack_container
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U aistack -d aistack_container"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+
+    env:
+      # A throwaway secret for a throwaway container. Long enough to pass the startup check.
+      INVITE_CODE: ci-container-invite-code-not-a-secret
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: pipx install poetry
+
+      # The smoke script is a client: it needs fastmcp and the archive writer, not a server.
+      - run: poetry install
+
+      - run: docker build -t aistack:ci .
+
+      - name: Start on a fresh volume (SQLite)
+        run: |
+          docker run -d --name aistack -p 8000:8000 \
+            -e AISTACK_INVITE_CODE="$INVITE_CODE" \
+            -v aistack-ci:/data aistack:ci
+          scripts/wait_until_healthy.sh aistack
+
+      - run: poetry run python scripts/container_smoke.py fresh http://127.0.0.1:8000 "$INVITE_CODE" state.json
+
+      - name: Restart, and find everything still there
+        run: |
+          docker restart aistack
+          scripts/wait_until_healthy.sh aistack
+          poetry run python scripts/container_smoke.py restarted http://127.0.0.1:8000 "$INVITE_CODE" state.json
+
+      - name: The container runs unprivileged
+        run: test "$(docker exec aistack id -u)" = "10001"
+
+      # The secrets rule, checked on what the container actually wrote: not the invite code,
+      # not a machine token, not a transfer ticket.
+      - name: No secret reached the logs
+        run: |
+          docker logs aistack > container.log 2>&1
+          cat container.log
+          ! grep -F "$INVITE_CODE" container.log
+          ! grep -E "aist_[A-Za-z0-9_-]{20,}" container.log
+          ! grep -E "eyJ[A-Za-z0-9_-]{10,}\." container.log
+          grep -F "Invite code: 'configured'" container.log
+
+      - name: The same image runs against PostgreSQL
+        run: |
+          docker rm -f aistack
+          docker run -d --name aistack-postgres --network host \
+            -e AISTACK_INVITE_CODE="$INVITE_CODE" \
+            -e AISTACK_PORT=8001 \
+            -e DATABASE_URL=postgresql+psycopg://aistack:aistack@127.0.0.1:5434/aistack_container \
+            aistack:ci
+          scripts/wait_until_healthy.sh aistack-postgres
+          poetry run python scripts/container_smoke.py fresh http://127.0.0.1:8001 "$INVITE_CODE" state-postgres.json
+
+      - name: Container logs, if anything failed
+        if: failure()
+        run: docker logs aistack 2>&1 || true; docker logs aistack-postgres 2>&1 || true

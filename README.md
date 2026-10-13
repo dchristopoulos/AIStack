@@ -6,7 +6,7 @@ Self-hosted. Open source. Driven entirely from chat, through MCP.
 
 > Status: the seven MVP tools are built and tested against SQLite and PostgreSQL. A skill
 > pushed from one machine can be listed, installed, kept current, and removed on another.
-> Packaging (one container) and the first-run setup are what remain.
+> It ships as one container. The first-run setup is what remains.
 
 ## The problem
 
@@ -98,6 +98,19 @@ Sync never overwrites a locally modified skill. It asks whether to restore the v
 Deliberately not in the MVP: dashboard, CLI, version pinning, project-scoped installs, rules, hooks, agents, MCP gateway. The roadmap in the design document has the order they arrive in.
 
 ## Running it
+
+One container, one volume:
+
+```bash
+docker build -t aistack .
+docker run -d --name aistack -p 8000:8000 \
+  -e AISTACK_INVITE_CODE="$(openssl rand -base64 24)" \
+  -v aistack-data:/data aistack
+```
+
+[Operating AIStack](docs/OPERATING.md) covers configuration, reaching the server from other machines, backups, PostgreSQL, and the admin operations (revoke a machine, recover a locked-out user, rotate the invite code).
+
+From source:
 
 ```bash
 cp .env.example .env      # then set AISTACK_INVITE_CODE to a secret of your own
