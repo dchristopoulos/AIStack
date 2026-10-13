@@ -1,7 +1,9 @@
 import asyncio
 import contextlib
+import shlex
 import socket
 
+import httpx
 import pytest
 import uvicorn
 from fastmcp.client import BearerAuth, Client, StreamableHttpTransport
@@ -10,7 +12,9 @@ from aistack.bootstrap.configuration.settings.settings_config import Settings
 from aistack.bootstrap.context import application_context
 from aistack.db.engine import build_session_factory
 from aistack.mcp.mcp import http_server_config
+from tests.archives import skill_archive
 from tests.conftest import INVITE_CODE
+from tests.teams import SERVER_TEAM
 
 
 @pytest.fixture(name="anyio_backend")
@@ -62,3 +66,35 @@ def session_factory_fixture(portable_engine):
 def client_for(server_url: str, bearer: str) -> Client:
     """An MCP client presenting `bearer`, which is the only thing the server authenticates on."""
     return Client(StreamableHttpTransport(server_url, auth=BearerAuth(bearer)))
+
+
+async def join(server_url: str, username: str = "dimitris", machine_name: str = "macbook") -> str:
+    """A new user's first machine, as its token."""
+    async with client_for(server_url, INVITE_CODE) as client:
+        joined = await client.call_tool("join", {"username": username,
+                                                 "machine_name": machine_name, "os": "MACOS"})
+    return joined.structured_content["token"]
+
+
+async def call(server_url: str, token: str, tool: str, **arguments) -> dict:
+    async with client_for(server_url, token) as client:
+        return (await client.call_tool(tool, arguments)).structured_content
+
+
+async def second_machine(server_url: str, token: str, name: str = "desktop") -> str:
+    """Another computer of the same user, as its token, read from the command they would paste."""
+    added = await call(server_url, token, "add_machine", name=name, os="LINUX")
+    return shlex.split(added["command"])[-1].removeprefix("Authorization: Bearer ")
+
+
+async def push(server_url: str, token: str, name: str = "wizard", **archive) -> dict:
+    """Upload a skill into the caller's own skills, which nobody else sees."""
+    issued = await call(server_url, token, "push_skill", name=name)
+    async with httpx.AsyncClient() as http:
+        return (await http.put(issued["upload_url"],
+                               content=skill_archive(name, **archive))).json()
+
+
+async def share_with_everyone(server_url: str, token: str, name: str = "wizard") -> dict:
+    """What one shared vault used to do by itself: put a skill in front of every user."""
+    return await call(server_url, token, "share_skill", name=name, team=SERVER_TEAM)

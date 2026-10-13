@@ -1,5 +1,6 @@
 import hashlib
 import unicodedata
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, select
@@ -13,6 +14,7 @@ from aistack.services import onboarding_service, skill_service, sync_service
 from aistack.services.reconciliation import Choice, Desired, Observed
 from aistack.services.sync_service import Install, Update
 from tests.archives import local_digests, skill_archive
+from tests.teams import enable, share_with_everyone
 
 
 @pytest.fixture(name="session_factory")
@@ -32,26 +34,40 @@ def maria_fixture(session_factory):
         return onboarding_service.join(session, "maria", "laptop", "LINUX")
 
 
+@pytest.fixture(name="desktop")
+def desktop_fixture(session_factory, dimitris):
+    """Dimitris's second computer. A machine with no decision about one of its own user's
+    skills is the only way to be undecided: nobody else's skill is ever compared."""
+    with session_factory.begin() as session:
+        added = onboarding_service.add_machine(session, dimitris.user.user_id, "desktop",
+                                               "LINUX")
+    return SimpleNamespace(user=dimitris.user, machine=added.machine)
+
+
 def _push(session_factory, joined, name="wizard", **archive):
     with session_factory.begin() as session:
-        return skill_service.push(session, machine_id=joined.machine.machine_id,
-                                  user_id=joined.user.user_id, name=name, origin=None,
-                                  archive=skill_archive(name, **archive))
+        pushed = skill_service.push(session, machine_id=joined.machine.machine_id,
+                                    user_id=joined.user.user_id, name=name, origin=None,
+                                    archive=skill_archive(name, **archive))
+        share_with_everyone(session, joined.user.user_id, name)
+        return pushed
 
 
 def _enable(session_factory, joined, name="wizard"):
     with session_factory.begin() as session:
-        skill_service.get_skill(session, joined.machine.machine_id, name)
+        enable(session, joined.machine.machine_id, name)
 
 
 def _disable(session_factory, joined, name="wizard"):
     with session_factory.begin() as session:
-        skill_service.disable_skill(session, joined.machine.machine_id, name)
+        skill_service.disable_skill(session, joined.machine.machine_id,
+                                    joined.user.user_id, name)
 
 
 def _sync(session_factory, joined, local):
     with session_factory.begin() as session:
-        return sync_service.sync(session, joined.machine.machine_id, local)
+        return sync_service.sync(session, joined.machine.machine_id, joined.user.user_id,
+                                 local)
 
 
 # --- the silent rows ------------------------------------------------------------------------
@@ -71,11 +87,11 @@ def test_a_fresh_machine_installs_everything_enabled_for_it(session_factory, dim
 
 
 def test_an_older_unmodified_copy_is_updated_naming_both_revisions_and_the_pusher(
-        session_factory, dimitris, maria):
+        session_factory, dimitris, desktop):
     _push(session_factory, dimitris, files={"notes.md": "one\n"})
-    _enable(session_factory, maria)
+    _enable(session_factory, desktop)
     _push(session_factory, dimitris, files={"notes.md": "two\n"})
-    _push(session_factory, maria, files={"notes.md": "three\n"})
+    _push(session_factory, desktop, files={"notes.md": "three\n"})
     _enable(session_factory, dimitris)
 
     report = _sync(session_factory, dimitris,
@@ -83,7 +99,7 @@ def test_an_older_unmodified_copy_is_updated_naming_both_revisions_and_the_pushe
 
     assert report.install == ()
     assert report.update == (Update("wizard", from_revision=1, to_revision=3,
-                                    pushed_by="maria"),)
+                                    pushed_by="dimitris"),)
 
 
 def test_a_copy_matching_the_latest_revision_appears_nowhere(session_factory, dimitris):
@@ -236,7 +252,7 @@ def test_sync_is_not_discovery(session_factory, dimitris, maria):
 
     report = _sync(session_factory, maria, {})
 
-    assert report == sync_service.SyncReport(install=(), update=(), ask=(), orphans=(),
+    assert report == sync_service.SyncReport(install=(), update=(), ask=(), backup=(), team_updates=(),
                                              up_to_date=0, refresh_sync_skill=True)
 
 
@@ -267,18 +283,19 @@ def test_reserved_and_hidden_folders_are_ignored_even_if_sent(session_factory, d
     assert report.up_to_date == 1
 
 
-def test_sync_changes_no_desired_state(session_factory, dimitris, maria):
+def test_sync_changes_no_desired_state(session_factory, dimitris, desktop):
     _push(session_factory, dimitris, files={"notes.md": "one\n"})
     with session_factory() as session:
         before = session.execute(select(MachineSkill.machine_id, MachineSkill.enabled)).all()
+        revisions = session.scalar(select(func.count()).select_from(SkillVersion))
 
     _sync(session_factory, dimitris, {})
-    _sync(session_factory, maria, {"wizard": local_digests(files={"notes.md": "one\n"})})
+    _sync(session_factory, desktop, {"wizard": local_digests(files={"notes.md": "one\n"})})
 
     with session_factory() as session:
         assert session.execute(select(MachineSkill.machine_id,
                                       MachineSkill.enabled)).all() == before
-        assert session.scalar(select(func.count()).select_from(SkillVersion)) == 1
+        assert session.scalar(select(func.count()).select_from(SkillVersion)) == revisions
 
 
 # --- limits ---------------------------------------------------------------------------------
@@ -379,16 +396,16 @@ def test_a_disabled_skill_back_on_disk_is_asked_about_by_what_is_on_disk(session
 
 
 def test_a_vault_skill_on_disk_with_no_decision_is_asked_about_by_what_is_on_disk(
-        session_factory, dimitris, maria):
-    """Maria has the folder, the vault has the skill, and her machine never chose it."""
+        session_factory, dimitris, desktop):
+    """The desktop has the folder, the skill is one of his own, and that machine never chose it."""
     _push(session_factory, dimitris, files={"notes.md": "one\n"})
     _push(session_factory, dimitris, files={"notes.md": "two\n"})
 
-    current = _only_question(_sync(session_factory, maria,
+    current = _only_question(_sync(session_factory, desktop,
                                    {"wizard": local_digests(files={"notes.md": "two\n"})}))
-    stale = _only_question(_sync(session_factory, maria,
+    stale = _only_question(_sync(session_factory, desktop,
                                  {"wizard": local_digests(files={"notes.md": "one\n"})}))
-    unknown = _only_question(_sync(session_factory, maria, EDITED))
+    unknown = _only_question(_sync(session_factory, desktop, EDITED))
 
     assert current.desired is stale.desired is unknown.desired is Desired.UNDECIDED
     assert _flags(current) == {Choice.ENABLE: (False, False), Choice.SKIP: (False, False)}
@@ -401,14 +418,14 @@ def test_a_vault_skill_on_disk_with_no_decision_is_asked_about_by_what_is_on_dis
 
 
 def test_disabled_and_undecided_are_reported_as_different_things(session_factory, dimitris,
-                                                               maria):
+                                                               desktop):
     """One row with enabled = false, one machine with no row. Same disk, different question."""
     _push(session_factory, dimitris)
     _disable(session_factory, dimitris)
     local = {"wizard": local_digests()}
 
     disabled = _only_question(_sync(session_factory, dimitris, local))
-    undecided = _only_question(_sync(session_factory, maria, local))
+    undecided = _only_question(_sync(session_factory, desktop, local))
 
     assert disabled.desired is Desired.DISABLED
     assert undecided.desired is Desired.UNDECIDED
@@ -417,13 +434,13 @@ def test_disabled_and_undecided_are_reported_as_different_things(session_factory
 
 
 def test_only_unknown_content_is_ever_offered_a_choice_that_loses_edits(session_factory,
-                                                                      dimitris, maria):
+                                                                      dimitris, desktop):
     _push(session_factory, dimitris, "current")
     _push(session_factory, dimitris, "stale", files={"notes.md": "one\n"})
     _push(session_factory, dimitris, "stale", files={"notes.md": "two\n"})
     _push(session_factory, dimitris, "edited")
 
-    report = _sync(session_factory, maria, {
+    report = _sync(session_factory, desktop, {
         "current": local_digests("current"),
         "stale": local_digests("stale", files={"notes.md": "one\n"}),
         "edited": local_digests("edited", files={"x.md": "mine\n"}),
@@ -445,11 +462,11 @@ def test_the_three_absent_states_produce_no_report_at_all(session_factory, dimit
 
     report = _sync(session_factory, dimitris, {})
 
-    assert report == sync_service.SyncReport(install=(), update=(), ask=(), orphans=(),
+    assert report == sync_service.SyncReport(install=(), update=(), ask=(), backup=(), team_updates=(),
                                              up_to_date=0, refresh_sync_skill=True)
 
 
-# --- orphans --------------------------------------------------------------------------------
+# --- backup ---------------------------------------------------------------------------------
 
 def test_a_local_skill_the_vault_has_never_seen_is_an_orphan(session_factory, dimitris):
     _push(session_factory, dimitris)
@@ -460,7 +477,7 @@ def test_a_local_skill_the_vault_has_never_seen_is_an_orphan(session_factory, di
         "another-one": local_digests("another-one"),
     })
 
-    assert report.orphans == ("another-one", "my-private-skill")
+    assert report.backup == ("another-one", "my-private-skill")
     assert report.ask == ()
     assert report.up_to_date == 1
 
@@ -473,7 +490,7 @@ def test_the_skill_setup_installed_is_not_an_orphan(session_factory, dimitris):
         "my-private-skill": local_digests("my-private-skill"),
     })
 
-    assert report.orphans == ("my-private-skill",)
+    assert report.backup == ("my-private-skill",)
     assert report.ask == ()
 
 
@@ -505,7 +522,7 @@ def test_a_sync_skill_from_an_older_server_is_refreshed(session_factory, dimitri
     report = _sync(session_factory, dimitris, {SYNC_SKILL_NAME: local_digests(SYNC_SKILL_NAME)})
 
     assert report.refresh_sync_skill is True
-    assert report.orphans == () and report.ask == ()
+    assert report.backup == () and report.ask == ()
 
 
 def test_a_machine_without_the_sync_skill_is_offered_it(session_factory, dimitris):
@@ -529,7 +546,7 @@ def test_an_orphan_is_reported_and_never_pushed(session_factory, dimitris):
 
     report = _sync(session_factory, dimitris, local)
 
-    assert len(report.orphans) == 30
+    assert len(report.backup) == 30
     with session_factory() as session:
         assert session.scalar(select(func.count()).select_from(SkillVersion)) == 0
         assert session.scalar(select(func.count()).select_from(MachineSkill)) == 0
@@ -539,7 +556,7 @@ def test_a_folder_name_the_vault_could_never_hold_is_still_just_an_orphan(sessio
                                                                         dimitris):
     report = _sync(session_factory, dimitris, {"My Skill (copy)": local_digests()})
 
-    assert report.orphans == ("My Skill (copy)",)
+    assert report.backup == ("My Skill (copy)",)
 
 
 def test_a_renamed_local_folder_is_one_install_plus_one_orphan(session_factory, dimitris):
@@ -549,18 +566,18 @@ def test_a_renamed_local_folder_is_one_install_plus_one_orphan(session_factory, 
     report = _sync(session_factory, dimitris, {"wizard-renamed": local_digests()})
 
     assert report.install == (Install("wizard", 1, "dimitris"),)
-    assert report.orphans == ("wizard-renamed",)
+    assert report.backup == ("wizard-renamed",)
     assert report.ask == ()
 
 
 # --- the two invariants ---------------------------------------------------------------------
 
-def test_no_sync_outcome_changes_desired_state_or_the_vault(session_factory, dimitris, maria):
+def test_no_sync_outcome_changes_desired_state_or_the_vault(session_factory, dimitris, desktop):
     """Every state at once, twice. Sync reads; only get, push, and disable write."""
     _push(session_factory, dimitris, "enabled-edited")
     _push(session_factory, dimitris, "disabled-present")
     _disable(session_factory, dimitris, "disabled-present")
-    _push(session_factory, maria, "undecided-present")
+    _push(session_factory, desktop, "undecided-present")
     local = {
         "enabled-edited": local_digests("enabled-edited", files={"x.md": "mine\n"}),
         "disabled-present": local_digests("disabled-present"),
@@ -582,5 +599,5 @@ def test_no_sync_outcome_changes_desired_state_or_the_vault(session_factory, dim
 
     assert [question.name for question in report.ask] == [
         "disabled-present", "enabled-edited", "undecided-present"]
-    assert report.orphans == ("orphan",)
+    assert report.backup == ("orphan",)
     assert snapshot() == before

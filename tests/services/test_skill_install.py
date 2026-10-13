@@ -14,6 +14,7 @@ from aistack.db.models.timestamps import as_utc
 from aistack.services import onboarding_service, skill_service
 from aistack.services.content_hash import file_digest
 from tests.archives import skill_archive, skill_document
+from tests.teams import SERVER_TEAM, enable, share_with_everyone, user_of
 
 
 @pytest.fixture(name="session_factory")
@@ -43,19 +44,26 @@ def maria_fixture(session_factory):
 
 def _push(session_factory, joined, name="wizard", **archive):
     with session_factory.begin() as session:
-        return skill_service.push(session, machine_id=joined.machine.machine_id,
-                                  user_id=joined.user.user_id, name=name, origin=None,
-                                  archive=skill_archive(name, **archive))
+        pushed = skill_service.push(session, machine_id=joined.machine.machine_id,
+                                    user_id=joined.user.user_id, name=name, origin=None,
+                                    archive=skill_archive(name, **archive))
+        share_with_everyone(session, joined.user.user_id, name)
+        return pushed
 
 
-def _get(session_factory, machine_id, name="wizard"):
+def _get(session_factory, machine_id, name="wizard", team=None):
+    """Install on a machine. With `team`, take that team's copy first."""
     with session_factory.begin() as session:
-        return skill_service.get_skill(session, machine_id, name)
+        if team is None:
+            return enable(session, machine_id, name)
+        return skill_service.get_skill(session, machine_id, user_of(session, machine_id),
+                                       name, team)
 
 
 def _disable(session_factory, machine_id, name="wizard"):
     with session_factory.begin() as session:
-        return skill_service.disable_skill(session, machine_id, name)
+        return skill_service.disable_skill(session, machine_id,
+                                           user_of(session, machine_id), name)
 
 
 def _decisions(session_factory) -> dict[uuid.UUID, bool]:
@@ -71,24 +79,27 @@ def _extracted(archive: bytes) -> dict[str, tuple[bytes, bool]]:
 
 # --- list_skills ----------------------------------------------------------------------------
 
-def test_an_empty_vault_lists_nothing(session_factory):
+def test_someone_with_no_skills_in_a_server_with_none_lists_nothing(session_factory, dimitris):
     with session_factory() as session:
-        assert skill_service.list_skills(session) == []
+        assert skill_service.list_skills(session, dimitris.user.user_id) == []
 
 
-def test_the_listing_is_names_and_descriptions_sorted_by_name(session_factory, dimitris, maria):
+def test_the_listing_is_your_own_skills_then_each_teams(session_factory, dimitris, maria):
     _push(session_factory, dimitris, "wizard")
     _push(session_factory, maria, "code-review", description="Reviews a diff.")
     _push(session_factory, dimitris, "tdd", description="Red, green, refactor.")
 
     with session_factory() as session:
-        listing = skill_service.list_skills(session)
+        listing = skill_service.list_skills(session, dimitris.user.user_id)
 
-    assert [(skill.name, skill.description) for skill in listing] == [
-        ("code-review", "Reviews a diff."),
-        ("tdd", "Red, green, refactor."),
-        ("wizard", "Walks a human through steps."),
+    assert [(skill.team, skill.name, skill.pushed_by) for skill in listing] == [
+        (None, "tdd", "dimitris"),
+        (None, "wizard", "dimitris"),
+        (SERVER_TEAM, "code-review", "maria"),
+        (SERVER_TEAM, "tdd", "dimitris"),
+        (SERVER_TEAM, "wizard", "dimitris"),
     ]
+    assert listing[2].description == "Reviews a diff."
 
 
 def test_the_listing_shows_the_latest_description(session_factory, dimitris):
@@ -96,7 +107,9 @@ def test_the_listing_shows_the_latest_description(session_factory, dimitris):
     _push(session_factory, dimitris, description="Second draft.")
 
     with session_factory() as session:
-        assert skill_service.list_skills(session)[0].description == "Second draft."
+        listing = skill_service.list_skills(session, dimitris.user.user_id)
+    assert {skill.description for skill in listing} == {"Second draft."}
+    assert {skill.revision for skill in listing} == {2}
 
 
 # --- get_skill ------------------------------------------------------------------------------
@@ -108,9 +121,10 @@ def test_get_skill_describes_the_latest_revision_without_carrying_its_bytes(sess
     pushed = _push(session_factory, maria, files={"SKILL.md": document, "run.sh": "echo hi\n"},
                    executable=frozenset({"run.sh"}))
 
-    skill = _get(session_factory, dimitris.machine.machine_id)
+    skill = _get(session_factory, dimitris.machine.machine_id, team=SERVER_TEAM)
 
     assert skill.name == "wizard"
+    # His own first revision, then the team's copy on top of it.
     assert skill.revision == 2
     assert skill.version == "2.0"
     assert skill.pushed_by == "maria"
@@ -205,16 +219,18 @@ def test_disable_on_one_machine_leaves_the_users_other_machine_alone(session_fac
                                            desktop.machine_id: False}
 
 
-def test_disabling_a_skill_this_machine_never_enabled_is_refused(session_factory, dimitris,
-                                                               maria):
-    _push(session_factory, maria)
+def test_disabling_a_skill_this_machine_never_enabled_is_refused(session_factory, dimitris):
+    _push(session_factory, dimitris)
+    with session_factory.begin() as session:
+        desktop = onboarding_service.add_machine(session, dimitris.user.user_id, "desktop",
+                                                 "LINUX").machine.machine_id
 
     with pytest.raises(NotFound) as rejection:
-        _disable(session_factory, dimitris.machine.machine_id)
+        _disable(session_factory, desktop)
 
     assert "was never enabled on this machine" in str(rejection.value)
     # No row is still no decision: the refusal must not create one.
-    assert _decisions(session_factory) == {maria.machine.machine_id: True}
+    assert _decisions(session_factory) == {dimitris.machine.machine_id: True}
 
 
 def test_disabling_an_unknown_skill_is_refused(session_factory, dimitris):

@@ -16,11 +16,18 @@ from aistack.commons.exceptions import InvalidTicket
 TICKET_LIFETIME_SECONDS = 300
 SIGNING_KEY_BYTES = 32
 
+# A dashboard link signs a browser in; the session it starts is what the browser keeps.
+DASHBOARD_LINK_LIFETIME_SECONDS = 300
+DASHBOARD_SESSION_LIFETIME_SECONDS = 8 * 60 * 60
+
 _ALGORITHM = "HS256"
 # The audience is the purpose. A download ticket presented to the upload route fails here,
 # before any claim is read.
 _UPLOAD_AUDIENCE = "aistack:upload"
 _DOWNLOAD_AUDIENCE = "aistack:download"
+# A link cannot be replayed as a session cookie, nor a cookie as a link.
+_DASHBOARD_LINK_AUDIENCE = "aistack:dashboard-link"
+_DASHBOARD_SESSION_AUDIENCE = "aistack:dashboard-session"
 
 
 @dataclass(frozen=True)
@@ -82,12 +89,40 @@ class TicketSigner:
         except (KeyError, ValueError, TypeError) as error:
             raise _not_valid("get_skill") from error
 
-    def _signed(self, audience: str, machine_id: uuid.UUID, claims: dict) -> str:
+    def sign_dashboard_link(self, user_id: uuid.UUID) -> str:
+        """A link that signs a browser in as `user_id`, for a few minutes (ADR-0017)."""
+        return self._signed(_DASHBOARD_LINK_AUDIENCE, user_id, {},
+                            DASHBOARD_LINK_LIFETIME_SECONDS)
+
+    def verified_dashboard_link(self, token: str) -> uuid.UUID:
+        return self._verified_user(token, _DASHBOARD_LINK_AUDIENCE)
+
+    def sign_dashboard_session(self, user_id: uuid.UUID) -> str:
+        """The cookie a signed-in browser presents. A server restart signs everyone out."""
+        return self._signed(_DASHBOARD_SESSION_AUDIENCE, user_id, {},
+                            DASHBOARD_SESSION_LIFETIME_SECONDS)
+
+    def verified_dashboard_session(self, token: str) -> uuid.UUID:
+        return self._verified_user(token, _DASHBOARD_SESSION_AUDIENCE)
+
+    def _verified_user(self, token: str, audience: str) -> uuid.UUID:
+        try:
+            claims = jwt.decode(token, self._key, algorithms=[_ALGORITHM], audience=audience,
+                                options={"require": ["exp", "aud", "sub"]})
+            return uuid.UUID(claims["sub"])
+        except (jwt.InvalidTokenError, KeyError, ValueError, TypeError) as error:
+            raise InvalidTicket(
+                "This dashboard link is not valid or has expired. Ask your agent to \"open "
+                "my aistack dashboard\" for a new one."
+            ) from error
+
+    def _signed(self, audience: str, subject: uuid.UUID, claims: dict,
+                lifetime_seconds: int | None = None) -> str:
         return jwt.encode(
             {
                 "aud": audience,
-                "sub": str(machine_id),
-                "exp": int(time.time()) + self._lifetime_seconds,
+                "sub": str(subject),
+                "exp": int(time.time()) + (lifetime_seconds or self._lifetime_seconds),
                 **claims,
             },
             self._key,

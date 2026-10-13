@@ -9,6 +9,7 @@ from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.user import User
 from aistack.services import onboarding_service, skill_service
 from tests.archives import skill_archive
+from tests.teams import machines_of_one_user
 
 # PostgreSQL never had this problem: its writers wait for each other. These tests are about
 # SQLite, which is the default backend and so the one most deployments run.
@@ -86,7 +87,8 @@ def test_concurrent_pushes_of_different_skills_all_succeed(engine):
 
 def test_concurrent_pushes_of_one_skill_all_succeed_with_distinct_revisions(engine):
     session_factory = build_session_factory(engine)
-    pushers = _joined(session_factory, WRITER_COUNT)
+    with session_factory.begin() as session:
+        pushers = machines_of_one_user(session, WRITER_COUNT)
 
     pushed = _push_all_at_once(session_factory, pushers,
                                name_for=lambda index: "wizard",

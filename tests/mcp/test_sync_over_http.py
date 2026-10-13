@@ -7,9 +7,12 @@ from fastmcp.client import BearerAuth, Client, StreamableHttpTransport
 
 from aistack.services.skill_archive import ArchivedFile
 from aistack.services.skill_validation import validated_skill
-from tests.archives import local_digests, skill_archive
-from tests.conftest import INVITE_CODE
+from tests.archives import local_digests
+from tests.mcp.conftest import call as _call
 from tests.mcp.conftest import client_for
+from tests.mcp.conftest import join as _join
+from tests.mcp.conftest import push as _push
+from tests.mcp.conftest import second_machine
 
 pytestmark = pytest.mark.anyio
 
@@ -17,37 +20,18 @@ SYNC_SKILL = (pathlib.Path(__file__).parents[2] / "src" / "aistack" / "bundled" 
               / "sync-aistack")
 
 
-async def _join(server_url, username="dimitris", machine_name="macbook") -> str:
-    async with client_for(server_url, INVITE_CODE) as client:
-        joined = await client.call_tool("join", {"username": username,
-                                                 "machine_name": machine_name, "os": "MACOS"})
-    return joined.structured_content["token"]
-
-
-async def _call(server_url, token, tool, **arguments) -> dict:
-    async with client_for(server_url, token) as client:
-        return (await client.call_tool(tool, arguments)).structured_content
-
-
-async def _push(server_url, token, name="wizard", **archive) -> dict:
-    issued = await _call(server_url, token, "push_skill", name=name)
-    async with httpx.AsyncClient() as http:
-        return (await http.put(issued["upload_url"],
-                               content=skill_archive(name, **archive))).json()
-
-
 async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(server_url):
     """The reason the product exists: push on A, sync on B, B is told to update."""
-    machine_a = await _join(server_url, "dimitris", "macbook")
-    machine_b = await _join(server_url, "maria", "laptop")
+    machine_a = await _join(server_url)
+    machine_b = await second_machine(server_url, machine_a)
     await _push(server_url, machine_a, files={"notes.md": "one\n"})
     await _call(server_url, machine_b, "get_skill", name="wizard")
     on_machine_b = {"wizard": local_digests(files={"notes.md": "one\n"})}
 
     before = await _call(server_url, machine_b, "sync", local=on_machine_b)
     skill_url = f"{server_url.removesuffix('/mcp')}/setup/sync-aistack/SKILL.md"
-    assert before == {"install": [], "update": [], "ask": [], "orphans": [], "up_to_date": 1,
-                      "sync_skill_url": skill_url}
+    assert before == {"install": [], "update": [], "ask": [], "backup": [],
+                      "team_updates": [], "up_to_date": 1, "sync_skill_url": skill_url}
 
     await _push(server_url, machine_a, files={"notes.md": "two\n"})
 
@@ -57,15 +41,16 @@ async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(serv
         "update": [{"name": "wizard", "from_revision": 1, "to_revision": 2,
                     "pushed_by": "dimitris"}],
         "ask": [],
-        "orphans": [],
+        "backup": [],
+        "team_updates": [],
         "up_to_date": 0,
         "sync_skill_url": skill_url,
     }
 
 
 async def test_a_fresh_machine_is_told_to_install_what_it_enabled(server_url):
-    machine_a = await _join(server_url, "dimitris", "macbook")
-    machine_b = await _join(server_url, "maria", "laptop")
+    machine_a = await _join(server_url)
+    machine_b = await second_machine(server_url, machine_a)
     await _push(server_url, machine_a)
     await _call(server_url, machine_b, "get_skill", name="wizard")
 
@@ -96,17 +81,17 @@ async def test_sync_takes_digests_and_nothing_else(server_url):
 
 async def test_every_answer_to_a_question_is_an_existing_tool(server_url, session_factory):
     """Edit locally, get asked, and resolve it each way. No hidden verb is needed."""
-    machine_a = await _join(server_url, "dimitris", "macbook")
-    machine_b = await _join(server_url, "maria", "laptop")
+    machine_a = await _join(server_url)
+    machine_b = await second_machine(server_url, machine_a)
     await _push(server_url, machine_a)
     await _call(server_url, machine_b, "get_skill", name="wizard")
-    edited = {"notes.md": "maria's local edit\n"}
-    on_machine_b = {"wizard": local_digests(files=edited), "her-own": local_digests("her-own")}
+    edited = {"notes.md": "a local edit\n"}
+    on_machine_b = {"wizard": local_digests(files=edited), "new-here": local_digests("new-here")}
 
     report = await _call(server_url, machine_b, "sync", local=on_machine_b)
 
     assert report["install"] == [] and report["update"] == []
-    assert report["orphans"] == ["her-own"]
+    assert report["backup"] == ["new-here"]
     assert report["ask"] == [{
         "name": "wizard",
         "desired": "enabled",
@@ -121,22 +106,22 @@ async def test_every_answer_to_a_question_is_an_existing_tool(server_url, sessio
         ],
     }]
 
-    # Answer "push": her edit becomes revision 2 and the question is gone.
+    # Answer "push": the edit becomes revision 2 and the question is gone.
     pushed = await _push(server_url, machine_b, files=edited)
     assert pushed["revision"] == 2
     after_push = await _call(server_url, machine_b, "sync", local=on_machine_b)
     assert after_push["ask"] == [] and after_push["up_to_date"] == 1
 
-    # Answer "push" for the orphan: it stops being one.
-    await _push(server_url, machine_b, name="her-own")
-    assert (await _call(server_url, machine_b, "sync", local=on_machine_b))["orphans"] == []
+    # Back up the skill found only here: it stops being listed.
+    await _push(server_url, machine_b, name="new-here")
+    assert (await _call(server_url, machine_b, "sync", local=on_machine_b))["backup"] == []
 
     # Machine A is now behind, unmodified: a silent update, not a question.
     on_machine_a = {"wizard": local_digests()}
     behind = await _call(server_url, machine_a, "sync", local=on_machine_a)
     assert behind["ask"] == []
     assert behind["update"] == [{"name": "wizard", "from_revision": 1, "to_revision": 2,
-                                 "pushed_by": "maria"}]
+                                 "pushed_by": "dimitris"}]
 
 
 async def test_removing_and_then_finding_the_folder_again_is_a_question(server_url):
@@ -191,7 +176,8 @@ def test_the_shipped_sync_skill_explains_every_choice_and_both_flags():
     document = (SYNC_SKILL / "SKILL.md").read_text()
 
     for term in ("`enable`", "`restore`", "`push`", "`remove`", "`skip`", "`overwrites_local`",
-                 "`loses_local_edits`", "`orphans`", "`sync_skill_url`", "`undecided`", "`disabled`"):
+                 "`loses_local_edits`", "`backup`", "`team_updates`", "`sync_skill_url`",
+                 "`undecided`", "`disabled`"):
         assert term in document
 
 

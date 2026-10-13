@@ -15,7 +15,8 @@ from aistack.services.skill_archive import MAX_ARCHIVE_BYTES
 from aistack.services.transfer_ticket import TicketSigner
 from tests.archives import skill_archive
 from tests.conftest import INVITE_CODE
-from tests.mcp.conftest import client_for
+from tests.mcp.conftest import client_for, share_with_everyone
+from tests.teams import SERVER_TEAM
 
 pytestmark = pytest.mark.anyio
 
@@ -63,7 +64,6 @@ async def test_push_skill_then_upload_stores_the_skill(server_url, session_facto
         "file_count": 2,
         "previous_pushed_by": None,
         "stored_origin": "https://github.com/mattpocock/skills",
-        "possibly_unrelated": False,
     }
     with session_factory() as session:
         assert session.scalar(select(Skill.name)) == "wizard"
@@ -72,7 +72,8 @@ async def test_push_skill_then_upload_stores_the_skill(server_url, session_facto
         assert session.scalar(select(MachineSkill.enabled)) is True
 
 
-async def test_a_second_user_pushing_the_same_name_is_told_who_was_there_first(server_url):
+async def test_a_second_user_pushing_the_same_name_gets_a_skill_of_their_own(server_url):
+    """A push lands in the pusher's own skills, so a namesake is nobody's predecessor."""
     first = await _join(server_url, "dimitris", "macbook")
     second = await _join(server_url, "maria", "laptop")
     await _put(await _upload_url(server_url, first), skill_archive())
@@ -80,10 +81,33 @@ async def test_a_second_user_pushing_the_same_name_is_told_who_was_there_first(s
     response = await _put(await _upload_url(server_url, second),
                           skill_archive(files={"notes.md": "different\n"}))
 
-    assert response.json()["revision"] == 2
-    assert response.json()["created"] is False
-    assert response.json()["previous_pushed_by"] == "dimitris"
-    assert response.json()["possibly_unrelated"] is True
+    assert response.json()["revision"] == 1
+    assert response.json()["created"] is True
+    assert response.json()["previous_pushed_by"] is None
+    assert "possibly_unrelated" not in response.json()
+
+
+async def test_sharing_over_a_skill_never_taken_is_told_who_was_there_first(server_url):
+    """The warning a push used to carry, now at the moment a namesake can be replaced (#35)."""
+    first = await _join(server_url, "dimitris", "macbook")
+    second = await _join(server_url, "maria", "laptop")
+    await _put(await _upload_url(server_url, first), skill_archive())
+    await share_with_everyone(server_url, first)
+    await _put(await _upload_url(server_url, second),
+               skill_archive(files={"notes.md": "different\n"}))
+
+    shared = await share_with_everyone(server_url, second)
+
+    assert shared == {
+        "name": "wizard",
+        "team": SERVER_TEAM,
+        "group": None,
+        "revision": 2,
+        "created": False,
+        "unchanged": False,
+        "previous_pushed_by": "dimitris",
+        "possibly_unrelated": True,
+    }
 
 
 async def test_no_file_content_crosses_mcp(server_url):

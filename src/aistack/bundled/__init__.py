@@ -1,4 +1,5 @@
-"""Files AIStack ships and serves as they are: the setup instructions and the sync skill.
+"""Files AIStack ships and serves as they are: the setup instructions, the sync skill, and
+the dashboard page.
 
 They live inside the package so the container image carries them, and a new user's agent can
 fetch them from the server it is joining. A fresh vault cannot install the skill that talks
@@ -13,6 +14,11 @@ SYNC_SKILL_NAME = "sync-aistack"
 def setup_instructions() -> str:
     """The instructions template, with `{server_url}` and `{mcp_url}` still to fill in."""
     return _read("setup-aistack.md")
+
+
+def dashboard_page() -> str:
+    """The whole web application: one file, with its own styles and script (ADR-0017)."""
+    return _read("dashboard.html")
 
 
 def sync_skill_document() -> str:

@@ -1,11 +1,11 @@
 # Set up AIStack on this computer
 
-You are an AI coding agent. The user asked you to connect this computer to the AIStack server at {server_url}, which keeps their team's skills in sync. Do the steps below in order, with your shell. It takes about a minute and ends with one restart of Claude Code.
+You are an AI coding agent. The user asked you to connect this computer to the AIStack server at {server_url}, which backs up their skills, keeps every computer of theirs current, and lets them share skills with teams. Do the steps below in order, with your shell. It takes about a minute and ends with one restart of Claude Code.
 
 You need three things from the user. Ask for whichever they did not give you:
 
-- the **invite code** for this server
-- a **username**: a short lowercase handle their team will recognize, like `maria` or `j.smith` (letters, digits, and single `.`, `-`, `_`). It is shown next to every skill they push.
+- the **invite code** for this server. A code starting with `aistinv_` is a team's invite code, not the server's: it is used after setup, by saying "join a team with this code".
+- a **username**: a short lowercase handle their team will recognize, like `maria` or `j.smith` (letters, digits, and single `.`, `-`, `_`). It is shown next to every skill revision they push or share.
 - a **name for this computer**, like `macbook` or `work-laptop`. Suggest the short hostname, without the domain. It can be at most 64 characters.
 
 Work out the operating system yourself: `MACOS`, `WINDOWS`, or `LINUX`.
@@ -71,4 +71,7 @@ Tell the user:
 
 - This computer is connected to AIStack as `<username>` / `<computer name>`.
 - **Restart Claude Code once.** It reads its server list at startup, so the new connection appears after a restart. This is the only restart: skills installed from now on load without one.
-- After restarting, say **"sync aistack"** to install what this computer should have, **"what skills does the team have?"** to browse, or **"push my <skill> skill to aistack"** to share one. Syncing at the start of a work session, like `git pull`, keeps everything current.
+- After restarting, say **"sync aistack"**. It backs up the skills on this computer to "My skills", a private space only they see, and installs whatever their other computers already put there. Syncing at the start of a work session, like `git pull`, keeps everything current.
+- **"open my aistack dashboard"** gives a link to the web dashboard, where they see every skill and which computer has it, and manage teams, groups, and members.
+- To work with other people: **"what skills do my teams have?"** to browse, **"install <skill> from <team>"** to take one, **"share <skill> with <team>"** to give a team a copy of theirs, **"create a team called <name>"** to start one, and **"join a team with this code"** when someone sends them a team invite code. Everyone on this server is already in the team `everyone`.
+- A teammate's change to a shared skill never reaches this computer by itself. Sync reports it as an offer, and they decide each time.

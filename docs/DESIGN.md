@@ -1,10 +1,10 @@
 # AIStack design
 
-Scope, architecture, and schema for the MVP, settled 2026-08-21, revised 2026-08-24 after two external design reviews, and 2026-10-13 after research into what the client can carry (ADR-0010 to ADR-0012). Vocabulary lives in `CONTEXT.md`. Decisions and their reasoning live in `docs/adr/`. This document is the current plan, so where anything else disagrees with it, this wins.
+Scope, architecture, and schema for the MVP, settled 2026-08-21, revised 2026-08-24 after two external design reviews, 2026-10-13 after research into what the client can carry (ADR-0010 to ADR-0012), and 2026-10-14 for the personal space, teams, groups, migrations, and the dashboard (ADR-0015 to ADR-0017). Vocabulary lives in `CONTEXT.md`. Decisions and their reasoning live in `docs/adr/`. This document is the current plan, so where anything else disagrees with it, this wins.
 
 ## 1. What AIStack is
 
-A self-hosted, open-source control plane for AI development configuration. A team, or a solo developer with several machines, runs one AIStack server. It holds the canonical copies of their skills, and later their rules, agents, hooks, and MCP server definitions. Every developer installs and syncs from that shared vault through chat, from inside their coding agent.
+A self-hosted, open-source control plane for AI development configuration. A team, or a solo developer with several machines, runs one AIStack server. It holds the canonical copies of their skills, and later their rules, agents, hooks, and MCP server definitions. Each person has a private space, My skills, that mirrors their machines and is the only place those machines install from. They share skills with teams, and with groups inside a team, and take what others shared. The web dashboard is where they see and manage all of it; MCP connects their coding agent to their account, so the everyday actions are also a sentence in chat.
 
 Core promise:
 
@@ -12,10 +12,10 @@ Core promise:
 
 Two use cases drive the design:
 
-- **Small team**: a shared skill vault. Every dev sees what the others use and can install it with one sentence in chat.
+- **Small team**: skills shared with a team or a group in it. Every member sees what was shared and by whom, and takes what they want with one sentence in chat or one click.
 - **Solo dev**: same tools on every machine (desktop, MacBook, work laptop) and eventually every harness (Claude Code, Codex, ...).
 
-The design bar is maximum UX: the vault exists to make configuration simpler, so any feature that makes chat interactions more complicated than the problem it solves is out. When in doubt, do the smart thing silently where no data can be lost, and ask one clear question where it can.
+The design bar is maximum UX: AIStack exists to make configuration simpler, so any feature that makes chat interactions more complicated than the problem it solves is out. When in doubt, do the smart thing silently where no data can be lost, and ask one clear question where it can.
 
 Not a hosted SaaS. Whoever wants AIStack deploys it themselves — a company on its server, a solo dev on a VPS or home server. The project ships a one-container deploy and documents patterns (VPS, Tailscale); it does not solve hosting for you (no LAN discovery, no peer sync).
 
@@ -28,14 +28,15 @@ Python
 Poetry
 SQLAlchemy       synchronous; FastMCP threadpools plain `def` tools, so sync drivers
                  never block the event loop (see ADR-0005)
-FastMCP          (the entire MVP server)
+FastMCP          the MCP endpoint, and the Starlette application every other route is
+                 registered on: transfer, setup, health, and the dashboard (ADR-0017)
 SQLite           default; DATABASE_URL switches to Postgres via psycopg (ADR-0002)
-FastAPI          post-MVP, arrives with the dashboard
+Alembic          schema migrations, applied at startup in one transaction (ADR-0016)
 ```
 
 SQLite connections set `PRAGMA journal_mode=WAL`, an explicit 5-second busy timeout (the Python default, kept explicit because it is policy, not accident), and `PRAGMA foreign_keys=ON` — SQLite ignores `ON DELETE CASCADE` without it.
 
-Still open: frontend framework (blocked on nothing — decide when the dashboard starts).
+No FastAPI and no frontend framework: the dashboard is one HTML file with its own CSS and JavaScript, shipped as package data, with no build step (ADR-0017).
 
 ## 3. Decisions (ADRs)
 
@@ -53,29 +54,34 @@ Still open: frontend framework (blocked on nothing — decide when the dashboard
 - **ADR-0011 — The server alone computes the content hash.** `sync` receives a sha256 per local file and the server applies the ADR-0009 framing. No hashing script ships to any machine.
 - **ADR-0013 — The MCP endpoint is stateless.** No session is kept, so a restart strands no client and a new machine can call `join` with one HTTP request, which is what makes setup a single paste.
 - **ADR-0012 — Sync returns its questions as data.** Claude Code supports elicitation, and sync does not use it: returned data works in every harness, and the agent asks better questions in chat than a form does.
+- **ADR-0015 — A personal space per user, teams to share into, and groups inside a team.** A machine installs only from its user's own skills. Sharing copies a skill into a team; taking copies it back out. A teammate's change is an offer, never applied by sync.
+- **ADR-0016 — Schema changes are Alembic migrations, applied at startup in one transaction.** All pending migrations land or none do, a failed one stops the server, and there are no downgrades.
+- **ADR-0017 — The dashboard is served by the server, and a link from chat signs you in.** Same process, same services, no second framework, no build step, no passwords.
 
-## 4. MVP
+## 4. What is built
 
-One Docker container. One volume (SQLite file + config). FastMCP served over streamable HTTP, plus two plain HTTP routes on the same port that carry skill archives (ADR-0010). Chat is the entire interface: no dashboard, no CLI, no daemon. Claude Code is the only supported harness.
+One Docker container. One volume (SQLite file + config). FastMCP served over streamable HTTP, plus plain HTTP routes on the same port: two that carry skill archives (ADR-0010), setup, health, and the dashboard with its JSON API (ADR-0017). No CLI, no daemon. Claude Code is the only supported harness.
 
 ### State model (ADR-0004)
 
-The server holds **desired** state: which skills are enabled per machine. The local disk is **actual** state. Sync reconciles the two. Each machine belongs to one user and authenticates with its own permanent token — one lookup identifies both user and machine.
+The server holds **desired** state: which of a user's own skills are enabled per machine. The local disk is **actual** state. Sync reconciles the two. Each machine belongs to one user and authenticates with its own permanent token — one lookup identifies both user and machine.
 
 ### Auth
 
-Two principals, one centralized authorization rule enforced before any tool logic runs:
+Two MCP principals, one centralized authorization rule enforced before any tool logic runs:
 
 - **Bootstrap principal** — the invite code presented as a bearer token. May call `join` and nothing else.
 - **Machine principal** — a machine token (sha256-hashed at rest). May call everything except `join`.
 
+The dashboard has its own credential and reaches no MCP tool: a session cookie holding a signed ticket for one user, set by opening the link `open_dashboard` returns (ADR-0017). `/app` and `/api/*` refuse without it, and a request that changes state must also carry a header a cross-site form cannot send.
+
 `join` creates the user and their first machine and returns the permanent machine token. The agent writes it into the MCP config; from then on it authenticates every connection silently. First user to join becomes the admin.
 
-**Secrets rule.** Tokens appear exactly once: in the `join` / `add_machine` result (and therefore in the local Claude Code transcript — accepted for the MVP). They never appear in server logs, HTTP logs, error messages, or any other tool result. The invite code is never emitted in logs, errors, tool arguments, or tool results; it exists only as the bootstrap `Authorization` bearer and as operator-supplied config.
+**Secrets rule.** Tokens appear exactly once: in the `join` / `add_machine` result (and therefore in the local Claude Code transcript — accepted for the MVP). They never appear in server logs, HTTP logs, error messages, or any other tool result. The invite code is never emitted in logs, errors, tool arguments, or tool results; it exists only as the bootstrap `Authorization` bearer and as operator-supplied config. A team's invite code is made by the server, stored only as a hash, and appears once, in the answer to the admin who asked for it. A dashboard link is a credential for five minutes and is never logged.
 
-**Revocation** (lost or stolen machine): the admin deletes the machine row — a documented one-line DB operation, no tool. If that was the user's only machine, recovery is inserting a replacement machine row (or rotating an existing machine's `token_hash`) for that same user. Never delete the user: `pushed_by` is a non-null FK from `SKILL` and `SKILL_VERSION`, so deleting a contributor either fails or destroys provenance. Dashboard makes both a button later.
+**Revocation** (lost or stolen machine): the admin deletes the machine row — a documented one-line DB operation, no tool. If that was the user's only machine, recovery is inserting a replacement machine row (or rotating an existing machine's `token_hash`) for that same user. Never delete the user: `pushed_by` is a non-null FK from `SKILL` and `SKILL_VERSION`, so deleting a contributor either fails or destroys provenance.
 
-### Tools (all seven, nothing else)
+### Tools (all thirteen, nothing else)
 
 ```text
 join(username, machine_name, os) → creates user + first machine; returns the machine token
@@ -84,23 +90,34 @@ join(username, machine_name, os) → creates user + first machine; returns the m
                                 reveal the client's platform)
 add_machine(name, os)         → registers another machine for this user; returns a
                                 paste-ready MCP command with that machine's token
-list_skills                   → browse the vault (name + description; this is also the
-                                search — and the only discovery mechanism, sync is not)
-get_skill(name)               → enables the skill for the calling machine and returns the
+list_skills                   → the caller's own skills, then every team skill they may
+                                see (this is also the search — and the only discovery
+                                mechanism, sync is not)
+get_skill(name, team?)        → with a team, first takes that team's latest revision into
+                                the caller's own skills. Then enables the skill for the
+                                calling machine and returns the
                                 latest revision's metadata, its file list, and a signed
                                 download URL for the archive. The one "enable + give me
                                 the files" verb — install, restore, re-enable, adopt all
                                 resolve to it
 push_skill(name, origin?)     → returns a signed upload URL for that skill name. The
-                                upload itself creates the revision (existing name = new
-                                revision) and enables the skill for the calling machine
+                                upload creates the revision in the caller's own skills
+                                (existing name = new revision) and enables the skill for
+                                the calling machine. It shares nothing
+share_skill(name, team, group?)
+                              → copies the latest revision of one of the caller's own
+                                skills into a team or one of its groups
+list_teams, create_team(name), invite_to_team(team), join_team(code)
+                              → the teams the caller is in; make one; get its invite
+                                code (admins); join one with a code
+open_dashboard                → a short-lived link that signs a browser in (ADR-0017)
 sync(local: {name: {path: sha256}})
                               → reconcile desired vs actual; see the sync contract
 disable_skill(name)           → enabled = false for this machine; the agent then
                                 deletes the local folder
 ```
 
-`delete_skill` (hard delete from the vault) is deliberately deferred to the dashboard, alongside archive: a fresh install after deleting the latest revision would silently receive an older one, hard delete erases the provenance of a hostile revision after it propagated, and a safe version needs preview-confirm plus tombstones. Disable covers "get this off my machines"; immutable revisions keep the history.
+There is no `delete_skill` tool. Removal is a dashboard action, in two forms. Removing a skill from My skills keeps its row as a marker (`archived`) and disables it on every machine, so each machine's next sync asks whether to delete the folder and does not back it up again. A team admin removing a skill from a team deletes the team's copy and its history; copies members already took are theirs and are untouched. Deleting a single revision is not offered: a fresh install after deleting the latest would silently receive an older one, and a safe version needs preview-confirm plus tombstones.
 
 ### Flows
 
@@ -110,13 +127,17 @@ disable_skill(name)           → enabled = false for this machine; the agent th
 
 **Adding a machine**: on an already-registered machine — "add my Windows PC". `add_machine` returns the full MCP-config command with the new machine's token; the user pastes it on the other computer. No redeem step; the invite code is only for new users.
 
-**Push**: "push my wizard skill to aistack" — the agent calls `push_skill` with the skill's name and gets back a signed upload URL, then pipes a gzipped tar of the skill directory to it (`tar -czf - -C <dir> . | curl -sS --fail-with-body -X PUT --data-binary @- <url>`). The server validates the archive, stores the revision, and answers the upload with the result the agent reports; a rejection comes back as the same kind of sentence a tool error would carry. Uploading content identical to the latest revision creates nothing and says so, so repeating "push all my skills" does not mint a revision per skill per run. Pushing an existing name creates a new revision and the response says so loudly: who pushed the previous revision and, when origins differ or are unknown, a warning that this may be an unrelated skill sharing the name. Push records an optional `origin` URL (GitHub repo, marketplace page) when the agent knows it. Any member may push a new revision of any skill (trusted team; `pushed_by` gives provenance, and it means exactly that — AIStack never claims authorship). Push enables the skill for the calling machine.
+**Back up** (push): "push my wizard skill to aistack", or a name sync listed under `backup` — the agent calls `push_skill` with the skill's name and gets back a signed upload URL, then sends a gzipped tar of the skill directory to it with `tar` and `curl`, as the tool's description spells out. The server validates the archive, stores the revision in the caller's own skills, and answers the upload with the result the agent reports; a rejection comes back as the same kind of sentence a tool error would carry. Uploading content identical to the latest revision creates nothing and says so, so repeating "push all my skills" does not mint a revision per skill per run. Pushing a name the user already has adds a revision. Push records an optional `origin` URL (GitHub repo, marketplace page) the first time, when the agent knows it. Push enables the skill for the calling machine and shares nothing.
+
+**Share**: "share wizard with backend" — `share_skill` copies the latest revision of the caller's own skill into a team, or a group in it. No bytes move through the client. The team's copy has its own history, and every revision in it names who shared it (`pushed_by` means exactly that — AIStack never claims authorship). Any member may share over a team's skill. When the team already had that name and the sharer's copy was never taken from it, the result says so (`possibly_unrelated`), because it may be an unrelated skill that shares the name.
+
+**Take**: "install wizard from backend" — `get_skill` with a team copies that team's latest revision into the caller's own skills, remembers the source and its revision, and then installs as below. The copy stays theirs if they leave the team.
 
 **Gathering rules**: `tar` archives a symlink as a symlink, not as its target, so a link to `~/.ssh/id_rsa` inside a skill folder arrives as a link entry and the server rejects the push by naming it. The same goes for sockets, devices, FIFOs, and hard links. The push prompt tells the agent to set `COPYFILE_DISABLE=1` on macOS so `tar` does not synthesize `._*` AppleDouble entries, and to leave `.git` out. The server enforces all of it regardless (§4 Push validation); the prompt only makes the first attempt succeed.
 
-**Bulk import** ("move to AIStack"): not a tool. A documented prompt — "push all my skills" — makes the agent loop `push_skill` over the local skills directory.
+**Bulk import** ("move to AIStack"): not a tool. The first sync lists every local skill under `backup` and the agent pushes each one.
 
-**Install**: "install wizard from aistack" — `get_skill` marks the skill enabled for this machine and returns a signed download URL. The agent extracts the archive into a temporary sibling of the target (`curl -sS --fail <url> | tar -xzf - -C <tmp>`), then renames it into the global skills directory, so a failed download never leaves half a skill where Claude Code is watching. Install = enable + materialize; "remove wizard" = `disable_skill` + the agent deletes the local folder. After install the skill is a plain native skill, usable immediately in the same session. (Sync manages only the global directory in the MVP; a project-local copy is a manual chat action the server doesn't track.)
+**Install**: "install wizard" — `get_skill` marks one of the caller's own skills enabled for this machine and returns a signed download URL. The agent downloads and extracts the archive under `<skills>/.aistack-staging/`, then renames it into the global skills directory, so a failed download never leaves half a skill where Claude Code is watching. Install = enable + materialize; "remove wizard" = `disable_skill` + the agent deletes the local folder. After install the skill is a plain native skill, usable immediately in the same session. (Sync manages only the global directory in the MVP; a project-local copy is a manual chat action the server doesn't track.)
 
 ### The sync contract
 
@@ -140,29 +161,30 @@ Not enabled for this machine, but present on disk:
 | explicitly disabled here (`enabled = false` row) | matches latest | report: re-enable (no rewrite) or remove |
 | explicitly disabled here | matches an older revision | report: re-enable **and update** (states that files will be replaced) or remove |
 | explicitly disabled here | matches no revision | report: push / re-enable-and-replace (**states this discards local edits**) / remove / skip |
-| in the vault, no decision here (no row) | matches latest | report: adopt (no rewrite) |
-| in the vault, no decision here | matches an older revision | report: adopt **and update** (states that files will be replaced) |
-| in the vault, no decision here | matches no revision | report: push / adopt-and-replace (**states this discards local edits**) / skip |
-| not in the vault at all | any | report as orphan, offer to push — **never auto-push** (a fresh machine may hold dozens of third-party skills; importing them unasked creates false provenance) |
+| in My skills, no decision here (no row) | matches latest | report: adopt (no rewrite) |
+| in My skills, no decision here | matches an older revision | report: adopt **and update** (states that files will be replaced) |
+| in My skills, no decision here | matches no revision | report: push / adopt-and-replace (**states this discards local edits**) / skip |
+| not among the user's own skills | any | list under `backup`; the agent backs it up to My skills **without asking**. That space is private, so nothing is shared and nobody else sees the user as the pusher of something they only downloaded (this replaces "never auto-push", which guarded a vault everyone shared) |
 
 A prompt that leads to overwriting local content must say so. "Adopt?" on its own is not informed consent when the local copy matches no revision.
 
 **Hash precedence** (identical content can legitimately be pushed as two revisions, so a hash can match both): if the local hash equals the latest revision's, the copy is current. Otherwise, if it equals any revision's, it is stale. Otherwise it is unknown.
 
-**No-op states**, stated so the contract covers the full product rather than relying on inference: absent + disabled, absent + no row, and absent + not in the vault all mean nothing to do and are never reported.
+**No-op states**, stated so the contract covers the full product rather than relying on inference: absent + disabled, absent + no row, and absent + not in My skills all mean nothing to do and are never reported.
 
 Every answer maps to an existing tool: restore / re-enable / adopt → `get_skill` (on the wire, `restore` for a skill already enabled here and `enable` for the other two); push → `push_skill`; remove → the flag is already false, the agent just deletes the folder; skip → nothing. No hidden verbs.
 
-**Wire contract**: the agent sends, for every skill folder in the global skills directory, each file's relative path and the sha256 of its bytes. The server derives the canonical hash from those (ADR-0011) and returns *action metadata only*: skills to install, skills to update, and questions. For each entry that is the skill name, the target revision, and who pushed it; a question also carries the state that was found, the options the user may choose, and for each option whether it replaces local files and whether it discards local edits (ADR-0012). It never returns file content. The agent then calls `get_skill` per install or update. This keeps a sync of fifty skills small, and makes `get_skill` the single materialization path rather than a second one hiding inside sync.
+**Wire contract**: the agent sends, for every skill folder in the global skills directory, each file's relative path and the sha256 of its bytes. The server derives the canonical hash from those (ADR-0011) and returns *action metadata only*: skills to install, skills to update, questions, the names to back up, and team updates on offer. For each entry that is the skill name, the target revision, and who pushed it; a question also carries the state that was found, the options the user may choose, and for each option whether it replaces local files and whether it discards local edits (ADR-0012). It never returns file content. The agent then calls `get_skill` per install or update, and `push_skill` per name to back up. This keeps a sync of fifty skills small, and makes `get_skill` the single materialization path rather than a second one hiding inside sync.
 
-Two folders are never reported: `synced`, which Claude Code reserves for skills it downloads from claude.ai, and anything starting with a dot. The `sync-aistack` skill leaves them out of what it sends, along with `.DS_Store` files. The `sync-aistack` folder itself is never an orphan: setup wrote it from the server, so it is in no fresh vault. Instead the server compares it with the copy it ships, and when the machine's is missing or different the report carries `sync_skill_url`, which the agent downloads over it without asking. That is how the skill follows a server upgrade, and how a machine connected with `add_machine`, which never ran setup, gets it at all. If someone does push the skill to the vault, it is reconciled like any other and the field stays null.
+Two folders are never reported: `synced`, which Claude Code reserves for skills it downloads from claude.ai, and anything starting with a dot. The `sync-aistack` skill leaves them out of what it sends, along with `.DS_Store` files. The `sync-aistack` folder itself is never listed under `backup`: setup wrote it from the server, so it needs no backing up. Instead the server compares it with the copy it ships, and when the machine's is missing or different the report carries `sync_skill_url`, which the agent downloads over it without asking. That is how the skill follows a server upgrade, and how a machine connected with `add_machine`, which never ran setup, gets it at all. If the user pushes their own copy of the skill, it is reconciled like any other and the field stays null.
 
-Two invariants:
+Three invariants:
 
 1. **Sync never deletes a local file.** Only `disable_skill` leads to local deletion, and only because the user asked.
-2. **Sync never flips `enabled` silently.** Adoption and re-enable are always questions, because both mean future pushes will overwrite that folder — something the user must agree to once.
+2. **Sync never flips `enabled` silently.** Adoption and re-enable are always questions, because both mean later revisions will overwrite that folder — something the user must agree to once.
+3. **Sync never applies a teammate's change.** A newer revision in a team is listed under `team_updates` and reaches a machine only when the user accepts it, each time (ADR-0015).
 
-Known, accepted quirks: a renamed local folder shows up as one missing skill plus one orphan (self-explaining, not destructive); a user who never says "sync aistack" never receives updates (background sync is roadmap item 4).
+Known, accepted quirks: a renamed local folder shows up as one missing skill plus one new one to back up (self-explaining, not destructive); a user who never says "sync aistack" never receives updates (background sync is roadmap item 4).
 
 ### Versions
 
@@ -205,13 +227,44 @@ Push is the trust boundary: everything below is enforced by the server on the up
 
 **Reserved names.** A skill may not be named `synced` (Claude Code's folder for claude.ai skills, which an install would replace) or after a Windows device (`con`, `nul`, `com1`, …): the name is a folder on every machine.
 
-**Environment files.** `.env` and `.env.*` are refused anywhere in a skill, because that is where secrets are kept and the vault is shared. The templates `.env.example`, `.env.sample`, and `.env.template` are kept.
+**Environment files.** `.env` and `.env.*` are refused anywhere in a skill, because that is where secrets are kept and a skill can be shared. The templates `.env.example`, `.env.sample`, and `.env.template` are kept.
 
 **`origin`.** Optional, at most 255 characters, no control characters, and an `http://` or `https://` URL: it will be rendered as a link.
 
-**Usernames.** A lowercase handle: letters and digits joined by single `.`, `-`, or `_`. A username is the `pushed_by` teammates read before a skill changes on their machine, so no two may differ only in case or alphabet. Machine names are seen only by their owner and may be any printable text.
+**Usernames.** A lowercase handle: letters and digits joined by single `.`, `-`, or `_`. A username is the `pushed_by` teammates read before a skill changes on their machine, so no two may differ only in case or alphabet. A username is also the name of the user's personal team, so usernames and team names share one namespace. Machine names are seen only by their owner and may be any printable text.
 
-### Schema (final for MVP)
+### Personal space, teams, and groups (ADR-0015)
+
+Three places hold skills, and they nest in that order of privacy.
+
+| Place | Who sees it | How a skill gets there | What installs from it |
+|---|---|---|---|
+| **My skills** (a personal team per user) | Only that user | Backed up from their computers by sync, without asking | Their machines, and nothing else |
+| **A team** (`everyone`, or one a user created) | Its members | A member shares one of their own skills | Nothing directly: a member takes a copy into My skills |
+| **A group** in a team (`backend`, `backend/aistack`) | Open: whoever sees the group above. Private: the people added to it | A member of it, or of a group above it, shares into it | As a team |
+
+**The four verbs.** *Back up* (`push_skill`): a local skill goes into My skills. *Share* (`share_skill`, or a tick on the dashboard): the team gets a copy of the latest revision. *Take* (`get_skill` with a team): the team's latest revision is copied into My skills and installed. *Remove*: from one computer (`disable_skill`), from My skills on every computer (dashboard), or from a team (its admin).
+
+**Updates from a team are offers.** A personal skill remembers its team source and that source's revision. When the team's copy is newer, sync lists it under `team_updates` and the user answers each time; yes is *take*. A user who unsubscribes from a group is not offered its updates.
+
+**What leaving a team changes:** what the user can list and take. Nothing they already took is touched, because their machines never ran the team's copy.
+
+**Roles.** Admin and member. An admin manages the invite code, members and their roles, groups and their members, and where a team's skill sits. A team keeps at least one admin.
+
+**Where the rule lives.** `services/visibility.py` decides who sees what; `services/team_service.py` is team administration. A team, group, or skill the caller may not see answers exactly like one that does not exist.
+
+### The dashboard (ADR-0017)
+
+The web application is the product; MCP connects an agent to the account. The dashboard is one page served at `/app`, signed into by the link `open_dashboard` returns, backed by JSON routes under `/api` that call the same services as the tools.
+
+| View | What a user does there |
+|---|---|
+| My skills | See every skill and which of their computers has it; turn it on or off per computer; share it with a team or group; take an offered update; remove it |
+| A team | Browse its skills by group, with who pushed each; take one; unsubscribe from a group |
+| Team admin | Invite code; members, roles, and sight of every group; create groups and nest them; make one private; add people; move or remove a skill |
+| Teams | Create a team; join one with a code; leave one |
+
+### Schema
 
 Portability: runs identically on SQLite and Postgres. Enums are `VARCHAR + CHECK` (SQLAlchemy `Enum(native_enum=False)`), JSON is SQLAlchemy `JSON` (JSONB variant on PG), timestamps are `DateTime(timezone=True)` (timestamptz on PG, ISO text on SQLite).
 
@@ -226,7 +279,8 @@ USER
                                                       -- is the fast path only: on Postgres READ
                                                       -- COMMITTED it lets two concurrent joins both
                                                       -- win. The update runs in a savepoint.
-                                                      -- Reserved: no MVP tool reads it
+                                                      -- Read at join: the server's admin is the
+                                                      -- admin of the server's team
   created_on    TIMESTAMPTZ  NOT NULL
 
 MACHINE
@@ -238,15 +292,59 @@ MACHINE
   created_on    TIMESTAMPTZ  NOT NULL
   UNIQUE (user_id, name)
 
+TEAM                                           -- ADR-0015
+  team_id       UUID PK
+  name          VARCHAR(64)  NOT NULL UNIQUE   -- a personal team carries its user's name
+  kind          ENUM(SERVER, PERSONAL, SHARED) NOT NULL  -- code asks the kind, never the name
+  created_by    UUID FK → USER NULL            -- null for the server's team
+  invite_hash   VARCHAR(64)  NULL UNIQUE       -- sha256 of the invite code; the join lookup
+  created_on    TIMESTAMPTZ  NOT NULL
+
+TEAM_MEMBER
+  team_member_id UUID PK
+  team_id       UUID FK → TEAM ON DELETE CASCADE NOT NULL
+  user_id       UUID FK → USER NOT NULL
+  role          ENUM(ADMIN, MEMBER) NOT NULL
+  sees_all_groups BOOLEAN    NOT NULL          -- reads every group, private ones included
+  created_on    TIMESTAMPTZ  NOT NULL
+  UNIQUE (team_id, user_id)
+
+TEAM_GROUP
+  group_id      UUID PK
+  team_id       UUID FK → TEAM ON DELETE CASCADE NOT NULL
+  path          VARCHAR(255) NOT NULL          -- 'backend/aistack': fixed at creation, so the
+                                               -- groups above are read from it; ≤ 8 deep
+  private       BOOLEAN      NOT NULL
+  created_on    TIMESTAMPTZ  NOT NULL
+  UNIQUE (team_id, path)
+
+GROUP_MEMBER
+  group_member_id UUID PK
+  group_id      UUID FK → TEAM_GROUP ON DELETE CASCADE NOT NULL
+  user_id       UUID FK → USER NOT NULL
+  created_on    TIMESTAMPTZ  NOT NULL
+  UNIQUE (group_id, user_id)
+
+GROUP_UNSUBSCRIBED                             -- no update offers from this group or below
+  group_unsubscribed_id UUID PK
+  group_id      UUID FK → TEAM_GROUP ON DELETE CASCADE NOT NULL
+  user_id       UUID FK → USER NOT NULL
+  UNIQUE (group_id, user_id)
+
 SKILL
   skill_id      UUID PK
-  name          VARCHAR(64)  NOT NULL UNIQUE   -- ^[a-z0-9]+(-[a-z0-9]+)*$
+  team_id       UUID FK → TEAM NOT NULL        -- the team whose vault holds it
+  group_id      UUID FK → TEAM_GROUP ON DELETE SET NULL NULL   -- null = whole team
+  source_skill_id UUID FK → SKILL ON DELETE SET NULL NULL      -- personal skills only: the
+  source_revision INTEGER    NULL              -- team skill taken from or shared to, and its
+                                               -- revision then. Newer there = an update on offer
+  archived      BOOLEAN      NOT NULL          -- removed from My skills; kept so sync does
+                                               -- not back the folder up again
+  name          VARCHAR(64)  NOT NULL          -- ^[a-z0-9]+(-[a-z0-9]+)*$; UNIQUE (team_id, name)
   description   VARCHAR(1024) NOT NULL         -- denormalized from latest revision on push;
                                                -- required: it's the auto-trigger signal
   origin        VARCHAR(255) NULL              -- source URL when known. First-push-only: later
-                                               -- pushes are compared against it, never overwrite
-                                               -- it. Differing origins, or a NULL on either
-                                               -- side, trigger the name-collision warning
+                                               -- pushes never overwrite it. A record only
   created_on    TIMESTAMPTZ  NOT NULL
   pushed_by     FK → USER    NOT NULL          -- who first pushed it into the vault.
                                                -- NEVER rendered as "author"/"created by":
@@ -296,19 +394,21 @@ Behavior summary: install/adopt/restore/re-enable = `get_skill` (upsert MACHINE_
 Trusted team, honestly stated:
 
 - A skill body is instructions to an agent, so a hostile revision needs no script — the real vector is text, not the executable bit. Mitigation is visibility at the moment of risk: sync reports what it is about to change and who pushed it, before the agent writes anything.
-- Revisions auto-update to latest without confirmation. This is accepted risk for a trusted team, recorded here so it is a decision and not an accident.
+- A machine updates to the latest revision of its user's own skill without confirmation. Only that user's pushes, and team revisions they chose to take, create such a revision. A teammate's change never arrives unasked: it is an offer that names who pushed it (ADR-0015).
+- Any member may share over a team's skill. The control is visibility, not restriction: the revision carries their name, and nobody receives it without accepting it.
 - Machine tokens: sha256-hashed at rest, revocable by row deletion, never logged.
-- The invite code is a static long-lived shared secret: rotate by changing the env var and restarting; share it over something better than a group chat. Expiry/single-use codes are post-MVP.
+- The server's invite code is a static long-lived shared secret: rotate by changing the env var and restarting; share it over something better than a group chat. A team's invite code is stored hashed and replaced whenever an admin asks for a new one. Expiry and single-use codes are not built.
+- The dashboard has no passwords. A sign-in link is a credential for five minutes, the session cookie for eight hours, and both die with the process because the signing key is in memory.
 
-Deferred deliberately: audit trail, signing, approval workflows, per-skill push permissions (all dashboard-era).
+Deferred deliberately: audit trail, signing, approval workflows, per-skill push permissions.
 
-### Explicitly not in the MVP
+### Explicitly not built
 
-No dashboard, no FastAPI, no CLI/daemon, no archive, no `delete_skill` (see §4 Tools), no version pinning (always latest), no project-scoped sync (global directory only), no rules/hooks/agents/MCP gateway/profiles, no workspaces beyond the single implicit one, no OAuth/passwords, no binary files, no admin tools (the `is_admin` column ships; its powers are documented DB operations until the dashboard), no harness besides Claude Code. Anything needing many typed parameters waits for the dashboard — chat must stay low-friction.
+No FastAPI, no CLI/daemon, no version pinning (always latest), no deleting a single revision (see §4 Tools), no project-scoped sync (global directory only), no rules/hooks/agents/MCP gateway/profiles, no OAuth/passwords, no binary files, no server-admin tools or pages (the `is_admin` column ships; its powers are documented scripts), no harness besides Claude Code. From ADR-0015: no permission matrix of roles × groups, no automatic updates from a team, no merging when both copies changed, no one machine on two servers. Anything needing many typed parameters is a dashboard action, not a tool — chat must stay low-friction.
 
 ### Proof of the MVP
 
-Push `wizard` and `domain-modeling` (both multi-file: a script, reference files) from machine A. Install on machine B via chat. Verify:
+The acceptance test the first release was held to, before teams. Push `wizard` and `domain-modeling` (both multi-file: a script, reference files) from machine A. Install on machine B via chat. Verify:
 
 1. `diff -r` between source and installed copy is clean;
 2. the executable bit round-trips through the vault (stored, re-applied on materialization). It is deliberately not part of the content hash (§4 Versions), and no skill in the current corpus is executable — so test it with a deliberately `chmod +x`'d file rather than assuming one exists;
@@ -318,13 +418,13 @@ Push `wizard` and `domain-modeling` (both multi-file: a script, reference files)
 ## 5. Post-MVP roadmap (decided order of interest, not committed)
 
 1. **Second harness** — Codex first. Moved to the front on 2026-10-13: Claude Code now syncs a user's claude.ai skills on its own and has git-backed plugin marketplaces (§7), so one vault feeding several harnesses is where AIStack is not duplicated. The Agent Skills format is shared, so the adapter is mostly a target directory.
-2. **Dashboard** — FastAPI joins the stack; login sessions on top of tokens; admin management (grant admin, revoke machines, recover locked-out users — the `is_admin` column already exists); per-machine enable toggles; version pinning; archive skills and `delete_skill` (preview-confirm, per-revision, tombstones so sync can say "deleted on purpose"); GitHub-link skill import; display names rendered from skill names.
+2. **Dashboard** — built 2026-10-14 without FastAPI (ADR-0017). What remains of the original plan: server admin management (grant admin, revoke machines, recover locked-out users — the `is_admin` column already exists); version pinning; deleting a single revision (preview-confirm, tombstones so sync can say "deleted on purpose"); GitHub-link skill import; display names rendered from skill names.
 3. **Rules** — the second resource type. Canonical rules projected into `CLAUDE.md` / `AGENTS.md` / `.cursor/rules/` by adapters.
 4. **Background sync** — opportunistic (check on any MCP call) vs daemon; compare cost after the MVP.
 5. **Hooks, agents** — same adapter approach; harness support varies.
 6. **MCP gateway** — one AIStack MCP endpoint proxying enabled remote MCPs with central auth/policy.
 7. **Profiles** — named bundles ("Backend Developer") assigning many resources at once.
-8. **Teams and groups** — a user in many teams, each with its own vault and invite code, and open or private groups inside a team (ADR-0015, designed 2026-10-14). Project-level precedence stays with item 9.
+8. **Teams and groups** — built 2026-10-14 (ADR-0015): a personal space per user, teams to share into, nested groups. Project-level precedence stays with item 9.
 9. **Project-scoped sync** — per-project desired state once projects become a real concept.
 10. **Secrets** — never sync plaintext credentials; store references (1Password, Vault, cloud secret stores).
 
@@ -351,9 +451,11 @@ Deliberately pre-structured for scale (owner's choice over a flat MVP layout). R
 
 ```text
 src/aistack/
-  api/                     # FastAPI — EMPTY until the dashboard (post-MVP); do not fill early
-  bundled/                 # files served as they are: the setup instructions and the
-                           # sync-aistack skill a new machine needs before it has a vault
+  api/                     # the dashboard's routes: sign-in, the page, and the JSON API
+                           # (ADR-0017). Starlette routes, as thin as the tools
+  bundled/                 # files served as they are: the setup instructions, the
+                           # sync-aistack skill a new machine needs before it can ask the
+                           # server for anything, and the dashboard page
   bootstrap/               # app assembly & entrypoint
     __main__.py            #   python -m aistack.bootstrap
     configuration/
@@ -362,15 +464,16 @@ src/aistack/
   commons/
     exceptions/            # shared exception types
   db/
-    engine + session setup
-    models/                # SQLAlchemy models for the six tables
+    engine + session setup; schema.py applies the migrations (ADR-0016)
+    migrations/versions/   # numbered Alembic migrations, shipped in the package
+    models/                # SQLAlchemy models for the eleven tables
   mcp/                     # FastMCP server + auth
-    tools/                 # the seven MCP tools (onboarding, skills, sync)
+    tools/                 # the thirteen MCP tools (onboarding, skills, sync, teams)
     routes/                # plain HTTP beside MCP: the two transfer routes (ADR-0010),
                            # setup, and health; as thin as the tools
   services/                # business logic: push validation, sync reconciliation,
-                           # token and ticket issuing — tools and routes stay thin,
-                           # logic lives here
+                           # visibility, team administration, token and ticket issuing —
+                           # tools and routes stay thin, logic lives here
 tests/
 ```
 

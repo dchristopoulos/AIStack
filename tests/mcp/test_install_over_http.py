@@ -9,29 +9,14 @@ from sqlalchemy import select
 
 from aistack.db.models.machine_skill import MachineSkill
 from tests.archives import skill_archive, skill_document
-from tests.conftest import INVITE_CODE
+from tests.mcp.conftest import call as _call
 from tests.mcp.conftest import client_for
+from tests.mcp.conftest import join as _join
+from tests.mcp.conftest import push as _push
+from tests.mcp.conftest import second_machine, share_with_everyone
+from tests.teams import SERVER_TEAM
 
 pytestmark = pytest.mark.anyio
-
-
-async def _join(server_url, username="dimitris", machine_name="macbook") -> str:
-    async with client_for(server_url, INVITE_CODE) as client:
-        joined = await client.call_tool("join", {"username": username,
-                                                 "machine_name": machine_name, "os": "MACOS"})
-    return joined.structured_content["token"]
-
-
-async def _call(server_url, token, tool, **arguments) -> dict:
-    async with client_for(server_url, token) as client:
-        return (await client.call_tool(tool, arguments)).structured_content
-
-
-async def _push(server_url, token, name="wizard", **archive) -> dict:
-    issued = await _call(server_url, token, "push_skill", name=name)
-    async with httpx.AsyncClient() as http:
-        return (await http.put(issued["upload_url"],
-                               content=skill_archive(name, **archive))).json()
 
 
 async def _download(url: str) -> httpx.Response:
@@ -45,19 +30,26 @@ def _extracted(archive: bytes) -> dict[str, tuple[bytes, bool]]:
                 for member in tar}
 
 
-async def test_a_skill_pushed_from_one_machine_installs_on_another(server_url, session_factory):
-    """The product, end to end: push on A, list and install on B, same bytes."""
+async def test_a_skill_shared_from_one_machine_installs_on_another(server_url, session_factory):
+    """The product, end to end: push and share on A, list and take on B, same bytes."""
     machine_a = await _join(server_url, "dimitris", "macbook")
     machine_b = await _join(server_url, "maria", "laptop")
     script = "#!/bin/sh\r\necho hi\r\n"
     pushed = await _push(server_url, machine_a, files={"scripts/run.sh": script},
                          executable=frozenset({"scripts/run.sh"}))
+    await share_with_everyone(server_url, machine_a)
 
     listing = await _call(server_url, machine_b, "list_skills")
-    assert listing == {"skills": [{"name": "wizard",
-                                   "description": "Walks a human through steps."}]}
+    assert listing == {"skills": [{
+        "name": "wizard",
+        "team": SERVER_TEAM,
+        "group": None,
+        "description": "Walks a human through steps.",
+        "revision": 1,
+        "pushed_by": "dimitris",
+    }]}
 
-    skill = await _call(server_url, machine_b, "get_skill", name="wizard")
+    skill = await _call(server_url, machine_b, "get_skill", name="wizard", team=SERVER_TEAM)
     assert skill["revision"] == 1
     assert skill["version"] is None
     assert skill["pushed_by"] == "dimitris"
@@ -165,8 +157,8 @@ async def test_remove_then_reinstall(server_url, session_factory):
 
 
 async def test_disabling_a_skill_never_enabled_here_is_refused(server_url):
-    pusher = await _join(server_url, "dimitris", "macbook")
-    other = await _join(server_url, "maria", "laptop")
+    pusher = await _join(server_url)
+    other = await second_machine(server_url, pusher)
     await _push(server_url, pusher)
 
     async with client_for(server_url, other) as client:

@@ -1,0 +1,187 @@
+"""What the dashboard shows one user, assembled in one place (ADR-0017).
+
+Everything here is read through `visibility` and `team_service`, so the page is sent exactly
+what its user may see and never has to hide anything itself.
+"""
+
+import uuid
+from typing import Any
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from aistack.commons.exceptions import NotFound, SignedOut
+from aistack.commons.text import loggable
+from aistack.db.models.machine import Machine
+from aistack.db.models.machine_skill import MachineSkill
+from aistack.db.models.skill import Skill
+from aistack.db.models.skill_file import SkillFile
+from aistack.db.models.skill_version import SkillVersion
+from aistack.db.models.team import Team, TeamMember
+from aistack.db.models.timestamps import as_utc
+from aistack.db.models.user import User
+from aistack.services import skill_service, team_service, visibility
+
+
+def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
+    """The user, their computers, their own skills, and each of their teams."""
+    team_skills = _team_skills(session, user_id)
+    by_id = {skill["id"]: skill for skills in team_skills.values() for skill in skills}
+    mine = _my_skills(session, user_id, by_id)
+    taken = {skill["source_id"] for skill in mine if skill["source_id"] is not None}
+
+    teams = []
+    for team in team_service.list_teams(session, user_id):
+        me = session.scalar(
+            select(TeamMember)
+            .join(Team, Team.team_id == TeamMember.team_id)
+            .where(Team.name == team.name, TeamMember.user_id == user_id))
+        teams.append({
+            "name": team.name,
+            "kind": team.kind.value,
+            "role": team.role.value,
+            "sees_all_groups": me.sees_all_groups,
+            "members": [
+                {"username": member.username, "role": member.role.value,
+                 "sees_all_groups": member.sees_all_groups, "groups": list(member.groups)}
+                for member in team_service.members(session, user_id, team.name)
+            ],
+            "groups": [
+                {"path": group.path, "private": group.private, "member": group.member,
+                 "subscribed": group.subscribed}
+                for group in team_service.groups(session, user_id, team.name)
+            ],
+            "skills": [
+                {key: value for key, value in skill.items() if key != "id"}
+                | {"in_my_skills": skill["id"] in taken}
+                for skill in team_skills.get(team.name, [])
+            ],
+        })
+
+    return {
+        "user": {"username": session.scalar(
+            select(User.username).where(User.user_id == user_id))},
+        "machines": [
+            {"id": str(machine_id), "name": name, "os": os.value}
+            for machine_id, name, os in session.execute(
+                select(Machine.machine_id, Machine.name, Machine.os)
+                .where(Machine.user_id == user_id).order_by(Machine.created_on)).all()
+        ],
+        "skills": [{key: value for key, value in skill.items() if key != "source_id"}
+                   for skill in mine],
+        "teams": teams,
+    }
+
+
+def require_a_machine(session: Session, user_id: uuid.UUID) -> None:
+    """A session is only as good as its user's connection to the server.
+
+    An operator takes someone off a server by deleting their machines (docs/OPERATING.md).
+    The session cookie would otherwise keep working until it expired.
+    """
+    if session.scalar(select(Machine.machine_id).where(Machine.user_id == user_id)
+                      .limit(1)) is None:
+        raise SignedOut("This account no longer has a computer connected to this server, so "
+                        "the dashboard is closed to it.")
+
+
+def set_on_machine(session: Session, user_id: uuid.UUID, name: str, machine_id: str,
+                   enabled: bool) -> None:
+    """Switch one of the user's own skills on or off for one of their computers.
+
+    The decision is recorded; the files move the next time that computer syncs.
+    """
+    skill = visibility.required_my_skill(session, user_id, name)
+    try:
+        machine = session.get(Machine, uuid.UUID(machine_id))
+    except (ValueError, TypeError, AttributeError):
+        machine = None
+    # Somebody else's computer is answered like one that does not exist.
+    if machine is None or machine.user_id != user_id:
+        raise NotFound(f"You have no computer '{loggable(str(machine_id))}'.")
+    skill_service.set_enabled(session, machine.machine_id, skill.skill_id, enabled=bool(enabled))
+
+
+def _newest() -> Any:
+    """Each skill's latest revision, with who pushed it and when."""
+    latest = (
+        select(SkillVersion.skill_id, func.max(SkillVersion.revision).label("revision"))
+        .group_by(SkillVersion.skill_id).subquery()
+    )
+    files = (
+        select(SkillFile.skill_version_id, func.count().label("files"))
+        .group_by(SkillFile.skill_version_id).subquery()
+    )
+    return (
+        select(SkillVersion.skill_id, SkillVersion.revision, User.username.label("pushed_by"),
+               SkillVersion.created_on, files.c.files)
+        .join(latest, (latest.c.skill_id == SkillVersion.skill_id)
+              & (latest.c.revision == SkillVersion.revision))
+        .join(User, User.user_id == SkillVersion.pushed_by)
+        .join(files, files.c.skill_version_id == SkillVersion.skill_version_id)
+        .subquery()
+    )
+
+
+def _team_skills(session: Session, user_id: uuid.UUID) -> dict[str, list[dict[str, Any]]]:
+    """Every team skill the user may see, by team, each with its latest revision."""
+    visible = visibility.team_skills(session, user_id).subquery()
+    newest = _newest()
+    rows = session.execute(
+        select(visible.c.skill_id, visible.c.name, visible.c.description, visible.c.team,
+               visible.c.group, newest.c.revision, newest.c.pushed_by, newest.c.created_on)
+        .join(newest, newest.c.skill_id == visible.c.skill_id)
+        .order_by(visible.c.team, visible.c.group, visible.c.name)
+    ).all()
+    by_team: dict[str, list[dict[str, Any]]] = {}
+    for skill_id, name, description, team, group, revision, pushed_by, pushed_on in rows:
+        by_team.setdefault(team, []).append({
+            "id": skill_id, "name": name, "description": description, "team": team,
+            "group": group, "revision": revision, "pushed_by": pushed_by,
+            "updated_on": as_utc(pushed_on).isoformat(),
+        })
+    return by_team
+
+
+def _my_skills(session: Session, user_id: uuid.UUID,
+               team_skills: dict[uuid.UUID, dict[str, Any]]) -> list[dict[str, Any]]:
+    mine = visibility.my_skills(user_id).where(Skill.archived.is_(False)).subquery()
+    newest = _newest()
+    rows = session.execute(
+        select(mine.c.skill_id, mine.c.name, mine.c.description, mine.c.source_skill_id,
+               mine.c.source_revision, newest.c.revision, newest.c.pushed_by,
+               newest.c.created_on, newest.c.files)
+        .join(newest, newest.c.skill_id == mine.c.skill_id)
+        .order_by(mine.c.name)
+    ).all()
+    enabled: dict[uuid.UUID, list[str]] = {}
+    for skill_id, machine_id in session.execute(
+            select(MachineSkill.skill_id, MachineSkill.machine_id)
+            .join(Machine, Machine.machine_id == MachineSkill.machine_id)
+            .where(Machine.user_id == user_id, MachineSkill.enabled.is_(True))).all():
+        enabled.setdefault(skill_id, []).append(str(machine_id))
+
+    skills = []
+    for (skill_id, name, description, source_id, source_revision, revision, pushed_by,
+         pushed_on, files) in rows:
+        # A source the user can no longer see is no source: the copy is simply theirs.
+        source = team_skills.get(source_id)
+        skills.append({
+            "name": name,
+            "description": description,
+            "revision": revision,
+            "pushed_by": pushed_by,
+            "updated_on": as_utc(pushed_on).isoformat(),
+            "files": files,
+            "machines": sorted(enabled.get(skill_id, [])),
+            "source_id": None if source is None else source_id,
+            "source": None if source is None else {
+                "team": source["team"],
+                "group": source["group"],
+                "revision": source_revision,
+                "latest_revision": source["revision"],
+                "latest_pushed_by": source["pushed_by"],
+                "update_available": source["revision"] > source_revision,
+            },
+        })
+    return skills

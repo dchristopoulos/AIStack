@@ -37,11 +37,13 @@ class PushSkillResult(TypedDict):
 
 
 @mcp.tool(
-    description="""Start pushing a local skill to the vault. Returns a URL to upload it to.
+    description="""Back up a local skill to the user's own skills. Returns a URL to upload to.
 
-    Use when the user wants to share or back up a skill ("push my wizard skill to aistack").
-    Pushing a name the vault already has adds a new revision; nothing is overwritten. The
-    skill's files are never passed to this tool. Upload them from a shell:
+    "My skills" is private: it mirrors what is on the user's computers, and nobody else sees
+    it. Use this for a skill sync listed under backup, and after the user edits one of their
+    skills. To put a skill in front of other people, call share_skill afterwards. Pushing a
+    name they already have adds a revision; nothing is overwritten. The files are never
+    passed to this tool. Upload them from a shell:
 
         COPYFILE_DISABLE=1 tar -czf <tmp>/skill.tgz --exclude .git -C <skill folder> .
         curl -sS -X PUT --data-binary @<tmp>/skill.tgz "<upload_url>"
@@ -50,24 +52,21 @@ class PushSkillResult(TypedDict):
     .tgz afterwards.
 
     curl prints the result as JSON. An "error" field means nothing was stored and says what
-    to fix. Otherwise tell the user the "revision", and:
-      - "unchanged" true: the vault already held exactly these files, so no revision was
-        added. Only content counts: a chmod alone is not a change.
-      - "possibly_unrelated" true: someone else ("previous_pushed_by") pushed the previous
-        revision and the two are not known to share a source. Tell the user plainly that
-        this may be a different skill that happens to share the name.
+    to fix. Otherwise:
+      - "unchanged" true: these exact files were already stored, so no revision was added.
+        Only content counts: a chmod alone is not a change.
+      - otherwise it is now revision "revision" of the user's own skill.
     The skill is now enabled for this machine, so sync will keep it current.
 
     Args:
         name: The skill's name, exactly as in the 'name' field of its SKILL.md frontmatter.
-        origin: Where the skill came from, when you know it (a repository or page URL).
-               Omit it for a skill the user wrote themselves.
+        origin: The http(s) URL the skill came from, when you know it. Omit it for a skill
+               the user wrote themselves.
 
     Returns:
         PushSkillResult containing:
             - name: the skill name the upload URL is bound to
-            - upload_url: where to PUT the archive. It is a credential: use it once, and do
-                         not repeat it to the user.
+            - upload_url: where to PUT the archive. A credential: do not show the user.
             - expires_in_seconds: how long the URL works
     """)
 @handle_mcp_errors
@@ -95,9 +94,74 @@ def push_skill(name: str, origin: str | None = None) -> PushSkillResult:
     )
 
 
+class ShareSkillResult(TypedDict):
+    name: str
+    team: str
+    group: str | None
+    revision: int
+    created: bool
+    unchanged: bool
+    previous_pushed_by: str | None
+    possibly_unrelated: bool
+
+
+@mcp.tool(
+    description="""Share one of the user's own skills with a team they are in.
+
+    Use when the user wants teammates to have a skill ("share wizard with backend"). The
+    team gets its own copy of the skill's latest revision, and its members see who shared
+    it. Nothing is uploaded: the skill must already be in the user's own skills, so call
+    push_skill first if sync lists it under backup or the user just edited it.
+
+    Sharing a name the team already has adds a revision there. Any member may do that.
+    Tell the user the team and revision, and:
+      - "unchanged" true: the team already had exactly this.
+      - "possibly_unrelated" true: the team already had a skill of this name, last pushed
+        by "previous_pushed_by", that the user's copy was never taken from. Say plainly
+        that this may have replaced a different skill that shares the name.
+
+    Args:
+        name: The skill's name, one of the user's own.
+        team: A team the user is in, as list_teams names it.
+        group: A group inside that team the user belongs to. Omit for the whole team.
+
+    Returns:
+        ShareSkillResult containing:
+            - name, team, group: where the skill now is
+            - revision: its revision number in that team
+            - created: true when the team did not have this skill before
+            - unchanged, previous_pushed_by, possibly_unrelated: as described above
+    """)
+@handle_mcp_errors
+def share_skill(name: str, team: str, group: str | None = None) -> ShareSkillResult:
+    started_at = perf_counter()
+    caller = current_machine()
+
+    with get_session_factory().begin() as session:
+        shared = skill_service.share(session, caller.user_id, name, team, group)
+
+    logger.info(f"Skill shared. Skill: '{shared.name}'. Revision: '{shared.revision}'. "
+                f"User: '{caller.user_id}'. "
+                f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
+    return ShareSkillResult(
+        name=shared.name,
+        team=shared.team,
+        group=shared.group,
+        revision=shared.revision,
+        created=shared.created,
+        unchanged=shared.unchanged,
+        previous_pushed_by=shared.previous_pushed_by,
+        possibly_unrelated=shared.possibly_unrelated,
+    )
+
+
 class SkillListing(TypedDict):
     name: str
+    team: str | None
+    group: str | None
     description: str
+    revision: int
+    pushed_by: str
 
 
 class ListSkillsResult(TypedDict):
@@ -106,30 +170,39 @@ class ListSkillsResult(TypedDict):
 
 @mcp.tool(
     meta={"anthropic/maxResultSizeChars": _LISTING_RESULT_MAX_CHARS},
-    description="""List every skill in the team's vault, with its description.
+    description="""List the user's own skills and every skill their teams have shared.
 
-    Use when the user asks what is available ("what skills does the team have?") or is
-    looking for a skill to do something: this listing is the search. It is the only way to
-    discover skills; sync reports only on skills this machine already manages. To install
-    one, call get_skill with its name.
+    Use when the user asks what they have or what is available ("what skills does the team
+    have?"), or is looking for a skill to do something: this listing is the search. Answer
+    in two parts: their own skills (team is null), then each team's.
+
+    To install a team's skill on this machine, call get_skill with its name and team: it
+    is copied into the user's own skills and stays theirs. To give one of their own to a
+    team, call share_skill.
 
     Returns:
         ListSkillsResult containing:
-            - skills: one entry per skill, sorted by name, each with:
-                - name: the skill's name, used with get_skill and disable_skill
+            - skills: the user's own first, then by team and name, each with:
+                - name: the skill's name
+                - team: the team that shares it, or null for one of the user's own
+                - group: the group inside that team, or null
                 - description: what it does and when an agent should use it
+                - revision, pushed_by: its latest revision there and who pushed it
     """)
 @handle_mcp_errors
 def list_skills() -> ListSkillsResult:
     started_at = perf_counter()
 
     with get_session_factory().begin() as session:
-        skills = skill_service.list_skills(session)
+        skills = skill_service.list_skills(session, current_machine().user_id)
 
     logger.info(f"Skills listed. Count: '{len(skills)}'. "
                 f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
     return ListSkillsResult(skills=[
-        SkillListing(name=skill.name, description=skill.description) for skill in skills
+        SkillListing(name=skill.name, team=skill.team, group=skill.group,
+                     description=skill.description, revision=skill.revision,
+                     pushed_by=skill.pushed_by)
+        for skill in skills
     ])
 
 
@@ -152,14 +225,16 @@ class GetSkillResult(TypedDict):
 
 
 @mcp.tool(
-    description="""Enable a vault skill on this machine and get a URL to download its files.
+    description="""Enable a skill on this machine and get a URL to download its files.
 
-    Use to install a skill, update it, restore a locally edited copy, or re-enable one that
-    was disabled: each means "this machine should have the latest revision". It replaces the
-    local folder, so if sync reported local edits, the user must have agreed to lose them.
+    Use to install a skill, update it, restore an edited copy, or re-enable a disabled one:
+    each means "this machine should have the latest revision". It replaces the local
+    folder, so if sync reported local edits, the user must have agreed to lose them. With
+    team, the team's latest revision is first copied into the user's own skills: that is
+    how a team's skill is installed, and how an update sync offered is accepted.
 
-    The files are not in this result. Install them with shell commands, where <skills> is
-    the global skills directory (~/.claude/skills) and <stage> is <skills>/.aistack-staging:
+    The files are not in this result. Install them from a shell, where <skills> is
+    ~/.claude/skills and <stage> is <skills>/.aistack-staging:
 
         curl -sS -o <stage>/<name>.tgz "<download_url>"
         mkdir <stage>/<name>, then: tar -xzf <stage>/<name>.tgz -C <stage>/<name>
@@ -167,34 +242,33 @@ class GetSkillResult(TypedDict):
         delete <stage>/<name>.tgz
 
     Create <stage> first and clear any leftover <stage>/<name>. If tar fails, the .tgz is a
-    JSON error message: read it. On Windows the commands are curl.exe and tar.exe. Staging
-    inside the skills directory makes the final move a rename, so a failed download never
-    leaves half a skill in place. The skill is usable as soon as the move completes.
-    tar restores file modes, so run no chmod. Leave <stage> itself in place; sync ignores
-    it. The listed hashes need no checking.
+    JSON error message: read it. On Windows the commands are curl.exe and tar.exe. The
+    final move is a rename, so a failed download never leaves half a skill in place, and
+    the skill is usable as soon as it completes. tar restores file modes, so run no chmod.
+    Leave <stage> itself in place; sync ignores it. The listed hashes need no checking.
 
     Args:
         name: The skill's name, as list_skills or sync reported it.
+        team: Omit for one of the user's own. Name a team to take its copy.
 
     Returns:
         GetSkillResult containing:
             - name, description: the skill
-            - revision: the vault's revision number for what you are installing
-            - version: the author's own version string, or null if they gave none
-            - pushed_by: who uploaded this revision (not necessarily who wrote it)
-            - content_hash: the vault's hash of this revision
-            - files: each file's path, sha256, and whether it is executable
-            - download_url: where to GET the archive. A credential: do not show the user.
+            - revision: the revision you are installing
+            - version: the author's version string, or null
+            - pushed_by: who uploaded this revision, not necessarily its author
+            - content_hash, files: its hash, and each file's path, sha256, executable bit
+            - download_url: where to GET the archive. A credential: keep it private.
             - expires_in_seconds: how long the URL works
     """)
 @handle_mcp_errors
-def get_skill(name: str) -> GetSkillResult:
+def get_skill(name: str, team: str | None = None) -> GetSkillResult:
     started_at = perf_counter()
     caller = current_machine()
     logger.debug(f"Getting skill. Skill: '{loggable(name)}'. Machine: '{caller.machine_id}'.")
 
     with get_session_factory().begin() as session:
-        skill = skill_service.get_skill(session, caller.machine_id, name)
+        skill = skill_service.get_skill(session, caller.machine_id, caller.user_id, name, team)
 
     ticket = get_ticket_signer().sign_download(DownloadTicket(
         machine_id=caller.machine_id,
@@ -232,7 +306,7 @@ class DisableSkillResult(TypedDict):
     records the decision; it does not touch the disk. After it succeeds, delete the skill's
     folder from the global skills directory (~/.claude/skills/<name>) to finish the removal.
 
-    The skill stays in the vault and on the user's other machines. To bring it back here,
+    The skill stays in their own skills and on their other machines. To bring it back here,
     call get_skill.
 
     Args:
@@ -250,7 +324,8 @@ def disable_skill(name: str) -> DisableSkillResult:
     logger.debug(f"Disabling skill. Skill: '{loggable(name)}'. Machine: '{caller.machine_id}'.")
 
     with get_session_factory().begin() as session:
-        disabled = skill_service.disable_skill(session, caller.machine_id, name)
+        disabled = skill_service.disable_skill(session, caller.machine_id, caller.user_id,
+                                               name)
 
     logger.info(f"Skill disabled. Skill: '{disabled}'. Machine: '{caller.machine_id}'. "
                 f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")

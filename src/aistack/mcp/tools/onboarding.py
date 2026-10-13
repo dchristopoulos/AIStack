@@ -28,7 +28,7 @@ class JoinResult(TypedDict):
     description="""Register a new user and their first machine on this AIStack server.
 
     Call this once per person, from the machine they are setting up, while connected with the
-    team invite code as the bearer token. It returns that machine's permanent token, which
+    server invite code as the bearer token. It returns that machine's permanent token, which
     goes into the MCP configuration and authenticates every later connection. Registering
     another computer for someone who has already joined is add_machine, not this.
 

@@ -12,6 +12,7 @@ from aistack.commons.exceptions import (
     Conflict,
     InvalidTicket,
     NotFound,
+    SignedOut,
     ValidationError,
 )
 from aistack.commons.text import bounded_failure
@@ -20,6 +21,7 @@ from aistack.commons.text import bounded_failure
 # sentence in the body, which is the same one a ToolError would have carried.
 _STATUS_CODES: dict[type[AIStackError], int] = {
     ValidationError: 400,
+    SignedOut: 401,
     InvalidTicket: 403,
     NotFound: 404,
     Conflict: 409,

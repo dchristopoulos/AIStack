@@ -18,7 +18,10 @@ mcp = FastMCP(
 
 # Register tools and routes before building the HTTP app.
 from aistack.mcp.routes import health, setup, transfer  # noqa: F401, E402
-from aistack.mcp.tools import onboarding, skills, sync  # noqa: F401, E402
+from aistack.mcp.tools import onboarding, skills, sync, teams  # noqa: F401, E402
+
+# The dashboard's routes, registered last: they import the login path from the tools.
+from aistack.api import dashboard  # noqa: F401, E402
 
 
 def http_server_config(path: str, log_level: str, **bind) -> uvicorn.Config:

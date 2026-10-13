@@ -45,22 +45,30 @@ class AskEntry(TypedDict):
     options: list[OptionEntry]
 
 
+class TeamUpdateEntry(TypedDict):
+    name: str
+    team: str
+    from_revision: int
+    to_revision: int
+    pushed_by: str
+
+
 class SyncResult(TypedDict):
     install: list[InstallEntry]
     update: list[UpdateEntry]
     ask: list[AskEntry]
-    orphans: list[str]
+    backup: list[str]
+    team_updates: list[TeamUpdateEntry]
     up_to_date: int
     sync_skill_url: str | None
 
 
 @mcp.tool(
-    description="""Compare this machine's skills with the vault and report what to do.
+    description="""Compare this machine's skills with the user's own skills on the server.
 
     Use when the user says "sync aistack" or starts work. It changes nothing. Send every
-    folder in the global skills directory (~/.claude/skills) with the sha256 of each file,
-    paths relative to the skill's folder. Skip 'synced', dot-folders, and .DS_Store. Get
-    digests from a shell, never by reading files:
+    folder in ~/.claude/skills with the sha256 of each file, paths relative to the skill's
+    folder. Skip 'synced', dot-folders, and .DS_Store. Get digests from a shell:
 
         cd ~/.claude/skills && find -L . -mindepth 2 -type f ! -name .DS_Store \\
           ! -path './.*' ! -path './synced/*' -exec shasum -a 256 {} +
@@ -68,20 +76,22 @@ class SyncResult(TypedDict):
 
     Then, per field of the result:
       - install (name, revision, pushed_by) and update (name, from_revision, to_revision,
-        pushed_by): call get_skill and install, without asking. Then tell the user what
-        updated, between which revisions, and who pushed it.
+        pushed_by): call get_skill and install, without asking. Then say what updated,
+        between which revisions, and who pushed it.
+      - backup: local skills not yet in the user's own skills. push_skill each, without
+        asking: that space is private and mirrors this computer. Nothing is shared.
       - ask (name, desired, local, local_revision, latest_revision, pushed_by, options):
-        put each to the user and act only on their answer. desired is enabled, disabled,
-        or undecided for this machine; local is current, stale (an older revision), or
-        unknown (edited). Offer exactly the listed options. If one has overwrites_local,
-        say local files will be replaced; if it has loses_local_edits, say their edits
-        will be lost. enable, restore = get_skill and install; push = push_skill; remove =
-        delete the local folder; skip = nothing.
-      - orphans: local skills the vault has never seen. Offer to push; never push unasked.
-      - up_to_date: how many enabled skills already match the vault.
-      - sync_skill_url: null, or where the server's own sync-aistack skill is, because the
-        local one is missing or differs. Without asking, curl -sS -o it to
-        ~/.claude/skills/sync-aistack/SKILL.md (create the folder first).
+        put each to the user and act only on their answer. desired: enabled, disabled, or
+        undecided here; local: current, stale, or unknown (edited). Offer exactly the
+        listed options. overwrites_local: say local files will be replaced;
+        loses_local_edits: say their edits will be lost. enable, restore = get_skill and
+        install; push = push_skill; remove = delete the folder; skip = nothing.
+      - team_updates (name, team, from_revision, to_revision, pushed_by): a team has a
+        newer version of a skill the user took from it. Ask each time. Yes = get_skill
+        with that team, and install.
+      - up_to_date: how many enabled skills match.
+      - sync_skill_url: null, or where the server's own sync-aistack skill is. Without
+        asking, curl -sS -o it to ~/.claude/skills/sync-aistack/SKILL.md.
 
     Args:
         local: {skill folder: {relative file path: sha256 hex}}. {} if there are none.
@@ -92,7 +102,7 @@ def sync(local: dict[str, dict[str, str]]) -> SyncResult:
     caller = current_machine()
 
     with get_session_factory().begin() as session:
-        report = sync_service.sync(session, caller.machine_id, local)
+        report = sync_service.sync(session, caller.machine_id, caller.user_id, local)
 
     sync_skill_url = None
     if report.refresh_sync_skill:
@@ -102,7 +112,8 @@ def sync(local: dict[str, dict[str, str]]) -> SyncResult:
     logger.info(
         f"Sync reported. Machine: '{caller.machine_id}'. Local skills: '{len(local)}'. "
         f"Install: '{len(report.install)}'. Update: '{len(report.update)}'. "
-        f"Ask: '{len(report.ask)}'. Orphans: '{len(report.orphans)}'. "
+        f"Ask: '{len(report.ask)}'. Backup: '{len(report.backup)}'. "
+        f"Team updates: '{len(report.team_updates)}'. "
         f"Up to date: '{report.up_to_date}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
@@ -127,7 +138,12 @@ def sync(local: dict[str, dict[str, str]]) -> SyncResult:
             )
             for question in report.ask
         ],
-        orphans=list(report.orphans),
+        backup=list(report.backup),
+        team_updates=[TeamUpdateEntry(name=entry.name, team=entry.team,
+                                      from_revision=entry.from_revision,
+                                      to_revision=entry.to_revision,
+                                      pushed_by=entry.pushed_by)
+                      for entry in report.team_updates],
         up_to_date=report.up_to_date,
         sync_skill_url=sync_skill_url,
     )

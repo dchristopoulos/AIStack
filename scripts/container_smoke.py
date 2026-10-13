@@ -20,6 +20,8 @@ from fastmcp.client import BearerAuth, Client, StreamableHttpTransport
 from aistack.services.skill_archive import build_archive
 
 SKILL_NAME = "container-proof"
+# The team every user is in.
+SERVER_TEAM = "everyone"
 SKILL_FILES = [
     ("SKILL.md", f"---\nname: {SKILL_NAME}\ndescription: Proves the container works.\n---\n"
                  "\n# Container proof\n".encode(), False),
@@ -34,7 +36,7 @@ async def call(base_url: str, bearer: str, tool: str, **arguments) -> dict:
 
 
 async def fresh(base_url: str, invite_code: str, state_file: pathlib.Path) -> None:
-    """Machine A joins and pushes; machine B joins, lists, and installs the same bytes."""
+    """A joins, pushes, and shares with everyone; B joins, takes it, and gets the same bytes."""
     # The setup page and the sync skill are package data: this is what proves the image
     # actually carries them.
     async with httpx.AsyncClient() as http:
@@ -53,10 +55,14 @@ async def fresh(base_url: str, invite_code: str, state_file: pathlib.Path) -> No
         pushed = (await http.put(issued["upload_url"], content=build_archive(SKILL_FILES))).json()
     assert pushed["revision"] == 1 and pushed["created"] is True, pushed
 
+    # A push is private: the other user sees it only once it is shared.
+    assert (await call(base_url, machine_b, "list_skills"))["skills"] == []
+    await call(base_url, machine_a, "share_skill", name=SKILL_NAME, team=SERVER_TEAM)
     listing = await call(base_url, machine_b, "list_skills")
-    assert [skill["name"] for skill in listing["skills"]] == [SKILL_NAME], listing
+    assert [(skill["name"], skill["team"]) for skill in listing["skills"]] == [
+        (SKILL_NAME, SERVER_TEAM)], listing
 
-    skill = await call(base_url, machine_b, "get_skill", name=SKILL_NAME)
+    skill = await call(base_url, machine_b, "get_skill", name=SKILL_NAME, team=SERVER_TEAM)
     async with httpx.AsyncClient() as http:
         archive = (await http.get(skill["download_url"])).content
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
@@ -67,11 +73,12 @@ async def fresh(base_url: str, invite_code: str, state_file: pathlib.Path) -> No
 
     state_file.write_text(json.dumps({"machine_b": machine_b,
                                       "content_hash": pushed["content_hash"]}))
-    print("fresh: joined two machines, pushed from one, installed byte-identical on the other")
+    print("fresh: joined two machines, pushed and shared from one, took it byte-identical on "
+          "the other")
 
 
 async def restarted(base_url: str, invite_code: str, state_file: pathlib.Path) -> None:
-    """After a restart: the token still works and the vault still holds the skill."""
+    """After a restart: the token still works and the skill B took is still its own."""
     state = json.loads(state_file.read_text())
 
     skill = await call(base_url, state["machine_b"], "get_skill", name=SKILL_NAME)

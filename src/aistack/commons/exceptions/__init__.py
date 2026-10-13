@@ -35,3 +35,7 @@ class NotFound(AIStackError):
 
 class InvalidTicket(AIStackError):
     """A transfer URL whose ticket is forged, expired, for another purpose, or orphaned."""
+
+
+class SignedOut(AIStackError):
+    """A dashboard request with no session, or one that has ended."""

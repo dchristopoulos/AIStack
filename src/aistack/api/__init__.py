@@ -1,5 +1,1 @@
-"""Reserved for the FastAPI dashboard, which arrives after the MVP.
-
-Intentionally empty: the layered layout is fixed up front so later code lands in
-its layer rather than moving there. See docs/DESIGN.md §8.
-"""
+"""The dashboard: its page route and the JSON routes behind it (ADR-0017)."""

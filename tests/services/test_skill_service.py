@@ -75,8 +75,6 @@ def test_the_first_push_stores_revision_one_with_its_files_and_provenance(sessio
     assert pushed.file_count == 3
     assert pushed.previous_pushed_by is None
     assert pushed.stored_origin == ORIGIN
-    assert pushed.possibly_unrelated is False
-
     with session_factory() as session:
         skill = session.scalar(select(Skill))
         version = session.scalar(select(SkillVersion))
@@ -103,7 +101,7 @@ def test_a_second_push_adds_revision_two_and_leaves_revision_one_untouched(sessi
     _push(session_factory, dimitris, skill_archive(files={"notes.md": "first\n"}))
     before = _files_of(session_factory, revision=1)
 
-    pushed = _push(session_factory, maria, skill_archive(
+    pushed = _push(session_factory, dimitris, skill_archive(
         files={"notes.md": "second\n"}, description="Now does more."))
 
     assert pushed.revision == 2
@@ -122,13 +120,13 @@ def test_a_second_push_adds_revision_two_and_leaves_revision_one_untouched(sessi
     # The skill row keeps who first pushed it and follows the latest description.
     assert skill.pushed_by == dimitris.user.user_id
     assert skill.description == "Now does more."
-    assert revisions == [(1, dimitris.user.user_id), (2, maria.user.user_id)]
+    assert revisions == [(1, dimitris.user.user_id), (2, dimitris.user.user_id)]
 
 
 def test_identical_content_creates_no_revision_and_says_so(session_factory, dimitris, maria):
     _push(session_factory, dimitris)
 
-    again = _push(session_factory, maria)
+    again = _push(session_factory, dimitris)
 
     assert again.unchanged is True
     assert again.created is False
@@ -202,7 +200,7 @@ def test_an_unchanged_push_still_enables_the_skill_for_a_new_machine(session_fac
 def test_the_origin_is_recorded_once_and_never_overwritten(session_factory, dimitris, maria):
     _push(session_factory, dimitris, origin=ORIGIN)
 
-    pushed = _push(session_factory, maria, skill_archive(files={"x.md": "x\n"}),
+    pushed = _push(session_factory, dimitris, skill_archive(files={"x.md": "x\n"}),
                    origin="https://example.com/some-other-wizard")
 
     assert pushed.stored_origin == ORIGIN
@@ -214,85 +212,23 @@ def test_a_later_push_does_not_fill_in_an_origin_the_first_one_left_out(session_
                                                                        dimitris, maria):
     _push(session_factory, dimitris, origin=None)
 
-    pushed = _push(session_factory, maria, skill_archive(files={"x.md": "x\n"}), origin=ORIGIN)
+    pushed = _push(session_factory, dimitris, skill_archive(files={"x.md": "x\n"}), origin=ORIGIN)
 
     assert pushed.stored_origin is None
 
 
-# --- the shared-name warning ----------------------------------------------------------------
+# --- whose skill a push lands in ------------------------------------------------------------
 
-def _second_push(session_factory, first_pusher, second_pusher, first_origin, second_origin):
-    _push(session_factory, first_pusher, origin=first_origin)
-    return _push(session_factory, second_pusher, skill_archive(files={"x.md": "x\n"}),
-                 origin=second_origin)
+def test_two_people_pushing_the_same_name_each_get_their_own_skill(session_factory, dimitris,
+                                                                  maria):
+    """A push lands in the pusher's own skills. Nobody's push can land on anybody else's."""
+    first = _push(session_factory, dimitris, skill_archive(files={"x.md": "dimitris\n"}))
+    second = _push(session_factory, maria, skill_archive(files={"x.md": "maria\n"}))
 
-
-def test_a_first_push_has_nothing_to_be_unrelated_to(session_factory, dimitris):
-    assert _push(session_factory, dimitris).possibly_unrelated is False
-
-
-def test_someone_else_pushing_a_name_with_no_origin_on_either_side_is_warned(session_factory,
-                                                                           dimitris, maria):
-    """The motivating case: two unrelated skills sharing a name, neither with a source.
-
-    "Unknown" must not be implemented as "two equal nulls, so no mismatch".
-    """
-    pushed = _second_push(session_factory, dimitris, maria, None, None)
-
-    assert pushed.created is False
-    assert pushed.previous_pushed_by == "dimitris"
-    assert pushed.possibly_unrelated is True
-
-
-@pytest.mark.parametrize(("first_origin", "second_origin"), [
-    (ORIGIN, "https://example.com/some-other-wizard"),
-    (ORIGIN, None),
-    (None, ORIGIN),
-])
-def test_someone_else_pushing_from_a_different_or_unknown_source_is_warned(
-        session_factory, dimitris, maria, first_origin, second_origin):
-    pushed = _second_push(session_factory, dimitris, maria, first_origin, second_origin)
-
-    assert pushed.possibly_unrelated is True
-
-
-def test_someone_else_pushing_from_the_same_source_is_not_warned(session_factory, dimitris,
-                                                               maria):
-    pushed = _second_push(session_factory, dimitris, maria, ORIGIN, ORIGIN)
-
-    assert pushed.possibly_unrelated is False
-
-
-@pytest.mark.parametrize("origin", [None, ORIGIN])
-def test_pushing_over_your_own_revision_is_never_warned(session_factory, dimitris, origin):
-    """The common case. A warning that fires here is one nobody reads when it matters."""
-    pushed = _second_push(session_factory, dimitris, dimitris, origin, None)
-
-    assert pushed.created is False
-    assert pushed.previous_pushed_by == "dimitris"
-    assert pushed.possibly_unrelated is False
-
-
-def test_the_warning_follows_the_previous_revision_not_the_first(session_factory, dimitris,
-                                                                maria):
-    """Maria took over the skill. Dimitris pushing next is pushing over her work, not his."""
-    _push(session_factory, dimitris)
-    _push(session_factory, maria, skill_archive(files={"x.md": "maria\n"}))
-
-    pushed = _push(session_factory, dimitris, skill_archive(files={"x.md": "dimitris\n"}))
-
-    assert pushed.previous_pushed_by == "maria"
-    assert pushed.possibly_unrelated is True
-
-
-def test_an_unchanged_upload_is_never_warned(session_factory, dimitris, maria):
-    """Identical files are the same skill, whoever sends them."""
-    _push(session_factory, dimitris)
-
-    again = _push(session_factory, maria)
-
-    assert again.unchanged is True
-    assert again.possibly_unrelated is False
+    assert (first.revision, first.created) == (1, True)
+    assert (second.revision, second.created, second.previous_pushed_by) == (1, True, None)
+    with session_factory() as session:
+        assert len(session.scalars(select(Skill)).all()) == 2
 
 
 def test_the_frontmatter_is_stored_parsed_and_skill_md_is_stored_verbatim(session_factory,

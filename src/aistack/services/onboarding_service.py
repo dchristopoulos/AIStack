@@ -12,6 +12,7 @@ from aistack.commons.exceptions import Conflict, ValidationError
 from aistack.commons.text import loggable
 from aistack.db.models.machine import MACHINE_NAME_MAX_LENGTH, Machine
 from aistack.db.models.operating_system import OperatingSystem
+from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.user import USERNAME_MAX_LENGTH, User
 from aistack.services.token_service import generate_machine_token, hash_token
 
@@ -40,6 +41,11 @@ def join(session: Session, username: str, machine_name: str, os: str) -> JoinedM
     session.add(user)
     try:
         session.flush()
+        # A personal team carries its user's name, so a username must also be free as a team
+        # name. Flushed together: either name being taken is the same rejection.
+        personal_team = Team(name=username, kind=TeamKind.PERSONAL, created_by=user.user_id)
+        session.add(personal_team)
+        session.flush()
     except IntegrityError as error:
         raise Conflict(
             f"Username '{username}' is already taken. Pick a different one, or, if "
@@ -58,6 +64,7 @@ def join(session: Session, username: str, machine_name: str, os: str) -> JoinedM
     session.flush()
 
     _claim_admin(session, user)
+    _join_teams(session, user, personal_team)
 
     logger.debug(
         f"Join persisted. Username: '{loggable(username)}'. "
@@ -106,6 +113,23 @@ def add_machine(session: Session, user_id: uuid.UUID, machine_name: str, os: str
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return AddedMachine(machine=machine, token=token)
+
+
+def _join_teams(session: Session, user: User, personal_team: Team) -> None:
+    """Put a new user in their own team and in the server's (ADR-0015).
+
+    The server's team is what the server's invite code admits to: everyone who joined this
+    server shares it. The server's admin is that team's admin.
+    """
+    session.refresh(user, ["is_admin"])
+    server_team_id = session.scalars(
+        select(Team.team_id).where(Team.kind == TeamKind.SERVER)).one()
+    session.add_all([
+        TeamMember(team_id=personal_team.team_id, user_id=user.user_id, role=TeamRole.ADMIN),
+        TeamMember(team_id=server_team_id, user_id=user.user_id,
+                   role=TeamRole.ADMIN if user.is_admin else TeamRole.MEMBER),
+    ])
+    session.flush()
 
 
 def _claim_admin(session: Session, user: User) -> None:

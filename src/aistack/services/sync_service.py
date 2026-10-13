@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from time import perf_counter
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from aistack.bundled import SYNC_SKILL_NAME, sync_skill_document
@@ -14,6 +14,7 @@ from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.user import User
+from aistack.services import visibility
 from aistack.services.content_hash import canonical_content_hash, normalized_path
 from aistack.services.reconciliation import Desired, Observed, Option, Step, reconcile
 from aistack.services.skill_archive import is_filesystem_noise
@@ -63,14 +64,30 @@ class Question:
 
 
 @dataclass(frozen=True)
+class TeamUpdate:
+    """A team holds a newer revision of a skill this machine took from it or shared to it.
+
+    An offer, never applied unasked: the user decides each time (ADR-0015).
+    """
+
+    name: str
+    team: str
+    from_revision: int
+    to_revision: int
+    pushed_by: str
+
+
+@dataclass(frozen=True)
 class SyncReport:
     install: tuple[Install, ...]
     update: tuple[Update, ...]
     ask: tuple[Question, ...]
-    # On disk and not in the vault at all. Reported, offered for push, never pushed unasked:
-    # a fresh machine may hold dozens of third-party skills, and importing them would record
-    # this user as the pusher of things they only downloaded.
-    orphans: tuple[str, ...]
+    # On disk and not yet in the user's own skills. The agent backs each one up without
+    # asking: "My skills" is private and mirrors the computer, so nothing is shared and
+    # nobody else sees the user as the pusher of something they only downloaded. Sharing is
+    # a separate, deliberate step.
+    backup: tuple[str, ...]
+    team_updates: tuple[TeamUpdate, ...]
     # Enabled skills whose local copy already matches the latest revision.
     up_to_date: int
     # The sync skill on this machine is missing or is not the one this server ships. Setup
@@ -85,9 +102,12 @@ class _Revision:
     pushed_by: str
 
 
-def sync(session: Session, machine_id: uuid.UUID,
+def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
          local: Mapping[str, Mapping[str, str]]) -> SyncReport:
-    """Compare what this machine has with what it should have, and say what to do.
+    """Compare what this machine has with what its user's own skills say it should have.
+
+    A machine installs only from its user's personal team, so teams never enter the
+    comparison. They appear once, as updates on offer.
 
     Read-only. Sync never changes desired state and never returns file content: every action
     it reports is carried out by a later get_skill, push_skill, or disable_skill call.
@@ -95,7 +115,7 @@ def sync(session: Session, machine_id: uuid.UUID,
     started_at = perf_counter()
     local_hashes = _local_hashes(local)
     decisions = _decisions(session, machine_id)
-    revisions = _revisions(session, set(local_hashes) | set(decisions))
+    revisions = _revisions(session, user_id, set(local_hashes) | set(decisions))
 
     install: list[Install] = []
     update: list[Update] = []
@@ -120,12 +140,14 @@ def sync(session: Session, machine_id: uuid.UUID,
         elif desired is Desired.ENABLED and observed is Observed.CURRENT:
             up_to_date += 1
 
-    # Setup wrote the sync skill from this server, so it is on every machine and in no fresh
-    # vault. Once someone pushes it, it is in `revisions` and reconciled like any other.
-    orphans = tuple(sorted(name for name in local_hashes
-                           if name not in revisions and name != SYNC_SKILL_NAME))
+    # Setup wrote the sync skill from this server, so it is on every machine and needs no
+    # backing up. Once the user pushes their own, it is in `revisions` like any other.
+    backup = tuple(sorted(name for name in local_hashes
+                          if name not in revisions and name != SYNC_SKILL_NAME))
+    team_updates = _team_updates(session, user_id,
+                                 {name for name, enabled in decisions.items() if enabled})
 
-    # A vault that holds the sync skill manages it like any other; otherwise the server's own
+    # A user who keeps their own sync skill manages it like any other; otherwise the server's
     # copy is the reference.
     refresh_sync_skill = (SYNC_SKILL_NAME not in revisions
                           and local_hashes.get(SYNC_SKILL_NAME) != _bundled_sync_skill_hash())
@@ -133,11 +155,12 @@ def sync(session: Session, machine_id: uuid.UUID,
     logger.debug(
         f"Sync reconciled. Machine: '{machine_id}'. Local: '{len(local_hashes)}'. "
         f"Install: '{len(install)}'. Update: '{len(update)}'. Ask: '{len(ask)}'. "
-        f"Orphans: '{len(orphans)}'. Current: '{up_to_date}'. "
+        f"Backup: '{len(backup)}'. Team updates: '{len(team_updates)}'. "
+        f"Current: '{up_to_date}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return SyncReport(install=tuple(install), update=tuple(update), ask=tuple(ask),
-                      orphans=orphans, up_to_date=up_to_date,
+                      backup=backup, team_updates=team_updates, up_to_date=up_to_date,
                       refresh_sync_skill=refresh_sync_skill)
 
 
@@ -198,26 +221,61 @@ def _decisions(session: Session, machine_id: uuid.UUID) -> dict[str, bool]:
     return dict(rows)
 
 
-def _revisions(session: Session, names: set[str]) -> dict[str, list[_Revision]]:
-    """The full history of each named skill the vault holds, oldest first.
+def _revisions(session: Session, user_id: uuid.UUID,
+               names: set[str]) -> dict[str, list[_Revision]]:
+    """The full history of each named skill among the user's own, oldest first.
 
-    A name missing from the result is not in the vault. Sync is not discovery: only names
+    A name missing from the result is not one of theirs. Sync is not discovery: only names
     this machine has on disk or has decided about are ever looked up.
     """
     if not names:
         return {}
+    mine = visibility.my_skills(user_id).where(Skill.name.in_(names)).subquery()
     rows = session.execute(
-        select(Skill.name, SkillVersion.revision, SkillVersion.content_hash, User.username)
-        .join(SkillVersion, SkillVersion.skill_id == Skill.skill_id)
+        select(mine.c.name, SkillVersion.revision, SkillVersion.content_hash, User.username)
+        .join(SkillVersion, SkillVersion.skill_id == mine.c.skill_id)
         .join(User, User.user_id == SkillVersion.pushed_by)
-        .where(Skill.name.in_(names))
-        .order_by(Skill.name, SkillVersion.revision)
+        .order_by(mine.c.name, SkillVersion.revision)
     ).all()
 
     history: dict[str, list[_Revision]] = {}
     for name, revision, content_hash, pushed_by in rows:
         history.setdefault(name, []).append(_Revision(revision, content_hash, pushed_by))
     return history
+
+
+def _team_updates(session: Session, user_id: uuid.UUID,
+                  enabled_here: set[str]) -> tuple[TeamUpdate, ...]:
+    """Skills enabled on this machine whose team source has moved on since they were taken.
+
+    Only a source the user can still see counts: after leaving a team their copy is simply
+    theirs, with nothing further on offer.
+    """
+    if not enabled_here:
+        return ()
+    mine = visibility.my_skills(user_id).where(
+        Skill.name.in_(enabled_here), Skill.archived.is_(False),
+        Skill.source_skill_id.is_not(None)).subquery()
+    newest = (
+        select(SkillVersion.skill_id, func.max(SkillVersion.revision).label("revision"))
+        .group_by(SkillVersion.skill_id).subquery()
+    )
+    # A group the user unsubscribed from stays visible; only its updates go unmentioned.
+    quiet = visibility.group_access(session, user_id).unsubscribed
+    visible = visibility.team_skills(session, user_id).where(
+        Skill.group_id.is_(None) | Skill.group_id.not_in(quiet)).subquery()
+    rows = session.execute(
+        select(mine.c.name, visible.c.team, mine.c.source_revision, newest.c.revision,
+               User.username)
+        .join(visible, visible.c.skill_id == mine.c.source_skill_id)
+        .join(newest, newest.c.skill_id == mine.c.source_skill_id)
+        .join(SkillVersion, (SkillVersion.skill_id == newest.c.skill_id)
+              & (SkillVersion.revision == newest.c.revision))
+        .join(User, User.user_id == SkillVersion.pushed_by)
+        .where(newest.c.revision > mine.c.source_revision)
+        .order_by(mine.c.name)
+    ).all()
+    return tuple(TeamUpdate(*row) for row in rows)
 
 
 def _desired(enabled: bool | None) -> Desired:

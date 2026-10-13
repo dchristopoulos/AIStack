@@ -41,13 +41,13 @@ def _denial(required: str, tool_name: str, token) -> str:
 
     if required == BOOTSTRAP_SCOPE:
         return (
-            f"'{tool_name}' is an onboarding tool and takes the team invite code as its "
+            f"'{tool_name}' is an onboarding tool and takes the server invite code as its "
             f"bearer. This connection is authenticated as a registered machine, which has "
             f"already joined — registering another computer is add_machine."
         )
 
     return (
         f"'{tool_name}' takes a machine token as its bearer. This connection is "
-        f"authenticated with the team invite code, which may only call 'join'. Call 'join' "
+        f"authenticated with the server invite code, which may only call 'join'. Call 'join' "
         f"first, then reconnect with the token it returns."
     )

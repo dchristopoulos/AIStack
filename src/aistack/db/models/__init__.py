@@ -5,6 +5,15 @@ from aistack.db.models.operating_system import OperatingSystem
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.skill_version import SkillVersion
+from aistack.db.models.team import (
+    GroupMember,
+    GroupUnsubscribed,
+    Team,
+    TeamGroup,
+    TeamKind,
+    TeamMember,
+    TeamRole,
+)
 from aistack.db.models.user import User
 
 # Every model is imported here so that importing this package is enough to populate
@@ -12,11 +21,18 @@ from aistack.db.models.user import User
 # that happen to have been imported by whatever ran first.
 __all__ = [
     "Base",
+    "GroupMember",
+    "GroupUnsubscribed",
     "Machine",
     "MachineSkill",
     "OperatingSystem",
     "Skill",
     "SkillFile",
     "SkillVersion",
+    "Team",
+    "TeamGroup",
+    "TeamKind",
+    "TeamMember",
+    "TeamRole",
     "User",
 ]
