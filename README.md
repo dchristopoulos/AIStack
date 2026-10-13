@@ -189,7 +189,7 @@ Deliberately not built yet, in the order they are likely to arrive:
 3. **Rules**, the second resource type, projected into `CLAUDE.md`, `AGENTS.md`, and `.cursor/rules/`.
 4. **Background sync**, then hooks, agents, an MCP gateway, and profiles.
 
-Known limits today: no version pinning (a machine always gets the latest revision), global skills directory only, and no schema migrations yet. One server is one team: there are no personal or per-project vaults. A skill is text files only, at most 100 of them, 256 KB each and 1 MiB together, up to 8 folders deep; empty folders are not stored and `.env` files are refused. [`docs/DESIGN.md`](docs/DESIGN.md) §4 lists everything left out and why.
+Known limits today: no version pinning (a machine always gets the latest revision), global skills directory only, and no schema migrations yet. One server is one team: personal teams, several teams per user, and groups inside a team are designed ([ADR-0015](docs/adr/0015-teams-and-groups.md)) and not built. A skill is text files only, at most 100 of them, 256 KB each and 1 MiB together, up to 8 folders deep; empty folders are not stored and `.env` files are refused. [`docs/DESIGN.md`](docs/DESIGN.md) §4 lists everything left out and why.
 
 ## Documentation
 
@@ -213,6 +213,7 @@ Decisions are written down before code, with the reasoning kept.
   - [0012 Sync returns its questions as data](docs/adr/0012-sync-returns-questions-as-data.md)
   - [0013 The MCP endpoint is stateless](docs/adr/0013-stateless-streamable-http.md)
   - [0014 SQLite transactions take the write lock at BEGIN](docs/adr/0014-sqlite-transactions-begin-immediate.md)
+  - [0015 Teams hold skills; groups decide who sees them](docs/adr/0015-teams-and-groups.md) (designed, not built)
 
 ## Stack
 

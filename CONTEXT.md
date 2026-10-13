@@ -33,12 +33,20 @@ The server-side integer that orders a skill's versions. Distinct from the author
 _Avoid_: Version number (ambiguous)
 
 **Vault**:
-The shared pool of canonical skills on an AIStack server. One copy of each skill; every user installs from the same pool.
+The shared pool of canonical skills on an AIStack server. One copy of each skill; every user installs from the same pool. With teams (ADR-0015) each team has its own.
 _Avoid_: Registry, library, marketplace
 
-**Workspace** _(post-MVP — the term is reserved, the concept does not exist yet)_:
-The ownership and collaboration boundary. The MVP has exactly one implicit vault shared by everyone on the server; personal and team workspaces arrive with real scoping (roadmap item 8). Don't write code or docs that assume workspaces today.
-_Avoid_: Org, tenant, account
+**Team** _(designed in ADR-0015, not built yet — the server still has one implicit team)_:
+The boundary a skill lives in: its own vault, members, and invite code. A user belongs to any number of teams, and a personal team is an ordinary team with one member. Don't write code that assumes more than one team until the first slice lands.
+_Avoid_: Org, tenant, workspace, account
+
+**Group** _(ADR-0015, not built yet)_:
+A named set of skills and members inside a team, such as `backend`. Open (the whole team can see and use its skills) or private (only its members can). "Backend developer" is membership of a group, not a role.
+_Avoid_: Folder, sub-team, role, channel
+
+**Team admin** _(ADR-0015, not built yet)_:
+The member who manages a team's invite code, members, and groups. Whoever creates a team is its first admin.
+_Avoid_: Owner, moderator
 
 **Machine**:
 A registered computer belonging to one user, authenticating with its own permanent token. The unit that enabled skills (and later, local resources) are scoped to.
@@ -73,5 +81,5 @@ Enabling a skill on this machine that already exists both on disk and in the vau
 _Avoid_: Auto-enable, link
 
 **Admin**:
-The first user to join (`is_admin`). The server can only observe join order, not who deployed it — in practice the operator joins first, alone, before sharing the invite code. In the MVP, admin powers are documented DB operations (revoke a machine, recover a locked-out user); granting admin and admin UI arrive with the dashboard.
+The server's operator role, distinct from a team admin: the first user to join (`is_admin`). The server can only observe join order, not who deployed it — in practice the operator joins first, alone, before sharing the invite code. In the MVP, admin powers are documented DB operations (revoke a machine, recover a locked-out user); granting admin and admin UI arrive with the dashboard.
 _Avoid_: Owner, superuser

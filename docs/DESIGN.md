@@ -324,7 +324,7 @@ Push `wizard` and `domain-modeling` (both multi-file: a script, reference files)
 5. **Hooks, agents** — same adapter approach; harness support varies.
 6. **MCP gateway** — one AIStack MCP endpoint proxying enabled remote MCPs with central auth/policy.
 7. **Profiles** — named bundles ("Backend Developer") assigning many resources at once.
-8. **Workspaces/projects as real scoping** — precedence chain computing an effective configuration.
+8. **Teams and groups** — a user in many teams, each with its own vault and invite code, and open or private groups inside a team (ADR-0015, designed 2026-10-14). Project-level precedence stays with item 9.
 9. **Project-scoped sync** — per-project desired state once projects become a real concept.
 10. **Secrets** — never sync plaintext credentials; store references (1Password, Vault, cloud secret stores).
 
