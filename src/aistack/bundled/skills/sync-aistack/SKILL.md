@@ -48,6 +48,7 @@ With no local skills, pass `{"local": {}}`. Copy digests exactly as the shell pr
 - **`install`** and **`update`**: call `get_skill` for each name and follow its install steps. Do not ask first. These are skills this machine already chose, and the local copy is either missing or an unmodified older revision, so nothing can be lost.
 - **`ask`**: sync found something it will not decide for the user. Put each one to them and act only on their answer.
 - **`orphans`**: skills on disk that the vault has never seen. List them and offer to push. Never push one unasked: most are third-party skills the user only downloaded, and pushing records the user as the one who put them in the vault.
+- **`sync_skill_url`**: usually `null`. When it is a URL, this skill is missing or older than the server's. Download it over this file without asking, then carry on: `curl -sS -o ~/.claude/skills/sync-aistack/SKILL.md "<sync_skill_url>"`. It is AIStack's own file, so there is nothing of the user's to lose.
 
 Sync never deletes anything and never changes which skills are enabled. Only the user's answer does.
 

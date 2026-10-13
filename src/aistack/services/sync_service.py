@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import uuid
 from collections.abc import Mapping
@@ -7,7 +8,7 @@ from time import perf_counter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from aistack.bundled import SYNC_SKILL_NAME
+from aistack.bundled import SYNC_SKILL_NAME, sync_skill_document
 from aistack.commons.exceptions import ValidationError
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill import Skill
@@ -72,6 +73,9 @@ class SyncReport:
     orphans: tuple[str, ...]
     # Enabled skills whose local copy already matches the latest revision.
     up_to_date: int
+    # The sync skill on this machine is missing or is not the one this server ships. Setup
+    # fetched it once and add_machine never did, so this is the only way it stays current.
+    refresh_sync_skill: bool
 
 
 @dataclass(frozen=True)
@@ -121,6 +125,11 @@ def sync(session: Session, machine_id: uuid.UUID,
     orphans = tuple(sorted(name for name in local_hashes
                            if name not in revisions and name != SYNC_SKILL_NAME))
 
+    # A vault that holds the sync skill manages it like any other; otherwise the server's own
+    # copy is the reference.
+    refresh_sync_skill = (SYNC_SKILL_NAME not in revisions
+                          and local_hashes.get(SYNC_SKILL_NAME) != _bundled_sync_skill_hash())
+
     logger.debug(
         f"Sync reconciled. Machine: '{machine_id}'. Local: '{len(local_hashes)}'. "
         f"Install: '{len(install)}'. Update: '{len(update)}'. Ask: '{len(ask)}'. "
@@ -128,7 +137,13 @@ def sync(session: Session, machine_id: uuid.UUID,
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return SyncReport(install=tuple(install), update=tuple(update), ask=tuple(ask),
-                      orphans=orphans, up_to_date=up_to_date)
+                      orphans=orphans, up_to_date=up_to_date,
+                      refresh_sync_skill=refresh_sync_skill)
+
+
+def _bundled_sync_skill_hash() -> str:
+    document = sync_skill_document().encode("utf-8")
+    return canonical_content_hash({"SKILL.md": hashlib.sha256(document).hexdigest()})
 
 
 def _local_hashes(local: Mapping[str, Mapping[str, str]]) -> dict[str, str | None]:

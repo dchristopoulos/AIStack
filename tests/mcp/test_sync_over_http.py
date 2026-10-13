@@ -1,3 +1,4 @@
+import hashlib
 import pathlib
 
 import httpx
@@ -44,7 +45,9 @@ async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(serv
     on_machine_b = {"wizard": local_digests(files={"notes.md": "one\n"})}
 
     before = await _call(server_url, machine_b, "sync", local=on_machine_b)
-    assert before == {"install": [], "update": [], "ask": [], "orphans": [], "up_to_date": 1}
+    skill_url = f"{server_url.removesuffix('/mcp')}/setup/sync-aistack/SKILL.md"
+    assert before == {"install": [], "update": [], "ask": [], "orphans": [], "up_to_date": 1,
+                      "sync_skill_url": skill_url}
 
     await _push(server_url, machine_a, files={"notes.md": "two\n"})
 
@@ -56,6 +59,7 @@ async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(serv
         "ask": [],
         "orphans": [],
         "up_to_date": 0,
+        "sync_skill_url": skill_url,
     }
 
 
@@ -187,8 +191,21 @@ def test_the_shipped_sync_skill_explains_every_choice_and_both_flags():
     document = (SYNC_SKILL / "SKILL.md").read_text()
 
     for term in ("`enable`", "`restore`", "`push`", "`remove`", "`skip`", "`overwrites_local`",
-                 "`loses_local_edits`", "`orphans`", "`undecided`", "`disabled`"):
+                 "`loses_local_edits`", "`orphans`", "`sync_skill_url`", "`undecided`", "`disabled`"):
         assert term in document
+
+
+async def test_sync_hands_out_the_servers_sync_skill_until_the_machine_has_it(server_url):
+    """A machine added with add_machine never ran setup, and setup only ever ran once."""
+    machine = await _join(server_url)
+
+    offered = (await _call(server_url, machine, "sync", local={}))["sync_skill_url"]
+    async with httpx.AsyncClient() as http:
+        document = (await http.get(offered)).content
+    installed = {"sync-aistack": {"SKILL.md": hashlib.sha256(document).hexdigest()}}
+
+    assert document.startswith(b"---\nname: sync-aistack\n")
+    assert (await _call(server_url, machine, "sync", local=installed))["sync_skill_url"] is None
 
 
 async def test_the_sync_description_lists_files_the_way_the_skill_does(server_url):

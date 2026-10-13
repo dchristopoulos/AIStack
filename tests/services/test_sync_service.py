@@ -1,9 +1,10 @@
+import hashlib
 import unicodedata
 
 import pytest
 from sqlalchemy import func, select
 
-from aistack.bundled import SYNC_SKILL_NAME
+from aistack.bundled import SYNC_SKILL_NAME, sync_skill_document
 from aistack.commons.exceptions import ValidationError
 from aistack.db.engine import build_session_factory
 from aistack.db.models.machine_skill import MachineSkill
@@ -236,7 +237,7 @@ def test_sync_is_not_discovery(session_factory, dimitris, maria):
     report = _sync(session_factory, maria, {})
 
     assert report == sync_service.SyncReport(install=(), update=(), ask=(), orphans=(),
-                                             up_to_date=0)
+                                             up_to_date=0, refresh_sync_skill=True)
 
 
 def test_sync_is_scoped_to_the_calling_machine(session_factory, dimitris, maria):
@@ -445,7 +446,7 @@ def test_the_three_absent_states_produce_no_report_at_all(session_factory, dimit
     report = _sync(session_factory, dimitris, {})
 
     assert report == sync_service.SyncReport(install=(), update=(), ask=(), orphans=(),
-                                             up_to_date=0)
+                                             up_to_date=0, refresh_sync_skill=True)
 
 
 # --- orphans --------------------------------------------------------------------------------
@@ -487,6 +488,38 @@ def test_the_sync_skill_is_reconciled_like_any_other_once_the_vault_holds_it(ses
 
     assert current.up_to_date == 1
     assert _only_question(edited).name == SYNC_SKILL_NAME
+
+
+def _bundled_digests() -> dict[str, str]:
+    return {"SKILL.md": hashlib.sha256(sync_skill_document().encode("utf-8")).hexdigest()}
+
+
+def test_a_sync_skill_that_matches_the_servers_needs_no_refresh(session_factory, dimitris):
+    report = _sync(session_factory, dimitris, {SYNC_SKILL_NAME: _bundled_digests()})
+
+    assert report.refresh_sync_skill is False
+
+
+def test_a_sync_skill_from_an_older_server_is_refreshed(session_factory, dimitris):
+    """Setup fetched it once. Without this, an upgraded server talks to old instructions."""
+    report = _sync(session_factory, dimitris, {SYNC_SKILL_NAME: local_digests(SYNC_SKILL_NAME)})
+
+    assert report.refresh_sync_skill is True
+    assert report.orphans == () and report.ask == ()
+
+
+def test_a_machine_without_the_sync_skill_is_offered_it(session_factory, dimitris):
+    """add_machine connects a second computer without running setup, so it has no copy."""
+    assert _sync(session_factory, dimitris, {}).refresh_sync_skill is True
+
+
+def test_a_sync_skill_the_vault_holds_is_the_vaults_to_manage(session_factory, dimitris):
+    _push(session_factory, dimitris, SYNC_SKILL_NAME)
+
+    report = _sync(session_factory, dimitris, {SYNC_SKILL_NAME: local_digests(SYNC_SKILL_NAME)})
+
+    assert report.refresh_sync_skill is False
+    assert report.up_to_date == 1
 
 
 def test_an_orphan_is_reported_and_never_pushed(session_factory, dimitris):
