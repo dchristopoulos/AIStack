@@ -41,20 +41,21 @@ class PushSkillResult(TypedDict):
 
     Use when the user wants to share or back up a skill ("push my wizard skill to aistack").
     Pushing a name the vault already has adds a new revision; nothing is overwritten. The
-    skill's files are never passed to this tool. Upload them in two shell commands:
+    skill's files are never passed to this tool. Upload them from a shell:
 
-        tar -czf <tmp>/skill.tgz -C <skill folder> .
+        COPYFILE_DISABLE=1 tar -czf <tmp>/skill.tgz --exclude .git -C <skill folder> .
         curl -sS -X PUT --data-binary @<tmp>/skill.tgz "<upload_url>"
 
-    On macOS put COPYFILE_DISABLE=1 before tar. On Windows the commands are tar.exe and
-    curl.exe. Leave .git out with --exclude .git. Delete the .tgz afterwards.
+    On Windows drop the COPYFILE_DISABLE=1 prefix and use tar.exe and curl.exe. Delete the
+    .tgz afterwards.
 
-    curl prints the result as JSON. An "error" field means nothing was stored: it says what
-    to fix. Otherwise report "revision", and:
-      - "unchanged" true: the vault already held exactly these files; nothing was added.
-      - "created" false and "same_origin" false: tell the user plainly that the vault
-        already had a skill by this name, last pushed by "previous_pushed_by", and that
-        this may be an unrelated skill sharing the name.
+    curl prints the result as JSON. An "error" field means nothing was stored and says what
+    to fix. Otherwise tell the user the "revision", and:
+      - "unchanged" true: the vault already held exactly these files, so no revision was
+        added. Only content counts: a chmod alone is not a change.
+      - "possibly_unrelated" true: someone else ("previous_pushed_by") pushed the previous
+        revision and the two are not known to share a source. Tell the user plainly that
+        this may be a different skill that happens to share the name.
     The skill is now enabled for this machine, so sync will keep it current.
 
     Args:

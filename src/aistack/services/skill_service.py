@@ -45,9 +45,9 @@ class PushedSkill:
     # Who pushed the revision that was latest before this upload; None for a new skill.
     previous_pushed_by: str | None
     stored_origin: str | None
-    # False when the origins differ or either is unknown: the name may be shared by two
-    # unrelated skills, and the agent must say so.
-    same_origin: bool
+    # True when this push may have landed on somebody else's unrelated skill of the same
+    # name, and the agent must say so. See _possibly_unrelated.
+    possibly_unrelated: bool
 
 
 def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
@@ -86,7 +86,8 @@ def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
         file_count=len(uploaded.files),
         previous_pushed_by=previous_pushed_by,
         stored_origin=skill.origin,
-        same_origin=created or (origin is not None and origin == skill.origin),
+        possibly_unrelated=(not unchanged
+                            and _possibly_unrelated(previous, user_id, origin, skill.origin)),
     )
 
 
@@ -201,6 +202,26 @@ def archive_of(session: Session, machine_id: uuid.UUID,
         # Installed files are dated by when the revision was pushed, not 1970 and not now.
         modified_at=int(as_utc(pushed_on).timestamp()),
     )
+
+
+def _possibly_unrelated(previous: SkillVersion | None, user_id: uuid.UUID,
+                        pushed_origin: str | None, stored_origin: str | None) -> bool:
+    """Whether a new revision may be a different skill that happens to share the name.
+
+    Names are the only identity a skill has, so two people can push unrelated skills called
+    `review` and the second silently becomes revision 2 of the first. Nothing can detect that
+    for certain. What can be known is when it is ruled out:
+
+    - there was no previous revision, so there is nothing to collide with;
+    - the same user pushed the previous revision, so they know what they are replacing;
+    - both pushes named the same origin, so they came from the same place.
+
+    Two unknown origins rule nothing out. That is the motivating case, not an edge: most
+    skills are written by their pusher and have no origin at all.
+    """
+    if previous is None or previous.pushed_by == user_id:
+        return False
+    return pushed_origin is None or pushed_origin != stored_origin
 
 
 def set_enabled(session: Session, machine_id: uuid.UUID, skill_id: uuid.UUID,

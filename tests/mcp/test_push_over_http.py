@@ -63,7 +63,7 @@ async def test_push_skill_then_upload_stores_the_skill(server_url, session_facto
         "file_count": 2,
         "previous_pushed_by": None,
         "stored_origin": "https://github.com/mattpocock/skills",
-        "same_origin": True,
+        "possibly_unrelated": False,
     }
     with session_factory() as session:
         assert session.scalar(select(Skill.name)) == "wizard"
@@ -83,7 +83,7 @@ async def test_a_second_user_pushing_the_same_name_is_told_who_was_there_first(s
     assert response.json()["revision"] == 2
     assert response.json()["created"] is False
     assert response.json()["previous_pushed_by"] == "dimitris"
-    assert response.json()["same_origin"] is False
+    assert response.json()["possibly_unrelated"] is True
 
 
 async def test_no_file_content_crosses_mcp(server_url):
