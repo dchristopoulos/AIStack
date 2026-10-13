@@ -27,3 +27,11 @@ class ValidationError(AIStackError):
 
 class Conflict(AIStackError):
     """The argument is well-formed but collides with state that already exists."""
+
+
+class NotFound(AIStackError):
+    """The argument is well-formed but names something the vault does not hold."""
+
+
+class InvalidTicket(AIStackError):
+    """A transfer URL whose ticket is forged, expired, for another purpose, or orphaned."""

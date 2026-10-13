@@ -16,11 +16,17 @@ mcp = FastMCP(
     middleware=[AuthMiddleware(auth=authorize)],
 )
 
-# Register tools before building the HTTP app.
-from aistack.mcp.tools import onboarding  # noqa: F401, E402
+# Register tools and routes before building the HTTP app.
+from aistack.mcp.routes import transfer  # noqa: F401, E402
+from aistack.mcp.tools import onboarding, skills  # noqa: F401, E402
 
 
-async def run_http_stream_server(host: str, port: int, path: str, log_level: str) -> None:
+def http_server_config(path: str, log_level: str, **bind) -> uvicorn.Config:
+    """The uvicorn configuration AIStack is served with; `bind` is host and port, or nothing.
+
+    One function so the test server runs what production runs: the settings below are
+    security decisions, and a fixture with its own copy would prove nothing about them.
+    """
     # http_app() captures auth at construction. Missing auth would expose the server.
     if mcp.auth is None:
         raise RuntimeError(
@@ -29,20 +35,24 @@ async def run_http_stream_server(host: str, port: int, path: str, log_level: str
             "request unauthenticated."
         )
 
-    logger.info(
-        f"Starting MCP server over streamable HTTP. Host: '{host}'. Port: '{port}'. "
-        f"Path: '{path}'."
-    )
-
-    config = uvicorn.Config(
+    return uvicorn.Config(
         mcp.http_app(path=path, transport="http"),
-        host=host,
-        port=port,
         log_level=log_level.lower(),
         # Use the root logger's timestamp and logger-name format.
         log_config=None,
-        # Avoid recording request URLs, which may contain credentials.
+        # A transfer URL carries its ticket in the path (ADR-0010), and an access log line
+        # is the request path. Off, so the one credential in a URL is never written down.
         access_log=False,
         timeout_graceful_shutdown=20,
+        **bind,
+    )
+
+
+async def run_http_stream_server(host: str, port: int, path: str, log_level: str) -> None:
+    config = http_server_config(path, log_level, host=host, port=port)
+
+    logger.info(
+        f"Starting MCP server over streamable HTTP. Host: '{host}'. Port: '{port}'. "
+        f"Path: '{path}'."
     )
     await uvicorn.Server(config).serve()

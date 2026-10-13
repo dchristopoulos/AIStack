@@ -9,7 +9,7 @@ from fastmcp.client import BearerAuth, Client, StreamableHttpTransport
 from aistack.bootstrap.configuration.settings.settings_config import Settings
 from aistack.bootstrap.context import application_context
 from aistack.db.engine import build_session_factory
-from aistack.mcp.mcp import mcp
+from aistack.mcp.mcp import http_server_config
 from tests.conftest import INVITE_CODE
 
 
@@ -33,10 +33,7 @@ async def server_url_fixture(portable_engine):
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
-            server = uvicorn.Server(uvicorn.Config(
-                mcp.http_app(path="/mcp", transport="http"),
-                log_config=None,
-            ))
+            server = uvicorn.Server(http_server_config(path="/mcp", log_level="INFO"))
             serving = asyncio.create_task(server.serve(sockets=[listener]))
             try:
                 async with asyncio.timeout(5):

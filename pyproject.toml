@@ -16,6 +16,10 @@ dependencies = [
     "SQLAlchemy>=2.0.52,<3.0.0",
     "psycopg[binary]>=3.3.4,<4.0.0",
     "pydantic-settings>=2.13.1,<3.0.0",
+    # Both arrive through fastmcp today. They are declared because AIStack imports them
+    # directly: frontmatter parsing and transfer tickets must not vanish with a transitive.
+    "PyYAML>=6.0.3,<7.0.0",
+    "PyJWT>=2.13.0,<3.0.0",
 ]
 
 [dependency-groups]

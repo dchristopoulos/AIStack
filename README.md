@@ -4,9 +4,9 @@ Keep your AI development setup in sync across every developer, machine, and codi
 
 Self-hosted. Open source. Driven entirely from chat, through MCP.
 
-> Status: early. Two of the seven MVP tools are built. The server starts, authenticates
-> both kinds of bearer, `join` registers a user and their first machine, and `add_machine`
-> registers their next one. The five skill tools are designed but not yet written.
+> Status: early. Three of the seven MVP tools are built. The server starts, authenticates
+> both kinds of bearer, `join` and `add_machine` register machines, and `push_skill` stores
+> a skill in the vault. Installing and syncing are designed but not yet written.
 
 ## The problem
 
@@ -79,7 +79,7 @@ forced into chat.
 
 ## MVP
 
-The MVP supports Claude Code and seven MCP tools for skills. The two onboarding tools are built; the five skill tools are planned.
+The MVP supports Claude Code and seven MCP tools for skills. The two onboarding tools and `push_skill` are built; the other four are planned.
 
 | Tool | What it does |
 |---|---|
@@ -87,7 +87,7 @@ The MVP supports Claude Code and seven MCP tools for skills. The two onboarding 
 | `add_machine` | **Implemented.** Register another computer and return a ready MCP command to paste there |
 | `list_skills` | Planned. Browse the team vault |
 | `get_skill` | Planned. Fetch a skill's files for install and enable it on this machine |
-| `push_skill` | Planned. Upload a skill, where a repeated name creates a new revision |
+| `push_skill` | **Implemented.** Upload a skill, where a repeated name creates a new revision |
 | `sync` | Planned. Compare local state against the server's desired state for this machine |
 | `disable_skill` | Planned. Disable a skill for this machine; the harness then removes its local folder |
 
