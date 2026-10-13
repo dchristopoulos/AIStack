@@ -52,7 +52,7 @@ def read_archive(body: bytes) -> list[ArchivedFile]:
     try:
         with tarfile.open(fileobj=io.BytesIO(_gunzipped(body)), mode="r:") as archive:
             for member in archive:
-                if member.isdir() or _is_filesystem_noise(member.name):
+                if member.isdir() or is_filesystem_noise(member.name):
                     continue
                 # REGTYPE and AREGTYPE only. isfile() would also admit sparse files, and
                 # everything else is a link, a device, or a FIFO.
@@ -144,7 +144,7 @@ def _gunzipped(body: bytes) -> bytes:
     return bytes(output)
 
 
-def _is_filesystem_noise(name: str) -> bool:
+def is_filesystem_noise(name: str) -> bool:
     """Entries the operating system made, not the skill's author.
 
     macOS `tar` synthesizes `._name` AppleDouble entries for extended attributes; they never

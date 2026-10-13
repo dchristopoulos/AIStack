@@ -4,9 +4,9 @@ Keep your AI development setup in sync across every developer, machine, and codi
 
 Self-hosted. Open source. Driven entirely from chat, through MCP.
 
-> Status: early. Six of the seven MVP tools are built. A skill pushed from one machine can
-> be listed, installed, and removed on another. `sync`, which keeps installed skills
-> current, is designed but not yet written.
+> Status: early. All seven MVP tools are built. A skill pushed from one machine can be
+> listed, installed, and removed on another, and `sync` installs and updates what a machine
+> has enabled. The questions sync asks about locally edited skills are the last piece.
 
 ## The problem
 
@@ -79,7 +79,7 @@ forced into chat.
 
 ## MVP
 
-The MVP supports Claude Code and seven MCP tools for skills. Six are built; `sync` is planned.
+The MVP supports Claude Code and seven MCP tools for skills. All seven are built.
 
 | Tool | What it does |
 |---|---|
@@ -88,8 +88,10 @@ The MVP supports Claude Code and seven MCP tools for skills. Six are built; `syn
 | `list_skills` | **Implemented.** Browse the team vault |
 | `get_skill` | **Implemented.** Enable a skill on this machine and get a URL to download its files |
 | `push_skill` | **Implemented.** Upload a skill, where a repeated name creates a new revision |
-| `sync` | Planned. Compare local state against the server's desired state for this machine |
+| `sync` | **Implemented.** Compare local state against the server's desired state for this machine |
 | `disable_skill` | **Implemented.** Disable a skill for this machine; the harness then removes its local folder |
+
+Sync when you start work, the way you would `git pull`. Nothing runs in the background: saying "sync aistack" is the whole mechanism, and the [`sync-aistack`](skills/sync-aistack/SKILL.md) skill is what teaches the agent to do it.
 
 Sync never overwrites a locally modified skill. It asks whether to restore the vault copy, push your edit as a new revision, or leave it alone.
 

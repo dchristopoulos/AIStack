@@ -5,6 +5,7 @@
 """
 
 import gzip
+import hashlib
 import io
 import tarfile
 
@@ -52,3 +53,15 @@ def special_member(name: str, member_type: bytes, linkname: str = "") -> tarfile
     info.type = member_type
     info.linkname = linkname
     return info
+
+
+def local_digests(name: str = "wizard", files: dict[str, str | bytes] | None = None,
+                  **document) -> dict[str, str]:
+    """What a machine holding that skill would send to sync: {path: sha256} of each file."""
+    contents: dict[str, str | bytes] = {"SKILL.md": skill_document(name, **document)}
+    contents.update(files or {})
+    return {
+        path: hashlib.sha256(
+            content.encode("utf-8") if isinstance(content, str) else content).hexdigest()
+        for path, content in contents.items()
+    }
