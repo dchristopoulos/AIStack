@@ -56,7 +56,8 @@ class SyncResult(TypedDict):
     sha256 of each file, paths relative to the skill's folder. Skip 'synced', dot-folders,
     and .DS_Store. Get digests from a shell, never by reading files:
 
-        cd ~/.claude/skills && find -L . -mindepth 2 -type f -exec shasum -a 256 {} +
+        cd ~/.claude/skills && find -L . -mindepth 2 -type f ! -name .DS_Store \\
+          ! -path './.*' ! -path './synced/*' -exec shasum -a 256 {} +
         Windows: Get-ChildItem $HOME\\.claude\\skills -Recurse -File | Get-FileHash
 
     Then:
@@ -64,8 +65,9 @@ class SyncResult(TypedDict):
         user what updated, between which revisions, and who pushed it.
       - ask: put each to the user and act only on their answer. Offer exactly the listed
         options. If one has overwrites_local, say the local files will be replaced; if it
-        has loses_local_edits, say their local edits will be lost. enable = get_skill and
-        install; push = push_skill; remove = delete the local folder; skip = do nothing.
+        has loses_local_edits, say their local edits will be lost. enable, restore =
+        get_skill and install; push = push_skill; remove = delete the local folder; skip =
+        do nothing.
       - orphans: local skills the vault has never seen. Offer to push; never push unasked.
 
     Args:

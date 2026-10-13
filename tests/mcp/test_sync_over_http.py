@@ -111,7 +111,7 @@ async def test_every_answer_to_a_question_is_an_existing_tool(server_url, sessio
         "latest_revision": 1,
         "pushed_by": "dimitris",
         "options": [
-            {"choice": "enable", "overwrites_local": True, "loses_local_edits": True},
+            {"choice": "restore", "overwrites_local": True, "loses_local_edits": True},
             {"choice": "push", "overwrites_local": False, "loses_local_edits": False},
             {"choice": "skip", "overwrites_local": False, "loses_local_edits": False},
         ],
@@ -186,6 +186,18 @@ def test_the_shipped_sync_skill_explains_every_choice_and_both_flags():
     """The tool returns facts; this file is what turns them into a question worth answering."""
     document = (SYNC_SKILL / "SKILL.md").read_text()
 
-    for term in ("`enable`", "`push`", "`remove`", "`skip`", "`overwrites_local`",
+    for term in ("`enable`", "`restore`", "`push`", "`remove`", "`skip`", "`overwrites_local`",
                  "`loses_local_edits`", "`orphans`", "`undecided`", "`disabled`"):
         assert term in document
+
+
+async def test_the_sync_description_lists_files_the_way_the_skill_does(server_url):
+    """An agent with only the description must not send what the description says to skip."""
+    async with client_for(server_url, await _join(server_url)) as client:
+        description = next(tool.description for tool in await client.list_tools()
+                           if tool.name == "sync")
+    document = (SYNC_SKILL / "SKILL.md").read_text()
+
+    for exclusion in ("! -name .DS_Store", "! -path './.*'", "! -path './synced/*'"):
+        assert exclusion in document
+        assert exclusion in description

@@ -47,6 +47,9 @@ class Choice(StrEnum):
 
     # Take the vault's latest revision and manage this resource here from now on.
     ENABLE = "enable"
+    # Take the vault's latest revision over an edited copy. Already managed here, so nothing
+    # about this machine changes except the files.
+    RESTORE = "restore"
     # Send the local copy to the vault as a new revision.
     PUSH = "push"
     # Delete the local copy; the server already holds the decision not to have it here.
@@ -81,6 +84,7 @@ _NOTHING = Verdict(Step.NOTHING)
 _KEEP_AS_IS = Option(Choice.ENABLE)
 _REPLACE_UNMODIFIED = Option(Choice.ENABLE, overwrites_local=True)
 _REPLACE_EDITED = Option(Choice.ENABLE, overwrites_local=True, loses_local_edits=True)
+_RESTORE = Option(Choice.RESTORE, overwrites_local=True, loses_local_edits=True)
 _PUSH = Option(Choice.PUSH)
 _SKIP = Option(Choice.SKIP)
 _REMOVE = Option(Choice.REMOVE)
@@ -91,7 +95,7 @@ _POLICY: dict[tuple[Desired, Observed], Verdict] = {
     (Desired.ENABLED, Observed.ABSENT): Verdict(Step.INSTALL),
     (Desired.ENABLED, Observed.CURRENT): _NOTHING,
     (Desired.ENABLED, Observed.STALE): Verdict(Step.UPDATE),
-    (Desired.ENABLED, Observed.UNKNOWN): Verdict(Step.ASK, (_REPLACE_EDITED, _PUSH, _SKIP)),
+    (Desired.ENABLED, Observed.UNKNOWN): Verdict(Step.ASK, (_RESTORE, _PUSH, _SKIP)),
 
     # Explicitly disabled here, yet present on disk.
     (Desired.DISABLED, Observed.ABSENT): _NOTHING,

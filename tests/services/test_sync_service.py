@@ -3,6 +3,7 @@ import unicodedata
 import pytest
 from sqlalchemy import func, select
 
+from aistack.bundled import SYNC_SKILL_NAME
 from aistack.commons.exceptions import ValidationError
 from aistack.db.engine import build_session_factory
 from aistack.db.models.machine_skill import MachineSkill
@@ -329,7 +330,7 @@ def test_an_edited_enabled_skill_is_a_question_with_restore_push_and_skip(sessio
     assert question.latest_revision == 1
     assert question.pushed_by == "maria"
     assert _flags(question) == {
-        Choice.ENABLE: (True, True),
+        Choice.RESTORE: (True, True),
         Choice.PUSH: (False, False),
         Choice.SKIP: (False, False),
     }
@@ -461,6 +462,31 @@ def test_a_local_skill_the_vault_has_never_seen_is_an_orphan(session_factory, di
     assert report.orphans == ("another-one", "my-private-skill")
     assert report.ask == ()
     assert report.up_to_date == 1
+
+
+def test_the_skill_setup_installed_is_not_an_orphan(session_factory, dimitris):
+    """Setup writes it from the server, so a fresh vault never holds it. Offering to push the
+    skill that does the syncing, on every sync, is noise."""
+    report = _sync(session_factory, dimitris, {
+        SYNC_SKILL_NAME: local_digests(SYNC_SKILL_NAME),
+        "my-private-skill": local_digests("my-private-skill"),
+    })
+
+    assert report.orphans == ("my-private-skill",)
+    assert report.ask == ()
+
+
+def test_the_sync_skill_is_reconciled_like_any_other_once_the_vault_holds_it(session_factory,
+                                                                           dimitris):
+    _push(session_factory, dimitris, SYNC_SKILL_NAME)
+
+    current = _sync(session_factory, dimitris, {SYNC_SKILL_NAME: local_digests(SYNC_SKILL_NAME)})
+    edited = _sync(session_factory, dimitris, {
+        SYNC_SKILL_NAME: local_digests(SYNC_SKILL_NAME, files={"notes.md": "my local edit\n"}),
+    })
+
+    assert current.up_to_date == 1
+    assert _only_question(edited).name == SYNC_SKILL_NAME
 
 
 def test_an_orphan_is_reported_and_never_pushed(session_factory, dimitris):

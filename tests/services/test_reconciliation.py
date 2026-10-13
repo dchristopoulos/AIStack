@@ -84,7 +84,7 @@ def test_a_choice_loses_edits_only_when_there_are_edits_to_lose(desired, observe
     for option in reconcile(desired, observed).options:
         if option.loses_local_edits:
             assert observed is Observed.UNKNOWN
-            assert option.choice in (Choice.ENABLE, Choice.REMOVE)
+            assert option.choice in (Choice.ENABLE, Choice.RESTORE, Choice.REMOVE)
 
 
 @pytest.mark.parametrize(("desired", "observed"), EVERY_PAIR)
@@ -93,7 +93,7 @@ def test_every_destructive_choice_on_unknown_content_is_flagged(desired, observe
     if observed is not Observed.UNKNOWN:
         return
     for option in reconcile(desired, observed).options:
-        if option.choice in (Choice.ENABLE, Choice.REMOVE):
+        if option.choice in (Choice.ENABLE, Choice.RESTORE, Choice.REMOVE):
             assert option.loses_local_edits is True
 
 
@@ -103,6 +103,20 @@ def test_enabling_says_whether_it_rewrites_the_folder(desired, observed):
     for option in reconcile(desired, observed).options:
         if option.choice is Choice.ENABLE:
             assert option.overwrites_local == (observed is not Observed.CURRENT)
+
+
+@pytest.mark.parametrize(("desired", "observed"), EVERY_PAIR)
+def test_a_skill_already_enabled_is_restored_and_never_enabled_again(desired, observed):
+    """Enable changes what this machine manages. Restore only puts the vault's copy back."""
+    choices = _choices(desired, observed)
+
+    assert (Choice.RESTORE in choices) == (
+        desired is Desired.ENABLED and observed is Observed.UNKNOWN)
+    if desired is Desired.ENABLED:
+        assert Choice.ENABLE not in choices
+    for option in reconcile(desired, observed).options:
+        if option.choice is Choice.RESTORE:
+            assert option.overwrites_local and option.loses_local_edits
 
 
 @pytest.mark.parametrize(("desired", "observed"), EVERY_PAIR)
@@ -126,7 +140,7 @@ def test_removal_is_offered_only_where_the_user_already_said_no():
 
 def test_the_options_for_each_question():
     assert _choices(Desired.ENABLED, Observed.UNKNOWN) == [
-        Choice.ENABLE, Choice.PUSH, Choice.SKIP]
+        Choice.RESTORE, Choice.PUSH, Choice.SKIP]
     assert _choices(Desired.DISABLED, Observed.CURRENT) == [Choice.ENABLE, Choice.REMOVE]
     assert _choices(Desired.DISABLED, Observed.STALE) == [Choice.ENABLE, Choice.REMOVE]
     assert _choices(Desired.DISABLED, Observed.UNKNOWN) == [

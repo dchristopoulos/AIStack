@@ -7,6 +7,7 @@ from time import perf_counter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from aistack.bundled import SYNC_SKILL_NAME
 from aistack.commons.exceptions import ValidationError
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill import Skill
@@ -117,7 +118,10 @@ def sync(session: Session, machine_id: uuid.UUID,
         elif desired is Desired.ENABLED and observed is Observed.CURRENT:
             up_to_date += 1
 
-    orphans = tuple(sorted(name for name in local_hashes if name not in revisions))
+    # Setup wrote the sync skill from this server, so it is on every machine and in no fresh
+    # vault. Once someone pushes it, it is in `revisions` and reconciled like any other.
+    orphans = tuple(sorted(name for name in local_hashes
+                           if name not in revisions and name != SYNC_SKILL_NAME))
 
     logger.debug(
         f"Sync reconciled. Machine: '{machine_id}'. Local: '{len(local_hashes)}'. "

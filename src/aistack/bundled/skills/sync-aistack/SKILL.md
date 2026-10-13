@@ -72,6 +72,7 @@ Offer exactly the `options` listed, no others. Each choice maps to something you
 | `choice` | do this |
 |---|---|
 | `enable` | `get_skill`, then install. The machine manages the skill from now on |
+| `restore` | `get_skill`, then install. The skill was already managed here; this puts the vault's copy back over the local edits |
 | `push` | `push_skill`, then upload the local folder as a new revision |
 | `remove` | delete the local folder. It is already disabled on the server |
 | `skip` | nothing. Sync asks again next time |

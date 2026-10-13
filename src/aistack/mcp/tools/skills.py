@@ -170,6 +170,8 @@ class GetSkillResult(TypedDict):
     JSON error message: read it. On Windows the commands are curl.exe and tar.exe. Staging
     inside the skills directory makes the final move a rename, so a failed download never
     leaves half a skill in place. The skill is usable as soon as the move completes.
+    tar restores file modes, so run no chmod. Leave <stage> itself in place; sync ignores
+    it. The listed hashes need no checking.
 
     Args:
         name: The skill's name, as list_skills or sync reported it.
