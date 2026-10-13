@@ -20,9 +20,25 @@ MAX_FILE_COUNT = 100
 MAX_FILE_BYTES = 256 * 1024
 MAX_TOTAL_BYTES = 1024 * 1024
 
-# Headers, padding, and pax records on top of the file bytes themselves. Generous, and still
-# a hard ceiling on what one megabyte of gzip may expand to.
-_MAX_TAR_BYTES = 4 * MAX_TOTAL_BYTES
+# Headers, padding, and pax records on top of the file bytes themselves. A hundred files
+# with an extended header each add well under 300 KiB, so twice the content limit is ample,
+# and it is the hard ceiling on what one megabyte of gzip may expand to.
+_MAX_TAR_BYTES = 2 * MAX_TOTAL_BYTES
+
+_BLOCK_BYTES = 512
+_END_OF_ARCHIVE = bytes(_BLOCK_BYTES)
+
+# Members that describe the next member instead of being one: pax extended and global
+# headers, and GNU long names and long link names. tarfile parses them itself, in full,
+# before a caller sees anything.
+_PAX_HEADER_TYPES = (tarfile.XHDTYPE, tarfile.XGLTYPE)
+_LONG_NAME_TYPES = (tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK)
+# A path is at most 255 characters and macOS adds a few extended attributes per file.
+_MAX_PAX_HEADER_BYTES = 16 * 1024
+_MAX_LONG_NAME_BYTES = 4 * 1024
+# Records that change where tarfile believes a member's data ends. A skill has no use for
+# either, and each would let the archive tarfile reads differ from the one inspected here.
+_LAYOUT_PAX_KEYS = ("size", "GNU.sparse")
 
 # auto-detect off: 16 + MAX_WBITS means "a gzip stream, and nothing else".
 _GZIP_WBITS = 16 + zlib.MAX_WBITS
@@ -49,8 +65,10 @@ def read_archive(body: bytes) -> list[ArchivedFile]:
 
     files: list[ArchivedFile] = []
     total_bytes = 0
+    tar = _gunzipped(body)
+    _inspect_structure(tar)
     try:
-        with tarfile.open(fileobj=io.BytesIO(_gunzipped(body)), mode="r:") as archive:
+        with tarfile.open(fileobj=io.BytesIO(tar), mode="r:") as archive:
             for member in archive:
                 if member.isdir() or is_filesystem_noise(member.name):
                     continue
@@ -83,11 +101,13 @@ def read_archive(body: bytes) -> list[ArchivedFile]:
                     content=archive.extractfile(member).read(),
                     executable=bool(member.mode & _EXECUTABLE_BITS),
                 ))
-    except tarfile.TarError as error:
-        raise ValidationError(
-            "The upload is not a readable tar archive. Create it with "
-            "'tar -czf <file> -C <skill folder> .' and send that file unchanged."
-        ) from error
+    except ValidationError:
+        raise
+    except Exception as error:
+        # Deliberately broad. tarfile raises TarError for most damage, and ValueError,
+        # IndexError, or EOFError for the rest (a malformed sparse map, a short read). Every
+        # one of them means the same thing to the caller, and none is a server fault.
+        raise _unreadable() from error
 
     if not files:
         raise ValidationError("The archive contains no files. Archive the skill's own folder, "
@@ -112,6 +132,98 @@ def build_archive(files: Iterable[tuple[str, bytes, bool]], modified_at: int = 0
                 member.mtime = modified_at
                 archive.addfile(member, io.BytesIO(content))
     return buffer.getvalue()
+
+
+def _inspect_structure(tar: bytes) -> None:
+    """Walk the tar's header blocks and refuse anything tarfile would be unsafe to parse.
+
+    tarfile reads a pax header into memory at whatever size it claims and then splits it into
+    records, so a few kilobytes of gzip become tens of megabytes of dictionaries. It also
+    stops silently at the first damaged header, which would store half a skill. Both are
+    checked here, on the raw blocks, before tarfile is handed a byte.
+    """
+    offset = 0
+    while offset < len(tar):
+        header = tar[offset:offset + _BLOCK_BYTES]
+        if header == _END_OF_ARCHIVE:
+            if tar[offset:].strip(b"\0"):
+                raise _unreadable()
+            return
+        if len(header) < _BLOCK_BYTES or not _checksum_matches(header):
+            raise _unreadable()
+
+        member_type = header[156:157]
+        size = _octal(header[124:136])
+        data = tar[offset + _BLOCK_BYTES:offset + _BLOCK_BYTES + size]
+        if len(data) < size:
+            raise _unreadable()
+
+        if member_type in _PAX_HEADER_TYPES:
+            if size > _MAX_PAX_HEADER_BYTES:
+                raise _oversized_header()
+            _reject_layout_records(data)
+        elif member_type in _LONG_NAME_TYPES and size > _MAX_LONG_NAME_BYTES:
+            raise _oversized_header()
+
+        offset += _BLOCK_BYTES + -(-size // _BLOCK_BYTES) * _BLOCK_BYTES
+
+
+def _checksum_matches(header: bytes) -> bool:
+    """A tar header's checksum is the sum of its bytes with the checksum field as spaces."""
+    expected = _octal(header[148:156])
+    return expected == sum(header[:148]) + 8 * ord(" ") + sum(header[156:])
+
+
+def _octal(field: bytes) -> int:
+    """A numeric header field. Anything but plain octal is refused, base-256 sizes included."""
+    digits = field.strip(b" \0")
+    if not digits:
+        return 0
+    try:
+        return int(digits, 8)
+    except ValueError:
+        raise _unreadable() from None
+
+
+def _reject_layout_records(pax_header: bytes) -> None:
+    """Refuse a pax header that redefines a member's size or declares it sparse.
+
+    Records are `<length> <key>=<value>\\n`, where the length counts the whole record.
+    """
+    position = 0
+    while position < len(pax_header):
+        length_end = pax_header.find(b" ", position)
+        key_end = pax_header.find(b"=", length_end)
+        if length_end < 0 or key_end < 0:
+            raise _unreadable()
+        try:
+            length = int(pax_header[position:length_end])
+        except ValueError:
+            raise _unreadable() from None
+        if length <= 0:
+            raise _unreadable()
+
+        key = pax_header[length_end + 1:key_end].decode("utf-8", errors="replace")
+        if key.startswith(_LAYOUT_PAX_KEYS):
+            raise ValidationError(
+                f"The archive uses a tar extension ('{loggable(key)}') that a skill has no "
+                "need for. Create it with plain 'tar -czf <file> -C <skill folder> .'."
+            )
+        position += length
+
+
+def _unreadable() -> ValidationError:
+    return ValidationError(
+        "The upload is not a readable tar archive. Create it with "
+        "'tar -czf <file> -C <skill folder> .' and send that file unchanged."
+    )
+
+
+def _oversized_header() -> ValidationError:
+    return ValidationError(
+        "The archive carries an extended header far larger than any file name needs. Create "
+        "it with plain 'tar -czf <file> -C <skill folder> .'."
+    )
 
 
 def _gunzipped(body: bytes) -> bytes:

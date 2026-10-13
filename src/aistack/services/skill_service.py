@@ -62,10 +62,10 @@ def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
     _require_registered_machine(session, machine_id, user_id)
 
     skill, created = _find_or_create_skill(session, uploaded, origin, user_id)
-    previous = _latest_version(session, skill.skill_id)
+    version, previous = _store_revision(session, skill, uploaded,
+                                        _latest_version(session, skill.skill_id), user_id)
+    unchanged = version is previous
     previous_pushed_by = None if previous is None else _username(session, previous.pushed_by)
-
-    version, unchanged = _store_revision(session, skill, uploaded, previous, user_id)
     if not unchanged:
         # Denormalized from the latest revision, so list_skills reads one table.
         skill.description = uploaded.description
@@ -274,16 +274,20 @@ def _find_or_create_skill(session: Session, uploaded: ValidatedSkill, origin: st
 
 def _store_revision(session: Session, skill: Skill, uploaded: ValidatedSkill,
                     latest: SkillVersion | None,
-                    user_id: uuid.UUID) -> tuple[SkillVersion, bool]:
-    """Insert the next revision, or return the latest one when the content is identical.
+                    user_id: uuid.UUID) -> tuple[SkillVersion, SkillVersion | None]:
+    """Insert the next revision and return it with the one it follows.
+
+    When the content is identical to the latest revision nothing is inserted, and that
+    revision is returned as both: it is its own predecessor.
 
     The revision number is MAX + 1, read and written inside this transaction. Two pushes can
     read the same MAX; the unique constraint on (skill_id, revision) lets one through, and
-    the other rolls back to its savepoint and reads again.
+    the other rolls back to its savepoint and reads again. The predecessor returned is the
+    one the insert finally followed, which after a lost race is not the one first read.
     """
     for _ in range(_REVISION_ATTEMPTS):
         if latest is not None and latest.content_hash == uploaded.content_hash:
-            return latest, True
+            return latest, latest
 
         version = SkillVersion(
             skill_id=skill.skill_id,
@@ -307,7 +311,7 @@ def _store_revision(session: Session, skill: Skill, uploaded: ValidatedSkill,
                     )
                     for file in uploaded.files
                 )
-            return version, False
+            return version, latest
         except IntegrityError:
             logger.info(f"Revision number taken concurrently; retrying. "
                         f"Skill: '{skill.name}'. Revision: '{version.revision}'.")

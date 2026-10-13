@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 UPLOAD_PATH = "/transfer/upload"
 DOWNLOAD_PATH = "/transfer/download"
 
+UPLOAD_READ_TIMEOUT_SECONDS = 30
+
 
 @mcp.custom_route(UPLOAD_PATH + "/{ticket}", methods=["PUT"])
 @handle_route_errors
@@ -92,12 +94,22 @@ async def _bounded_body(request: Request) -> bytes:
     """
     chunks: list[bytes] = []
     received = 0
-    async for chunk in request.stream():
-        received += len(chunk)
-        if received > MAX_ARCHIVE_BYTES:
-            raise ValidationError(
-                f"The upload is larger than the {MAX_ARCHIVE_BYTES} byte limit for one "
-                "skill. If a .git or node_modules folder is inside the skill, leave it out."
-            )
-        chunks.append(chunk)
+    try:
+        # One megabyte takes well under a second on any link worth pushing over. Without a
+        # deadline a ticket holder could open uploads and never finish them.
+        async with asyncio.timeout(UPLOAD_READ_TIMEOUT_SECONDS):
+            async for chunk in request.stream():
+                received += len(chunk)
+                if received > MAX_ARCHIVE_BYTES:
+                    raise ValidationError(
+                        f"The upload is larger than the {MAX_ARCHIVE_BYTES} byte limit for "
+                        "one skill. If a .git or node_modules folder is inside the skill, "
+                        "leave it out."
+                    )
+                chunks.append(chunk)
+    except TimeoutError:
+        raise ValidationError(
+            f"The upload did not finish within {UPLOAD_READ_TIMEOUT_SECONDS} seconds, so it "
+            "was dropped. Send the archive again."
+        ) from None
     return b"".join(chunks)

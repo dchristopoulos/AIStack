@@ -1,5 +1,5 @@
 from aistack.commons.exceptions import ValidationError
-from aistack.commons.text import LOGGED_VALUE_MAX_LENGTH, loggable, sanitized
+from aistack.commons.text import LOGGED_FAILURE_MAX_LENGTH, bounded_failure, LOGGED_VALUE_MAX_LENGTH, loggable, sanitized
 
 
 def test_a_newline_cannot_forge_a_log_line():
@@ -42,3 +42,20 @@ def test_a_domain_exception_cannot_carry_a_forged_line():
     assert "\n" not in error.message
     assert "\n" not in str(error)
     assert "\\nINFO nice try" in error.message
+
+
+def test_a_short_failure_is_logged_whole_and_escaped():
+    assert bounded_failure("boom\nsecond line") == "boom\\nsecond line"
+
+
+def test_a_huge_failure_keeps_its_start_and_its_end():
+    """Three thousand recursive frames must not buy a megabyte of log."""
+    traceback = "Traceback (most recent call last):\n" + "  frame\n" * 100_000 + "RecursionError"
+
+    rendered = bounded_failure(traceback)
+
+    assert len(rendered) < LOGGED_FAILURE_MAX_LENGTH + 100
+    assert rendered.startswith("Traceback (most recent call last):")
+    assert rendered.endswith("RecursionError")
+    assert "more characters]" in rendered
+    assert "\n" not in rendered

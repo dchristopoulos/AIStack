@@ -14,7 +14,7 @@ from aistack.commons.exceptions import (
     NotFound,
     ValidationError,
 )
-from aistack.commons.text import sanitized
+from aistack.commons.text import bounded_failure
 
 # The status is for curl's exit code and for anyone reading a proxy log. The agent reads the
 # sentence in the body, which is the same one a ToolError would have carried.
@@ -57,5 +57,5 @@ def error_response(message: str, status_code: int) -> JSONResponse:
 
 
 def _failure_message(route_name: str, error_message: str, started_at: float) -> str:
-    return (f"{route_name} failed. Error: '{sanitized(error_message)}'. "
+    return (f"{route_name} failed. Error: '{bounded_failure(error_message)}'. "
             f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")

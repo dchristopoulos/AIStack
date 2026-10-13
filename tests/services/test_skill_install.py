@@ -228,7 +228,7 @@ def test_the_archive_reproduces_the_pushed_files_byte_for_byte(session_factory, 
     files = {
         "scripts/run.sh": "#!/bin/sh\r\necho hi\r\n",
         "références/naïve.md": "café\n",
-        "with-bom.md": "﻿hello\n",
+        "with-bom.md": "\ufeffhello\n",
     }
     _push(session_factory, dimitris, files=files, executable=frozenset({"scripts/run.sh"}))
     skill = _get(session_factory, dimitris.machine.machine_id)

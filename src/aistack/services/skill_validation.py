@@ -7,6 +7,7 @@ opens a session, so the whole trust boundary can be tested without a database.
 
 import json
 import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -34,10 +35,20 @@ _SKILL_NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 # Characters Windows cannot put in a filename. A skill pushed from macOS must still install.
 _WINDOWS_FORBIDDEN = frozenset('<>:"|?*')
 _WINDOWS_DEVICE_NAMES = frozenset(
-    ["con", "prn", "aux", "nul"]
+    ["con", "prn", "aux", "nul", "conin$", "conout$"]
     + [f"com{number}" for number in range(1, 10)]
     + [f"lpt{number}" for number in range(1, 10)]
 )
+# Windows also reserves COM¹, COM², COM³ and their LPT twins.
+_SUPERSCRIPT_DIGITS = str.maketrans("¹²³", "123")
+
+# What one directory entry may weigh. Linux counts bytes and stops at 255; the character
+# limit on the whole path would let 255 four-byte characters through.
+_MAX_SEGMENT_BYTES = 255
+
+# Version-control metadata is never part of a skill, and a hook stored in it would arrive
+# on every machine with its executable bit set.
+_VERSION_CONTROL_FOLDERS = frozenset([".git", ".hg", ".svn"])
 
 _FRONTMATTER_FENCE = "---"
 # Enough for any real frontmatter, and a hard stop for one built to expand (see _measured).
@@ -186,18 +197,47 @@ def _validate_segment(segment: str, shown_path: str) -> None:
             f"The path '{shown_path}' has a name ending in a dot or a space, which Windows "
             "silently strips. Rename the file."
         )
-    if segment.split(".", 1)[0].casefold() in _WINDOWS_DEVICE_NAMES:
+    if _device_stem(segment) in _WINDOWS_DEVICE_NAMES:
         raise ValidationError(
             f"The path '{shown_path}' uses a name Windows reserves for a device (CON, PRN, "
             "AUX, NUL, COM1-9, LPT1-9). Rename the file."
         )
+    if len(segment.encode("utf-8")) > _MAX_SEGMENT_BYTES:
+        raise ValidationError(
+            f"The path '{shown_path}' has a name longer than {_MAX_SEGMENT_BYTES} bytes, "
+            "which no filesystem can create. Shorten it."
+        )
+    if segment.casefold() in _VERSION_CONTROL_FOLDERS:
+        raise ValidationError(
+            f"The path '{shown_path}' is version-control metadata, not part of the skill. "
+            "Leave it out: 'tar --exclude .git -czf <file> -C <skill folder> .'."
+        )
+
+
+def _device_stem(segment: str) -> str:
+    """The part of a name Windows compares against its device list.
+
+    Windows ignores everything from the first dot and any spaces before it, so `aux .txt` and
+    `NUL.tar.gz` are both devices.
+    """
+    return segment.split(".", 1)[0].rstrip(" ").casefold().translate(_SUPERSCRIPT_DIGITS)
+
+
+def _collision_key(path: str) -> str:
+    """Two paths with the same key are one file on a case-insensitive filesystem.
+
+    NTFS matches names by their uppercase form, and `casefold()` alone keeps `i` and the
+    dotless `ı` apart although both uppercase to `I`. Uppercasing first folds every pair
+    either rule would.
+    """
+    return unicodedata.normalize("NFC", path.upper().casefold())
 
 
 def _reject_colliding_paths(paths: Sequence[str]) -> None:
     """Two names a case-insensitive filesystem would merge, or a file where a folder must be."""
     seen: dict[str, str] = {}
     for path in paths:
-        folded = path.casefold()
+        folded = _collision_key(path)
         if folded in seen:
             raise ValidationError(
                 f"'{loggable(seen[folded])}' and '{loggable(path)}' are the same file on "
@@ -206,7 +246,7 @@ def _reject_colliding_paths(paths: Sequence[str]) -> None:
         seen[folded] = path
 
     for path in paths:
-        segments = path.casefold().split("/")
+        segments = _collision_key(path).split("/")
         for depth in range(1, len(segments)):
             folder = "/".join(segments[:depth])
             if folder in seen:
@@ -236,7 +276,9 @@ def _parsed_frontmatter(document: str) -> dict[str, Any]:
     BaseLoader builds only strings, lists, and dicts: it cannot construct an object, and it
     does not turn `version: 1.10` into the float 1.1.
     """
-    lines = document.removeprefix("﻿").splitlines()
+    # Split on line feeds only. splitlines() also breaks on U+2028, U+0085, and form feed,
+    # which a harness does not, so a fence could be closed where no reader sees a line end.
+    lines = [line.removesuffix("\r") for line in document.removeprefix("\ufeff").split("\n")]
     if not lines or lines[0].strip() != _FRONTMATTER_FENCE:
         raise ValidationError(
             f"{SKILL_DOCUMENT} does not start with frontmatter. Its first line must be '---', "
@@ -250,10 +292,14 @@ def _parsed_frontmatter(document: str) -> dict[str, Any]:
                               "containing only '---' after the last field.") from None
 
     try:
-        frontmatter = yaml.load("\n".join(lines[1:closing]), Loader=yaml.BaseLoader)
+        frontmatter = yaml.load("\n".join(lines[1:closing]), Loader=_FrontmatterLoader)
     except yaml.YAMLError as error:
         raise ValidationError(f"{SKILL_DOCUMENT} frontmatter is not valid YAML: "
                               f"{loggable(error)}") from error
+    except RecursionError as error:
+        # PyYAML's parser is recursive, and a few thousand nested brackets exhaust the stack
+        # before the node budget below ever sees the result.
+        raise _oversized_frontmatter() from error
     if not isinstance(frontmatter, dict):
         raise ValidationError(f"{SKILL_DOCUMENT} frontmatter must be 'key: value' fields, "
                               "starting with 'name:' and 'description:'.")
@@ -267,6 +313,30 @@ def _parsed_frontmatter(document: str) -> dict[str, Any]:
     return frontmatter
 
 
+class _FrontmatterLoader(yaml.BaseLoader):
+    """BaseLoader that refuses a key written twice.
+
+    YAML says duplicate keys are an error and PyYAML keeps the last one. A reader who keeps
+    the first would then see a different `name` or `description` than the one validated here.
+    """
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict:
+        keys = [self.construct_object(key_node, deep=True) for key_node, _ in node.value]
+        duplicates = sorted(key for key in set(map(str, keys)) if list(map(str, keys)).count(key) > 1)
+        if duplicates:
+            raise yaml.constructor.ConstructorError(
+                None, None, f"the key '{duplicates[0]}' appears more than once",
+                node.start_mark)
+        return super().construct_mapping(node, deep=deep)
+
+
+def _oversized_frontmatter() -> ValidationError:
+    return ValidationError(
+        f"{SKILL_DOCUMENT} frontmatter is too large or too deeply nested. It should be a "
+        "handful of fields; move anything long into the body."
+    )
+
+
 def _measured(node: Any, depth: int, budget: list[int]) -> None:
     """Walk the parsed frontmatter, refusing anything outsized before it is serialized.
 
@@ -276,15 +346,21 @@ def _measured(node: Any, depth: int, budget: list[int]) -> None:
     """
     budget[0] -= 1
     if budget[0] < 0 or depth > _MAX_FRONTMATTER_DEPTH:
-        raise ValidationError(
-            f"{SKILL_DOCUMENT} frontmatter is too large or too deeply nested. It should be a "
-            "handful of fields; move anything long into the body."
-        )
+        raise _oversized_frontmatter()
     if isinstance(node, str):
         # Postgres cannot store U+0000 in text or JSONB, and SQLite can: reject it for both.
         if "\x00" in node:
             raise ValidationError(f"{SKILL_DOCUMENT} frontmatter contains a NUL character "
                                   "(a '\\0' escape). Remove it.")
+        # A YAML escape such as "\ud800" produces half of a surrogate pair. That is a Python
+        # string and not text: nothing can encode it, and the two databases disagree on it.
+        try:
+            node.encode("utf-8")
+        except UnicodeEncodeError:
+            raise ValidationError(
+                f"{SKILL_DOCUMENT} frontmatter contains a character that is not valid "
+                "Unicode (an unpaired surrogate escape). Remove it."
+            ) from None
     elif isinstance(node, dict):
         for key, value in node.items():
             _measured(key, depth + 1, budget)
@@ -311,7 +387,14 @@ def _validated_description(frontmatter: dict[str, Any]) -> str:
             f"{SKILL_DOCUMENT} frontmatter has no 'description'. It is required: the "
             "description is how an agent decides when to use the skill."
         )
-    description = description.strip()
+    # One line. The description is shown in listings and read by other people's agents, so
+    # a block scalar's line breaks become spaces and nothing else unprintable may remain.
+    description = " ".join(description.split())
+    if not description.isprintable():
+        raise ValidationError(
+            f"The description contains control characters. Received: "
+            f"'{loggable(description)}'. Keep it to plain text."
+        )
     if len(description) > SKILL_DESCRIPTION_MAX_LENGTH:
         raise ValidationError(
             f"The description is {len(description)} characters long, and the limit is "

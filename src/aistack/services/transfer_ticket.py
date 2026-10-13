@@ -62,19 +62,25 @@ class TicketSigner:
 
     def verified_upload(self, token: str) -> UploadTicket:
         claims = self._verified(token, _UPLOAD_AUDIENCE, retry_with="push_skill")
-        return UploadTicket(
-            machine_id=uuid.UUID(claims["sub"]),
-            user_id=uuid.UUID(claims["user_id"]),
-            skill_name=claims["skill_name"],
-            origin=claims["origin"],
-        )
+        try:
+            return UploadTicket(
+                machine_id=uuid.UUID(claims["sub"]),
+                user_id=uuid.UUID(claims["user_id"]),
+                skill_name=claims["skill_name"],
+                origin=claims["origin"],
+            )
+        except (KeyError, ValueError, TypeError) as error:
+            raise _not_valid("push_skill") from error
 
     def verified_download(self, token: str) -> DownloadTicket:
         claims = self._verified(token, _DOWNLOAD_AUDIENCE, retry_with="get_skill")
-        return DownloadTicket(
-            machine_id=uuid.UUID(claims["sub"]),
-            skill_version_id=uuid.UUID(claims["skill_version_id"]),
-        )
+        try:
+            return DownloadTicket(
+                machine_id=uuid.UUID(claims["sub"]),
+                skill_version_id=uuid.UUID(claims["skill_version_id"]),
+            )
+        except (KeyError, ValueError, TypeError) as error:
+            raise _not_valid("get_skill") from error
 
     def _signed(self, audience: str, machine_id: uuid.UUID, claims: dict) -> str:
         return jwt.encode(
@@ -109,7 +115,12 @@ class TicketSigner:
                 f"minutes. Call {retry_with} again for a fresh one."
             ) from error
         except jwt.InvalidTokenError as error:
-            raise InvalidTicket(
-                "This transfer URL is not valid. Use the URL exactly as the tool returned "
-                f"it, or call {retry_with} again for a fresh one."
-            ) from error
+            raise _not_valid(retry_with) from error
+
+
+def _not_valid(retry_with: str) -> InvalidTicket:
+    """One sentence for every way a ticket can be wrong, so the reason is never a hint."""
+    return InvalidTicket(
+        "This transfer URL is not valid. Use the URL exactly as the tool returned it, or "
+        f"call {retry_with} again for a fresh one."
+    )

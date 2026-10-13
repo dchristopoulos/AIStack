@@ -184,7 +184,7 @@ Length-prefixed framing rather than JSON (ADR-0009): what must match is the byte
 
 Push is the trust boundary: everything below is enforced by the server on the uploaded archive, before any row is written, and every rejection says what to fix and what was received. Limits are sized against the reference corpus (25 skills, 75 files, largest skill 19 KB) with two orders of magnitude of headroom.
 
-**Archive.** A gzipped tar, at most 1 MiB compressed, counted while the request body streams so an oversized upload is cut off rather than buffered. Members are read in memory and never extracted to disk. A directory entry is skipped. A regular file is taken. Any other member type (symlink, hard link, device, FIFO) rejects the whole push, naming the member. `._*` AppleDouble entries and `.DS_Store` are skipped: the first is an artifact of macOS `tar` that never existed on disk, the second is never part of a skill.
+**Archive.** A gzipped tar, at most 1 MiB compressed, counted while the request body streams so an oversized upload is cut off rather than buffered. Members are read in memory and never extracted to disk. A directory entry is skipped. A regular file is taken. Any other member type (symlink, hard link, device, FIFO) rejects the whole push, naming the member. `._*` AppleDouble entries and `.DS_Store` are skipped: the first is an artifact of macOS `tar` that never existed on disk, the second is never part of a skill. Before `tarfile` parses anything, the header blocks are walked directly: a damaged header rejects the archive (it would otherwise be silently truncated), a pax or long-name header above a few kilobytes is rejected (it is parsed in full, in memory), and so is a pax record that redefines a member's size or marks it sparse.
 
 **Size.** At most 100 files, 256 KiB per file, 1 MiB in total uncompressed. The per-file and total limits are applied as each member is read, so a decompression bomb stops at the limit and not at the end.
 
@@ -192,15 +192,16 @@ Push is the trust boundary: everything below is enforced by the server on the up
 
 **Paths**, after the normalization in §4 Versions:
 
-- relative, at most 255 characters and 8 segments deep
+- relative, at most 255 characters and 8 segments deep, with no single name over 255 bytes
 - no empty, `.`, or `..` segment, and no leading `/`
 - no control characters, and none of `< > : " | ? *` (Windows cannot create them)
-- no segment ending in a dot or a space, and no segment whose stem is a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, in any case)
-- no two paths equal after case folding, and no path that is also a directory prefix of another (macOS and Windows would silently merge them)
+- no segment ending in a dot or a space, and no segment whose stem is a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, `COM1`–`COM9`, `LPT1`–`LPT9`, in any case, with superscript digits and spaces before the dot counted)
+- no `.git`, `.hg`, or `.svn` folder
+- no two paths equal after uppercasing and case folding, and no path that is also a directory prefix of another (macOS and Windows would silently merge them)
 
 **Content.** Valid UTF-8 with no NUL character. Bytes are stored and returned exactly; nothing is normalized, so CRLF and a BOM survive the round trip.
 
-**`SKILL.md`.** Must exist at the archive root with exactly that name. Its frontmatter must be a YAML mapping between `---` lines, parsed with every scalar kept as a string so a `version: 1.10` is stored as `1.10` and not as the number `1.1`. `name` must equal the pushed name. `description` is required and at most 1024 characters. `version` is optional and at most 32. Unknown fields are kept.
+**`SKILL.md`.** Must exist at the archive root with exactly that name. Its frontmatter must be a YAML mapping between `---` lines (lines end at a line feed and nothing else), parsed with every scalar kept as a string so a `version: 1.10` is stored as `1.10` and not as the number `1.1`. A key may appear once, every string must be valid Unicode, and nesting and size are bounded. `name` must equal the pushed name. `description` is required, stored as one printable line, and at most 1024 characters. `version` is optional and at most 32. Unknown fields are kept.
 
 **`origin`.** Optional, at most 255 characters, no control characters.
 

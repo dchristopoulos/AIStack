@@ -31,7 +31,7 @@ def test_concurrent_join_keeps_every_machine_and_one_admin(postgres_engine, monk
 
     def join_once(index):
         with session_factory.begin() as session:
-            return onboarding_service.join(session, f"racer-{index}\nline", f"box-{index}", "MACOS")
+            return onboarding_service.join(session, f"racer-{index}", f"box-{index}", "MACOS")
 
     with caplog.at_level("INFO"), ThreadPoolExecutor(max_workers=JOINER_COUNT) as pool:
         joined = list(pool.map(join_once, range(JOINER_COUNT)))
@@ -45,4 +45,4 @@ def test_concurrent_join_keeps_every_machine_and_one_admin(postgres_engine, monk
     if force_contenders:
         losers = [r.getMessage() for r in caplog.records if "Admin already claimed concurrently" in r.getMessage()]
         assert len(losers) == JOINER_COUNT - 1
-        assert all("\n" not in message and "\\nline" in message for message in losers)
+        assert all("\n" not in message and "racer-" in message for message in losers)

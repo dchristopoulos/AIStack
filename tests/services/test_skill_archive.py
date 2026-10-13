@@ -175,3 +175,140 @@ def test_a_hostile_member_name_is_escaped_in_the_rejection():
 
     assert "\n" not in str(rejection.value)
     assert "\x1b" not in str(rejection.value)
+
+
+# --- structure: what tarfile must never be handed -------------------------------------------
+
+def _tar_bytes(members) -> bytes:
+    """The uncompressed tar of `raw_archive(members)`, for editing block by block."""
+    return gzip.decompress(raw_archive(members))
+
+
+def _pax_member(records: bytes, member_type: bytes = tarfile.XHDTYPE) -> tuple:
+    header = tarfile.TarInfo(name="PaxHeader")
+    header.type = member_type
+    header.size = len(records)
+    return header.tobuf(format=tarfile.USTAR_FORMAT), records
+
+
+def _with_leading_header(header_block: bytes, data: bytes, then: list) -> bytes:
+    """A gzipped tar that opens with one hand-built header member, then ordinary files."""
+    padding = b"\0" * (-len(data) % 512)
+    return gzip.compress(header_block + data + padding + _tar_bytes(then))
+
+
+def test_a_small_upload_cannot_make_tarfile_build_a_huge_header(tmp_path):
+    """Six kilobytes of gzip that tarfile would turn into 56 MiB of pax records."""
+    import tracemalloc
+
+    block, records = _pax_member(b"6 a=b\n" * 698_333)
+    bomb = _with_leading_header(block, records, [("SKILL.md", b"x")])
+    assert len(bomb) < 16 * 1024
+
+    tracemalloc.start()
+    try:
+        with pytest.raises(ValidationError):
+            read_archive(bomb)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    # Decompressing it costs what it weighs; parsing it is what must not happen.
+    assert peak < 16 * 1024 * 1024
+
+
+@pytest.mark.parametrize("member_type", [tarfile.XHDTYPE, tarfile.XGLTYPE])
+def test_an_extended_header_larger_than_any_filename_needs_is_rejected(member_type):
+    block, records = _pax_member(b"30 comment=" + b"x" * 18 + b"\n" * 1 + b"6 a=b\n" * 3000,
+                                 member_type)
+
+    with pytest.raises(ValidationError, match="extended header far larger"):
+        read_archive(_with_leading_header(block, records, [("SKILL.md", b"x")]))
+
+
+@pytest.mark.parametrize("record", [
+    b"11 size=99\n",
+    b"26 GNU.sparse.map=0,1,2,3\n",
+    b"22 GNU.sparse.major=1\n",
+    b"28 GNU.sparse.realsize=abc\n",
+])
+@pytest.mark.parametrize("member_type", [tarfile.XHDTYPE, tarfile.XGLTYPE])
+def test_a_header_that_redefines_where_data_ends_is_rejected(record, member_type):
+    """`size` and the sparse keys make tarfile read a different archive than was inspected.
+
+    The malformed sparse values used to reach tarfile, which raises ValueError for them, and
+    the upload answered 500.
+    """
+    block, records = _pax_member(record, member_type)
+
+    with pytest.raises(ValidationError, match="tar extension"):
+        read_archive(_with_leading_header(block, records, [("SKILL.md", b"x")]))
+
+
+def test_an_ordinary_extended_header_is_still_accepted():
+    """A long or non-ASCII path is exactly what tar writes a pax header for."""
+    long_name = "références/" + "naïve-" * 20 + "notes.md"
+
+    read = read_archive(raw_archive([("SKILL.md", b"x"), (long_name, b"y")]))
+
+    assert [file.path for file in read] == ["SKILL.md", long_name]
+
+
+def test_an_oversized_gnu_long_name_is_rejected():
+    header = tarfile.TarInfo(name="././@LongLink")
+    header.type = tarfile.GNUTYPE_LONGNAME
+    header.size = 8 * 1024
+    block = header.tobuf(format=tarfile.GNU_FORMAT)
+
+    with pytest.raises(ValidationError, match="extended header far larger"):
+        read_archive(_with_leading_header(block, b"n" * header.size, [("SKILL.md", b"x")]))
+
+
+def test_a_damaged_header_rejects_the_archive_instead_of_truncating_it():
+    """tarfile stops quietly at a bad block, and half a skill would be stored as a whole one."""
+    tar = bytearray(_tar_bytes([("SKILL.md", b"x"), ("notes.md", b"y")]))
+    second_header = tar.index(b"notes.md")
+    tar[second_header + 200] ^= 0xFF
+
+    with pytest.raises(ValidationError, match="not a readable tar archive"):
+        read_archive(gzip.compress(bytes(tar)))
+
+
+def test_a_garbage_block_between_members_is_rejected():
+    tar = _tar_bytes([("SKILL.md", b"x"), ("notes.md", b"y")])
+    second_header = tar.index(b"notes.md")
+    damaged = tar[:second_header] + b"\xa5" * 512 + tar[second_header:]
+
+    with pytest.raises(ValidationError, match="not a readable tar archive"):
+        read_archive(gzip.compress(damaged))
+
+
+def test_data_after_the_end_of_archive_marker_is_rejected():
+    tar = _tar_bytes([("SKILL.md", b"x")])
+
+    with pytest.raises(ValidationError, match="not a readable tar archive"):
+        read_archive(gzip.compress(tar + b"hidden after the end"))
+
+
+def test_a_member_that_claims_more_data_than_the_archive_holds_is_rejected():
+    tar = _tar_bytes([("SKILL.md", b"x" * 4000)])
+
+    with pytest.raises(ValidationError, match="not a readable tar archive"):
+        read_archive(gzip.compress(tar[:1024]))
+
+
+def test_no_damaged_archive_ever_raises_anything_but_a_rejection():
+    """Flip one byte anywhere, three hundred times. The answer is always a sentence."""
+    import random
+
+    tar = _tar_bytes([("SKILL.md", b"---\nname: x\n---\n"), ("scripts/run.sh", b"echo hi\n"),
+                      ("références/" + "n" * 120 + ".md", b"y")])
+    random.seed(20261013)
+
+    for _ in range(300):
+        damaged = bytearray(tar)
+        damaged[random.randrange(len(damaged))] ^= 1 << random.randrange(8)
+        try:
+            read_archive(gzip.compress(bytes(damaged)))
+        except ValidationError:
+            pass

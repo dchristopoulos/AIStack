@@ -121,3 +121,28 @@ def test_the_public_url_is_stored_without_a_trailing_slash(configured, stored):
 def test_a_public_url_without_an_http_scheme_is_rejected(configured):
     with pytest.raises(ValidationError, match="AISTACK_PUBLIC_URL"):
         _settings(aistack_public_url=configured)
+
+
+@pytest.mark.parametrize("configured", [
+    "https://aistack.example.com; rm -rf ~",
+    "https://aistack.example.com$(id)",
+    "https://user:password@aistack.example.com",
+    "https://aistack.example.com/?next=x",
+    "https://aistack example.com",
+    'https://aistack.example.com" --header "x',
+])
+def test_a_public_url_that_is_not_a_plain_address_is_rejected(configured):
+    """It is pasted into a shell command, exactly like an address taken from a request."""
+    with pytest.raises(ValidationError, match="AISTACK_PUBLIC_URL"):
+        _settings(aistack_public_url=configured)
+
+
+@pytest.mark.parametrize("configured", [
+    "https://aistack.example.com",
+    "http://10.0.0.5:8000",
+    "http://[::1]:8000",
+    "https://example.com/aistack",
+    "http://aistack.tailnet-name.ts.net:8000",
+])
+def test_an_ordinary_public_url_is_accepted(configured):
+    assert _settings(aistack_public_url=configured).public_url == configured

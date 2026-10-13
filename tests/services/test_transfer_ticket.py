@@ -117,3 +117,28 @@ def test_a_rejection_never_repeats_the_ticket(signer):
 
     assert token not in str(rejection.value)
     assert token.split(".")[2] not in str(rejection.value)
+
+
+@pytest.mark.parametrize(("purpose", "claims"), [
+    ("upload", {"sub": "not-a-uuid"}),
+    ("upload", {"user_id": "not-a-uuid"}),
+    ("upload", {"user_id": None}),
+    ("upload", {"skill_name": ...}),
+    ("download", {"sub": "not-a-uuid"}),
+    ("download", {"skill_version_id": ...}),
+])
+def test_a_correctly_signed_ticket_with_malformed_claims_is_still_just_not_valid(purpose,
+                                                                              claims):
+    """Reachable only with the key. It is still a rejection, never an unhandled error."""
+    signer = TicketSigner(KEY)
+    token = signer.sign_upload(UPLOAD) if purpose == "upload" else signer.sign_download(DOWNLOAD)
+    forged = jwt.decode(token, options={"verify_signature": False})
+    for claim, value in claims.items():
+        if value is ...:
+            del forged[claim]
+        else:
+            forged[claim] = value
+    resigned = jwt.encode(forged, KEY, algorithm="HS256")
+
+    with pytest.raises(InvalidTicket, match="not valid"):
+        (signer.verified_upload if purpose == "upload" else signer.verified_download)(resigned)

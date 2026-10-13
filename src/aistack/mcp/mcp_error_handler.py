@@ -7,7 +7,7 @@ from typing import Callable, ParamSpec, TypeVar
 from fastmcp.exceptions import ToolError
 
 from aistack.commons.exceptions import AIStackError
-from aistack.commons.text import sanitized
+from aistack.commons.text import bounded_failure
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -37,5 +37,5 @@ def handle_mcp_errors(func: Callable[P, T]) -> Callable[P, T]:
 
 
 def _failure_message(tool_name: str, error_message: str, started_at: float) -> str:
-    return (f"{tool_name} failed. Error: '{sanitized(error_message)}'. "
+    return (f"{tool_name} failed. Error: '{bounded_failure(error_message)}'. "
             f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")

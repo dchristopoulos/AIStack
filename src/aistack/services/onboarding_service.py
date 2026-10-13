@@ -143,6 +143,13 @@ def _validated_name(value: str, field: str, max_length: int) -> str:
         raise ValidationError(
             f"{field} is blank. Give a name with at least one non-whitespace character."
         )
+    # A username is returned to other users' agents as `pushed_by`, so it has to be text that
+    # cannot be mistaken for anything else: no line breaks, no terminal escapes.
+    if not stripped.isprintable():
+        raise ValidationError(
+            f"{field} contains control characters. Use plain text. "
+            f"Received: '{loggable(stripped)}'."
+        )
     if len(stripped) > max_length:
         raise ValidationError(
             f"{field} is {len(stripped)} characters long, and the limit is "

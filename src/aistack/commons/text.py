@@ -17,6 +17,24 @@ def sanitized(text: str) -> str:
                    for character in text)
 
 
+# The cap on one rendered failure in the log. A traceback fits; a traceback through three
+# thousand recursive frames does not, and one request should not buy a megabyte of log.
+LOGGED_FAILURE_MAX_LENGTH = 8000
+
+
+def bounded_failure(text: str) -> str:
+    """Sanitize a failure for one log line, keeping its start and its end.
+
+    The end of a traceback names the exception and the start names the entry point; the
+    frames in between are the part that repeats.
+    """
+    text = sanitized(text)
+    if len(text) <= LOGGED_FAILURE_MAX_LENGTH:
+        return text
+    half = LOGGED_FAILURE_MAX_LENGTH // 2
+    return f"{text[:half]}[+{len(text) - 2 * half} more characters]{text[-half:]}"
+
+
 def loggable(value: object) -> str:
     """Render one caller-supplied value for a log line: sanitized, and bounded.
 

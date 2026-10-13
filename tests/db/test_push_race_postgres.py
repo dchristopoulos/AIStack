@@ -58,6 +58,14 @@ def test_concurrent_pushes_never_share_a_revision_number(postgres_engine, monkey
             range(PUSHER_COUNT)))
 
     assert sorted(result.revision for result in pushed) == [2, 3, 4]
+    # Each response names the revision it actually followed. The value read before the race
+    # was "pusher-0" for all three; only the winner of revision 2 may still say so.
+    pusher_of = {2: None, 3: None, 4: None}
+    for index, result in enumerate(pushed):
+        pusher_of[result.revision] = f"pusher-{index}"
+    for result in pushed:
+        expected = "pusher-0" if result.revision == 2 else pusher_of[result.revision - 1]
+        assert result.previous_pushed_by == expected
     with session_factory() as session:
         stored = session.scalars(select(SkillVersion.revision)
                                  .order_by(SkillVersion.revision)).all()

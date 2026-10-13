@@ -3,6 +3,8 @@ from typing import Literal
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from aistack.commons.urls import is_plain_http_url
+
 # Reject the public placeholder shipped in .env.example.
 PLACEHOLDER_INVITE_CODE = "change-me"
 
@@ -74,8 +76,13 @@ class Settings(BaseSettings):
         if value is None or not value.strip():
             return None
         value = value.strip().rstrip("/")
-        if not value.startswith(("http://", "https://")):
-            raise ValueError("AISTACK_PUBLIC_URL must start with http:// or https://.")
+        # The same rule a request-derived address has to pass: this value is pasted into
+        # a shell command too, and an operator's typo should fail at startup, not there.
+        if not is_plain_http_url(value):
+            raise ValueError(
+                "AISTACK_PUBLIC_URL must be a plain http:// or https:// address such as "
+                "https://aistack.example.com, with no credentials, query, or spaces."
+            )
         return value
 
     @field_validator("log_level", mode="before")

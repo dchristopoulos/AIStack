@@ -22,7 +22,9 @@ async def test_join_logs_escape_and_bound_names(server_url, caplog, level, field
     with caplog.at_level(level):
         async with client_for(server_url, INVITE_CODE) as client:
             result = await client.call_tool("join", arguments, raise_on_error=False)
-    assert result.is_error == (len(value) > 64)
+    # Both are refused: one for its control characters, one for its length. Either way the
+    # value was logged before anything had validated it, which is what this test is about.
+    assert result.is_error is True
     records = [r for r in caplog.records if r.name.startswith("aistack.")]
     assert records
     for record in records:
