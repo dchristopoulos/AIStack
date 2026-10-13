@@ -33,7 +33,7 @@ class JoinResult(TypedDict):
     another computer for someone who has already joined is add_machine, not this.
 
     Args:
-        username: The name this person is known by in the vault, up to 64 characters. It is
+        username: A lowercase handle (letters, digits, single . - _), up to 64 characters. It is
                  shown as the pusher of every skill revision they upload, so a recognizable
                  handle beats a display name.
         machine_name: What this computer is called, up to 64 characters, unique among that

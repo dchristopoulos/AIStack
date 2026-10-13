@@ -77,7 +77,7 @@ def test_a_name_that_is_not_text_is_rejected(name):
     ("   ", None),
     ("https://github.com/mattpocock/skills", "https://github.com/mattpocock/skills"),
     ("  https://example.com/skill  ", "https://example.com/skill"),
-    ("x" * 255, "x" * 255),
+    ("https://e.co/" + "x" * 242, "https://e.co/" + "x" * 242),
 ])
 def test_origin_is_optional_and_stored_trimmed(origin, stored):
     assert validated_origin(origin) == stored
@@ -512,3 +512,27 @@ def test_a_description_with_control_characters_is_rejected(escape):
 
     assert "description contains control characters" in message
     assert "\x1b" not in message and "\x07" not in message
+
+
+@pytest.mark.parametrize("origin", ["javascript:alert(1)", "github.com/a/b", "ftp://host/x",
+                                    "https://", "https://exa mple.com/x", "file:///etc/passwd"])
+def test_an_origin_that_is_not_an_http_url_is_rejected(origin):
+    with pytest.raises(ValidationError, match="http"):
+        validated_origin(origin)
+
+
+@pytest.mark.parametrize("origin", ["https://github.com/mattpocock/skills",
+                                    "http://intranet.local/wiki/skills?id=3#top"])
+def test_an_http_origin_is_accepted(origin):
+    assert validated_origin(origin) == origin
+
+
+@pytest.mark.parametrize("path", [".env", "config/.env", ".env.local", ".ENV", ".env.production"])
+def test_an_environment_file_is_refused_because_the_vault_is_shared(path):
+    with pytest.raises(ValidationError, match="whole team"):
+        validated_skill("wizard", _files({path: b"API_KEY=1\n"}))
+
+
+@pytest.mark.parametrize("path", [".env.example", ".env.sample", ".gitignore", "env.md", ".envrc.md"])
+def test_a_dotfile_that_is_not_an_environment_file_is_kept(path):
+    assert path in {file.path for file in validated_skill("wizard", _files({path: b"x\n"})).files}

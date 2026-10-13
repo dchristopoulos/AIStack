@@ -189,7 +189,7 @@ Deliberately not built yet, in the order they are likely to arrive:
 3. **Rules**, the second resource type, projected into `CLAUDE.md`, `AGENTS.md`, and `.cursor/rules/`.
 4. **Background sync**, then hooks, agents, an MCP gateway, and profiles.
 
-Known limits today: no version pinning (a machine always gets the latest revision), global skills directory only, text files only, and no schema migrations yet. [`docs/DESIGN.md`](docs/DESIGN.md) §4 lists everything left out and why.
+Known limits today: no version pinning (a machine always gets the latest revision), global skills directory only, and no schema migrations yet. One server is one team: there are no personal or per-project vaults. A skill is text files only, at most 100 of them, 256 KB each and 1 MiB together, up to 8 folders deep; empty folders are not stored and `.env` files are refused. [`docs/DESIGN.md`](docs/DESIGN.md) §4 lists everything left out and why.
 
 ## Documentation
 

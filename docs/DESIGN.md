@@ -205,7 +205,11 @@ Push is the trust boundary: everything below is enforced by the server on the up
 
 **Reserved names.** A skill may not be named `synced` (Claude Code's folder for claude.ai skills, which an install would replace) or after a Windows device (`con`, `nul`, `com1`, …): the name is a folder on every machine.
 
-**`origin`.** Optional, at most 255 characters, no control characters.
+**Environment files.** `.env` and `.env.*` are refused anywhere in a skill, because that is where secrets are kept and the vault is shared. The templates `.env.example`, `.env.sample`, and `.env.template` are kept.
+
+**`origin`.** Optional, at most 255 characters, no control characters, and an `http://` or `https://` URL: it will be rendered as a link.
+
+**Usernames.** A lowercase handle: letters and digits joined by single `.`, `-`, or `_`. A username is the `pushed_by` teammates read before a skill changes on their machine, so no two may differ only in case or alphabet. Machine names are seen only by their owner and may be any printable text.
 
 ### Schema (final for MVP)
 

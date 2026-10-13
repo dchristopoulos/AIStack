@@ -87,7 +87,7 @@ def read_archive(body: bytes) -> list[ArchivedFile]:
                     )
                 if member.size > MAX_FILE_BYTES:
                     raise ValidationError(
-                        f"'{loggable(member.name)}' is {member.size} bytes and the limit "
+                        f"'{loggable(member.name.removeprefix('./'))}' is {member.size} bytes and the limit "
                         f"per file is {MAX_FILE_BYTES}."
                     )
                 total_bytes += member.size

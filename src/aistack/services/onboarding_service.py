@@ -1,4 +1,5 @@
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from time import perf_counter
@@ -16,6 +17,8 @@ from aistack.services.token_service import generate_machine_token, hash_token
 
 logger = logging.getLogger(__name__)
 
+_USERNAME = re.compile(r"[a-z0-9]+([._-][a-z0-9]+)*")
+
 
 @dataclass(frozen=True)
 class JoinedMachine:
@@ -29,7 +32,7 @@ class JoinedMachine:
 def join(session: Session, username: str, machine_name: str, os: str) -> JoinedMachine:
     """Create a user and first machine within the caller's transaction."""
     started_at = perf_counter()
-    username = _validated_name(username, "username", USERNAME_MAX_LENGTH)
+    username = _validated_username(username)
     machine_name = _validated_name(machine_name, "machine_name", MACHINE_NAME_MAX_LENGTH)
     operating_system = _validated_operating_system(os)
 
@@ -129,6 +132,21 @@ def _claim_admin(session: Session, user: User) -> None:
         return
 
     session.refresh(user, ["is_admin"])
+
+
+def _validated_username(username: str) -> str:
+    """A username is what teammates see as `pushed_by` before a skill changes on their machine.
+
+    So no two may differ only in how they look: one case, one alphabet, no spaces. That rules
+    out `Maria` beside `maria`, and a Cyrillic twin of either.
+    """
+    username = _validated_name(username, "username", USERNAME_MAX_LENGTH)
+    if not _USERNAME.fullmatch(username):
+        raise ValidationError(
+            "A username is a short lowercase handle: letters and digits, joined by single "
+            f"'.', '-' or '_', like 'maria' or 'j.smith'. Received: '{loggable(username)}'."
+        )
+    return username
 
 
 def _validated_name(value: str, field: str, max_length: int) -> str:

@@ -213,5 +213,21 @@ def test_a_name_with_control_or_invisible_characters_is_rejected(session_factory
 
 
 @pytest.mark.parametrize("name", ["maría", "dimitris-χ", "work laptop", "日本語"])
-def test_a_printable_name_in_any_script_is_accepted(session_factory, name):
-    assert _join(session_factory, username=name).user.username == name
+def test_a_printable_machine_name_in_any_script_is_accepted(session_factory, name):
+    """A machine name is seen only by its owner, so it is theirs to spell."""
+    assert _join(session_factory, machine_name=name).machine.name == name
+
+
+@pytest.mark.parametrize("username", ["Dimitris", "a b", "a/b", "<script>", "мария", "-a", "a..b",
+                                      "a."])
+def test_a_username_that_is_not_a_plain_lowercase_handle_is_rejected(session_factory, username):
+    """It is shown to teammates as pushed_by, so no two may differ only in how they look."""
+    with session_factory.begin() as session:
+        with pytest.raises(ValidationError, match="lowercase"):
+            onboarding_service.join(session, username, "macbook", "MACOS")
+
+
+@pytest.mark.parametrize("username", ["maria", "j.smith", "dev-2", "a_b", "x1"])
+def test_a_lowercase_handle_is_accepted(session_factory, username):
+    with session_factory.begin() as session:
+        assert onboarding_service.join(session, username, "macbook", "MACOS").user.username == username

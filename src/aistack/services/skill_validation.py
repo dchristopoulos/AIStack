@@ -36,6 +36,8 @@ _SKILL_NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 # not the user's to push and not AIStack's to manage.
 CLAUDE_CODE_FOLDER = "synced"
 
+_HTTP_URL = re.compile(r"https?://[^\s/]+(/\S*)?")
+
 # Characters Windows cannot put in a filename. A skill pushed from macOS must still install.
 _WINDOWS_FORBIDDEN = frozenset('<>:"|?*')
 _WINDOWS_DEVICE_NAMES = frozenset(
@@ -53,6 +55,7 @@ _MAX_SEGMENT_BYTES = 255
 # Version-control metadata is never part of a skill, and a hook stored in it would arrive
 # on every machine with its executable bit set.
 _VERSION_CONTROL_FOLDERS = frozenset([".git", ".hg", ".svn"])
+_ENVIRONMENT_TEMPLATES = frozenset([".env.example", ".env.sample", ".env.template"])
 
 _FRONTMATTER_FENCE = "---"
 # Enough for any real frontmatter, and a hard stop for one built to expand (see _measured).
@@ -126,6 +129,12 @@ def validated_origin(origin: str | None) -> str | None:
     if not origin.isprintable():
         raise ValidationError(
             f"origin contains control characters. Received: '{loggable(origin)}'."
+        )
+    # It will be shown as a link, so it has to be one a browser opens as a page.
+    if not _HTTP_URL.fullmatch(origin):
+        raise ValidationError(
+            "origin must be an http:// or https:// URL, like the repository or page the "
+            f"skill came from. Omit it otherwise. Received: '{loggable(origin)}'."
         )
     return origin
 
@@ -223,11 +232,21 @@ def _validate_segment(segment: str, shown_path: str) -> None:
             f"The path '{shown_path}' has a name longer than {_MAX_SEGMENT_BYTES} bytes, "
             "which no filesystem can create. Shorten it."
         )
+    if _is_environment_file(segment.casefold()):
+        raise ValidationError(
+            f"The path '{shown_path}' is an environment file, which is where secrets are "
+            "kept, and the vault is shared with the whole team. Leave it out of the skill."
+        )
     if segment.casefold() in _VERSION_CONTROL_FOLDERS:
         raise ValidationError(
             f"The path '{shown_path}' is version-control metadata, not part of the skill. "
             "Leave it out: 'tar --exclude .git -czf <file> -C <skill folder> .'."
         )
+
+
+def _is_environment_file(name: str) -> bool:
+    """`.env` and its per-environment variants, but not the templates meant to be shared."""
+    return name == ".env" or (name.startswith(".env.") and name not in _ENVIRONMENT_TEMPLATES)
 
 
 def _device_stem(segment: str) -> str:

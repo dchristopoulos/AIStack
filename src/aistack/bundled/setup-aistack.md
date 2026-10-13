@@ -5,7 +5,7 @@ You are an AI coding agent. The user asked you to connect this computer to the A
 You need three things from the user. Ask for whichever they did not give you:
 
 - the **invite code** for this server
-- a **username**: a short handle their team will recognize, like `maria`. It is shown next to every skill they push.
+- a **username**: a short lowercase handle their team will recognize, like `maria` or `j.smith` (letters, digits, and single `.`, `-`, `_`). It is shown next to every skill they push.
 - a **name for this computer**, like `macbook` or `work-laptop`. Suggest the short hostname, without the domain. It can be at most 64 characters.
 
 Work out the operating system yourself: `MACOS`, `WINDOWS`, or `LINUX`.

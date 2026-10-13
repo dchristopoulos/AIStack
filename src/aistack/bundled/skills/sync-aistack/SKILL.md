@@ -85,6 +85,8 @@ Two flags on each option are not optional to mention:
 
 Word the question from the facts. For `undecided` + `current`: "wizard is already on this machine and matches the vault. Want AIStack to keep it updated from now on?" For `enabled` + `unknown`: "You've edited wizard locally. Restore the vault's version (your edits will be lost), push your version to the vault, or leave it for now?"
 
+Before the user answers `push` for an `unknown` copy, tell them the vault's latest is revision `latest_revision`, pushed by `pushed_by`. Their push becomes the newest revision for everyone, and if that person changed the skill after the user's copy was taken, those changes are not in it. The older revisions stay in the vault.
+
 When several skills need the same kind of answer, ask about them together and accept one answer for the group.
 
 ## 4. Tell the user what happened
