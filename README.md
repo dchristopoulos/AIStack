@@ -4,9 +4,9 @@ Keep your AI development setup in sync across every developer, machine, and codi
 
 Self-hosted. Open source. Driven entirely from chat, through MCP.
 
-> Status: early. Three of the seven MVP tools are built. The server starts, authenticates
-> both kinds of bearer, `join` and `add_machine` register machines, and `push_skill` stores
-> a skill in the vault. Installing and syncing are designed but not yet written.
+> Status: early. Six of the seven MVP tools are built. A skill pushed from one machine can
+> be listed, installed, and removed on another. `sync`, which keeps installed skills
+> current, is designed but not yet written.
 
 ## The problem
 
@@ -79,17 +79,17 @@ forced into chat.
 
 ## MVP
 
-The MVP supports Claude Code and seven MCP tools for skills. The two onboarding tools and `push_skill` are built; the other four are planned.
+The MVP supports Claude Code and seven MCP tools for skills. Six are built; `sync` is planned.
 
 | Tool | What it does |
 |---|---|
 | `join` | **Implemented.** Redeem the team invite code, register your first machine, get its token |
 | `add_machine` | **Implemented.** Register another computer and return a ready MCP command to paste there |
-| `list_skills` | Planned. Browse the team vault |
-| `get_skill` | Planned. Fetch a skill's files for install and enable it on this machine |
+| `list_skills` | **Implemented.** Browse the team vault |
+| `get_skill` | **Implemented.** Enable a skill on this machine and get a URL to download its files |
 | `push_skill` | **Implemented.** Upload a skill, where a repeated name creates a new revision |
 | `sync` | Planned. Compare local state against the server's desired state for this machine |
-| `disable_skill` | Planned. Disable a skill for this machine; the harness then removes its local folder |
+| `disable_skill` | **Implemented.** Disable a skill for this machine; the harness then removes its local folder |
 
 Sync never overwrites a locally modified skill. It asks whether to restore the vault copy, push your edit as a new revision, or leave it alone.
 

@@ -95,20 +95,21 @@ def read_archive(body: bytes) -> list[ArchivedFile]:
     return files
 
 
-def build_archive(files: Iterable[tuple[str, bytes, bool]]) -> bytes:
+def build_archive(files: Iterable[tuple[str, bytes, bool]], modified_at: int = 0) -> bytes:
     """Pack `(path, content, executable)` into a gzipped tar that any `tar` can extract.
 
-    Deterministic: same files, same bytes. Timestamps and owners are zeroed because nothing
-    about the server's clock or its user belongs on the machine that installs the skill.
+    Deterministic: same files and same `modified_at` (seconds since the epoch) give the same
+    bytes. Every file carries that one timestamp, and no owner, because nothing about the
+    server's clock or its user belongs on the machine that installs the skill.
     """
     buffer = io.BytesIO()
-    with gzip.GzipFile(fileobj=buffer, mode="wb", mtime=0) as compressed:
+    with gzip.GzipFile(fileobj=buffer, mode="wb", mtime=modified_at) as compressed:
         with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as archive:
             for path, content, executable in sorted(files, key=lambda file: file[0].encode()):
                 member = tarfile.TarInfo(name=path)
                 member.size = len(content)
                 member.mode = 0o755 if executable else 0o644
-                member.mtime = 0
+                member.mtime = modified_at
                 archive.addfile(member, io.BytesIO(content))
     return buffer.getvalue()
 

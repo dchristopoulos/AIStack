@@ -18,11 +18,12 @@ from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.route_error_handler import handle_route_errors
 from aistack.services import skill_service
 from aistack.services.skill_archive import MAX_ARCHIVE_BYTES
-from aistack.services.transfer_ticket import UploadTicket
+from aistack.services.transfer_ticket import DownloadTicket, UploadTicket
 
 logger = logging.getLogger(__name__)
 
 UPLOAD_PATH = "/transfer/upload"
+DOWNLOAD_PATH = "/transfer/download"
 
 
 @mcp.custom_route(UPLOAD_PATH + "/{ticket}", methods=["PUT"])
@@ -56,6 +57,31 @@ def _store_upload(ticket: UploadTicket, archive: bytes) -> skill_service.PushedS
             origin=ticket.origin,
             archive=archive,
         )
+
+
+@mcp.custom_route(DOWNLOAD_PATH + "/{ticket}", methods=["GET"])
+@handle_route_errors
+async def download_skill(request: Request) -> Response:
+    started_at = perf_counter()
+    ticket = get_ticket_signer().verified_download(request.path_params["ticket"])
+
+    name, archive = await asyncio.to_thread(_load_download, ticket)
+
+    logger.info(
+        f"Skill downloaded. Skill: '{name}'. Bytes: '{len(archive)}'. "
+        f"Machine: '{ticket.machine_id}'. "
+        f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
+    )
+    return Response(
+        archive,
+        media_type="application/gzip",
+        headers={"Content-Disposition": f'attachment; filename="{name}.tgz"'},
+    )
+
+
+def _load_download(ticket: DownloadTicket) -> tuple[str, bytes]:
+    with get_session_factory().begin() as session:
+        return skill_service.archive_of(session, ticket.machine_id, ticket.skill_version_id)
 
 
 async def _bounded_body(request: Request) -> bytes:

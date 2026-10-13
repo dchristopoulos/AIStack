@@ -44,6 +44,8 @@ Layered layout under `src/aistack/` (see `docs/DESIGN.md` §8): MCP tool handler
 - The canonical content hash has one implementation, `services/content_hash.py` (ADR-0011). Push and sync both call it; nothing else frames a hash.
 - Provenance columns are `pushed_by` and mean exactly that — never render them as "author" or "created by".
 - Trust-boundary work gets a diff review, not just a plan review: auth, push validation and hashing, sync, and anything destructive. Plans cannot reveal a missing authorization check, a path traversal, or a secret in a log line.
+- Read a stored timestamp through `as_utc()` in `db/models/timestamps.py` before doing arithmetic on it. SQLite returns naive datetimes and Postgres aware ones; `.timestamp()` on a naive value silently assumes local time.
+- Installs stage under `<skills>/.aistack-staging/` and finish with a rename. A dot-folder two levels deep is neither loaded by Claude Code as a skill nor reported by sync, and it is on the same filesystem as the target, so the rename is atomic.
 - Enforce column lengths in the application. SQLite accepts oversized `VARCHAR(n)`, Postgres rejects it, so unenforced lengths break "runs identically on both".
 - Sync reconciliation is a pure function over `desired` and `observed` states, returning a policy action — no knowledge of skills, SQLAlchemy, paths, or adapters (ADR-0007). It is the seam a second resource type reuses.
 - Services raise domain exceptions from `commons/exceptions/`; the MCP layer converts them to `ToolError` in one place, with `mask_error_details=True` always on — never env-gated. Never return an error payload from a tool: at the protocol level it reads as success.

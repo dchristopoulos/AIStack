@@ -7,16 +7,21 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from aistack.commons.exceptions import Conflict, InvalidTicket
+from aistack.commons.exceptions import Conflict, InvalidTicket, NotFound
 from aistack.commons.text import loggable
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.skill_version import SkillVersion
+from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
-from aistack.services.skill_archive import read_archive
-from aistack.services.skill_validation import ValidatedSkill, validated_skill
+from aistack.services.skill_archive import build_archive, read_archive
+from aistack.services.skill_validation import (
+    ValidatedSkill,
+    validated_skill,
+    validated_skill_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +87,119 @@ def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
         previous_pushed_by=previous_pushed_by,
         stored_origin=skill.origin,
         same_origin=created or (origin is not None and origin == skill.origin),
+    )
+
+
+@dataclass(frozen=True)
+class SkillSummary:
+    name: str
+    description: str
+
+
+@dataclass(frozen=True)
+class InstallableFile:
+    path: str
+    sha256: str
+    executable: bool
+
+
+@dataclass(frozen=True)
+class InstallableSkill:
+    """The latest revision of a skill, described but not carried: bytes travel separately."""
+
+    name: str
+    description: str
+    skill_version_id: uuid.UUID
+    revision: int
+    version: str | None
+    pushed_by: str
+    content_hash: str
+    files: tuple[InstallableFile, ...]
+
+
+def list_skills(session: Session) -> list[SkillSummary]:
+    """Every skill in the vault, by name. The listing is also the search."""
+    rows = session.execute(select(Skill.name, Skill.description).order_by(Skill.name)).all()
+    return [SkillSummary(name=name, description=description) for name, description in rows]
+
+
+def get_skill(session: Session, machine_id: uuid.UUID, name: str) -> InstallableSkill:
+    """Enable `name` for this machine and describe its latest revision.
+
+    Install, restore, re-enable, and adopt are all this call: each one means "this machine
+    should have the latest revision", and the answer to each is the same files.
+    """
+    skill = _required_skill(session, name)
+    version = _latest_version(session, skill.skill_id)
+    set_enabled(session, machine_id, skill.skill_id, enabled=True)
+
+    files = session.execute(
+        select(SkillFile.path, SkillFile.sha256, SkillFile.executable)
+        .where(SkillFile.skill_version_id == version.skill_version_id)
+        .order_by(SkillFile.path)
+    ).all()
+    return InstallableSkill(
+        name=skill.name,
+        description=skill.description,
+        skill_version_id=version.skill_version_id,
+        revision=version.revision,
+        version=version.version,
+        pushed_by=_username(session, version.pushed_by),
+        content_hash=version.content_hash,
+        files=tuple(InstallableFile(path=path, sha256=sha256, executable=executable)
+                    for path, sha256, executable in files),
+    )
+
+
+def disable_skill(session: Session, machine_id: uuid.UUID, name: str) -> str:
+    """Record that this machine should not have `name`. The row stays, as `enabled = False`.
+
+    Keeping the row is the point (ADR-0006): sync tells "the user removed this here" apart
+    from "this machine never decided", and only the first is a reason to stay quiet.
+    """
+    skill = _required_skill(session, name)
+    decision = _machine_skill(session, machine_id, skill.skill_id)
+    if decision is None:
+        raise NotFound(
+            f"'{skill.name}' was never enabled on this machine, so there is nothing to "
+            "disable. If its folder is on disk and the user wants it gone, delete the folder; "
+            "the vault holds no decision about it for this machine."
+        )
+    decision.enabled = False
+    return skill.name
+
+
+def archive_of(session: Session, machine_id: uuid.UUID,
+               skill_version_id: uuid.UUID) -> tuple[str, bytes]:
+    """The skill name and gzipped tar of one exact revision, for a machine still registered.
+
+    The revision was chosen when the ticket was minted, so a push that lands between the
+    tool call and the download cannot serve files that disagree with what the tool described.
+    """
+    if session.get(Machine, machine_id) is None:
+        raise InvalidTicket(
+            "The machine this transfer URL was issued to is no longer registered, so the URL "
+            "is void. Reconnect this computer to AIStack before trying again."
+        )
+
+    revision = session.execute(
+        select(Skill.name, SkillVersion.created_on)
+        .join(SkillVersion, SkillVersion.skill_id == Skill.skill_id)
+        .where(SkillVersion.skill_version_id == skill_version_id)
+    ).one_or_none()
+    if revision is None:
+        raise NotFound("The revision this transfer URL points at no longer exists. Call "
+                       "get_skill again for the current one.")
+    name, pushed_on = revision
+
+    files = session.execute(
+        select(SkillFile.path, SkillFile.content, SkillFile.executable)
+        .where(SkillFile.skill_version_id == skill_version_id)
+    ).all()
+    return name, build_archive(
+        ((path, content.encode("utf-8"), executable) for path, content, executable in files),
+        # Installed files are dated by when the revision was pushed, not 1970 and not now.
+        modified_at=int(as_utc(pushed_on).timestamp()),
     )
 
 
@@ -178,6 +296,15 @@ def _store_revision(session: Session, skill: Skill, uploaded: ValidatedSkill,
         f"Several pushes to '{skill.name}' landed at the same moment and this one kept "
         "losing the race for a revision number. Nothing was stored; push it again."
     )
+
+
+def _required_skill(session: Session, name: str) -> Skill:
+    """The skill called `name`, or a rejection that says where to look instead."""
+    skill = _skill_named(session, validated_skill_name(name))
+    if skill is None:
+        raise NotFound(f"The vault has no skill named '{name}'. Call list_skills to see "
+                       "what it holds; names are exact.")
+    return skill
 
 
 def _skill_named(session: Session, name: str) -> Skill | None:
