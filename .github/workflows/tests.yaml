@@ -8,6 +8,9 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    # The suite takes about three minutes. Without a bound, a hung test holds the runner for
+    # GitHub's six hours and the pull request reads "pending" instead of failed.
+    timeout-minutes: 15
 
     services:
       # The concurrent-admin race (ADR-0008) cannot be reproduced on SQLite, and the test that
@@ -53,10 +56,13 @@ jobs:
           print('PostgreSQL reachable.')
           "
 
-      - run: poetry run pytest -q -p no:cacheprovider --no-header -rs
+      # A test still running after two minutes prints every thread's stack and carries on, so
+      # a hang that meets the job timeout has already named itself in the log.
+      - run: poetry run pytest -q -p no:cacheprovider --no-header -rs -o faulthandler_timeout=120
 
   container:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       postgres:
