@@ -4,9 +4,9 @@ Keep your AI development setup in sync across every developer, machine, and codi
 
 Self-hosted. Open source. Driven entirely from chat, through MCP.
 
-> Status: early. All seven MVP tools are built. A skill pushed from one machine can be
-> listed, installed, and removed on another, and `sync` installs and updates what a machine
-> has enabled. The questions sync asks about locally edited skills are the last piece.
+> Status: the seven MVP tools are built and tested against SQLite and PostgreSQL. A skill
+> pushed from one machine can be listed, installed, kept current, and removed on another.
+> Packaging (one container) and the first-run setup are what remain.
 
 ## The problem
 

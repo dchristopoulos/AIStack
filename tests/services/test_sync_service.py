@@ -8,6 +8,7 @@ from aistack.db.engine import build_session_factory
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill_version import SkillVersion
 from aistack.services import onboarding_service, skill_service, sync_service
+from aistack.services.reconciliation import Choice, Desired, Observed
 from aistack.services.sync_service import Install, Update
 from tests.archives import local_digests, skill_archive
 
@@ -233,7 +234,8 @@ def test_sync_is_not_discovery(session_factory, dimitris, maria):
 
     report = _sync(session_factory, maria, {})
 
-    assert report == sync_service.SyncReport(install=(), update=(), up_to_date=0)
+    assert report == sync_service.SyncReport(install=(), update=(), ask=(), orphans=(),
+                                             up_to_date=0)
 
 
 def test_sync_is_scoped_to_the_calling_machine(session_factory, dimitris, maria):
@@ -292,3 +294,234 @@ def test_too_many_local_files_is_rejected(session_factory, dimitris):
 
     with pytest.raises(ValidationError, match="files, and the limit is 20000"):
         _sync(session_factory, dimitris, local)
+
+
+# --- the questions --------------------------------------------------------------------------
+
+def _only_question(report):
+    assert report.install == () and report.update == ()
+    assert len(report.ask) == 1
+    return report.ask[0]
+
+
+def _choices(question) -> list[Choice]:
+    return [option.choice for option in question.options]
+
+
+def _flags(question) -> dict[Choice, tuple[bool, bool]]:
+    return {option.choice: (option.overwrites_local, option.loses_local_edits)
+            for option in question.options}
+
+
+EDITED = {"wizard": local_digests(files={"notes.md": "my local edit\n"})}
+
+
+def test_an_edited_enabled_skill_is_a_question_with_restore_push_and_skip(session_factory,
+                                                                        dimitris, maria):
+    _push(session_factory, maria)
+    _enable(session_factory, dimitris)
+
+    question = _only_question(_sync(session_factory, dimitris, EDITED))
+
+    assert (question.name, question.desired, question.local) == (
+        "wizard", Desired.ENABLED, Observed.UNKNOWN)
+    assert question.local_revision is None
+    assert question.latest_revision == 1
+    assert question.pushed_by == "maria"
+    assert _flags(question) == {
+        Choice.ENABLE: (True, True),
+        Choice.PUSH: (False, False),
+        Choice.SKIP: (False, False),
+    }
+
+
+def test_skipping_means_being_asked_again(session_factory, dimitris):
+    """Skip is not a state the server stores. The same input gives the same question."""
+    _push(session_factory, dimitris)
+
+    first = _sync(session_factory, dimitris, EDITED)
+    second = _sync(session_factory, dimitris, EDITED)
+
+    assert first == second
+    assert len(second.ask) == 1
+
+
+def test_a_disabled_skill_back_on_disk_is_asked_about_by_what_is_on_disk(session_factory,
+                                                                       dimitris):
+    _push(session_factory, dimitris, files={"notes.md": "one\n"})
+    _push(session_factory, dimitris, files={"notes.md": "two\n"})
+    _disable(session_factory, dimitris)
+
+    current = _only_question(_sync(session_factory, dimitris,
+                                   {"wizard": local_digests(files={"notes.md": "two\n"})}))
+    stale = _only_question(_sync(session_factory, dimitris,
+                                 {"wizard": local_digests(files={"notes.md": "one\n"})}))
+    unknown = _only_question(_sync(session_factory, dimitris, EDITED))
+
+    assert current.desired is stale.desired is unknown.desired is Desired.DISABLED
+    assert (current.local, current.local_revision) == (Observed.CURRENT, 2)
+    assert (stale.local, stale.local_revision) == (Observed.STALE, 1)
+    assert (unknown.local, unknown.local_revision) == (Observed.UNKNOWN, None)
+
+    # Re-enable with no rewrite, or finish the removal.
+    assert _flags(current) == {Choice.ENABLE: (False, False), Choice.REMOVE: (False, False)}
+    # Re-enabling replaces the files, and says so. Nothing is lost: revision 1 is in the vault.
+    assert _flags(stale) == {Choice.ENABLE: (True, False), Choice.REMOVE: (False, False)}
+    # Only here can an answer destroy work, and both ways of doing so are flagged.
+    assert _flags(unknown) == {
+        Choice.PUSH: (False, False),
+        Choice.ENABLE: (True, True),
+        Choice.REMOVE: (False, True),
+        Choice.SKIP: (False, False),
+    }
+
+
+def test_a_vault_skill_on_disk_with_no_decision_is_asked_about_by_what_is_on_disk(
+        session_factory, dimitris, maria):
+    """Maria has the folder, the vault has the skill, and her machine never chose it."""
+    _push(session_factory, dimitris, files={"notes.md": "one\n"})
+    _push(session_factory, dimitris, files={"notes.md": "two\n"})
+
+    current = _only_question(_sync(session_factory, maria,
+                                   {"wizard": local_digests(files={"notes.md": "two\n"})}))
+    stale = _only_question(_sync(session_factory, maria,
+                                 {"wizard": local_digests(files={"notes.md": "one\n"})}))
+    unknown = _only_question(_sync(session_factory, maria, EDITED))
+
+    assert current.desired is stale.desired is unknown.desired is Desired.UNDECIDED
+    assert _flags(current) == {Choice.ENABLE: (False, False), Choice.SKIP: (False, False)}
+    assert _flags(stale) == {Choice.ENABLE: (True, False), Choice.SKIP: (False, False)}
+    assert _flags(unknown) == {
+        Choice.PUSH: (False, False),
+        Choice.ENABLE: (True, True),
+        Choice.SKIP: (False, False),
+    }
+
+
+def test_disabled_and_undecided_are_reported_as_different_things(session_factory, dimitris,
+                                                               maria):
+    """One row with enabled = false, one machine with no row. Same disk, different question."""
+    _push(session_factory, dimitris)
+    _disable(session_factory, dimitris)
+    local = {"wizard": local_digests()}
+
+    disabled = _only_question(_sync(session_factory, dimitris, local))
+    undecided = _only_question(_sync(session_factory, maria, local))
+
+    assert disabled.desired is Desired.DISABLED
+    assert undecided.desired is Desired.UNDECIDED
+    assert Choice.REMOVE in _choices(disabled)
+    assert Choice.REMOVE not in _choices(undecided)
+
+
+def test_only_unknown_content_is_ever_offered_a_choice_that_loses_edits(session_factory,
+                                                                      dimitris, maria):
+    _push(session_factory, dimitris, "current")
+    _push(session_factory, dimitris, "stale", files={"notes.md": "one\n"})
+    _push(session_factory, dimitris, "stale", files={"notes.md": "two\n"})
+    _push(session_factory, dimitris, "edited")
+
+    report = _sync(session_factory, maria, {
+        "current": local_digests("current"),
+        "stale": local_digests("stale", files={"notes.md": "one\n"}),
+        "edited": local_digests("edited", files={"x.md": "mine\n"}),
+    })
+
+    assert [question.name for question in report.ask] == ["current", "edited", "stale"]
+    for question in report.ask:
+        loses = any(option.loses_local_edits for option in question.options)
+        assert loses == (question.local is Observed.UNKNOWN)
+
+
+# --- the states that are never reported -----------------------------------------------------
+
+def test_the_three_absent_states_produce_no_report_at_all(session_factory, dimitris, maria):
+    """Absent + disabled, absent + no decision, absent + not in the vault."""
+    _push(session_factory, dimitris, "disabled-here")
+    _disable(session_factory, dimitris, "disabled-here")
+    _push(session_factory, maria, "never-chosen")
+
+    report = _sync(session_factory, dimitris, {})
+
+    assert report == sync_service.SyncReport(install=(), update=(), ask=(), orphans=(),
+                                             up_to_date=0)
+
+
+# --- orphans --------------------------------------------------------------------------------
+
+def test_a_local_skill_the_vault_has_never_seen_is_an_orphan(session_factory, dimitris):
+    _push(session_factory, dimitris)
+
+    report = _sync(session_factory, dimitris, {
+        "wizard": local_digests(),
+        "my-private-skill": local_digests("my-private-skill"),
+        "another-one": local_digests("another-one"),
+    })
+
+    assert report.orphans == ("another-one", "my-private-skill")
+    assert report.ask == ()
+    assert report.up_to_date == 1
+
+
+def test_an_orphan_is_reported_and_never_pushed(session_factory, dimitris):
+    """A fresh machine may hold dozens of third-party skills. Sync imports none of them."""
+    local = {f"third-party-{number}": local_digests(f"third-party-{number}")
+             for number in range(30)}
+
+    report = _sync(session_factory, dimitris, local)
+
+    assert len(report.orphans) == 30
+    with session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(SkillVersion)) == 0
+        assert session.scalar(select(func.count()).select_from(MachineSkill)) == 0
+
+
+def test_a_folder_name_the_vault_could_never_hold_is_still_just_an_orphan(session_factory,
+                                                                        dimitris):
+    report = _sync(session_factory, dimitris, {"My Skill (copy)": local_digests()})
+
+    assert report.orphans == ("My Skill (copy)",)
+
+
+def test_a_renamed_local_folder_is_one_install_plus_one_orphan(session_factory, dimitris):
+    """The documented quirk: the vault knows names, not that a folder used to be called one."""
+    _push(session_factory, dimitris)
+
+    report = _sync(session_factory, dimitris, {"wizard-renamed": local_digests()})
+
+    assert report.install == (Install("wizard", 1, "dimitris"),)
+    assert report.orphans == ("wizard-renamed",)
+    assert report.ask == ()
+
+
+# --- the two invariants ---------------------------------------------------------------------
+
+def test_no_sync_outcome_changes_desired_state_or_the_vault(session_factory, dimitris, maria):
+    """Every state at once, twice. Sync reads; only get, push, and disable write."""
+    _push(session_factory, dimitris, "enabled-edited")
+    _push(session_factory, dimitris, "disabled-present")
+    _disable(session_factory, dimitris, "disabled-present")
+    _push(session_factory, maria, "undecided-present")
+    local = {
+        "enabled-edited": local_digests("enabled-edited", files={"x.md": "mine\n"}),
+        "disabled-present": local_digests("disabled-present"),
+        "undecided-present": local_digests("undecided-present"),
+        "orphan": local_digests("orphan"),
+    }
+
+    def snapshot():
+        with session_factory() as session:
+            return (
+                sorted(session.execute(select(MachineSkill.machine_id, MachineSkill.skill_id,
+                                              MachineSkill.enabled)).all()),
+                session.scalar(select(func.count()).select_from(SkillVersion)),
+            )
+
+    before = snapshot()
+    report = _sync(session_factory, dimitris, local)
+    _sync(session_factory, dimitris, local)
+
+    assert [question.name for question in report.ask] == [
+        "disabled-present", "enabled-edited", "undecided-present"]
+    assert report.orphans == ("orphan",)
+    assert snapshot() == before

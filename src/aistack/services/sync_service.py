@@ -13,7 +13,7 @@ from aistack.db.models.skill import Skill
 from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.user import User
 from aistack.services.content_hash import canonical_content_hash, normalized_path
-from aistack.services.reconciliation import Desired, Observed, Step, reconcile
+from aistack.services.reconciliation import Desired, Observed, Option, Step, reconcile
 from aistack.services.skill_archive import is_filesystem_noise
 
 logger = logging.getLogger(__name__)
@@ -49,9 +49,28 @@ class Update:
 
 
 @dataclass(frozen=True)
+class Question:
+    """A skill sync will not act on without the user. The options say what each answer costs."""
+
+    name: str
+    desired: Desired
+    local: Observed
+    # The revision the local copy matches, or None when it matches none.
+    local_revision: int | None
+    latest_revision: int
+    pushed_by: str
+    options: tuple[Option, ...]
+
+
+@dataclass(frozen=True)
 class SyncReport:
     install: tuple[Install, ...]
     update: tuple[Update, ...]
+    ask: tuple[Question, ...]
+    # On disk and not in the vault at all. Reported, offered for push, never pushed unasked:
+    # a fresh machine may hold dozens of third-party skills, and importing them would record
+    # this user as the pusher of things they only downloaded.
+    orphans: tuple[str, ...]
     # Enabled skills whose local copy already matches the latest revision.
     up_to_date: int
 
@@ -77,6 +96,7 @@ def sync(session: Session, machine_id: uuid.UUID,
 
     install: list[Install] = []
     update: list[Update] = []
+    ask: list[Question] = []
     up_to_date = 0
 
     for name in sorted(revisions):
@@ -91,15 +111,22 @@ def sync(session: Session, machine_id: uuid.UUID,
             install.append(Install(name, latest.revision, latest.pushed_by))
         elif verdict.step is Step.UPDATE:
             update.append(Update(name, local_revision, latest.revision, latest.pushed_by))
+        elif verdict.step is Step.ASK:
+            ask.append(Question(name, desired, observed, local_revision, latest.revision,
+                                latest.pushed_by, verdict.options))
         elif desired is Desired.ENABLED and observed is Observed.CURRENT:
             up_to_date += 1
 
+    orphans = tuple(sorted(name for name in local_hashes if name not in revisions))
+
     logger.debug(
         f"Sync reconciled. Machine: '{machine_id}'. Local: '{len(local_hashes)}'. "
-        f"Install: '{len(install)}'. Update: '{len(update)}'. Current: '{up_to_date}'. "
+        f"Install: '{len(install)}'. Update: '{len(update)}'. Ask: '{len(ask)}'. "
+        f"Orphans: '{len(orphans)}'. Current: '{up_to_date}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
-    return SyncReport(install=tuple(install), update=tuple(update), up_to_date=up_to_date)
+    return SyncReport(install=tuple(install), update=tuple(update), ask=tuple(ask),
+                      orphans=orphans, up_to_date=up_to_date)
 
 
 def _local_hashes(local: Mapping[str, Mapping[str, str]]) -> dict[str, str | None]:
