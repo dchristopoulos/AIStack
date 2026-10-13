@@ -4,9 +4,9 @@ Keep your AI development setup in sync across every developer, machine, and codi
 
 Self-hosted. Open source. Driven entirely from chat, through MCP.
 
-> Status: early. One of the seven MVP tools is built. The server starts, authenticates
-> bootstrap access, and `join` registers a user and their first machine. The other six tools
-> are designed but not yet written.
+> Status: early. Two of the seven MVP tools are built. The server starts, authenticates
+> both kinds of bearer, `join` registers a user and their first machine, and `add_machine`
+> registers their next one. The five skill tools are designed but not yet written.
 
 ## The problem
 
@@ -79,12 +79,12 @@ forced into chat.
 
 ## MVP
 
-The MVP supports Claude Code and seven MCP tools for skills. `join` is built; the other six are planned.
+The MVP supports Claude Code and seven MCP tools for skills. The two onboarding tools are built; the five skill tools are planned.
 
 | Tool | What it does |
 |---|---|
 | `join` | **Implemented.** Redeem the team invite code, register your first machine, get its token |
-| `add_machine` | Planned. Register another computer and return a ready MCP command to paste there |
+| `add_machine` | **Implemented.** Register another computer and return a ready MCP command to paste there |
 | `list_skills` | Planned. Browse the team vault |
 | `get_skill` | Planned. Fetch a skill's files for install and enable it on this machine |
 | `push_skill` | Planned. Upload a skill, where a repeated name creates a new revision |

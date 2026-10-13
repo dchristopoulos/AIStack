@@ -117,3 +117,82 @@ def test_names_are_stored_trimmed(session_factory, field):
     joined = _join(session_factory, **{field: "  spaced  "})
 
     assert (joined.user.username if field == "username" else joined.machine.name) == "spaced"
+
+
+def _add_machine(session_factory, user_id, name="desktop", os="WINDOWS"):
+    with session_factory.begin() as session:
+        return onboarding_service.add_machine(session, user_id, name, os)
+
+
+def test_add_machine_registers_a_second_machine_for_the_same_user(session_factory):
+    joined = _join(session_factory)
+
+    added = _add_machine(session_factory, joined.user.user_id, name="desktop", os="WINDOWS")
+
+    assert added.machine.name == "desktop"
+    assert added.machine.os is OperatingSystem.WINDOWS
+    assert added.machine.user_id == joined.user.user_id
+    assert added.token.startswith(TOKEN_PREFIX)
+    assert added.token != joined.token
+    assert added.token not in repr(added)
+
+    with session_factory() as session:
+        stored = session.scalar(select(Machine).where(Machine.name == "desktop"))
+        # Only the hash is stored, and it is the new machine's, not the caller's.
+        assert stored.token_hash == hash_token(added.token)
+        assert len(session.scalars(select(User)).all()) == 1
+
+
+def test_a_machine_name_the_user_already_has_is_rejected(session_factory):
+    joined = _join(session_factory, machine_name="macbook")
+
+    with pytest.raises(Conflict) as rejection:
+        _add_machine(session_factory, joined.user.user_id, name="macbook")
+
+    assert "macbook" in str(rejection.value)
+    assert "different" in str(rejection.value)
+    with session_factory() as session:
+        assert len(session.scalars(select(Machine)).all()) == 1
+
+
+def test_add_machine_trims_before_comparing_names(session_factory):
+    """`UNIQUE (user_id, name)` sees the stored value, so the trim has to happen first."""
+    joined = _join(session_factory, machine_name="macbook")
+
+    with pytest.raises(Conflict):
+        _add_machine(session_factory, joined.user.user_id, name="  macbook  ")
+
+
+def test_another_users_machine_name_is_free(session_factory):
+    _join(session_factory, username="first", machine_name="macbook")
+    second = _join(session_factory, username="second", machine_name="laptop")
+
+    added = _add_machine(session_factory, second.user.user_id, name="macbook")
+
+    assert added.machine.name == "macbook"
+
+
+@pytest.mark.parametrize(("name", "expected"), [
+    ("", "name is blank"),
+    ("   ", "name is blank"),
+    ("n" * 65, "limit is 64"),
+    ("x\x00y", "NUL"),
+])
+def test_add_machine_enforces_the_same_name_rules_as_join(session_factory, name, expected):
+    joined = _join(session_factory)
+
+    with pytest.raises(ValidationError) as rejection:
+        _add_machine(session_factory, joined.user.user_id, name=name)
+
+    assert expected in str(rejection.value)
+    with session_factory() as session:
+        assert len(session.scalars(select(Machine)).all()) == 1
+
+
+def test_add_machine_rejects_an_unsupported_os(session_factory):
+    joined = _join(session_factory)
+
+    with pytest.raises(ValidationError) as rejection:
+        _add_machine(session_factory, joined.user.user_id, os="SOLARIS")
+
+    assert "MACOS, WINDOWS, LINUX" in str(rejection.value)

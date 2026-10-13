@@ -53,11 +53,30 @@ class Settings(BaseSettings):
         description="HTTP path the streamable-HTTP transport is mounted at."
     )
 
+    public_url: str | None = Field(
+        default=None,
+        validation_alias="aistack_public_url",
+        description="The address clients reach this server at, e.g. https://aistack.example.com. "
+                    "Unset, it is taken from each request, which is wrong behind a reverse "
+                    "proxy that rewrites the host or terminates TLS."
+    )
+
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="INFO",
         validation_alias="aistack_log_level",
         description="Root log level for the server."
     )
+
+    @field_validator("public_url")
+    @classmethod
+    def normalize_public_url(cls, value: str | None) -> str | None:
+        """Keep one spelling, so every URL built from it joins with a single slash."""
+        if value is None or not value.strip():
+            return None
+        value = value.strip().rstrip("/")
+        if not value.startswith(("http://", "https://")):
+            raise ValueError("AISTACK_PUBLIC_URL must start with http:// or https://.")
+        return value
 
     @field_validator("log_level", mode="before")
     @classmethod

@@ -2,11 +2,15 @@ import logging
 from time import perf_counter
 from typing import Literal, TypedDict
 
+from fastmcp.server.dependencies import get_http_request
+
 from aistack.bootstrap.context.application_context import get_session_factory
 from aistack.commons.text import loggable
 from aistack.mcp.auth.policy import ONBOARDING_TAG
+from aistack.mcp.auth.principal import current_machine
 from aistack.mcp.mcp import mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
+from aistack.mcp.server_url import mcp_endpoint_url
 from aistack.services import onboarding_service
 
 logger = logging.getLogger(__name__)
@@ -70,3 +74,73 @@ def join(username: str, machine_name: str, os: Literal["MACOS", "WINDOWS", "LINU
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return result
+
+
+class AddMachineResult(TypedDict):
+    machine_name: str
+    os: str
+    command: str
+
+
+@mcp.tool(
+    description="""Register another computer for the user who is already connected.
+
+    Call this from a machine that has joined, when the user wants AIStack on a second computer
+    ("add my Windows PC"). It returns one command for them to paste into a terminal on that
+    other computer. There is nothing to redeem and the invite code is not involved.
+
+    Args:
+        name: What the new computer is called, up to 64 characters, unique among this user's
+             machines (e.g. "windows-pc", "work-laptop").
+        os: The new computer's operating system: MACOS, WINDOWS, or LINUX. Ask the user if it
+           is not obvious from what they said — it is the other computer's, not this one's.
+
+    Returns:
+        AddMachineResult containing:
+            - machine_name: the registered machine name
+            - os: its operating system
+            - command: a complete `claude mcp add` command carrying the new machine's
+                      permanent token. Show it to the user exactly as returned, in a code
+                      block, and tell them to run it on the other computer and then start
+                      Claude Code there. It is shown exactly here and never again — the
+                      server stores only a hash of the token.
+    """)
+@handle_mcp_errors
+def add_machine(name: str, os: Literal["MACOS", "WINDOWS", "LINUX"]) -> AddMachineResult:
+    started_at = perf_counter()
+    caller = current_machine()
+    logger.debug(
+        f"Adding machine. Machine: '{loggable(name)}'. OS: '{loggable(os)}'. "
+        f"User: '{caller.user_id}'."
+    )
+
+    # Resolve the address first: a server that cannot say where it lives should refuse
+    # before it has registered a machine nobody can connect.
+    endpoint = mcp_endpoint_url(get_http_request())
+
+    with get_session_factory().begin() as session:
+        added = onboarding_service.add_machine(session, caller.user_id, name, os)
+        result = AddMachineResult(
+            machine_name=added.machine.name,
+            os=added.machine.os.value,
+            command=_connect_command(endpoint, added.token),
+        )
+
+    # Log identities explicitly; result contains the plaintext token.
+    logger.info(
+        f"Machine added. Machine: '{loggable(added.machine.name)}'. "
+        f"OS: '{added.machine.os.value}'. User: '{caller.user_id}'. "
+        f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
+    )
+    return result
+
+
+def _connect_command(endpoint: str, token: str) -> str:
+    """The one line that turns another computer into a registered machine.
+
+    `--scope user` because Claude Code's default scope is a single project, and a vault that
+    only answers in the folder where it was set up is not the product. Double quotes around
+    the header are read the same way by sh, PowerShell, and cmd.
+    """
+    return (f"claude mcp add --transport http --scope user aistack {endpoint} "
+            f'--header "Authorization: Bearer {token}"')

@@ -101,3 +101,23 @@ def test_every_library_that_prints_the_wire_payload_is_floored():
     # the ones observed printing a full tool result at DEBUG.
     assert {"mcp.client", "mcp.server.streamable_http",
             "sse_starlette", "httpcore", "httpx"}.issubset(set(WIRE_LOGGERS))
+
+
+def test_the_public_url_is_unset_by_default():
+    assert _settings().public_url is None
+
+
+@pytest.mark.parametrize(("configured", "stored"), [
+    ("https://aistack.example.com", "https://aistack.example.com"),
+    ("https://aistack.example.com/", "https://aistack.example.com"),
+    ("  http://10.0.0.5:8000  ", "http://10.0.0.5:8000"),
+    ("", None),
+])
+def test_the_public_url_is_stored_without_a_trailing_slash(configured, stored):
+    assert _settings(aistack_public_url=configured).public_url == stored
+
+
+@pytest.mark.parametrize("configured", ["aistack.example.com", "ftp://aistack.example.com"])
+def test_a_public_url_without_an_http_scheme_is_rejected(configured):
+    with pytest.raises(ValidationError, match="AISTACK_PUBLIC_URL"):
+        _settings(aistack_public_url=configured)

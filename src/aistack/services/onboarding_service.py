@@ -1,4 +1,5 @@
 import logging
+import uuid
 from dataclasses import dataclass, field
 from time import perf_counter
 
@@ -61,6 +62,47 @@ def join(session: Session, username: str, machine_name: str, os: str) -> JoinedM
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return JoinedMachine(user=user, machine=machine, token=token)
+
+
+@dataclass(frozen=True)
+class AddedMachine:
+    """A machine registered for an existing user, and the token returned once by the tool."""
+
+    machine: Machine
+    token: str = field(repr=False)
+
+
+def add_machine(session: Session, user_id: uuid.UUID, machine_name: str, os: str) -> AddedMachine:
+    """Register another machine for `user_id` within the caller's transaction.
+
+    `user_id` comes from the verified bearer, never from a tool argument: a machine can only
+    ever add a sibling for its own user.
+    """
+    started_at = perf_counter()
+    machine_name = _validated_name(machine_name, "name", MACHINE_NAME_MAX_LENGTH)
+    operating_system = _validated_operating_system(os)
+
+    token = generate_machine_token()
+    machine = Machine(
+        user_id=user_id,
+        name=machine_name,
+        os=operating_system,
+        token_hash=hash_token(token),
+    )
+    session.add(machine)
+    try:
+        session.flush()
+    except IntegrityError as error:
+        raise Conflict(
+            f"You already have a machine named '{machine_name}'. Machine names are unique "
+            "per user, so pick a different one for this computer."
+        ) from error
+
+    logger.debug(
+        f"Machine persisted. Machine: '{loggable(machine_name)}'. User: '{user_id}'. "
+        f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
+    )
+    return AddedMachine(machine=machine, token=token)
 
 
 def _claim_admin(session: Session, user: User) -> None:
