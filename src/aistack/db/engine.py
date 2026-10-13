@@ -2,7 +2,7 @@ import logging
 import sqlite3
 from time import perf_counter
 
-from sqlalchemy import Engine, create_engine, event, make_url
+from sqlalchemy import Connection, Engine, create_engine, event, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from aistack.db.models import Base
@@ -19,13 +19,11 @@ def build_engine(database_url: str) -> Engine:
     url = make_url(database_url)
 
     if url.get_backend_name() == "sqlite":
-        engine = create_engine(
-            url,
-            # Start a transaction even before the first write. In legacy mode, releasing a
-            # savepoint opened before any DML can commit rows that outer rollback cannot undo.
-            connect_args={"autocommit": False},
-        )
-        event.listen(engine, "connect", _apply_sqlite_pragmas)
+        engine = create_engine(url)
+        # sqlite3 is told to open no transactions of its own, and SQLAlchemy opens them
+        # explicitly with BEGIN IMMEDIATE. See ADR-0014.
+        event.listen(engine, "connect", _configure_sqlite_connection)
+        event.listen(engine, "begin", _begin_immediate)
     else:
         engine = create_engine(url)
 
@@ -48,19 +46,29 @@ def create_schema(engine: Engine) -> None:
                 f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
 
 
-def _apply_sqlite_pragmas(connection: sqlite3.Connection, _connection_record) -> None:
-    """Apply WAL, busy timeout, and foreign keys outside the connection's transaction."""
-    previous_autocommit = connection.autocommit
-    connection.autocommit = True
+def _configure_sqlite_connection(connection: sqlite3.Connection, _connection_record) -> None:
+    """Hand transaction control to SQLAlchemy, then apply WAL, busy timeout, and foreign keys."""
+    # None means the driver never emits BEGIN itself. Its own implicit BEGIN is deferred, and
+    # it starts before the first write rather than before the first statement, which is also
+    # what breaks savepoints (ADR-0008).
+    connection.isolation_level = None
+
+    cursor = connection.cursor()
     try:
-        cursor = connection.cursor()
-        try:
-            # WAL lets readers proceed while another connection writes.
-            cursor.execute("PRAGMA journal_mode=WAL")
-            cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_SECONDS * 1000}")
-            # SQLite ignores foreign keys and cascades unless explicitly enabled.
-            cursor.execute("PRAGMA foreign_keys=ON")
-        finally:
-            cursor.close()
+        # WAL lets readers proceed while another connection writes.
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_SECONDS * 1000}")
+        # SQLite ignores foreign keys and cascades unless explicitly enabled.
+        cursor.execute("PRAGMA foreign_keys=ON")
     finally:
-        connection.autocommit = previous_autocommit
+        cursor.close()
+
+
+def _begin_immediate(connection: Connection) -> None:
+    """Take the write lock when the transaction starts, not when it first writes.
+
+    A deferred transaction that reads and then writes is refused outright if anyone else
+    committed in between: its snapshot is stale, and the busy timeout does not apply to that.
+    Taking the lock up front means a second writer waits its turn instead.
+    """
+    connection.exec_driver_sql("BEGIN IMMEDIATE")
