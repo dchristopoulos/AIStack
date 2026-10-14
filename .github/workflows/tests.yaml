@@ -100,6 +100,26 @@ jobs:
           poetry run pytest tests/ui -q -p no:cacheprovider --no-header -rs -o faulthandler_timeout=120 | tee result.txt
           ! grep -q "skipped" result.txt
 
+  # Local mode runs on the person's own computer, and people use Windows. The server runs in
+  # a Linux container, so only what runs on their computer is tested here: local mode, the
+  # localhost dashboard's routes, and the services underneath, on SQLite.
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: pipx install poetry
+
+      - run: poetry install
+
+      - run: poetry run pytest tests/mcp/test_local_mode.py tests/api/test_local_dashboard.py tests/services tests/bootstrap tests/db -q -p no:cacheprovider --no-header -rs
+
   container:
     runs-on: ubuntu-latest
     timeout-minutes: 15
