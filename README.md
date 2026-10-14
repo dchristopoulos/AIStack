@@ -8,6 +8,21 @@ You see and manage all of it on a web dashboard. Your coding agent is connected 
 
 Open source, one container, no passwords.
 
+## Try it in two minutes
+
+No coding agent and no Docker needed to look around. This starts a server on your machine and fills it with a small demo team:
+
+```bash
+git clone https://github.com/dchristopoulos/AIStack && cd AIStack
+poetry install
+AISTACK_INVITE_CODE=try-it-out-locally-1234 poetry run python -m aistack.bootstrap &
+poetry run python scripts/demo_seed.py http://127.0.0.1:8000 try-it-out-locally-1234
+```
+
+It prints a sign-in link for each of three people: an admin, a member with an update waiting, and a member who is kept out of a private group. Open one. Everything the script created went through the same tools and routes a real user's agent and browser use.
+
+## What it looks like
+
 ![My skills: every skill, where it came from, and which of your computers has it](docs/images/dashboard-my-skills.png)
 
 | A team, with nested groups | Managing groups |
@@ -142,6 +157,8 @@ To look around without setting anything up, fill a fresh server with a small dem
 ```bash
 poetry run python scripts/demo_seed.py http://127.0.0.1:8000 "<the invite code>"
 ```
+
+The screenshots in this README are retaken the same way, from a fresh server, by `scripts/retake_screenshots.py`.
 
 [**Operating AIStack**](docs/OPERATING.md) covers configuration, reaching the server from other machines, backups, upgrades, and the operator's tasks: revoke a machine, recover a locked-out user, take someone off the server, rotate the invite code.
 
