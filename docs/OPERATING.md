@@ -47,7 +47,9 @@ The server hands out URLs: the `claude mcp add` command from `add_machine`, the 
 
 ## Reaching it from other machines
 
-AIStack ships a container and does not solve hosting. Two patterns that work:
+AIStack ships a container and does not solve hosting. Whatever you choose, run **exactly one instance**: the key that signs dashboard links, sessions, and transfer URLs lives in that process's memory, so a second replica behind the same address refuses what the first one signed. Autoscaling platforms (Cloud Run, Azure Container Apps, Fly.io) need their maximum set to one. A platform that stops the container when idle restarts it on the next request, which signs the dashboard out each time.
+
+Two patterns that work:
 
 **A private network (Tailscale, WireGuard, a VPN).** Run the container on any machine in the network and use its private address. Nothing is exposed to the internet, and plain HTTP inside an encrypted tunnel is fine. This is the least work for a solo developer or a small team.
 
@@ -68,6 +70,8 @@ aistack.example.com {
     reverse_proxy 127.0.0.1:8000
 }
 ```
+
+**For one person** the cheapest dependable setup is the first pattern on a machine you already own that stays on (a desktop, a mini PC, a NAS), with SQLite and `tailscale serve` in front for HTTPS inside your tailnet. It costs nothing and nothing sleeps. A laptop does not work as the host, because it sleeps. Without such a machine, a single Fly.io Machine with a volume for SQLite costs a few dollars a month. [docs/research/free-personal-hosting.md](research/free-personal-hosting.md) compares the free databases and hosts, with sources.
 
 `GET /health` answers `{"status": "ok"}` without a token when the server can reach its database, and 503 when it cannot. The container's own health check uses it.
 
@@ -248,6 +252,8 @@ docker run -d --name aistack -p 8000:8000 \
 ```
 
 It is the one image either way: there is no separate PostgreSQL build, and the volume is simply unused.
+
+A managed PostgreSQL works, with two settings to get right. On **Supabase**, use the shared pooler in session mode (port 5432); transaction mode (port 6543) does not support the prepared statements psycopg uses. On **Neon**, use the direct endpoint, not the pooled one. Managed databases close idle connections; AIStack checks a pooled connection before using it, so a closed one is replaced rather than failing a request. A database that scales to zero is kept awake by the container's 30-second health check, which on Neon's free plan uses up the month's compute in about 17 days; turn the health check off there (`--no-healthcheck`) and let your platform's own check call `/health` less often.
 
 SQLite is the default because one container is easier to run than two, and the write volume of people pushing skills is tiny. Move to PostgreSQL when you already run one and want AIStack's data with the rest of yours, not for performance. The test suite runs every service and HTTP test against both.
 

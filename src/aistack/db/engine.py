@@ -23,7 +23,10 @@ def build_engine(database_url: str) -> Engine:
         event.listen(engine, "connect", _configure_sqlite_connection)
         event.listen(engine, "begin", _begin_immediate)
     else:
-        engine = create_engine(url)
+        # Managed databases and poolers close idle connections (Neon's scale to zero, a
+        # restart, a pooler's idle timeout). Checking a connection before handing it out
+        # replaces a closed one instead of failing the first request after a quiet spell.
+        engine = create_engine(url, pool_pre_ping=True)
 
     # Connection URLs can carry passwords in query parameters as well as userinfo.
     logger.info(f"Database engine built. Backend: '{url.get_backend_name()}'. "

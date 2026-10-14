@@ -106,3 +106,20 @@ def test_the_os_column_is_a_varchar_with_a_check_constraint(portable_engine: Eng
         except IntegrityError:
             return
     raise AssertionError("The database accepted an OS outside the enum.")
+
+
+
+def test_a_postgres_connection_closed_while_pooled_is_replaced_not_used(postgres_engine):
+    """A managed database or pooler closes idle connections; the next request must not fail."""
+    # Two connections in the pool, so the one that closes the other is not itself the victim.
+    with postgres_engine.connect() as victim, postgres_engine.connect() as killer:
+        pid = victim.exec_driver_sql("SELECT pg_backend_pid()").scalar()
+        victim.rollback()
+        victim.close()
+        killer.exec_driver_sql(f"SELECT pg_terminate_backend({pid})")
+
+    # Both pooled connections are handed out again; the closed one must have been replaced.
+    with postgres_engine.connect() as first, postgres_engine.connect() as second:
+        pids = {connection.exec_driver_sql("SELECT pg_backend_pid()").scalar()
+                for connection in (first, second)}
+    assert pid not in pids
