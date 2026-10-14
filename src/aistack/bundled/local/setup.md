@@ -88,5 +88,5 @@ Tell the user:
 
 - **Restart Claude Code once**, or Codex if that is the agent you are. It reads its server list at startup. Skills installed from now on load without a restart.
 - After restarting, say **"sync aistack"**. It backs up this computer's skills to the Library and installs what their other computers put there.
-- **`uvx aistack-mcp dashboard`** in a terminal opens the Library in the browser, on this computer only.
+- **"open my aistack dashboard"** opens the Library in the browser, on this computer, for as long as the session runs. `uvx aistack-mcp dashboard` in a terminal does the same without an agent.
 - For another computer, paste the same setup there and choose the same database. For choice 1 there is nothing to share.

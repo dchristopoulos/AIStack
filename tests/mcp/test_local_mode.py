@@ -19,6 +19,7 @@ from aistack.commons.exceptions import Conflict
 from aistack.db.models.machine import Machine
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.user import User
+from aistack.mcp import local_dashboard
 from aistack.mcp.local import local_mcp
 from aistack.services import onboarding_service, skill_service
 from aistack.services.skill_archive import ArchivedFile
@@ -59,6 +60,7 @@ def computer_fixture(tmp_path, monkeypatch, library_url):
             async with Client(local_mcp) as client:
                 yield client, home
         finally:
+            local_dashboard.stop_dashboard()
             application_context.dispose_application_context()
 
     return computer
@@ -84,7 +86,8 @@ async def test_local_mode_offers_only_one_persons_tools(computer):
     async with computer("laptop") as (client, _):
         tools = {tool.name for tool in await client.list_tools()}
 
-    assert tools == {"sync", "list_skills", "get_skill", "push_skill", "disable_skill"}
+    assert tools == {"sync", "list_skills", "get_skill", "push_skill", "disable_skill",
+                     "open_dashboard"}
 
 
 async def test_two_computers_share_one_library(computer):
@@ -378,3 +381,26 @@ async def test_two_computers_named_alike_with_ids_claimed_apart_stay_two(compute
 
     assert first.machine_id != second.machine_id
     assert first.user_id == second.user_id
+
+
+async def test_open_dashboard_serves_the_library_for_this_session(computer, monkeypatch):
+    """ "open my aistack dashboard" in chat, as on a server: the page runs in this process."""
+    import httpx
+
+    opened = []
+    monkeypatch.setattr("webbrowser.open", opened.append)
+    async with computer("laptop") as (laptop, home):
+        _write_skill(home)
+        await _call(laptop, "push_skill", name="wizard")
+        first = await _call(laptop, "open_dashboard")
+        second = await _call(laptop, "open_dashboard")
+
+        base = first["url"].split("/app/")[0]
+        async with httpx.AsyncClient(base_url=base) as browser:
+            assert (await browser.get(first["url"])).status_code == 303
+            state = (await browser.get("/api/state")).json()
+
+    assert opened == [first["url"], second["url"]]
+    assert second["url"].startswith(base + "/")
+    assert first["url"].startswith("http://127.0.0.1:")
+    assert [skill["name"] for skill in state["skills"]] == ["wizard"]

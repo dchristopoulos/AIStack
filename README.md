@@ -22,7 +22,7 @@ For the first two, your coding agent starts AIStack itself and nothing runs in b
 Set up AIStack: run `uvx aistack-mcp setup` and follow what it prints.
 ```
 
-It asks which choice you want, walks you through creating the Neon database if you pick it, connects your agent, and installs the `sync-aistack` skill. On another computer, paste the same and give it the same database address. If a laptop is lost, reset the database password and paste the new address on the others ([ADR-0023](docs/adr/0023-every-computer-keeps-the-database-address.md)). `uvx aistack-mcp dashboard` opens your Library in the browser, on that computer only.
+It asks which choice you want, walks you through creating the Neon database if you pick it, connects your agent, and installs the `sync-aistack` skill. On another computer, paste the same and give it the same database address. If a laptop is lost, reset the database password and paste the new address on the others ([ADR-0023](docs/adr/0023-every-computer-keeps-the-database-address.md)). "Open my aistack dashboard" opens your Library in the browser, on that computer only, as it does on a server.
 
 For a team, run a server and connect each computer to it: see [Connecting a computer to a server](#connecting-a-computer-to-a-server).
 
