@@ -118,7 +118,7 @@ async def test_the_join_result_carries_the_token_and_no_aistack_log_line_does(se
                                                       "machine_name": "macbook",
                                                       "os": "MACOS"})).structured_content
 
-    assert set(joined) == {"username", "machine_name", "token"}
+    assert set(joined) == {"username", "machine_name", "token", "team"}
 
     # Scoped to AIStack's own loggers: the transport necessarily carries the token in its
     # payload, and mcp/sse_starlette/httpx print that payload at DEBUG. Keeping them off DEBUG

@@ -2,7 +2,7 @@ import logging
 from time import perf_counter
 from typing import Literal, TypedDict
 
-from fastmcp.server.dependencies import get_http_request
+from fastmcp.server.dependencies import get_access_token, get_http_request
 
 from aistack.bootstrap.context.application_context import get_session_factory
 from aistack.commons.text import loggable
@@ -20,17 +20,19 @@ class JoinResult(TypedDict):
     username: str
     machine_name: str
     token: str
+    team: str | None
 
 
 @mcp.tool(
-    # The only tool the invite code may reach; the policy reads this tag, not the name.
+    # The only tool an invite code may reach; the policy reads this tag, not the name.
     tags={ONBOARDING_TAG},
     description="""Register a new user and their first machine on this AIStack server.
 
-    Call this once per person, from the machine they are setting up, while connected with the
-    server invite code as the bearer token. It returns that machine's permanent token, which
-    goes into the MCP configuration and authenticates every later connection. Registering
-    another computer for someone who has already joined is add_machine, not this.
+    Call this once per person, from the machine they are setting up, while connected with an
+    invite code as the bearer token: the server's own, or a team's (it starts with 'aistinv_'),
+    which also makes them a member of that team. It returns that machine's permanent token,
+    which goes into the MCP configuration and authenticates every later connection.
+    Registering another computer for someone who has already joined is add_machine, not this.
 
     Args:
         username: A lowercase handle (letters, digits, single . - _), up to 64 characters. It is
@@ -48,6 +50,7 @@ class JoinResult(TypedDict):
             - token: this machine's permanent token. Write it into the MCP configuration and
                     tell the user to restart their harness once. It is shown exactly here and
                     never again — the server stores only a hash of it.
+            - team: the team they joined with its invite code, or null for the server's code.
     """)
 @handle_mcp_errors
 def join(username: str, machine_name: str, os: Literal["MACOS", "WINDOWS", "LINUX"]) -> JoinResult:
@@ -57,20 +60,25 @@ def join(username: str, machine_name: str, os: Literal["MACOS", "WINDOWS", "LINU
         f"Machine: '{loggable(machine_name)}'. OS: '{loggable(os)}'."
     )
 
-    # Commit the user, machine, and admin claim together before returning the token.
+    # A team's code is the bearer itself; the claim only says it was one (ADR-0019).
+    bearer = get_access_token()
+    team_invite = bearer.token if bearer.claims.get("invite") == "team" else None
+
+    # Commit the user, machine, admin claim, and membership together before returning the token.
     with get_session_factory().begin() as session:
-        joined = onboarding_service.join(session, username, machine_name, os)
+        joined = onboarding_service.join(session, username, machine_name, os, team_invite)
         result = JoinResult(
             username=joined.user.username,
             machine_name=joined.machine.name,
             token=joined.token,
+            team=joined.team,
         )
 
     # Log identities explicitly; result contains the plaintext token.
     logger.info(
         f"Join completed. Username: '{loggable(joined.user.username)}'. "
         f"Machine: '{loggable(joined.machine.name)}'. OS: '{joined.machine.os.value}'. "
-        f"Admin: '{joined.user.is_admin}'. "
+        f"Admin: '{joined.user.is_admin}'. Team: '{loggable(joined.team or '')}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return result

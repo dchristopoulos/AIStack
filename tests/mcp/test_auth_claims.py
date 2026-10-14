@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from aistack.mcp.auth.aistack_token_verifier import AIStackTokenVerifier
 from aistack.mcp.auth.scopes import BOOTSTRAP_SCOPE, MACHINE_SCOPE
 from aistack.mcp.mcp import mcp
-from aistack.services import onboarding_service
+from aistack.services import onboarding_service, team_service
 from aistack.db.models.machine import Machine
 from aistack.services.token_service import hash_token
 from tests.conftest import INVITE_CODE
@@ -59,6 +59,22 @@ async def test_the_bootstrap_principal_carries_no_identity(verifier):
     # A bootstrap bearer has no machine and no user yet. An identity claim appearing here would
     # mean a tool could act as somebody, on a bearer anyone holding the invite code can present.
     assert access_token.claims == {}
+
+
+async def test_a_team_invite_code_is_a_bootstrap_principal_with_no_identity(verifier, joined,
+                                                                             session_factory):
+    with session_factory.begin() as session:
+        team_service.create_team(session, joined.user.user_id, "acme")
+        code = team_service.new_invite_code(session, joined.user.user_id, "acme")
+
+    access_token = await verifier.verify_token(code)
+
+    assert access_token.scopes == [BOOTSTRAP_SCOPE]
+    assert code not in repr(access_token)
+    # It says which kind of invite this is, never which team or user: `join` resolves the
+    # code again inside its own transaction, so a code replaced in between admits nobody.
+    assert access_token.claims == {"invite": "team"}
+    assert await verifier.verify_token(code[:-1]) is None
 
 
 async def test_an_unrecognized_bearer_resolves_to_nothing(verifier, joined):

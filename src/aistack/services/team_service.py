@@ -35,14 +35,13 @@ from aistack.db.models.team import (
 )
 from aistack.db.models.user import User
 from aistack.services import visibility
-from aistack.services.token_service import hash_token
+from aistack.services.token_service import TEAM_INVITE_PREFIX, hash_token
 
 logger = logging.getLogger(__name__)
 
 # The username rule. A personal team carries its user's name, so the two share a namespace.
 _NAME = re.compile(r"[a-z0-9]+([._-][a-z0-9]+)*")
 
-_INVITE_PREFIX = "aistinv_"
 
 
 @dataclass(frozen=True)
@@ -100,21 +99,15 @@ def new_invite_code(session: Session, user_id: uuid.UUID, team: str) -> str:
             f"'{found.name}' is the server's own team: everyone who joins this server is in "
             "it already. Create a team to invite people to."
         )
-    code = f"{_INVITE_PREFIX}{secrets.token_urlsafe(24)}"
+    code = f"{TEAM_INVITE_PREFIX}{secrets.token_urlsafe(24)}"
     found.invite_hash = hash_token(code)
     logger.info(f"Team invite code replaced. Team: '{found.team_id}'. User: '{user_id}'.")
     return code
 
 
 def join_team(session: Session, user_id: uuid.UUID, code: str) -> str:
-    """Join the team an invite code belongs to. Resolved by indexed lookup on its hash."""
-    team = None
-    if isinstance(code, str) and code.startswith(_INVITE_PREFIX):
-        team = session.scalar(select(Team).where(Team.invite_hash == hash_token(code.strip())))
-    if team is None:
-        # Never echoes what was presented: a near-miss of a real code is still a secret.
-        raise NotFound("That is not a team invite code that works. Ask a team admin for a "
-                       "new one; a code stops working when a newer one is made.")
+    """Join the team an invite code belongs to."""
+    team = invited_to(session, code)
     try:
         with session.begin_nested():
             session.add(TeamMember(team_id=team.team_id, user_id=user_id,
@@ -123,6 +116,22 @@ def join_team(session: Session, user_id: uuid.UUID, code: str) -> str:
         pass  # Already a member: joining again is not an error.
     logger.info(f"Team joined. Team: '{team.team_id}'. User: '{user_id}'.")
     return team.name
+
+
+def invited_to(session: Session, code: str) -> Team:
+    """The team a working invite code belongs to. Resolved by indexed lookup on its hash.
+
+    It also admits a new person at `join` (ADR-0019), so it is read again inside that
+    transaction rather than trusted from the moment the bearer was verified.
+    """
+    team = None
+    if isinstance(code, str) and code.strip().startswith(TEAM_INVITE_PREFIX):
+        team = session.scalar(select(Team).where(Team.invite_hash == hash_token(code.strip())))
+    if team is None:
+        # Never echoes what was presented: a near-miss of a real code is still a secret.
+        raise NotFound("That is not a team invite code that works. Ask a team admin for a "
+                       "new one; a code stops working when a newer one is made.")
+    return team
 
 
 def list_teams(session: Session, user_id: uuid.UUID) -> list[TeamSummary]:

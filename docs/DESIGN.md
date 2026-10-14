@@ -74,7 +74,7 @@ The server holds **desired** state: which of a user's own skills are enabled per
 
 Two MCP principals, one centralized authorization rule enforced before any tool logic runs:
 
-- **Bootstrap principal** — the invite code presented as a bearer token. May call `join` and nothing else.
+- **Bootstrap principal** — an invite code presented as a bearer token: the server's, or a team's, which `join` also makes the new user a member of (ADR-0019). May call `join` and nothing else.
 - **Machine principal** — a machine token (sha256-hashed at rest). May call everything except `join`.
 
 The dashboard has its own credential and reaches no MCP tool: a session cookie holding a signed ticket for one user, set by opening the link `open_dashboard` returns (ADR-0017). `/app` and `/api/*` refuse without it, and a request that changes state must also carry a header a cross-site form cannot send.
@@ -521,7 +521,7 @@ Trusted team, honestly stated:
 - A machine updates to the latest revision of its user's own skill without confirmation. Only that user's pushes, and team revisions they chose to take, create such a revision. A teammate's change never arrives unasked: it is an offer that names who pushed it (ADR-0015).
 - Any member may share over a team's skill. The control is visibility, not restriction: the revision carries their name, and nobody receives it without accepting it.
 - Machine tokens: sha256-hashed at rest, revocable by row deletion, never logged.
-- The server's invite code is a static long-lived shared secret: rotate by changing the env var and restarting; share it over something better than a group chat. A team's invite code is stored hashed and replaced whenever an admin asks for a new one. Expiry and single-use codes are not built.
+- The server's invite code is a static long-lived shared secret: rotate by changing the env var and restarting; share it over something better than a group chat. A team's invite code is stored hashed and replaced whenever an admin asks for a new one. Since ADR-0019 it also creates accounts, so a leaked one is replaced, not ignored. Expiry and single-use codes are not built.
 - The dashboard has no passwords. A sign-in link is a credential for five minutes, the session cookie for eight hours, and both die with the process because the signing key is in memory.
 
 Deferred deliberately: audit trail, signing, approval workflows, per-skill push permissions.

@@ -6,7 +6,7 @@ The steps are written for Claude Code and for Codex; where the two differ, each 
 
 You need three things from the user. Ask for whichever they did not give you:
 
-- the **invite code** for this server. A code starting with `aistinv_` is a team's invite code, not the server's: it is used after setup, by saying "join a team with this code".
+- an **invite code**: the server's own, or a team's, which starts with `aistinv_`. Either one works here, and a team's code also makes them a member of that team.
 - a **username**: a short lowercase handle their team will recognize, like `maria` or `j.smith` (letters, digits, and single `.`, `-`, `_`). It is shown next to every skill revision they push or share.
 - a **name for this computer**, like `macbook` or `work-laptop`. Suggest the short hostname, without the domain. It can be at most 64 characters.
 

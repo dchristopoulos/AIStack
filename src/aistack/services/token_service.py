@@ -6,6 +6,8 @@ from pydantic import SecretStr
 
 # Recognizable prefix; entropy comes entirely from the random suffix.
 TOKEN_PREFIX = "aist_"
+# A team's invite code. The prefix is how the token verifier knows which table to look in.
+TEAM_INVITE_PREFIX = "aistinv_"
 TOKEN_ENTROPY_BYTES = 32
 
 

@@ -2,12 +2,13 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from aistack.commons.exceptions import Conflict, ValidationError
+from aistack.commons.exceptions import Conflict, NotFound, ValidationError
 from aistack.db.engine import build_session_factory
 from aistack.db.models.machine import Machine
 from aistack.db.models.operating_system import OperatingSystem
+from aistack.db.models.team import Team, TeamMember, TeamRole
 from aistack.db.models.user import User
-from aistack.services import onboarding_service
+from aistack.services import onboarding_service, team_service
 from aistack.services.token_service import TOKEN_PREFIX, hash_token
 
 
@@ -231,3 +232,62 @@ def test_a_username_that_is_not_a_plain_lowercase_handle_is_rejected(session_fac
 def test_a_lowercase_handle_is_accepted(session_factory, username):
     with session_factory.begin() as session:
         assert onboarding_service.join(session, username, "macbook", "MACOS").user.username == username
+
+
+def _team_code(session_factory, admin_id, name="acme") -> str:
+    with session_factory.begin() as session:
+        team_service.create_team(session, admin_id, name)
+        return team_service.new_invite_code(session, admin_id, name)
+
+
+def _memberships(session_factory, user_id) -> list[str]:
+    with session_factory() as session:
+        return sorted(session.scalars(
+            select(Team.name).join(TeamMember, TeamMember.team_id == Team.team_id)
+            .where(TeamMember.user_id == user_id)).all())
+
+
+def test_a_team_invite_code_creates_one_user_one_machine_and_one_membership(session_factory):
+    admin = _join(session_factory, username="dimitris")
+    code = _team_code(session_factory, admin.user.user_id)
+
+    with session_factory.begin() as session:
+        joined = onboarding_service.join(session, "maria", "laptop", "LINUX", team_invite=code)
+
+    assert joined.team == "acme"
+    with session_factory() as session:
+        assert session.scalars(select(User.username).order_by(User.username)).all() == [
+            "dimitris", "maria"]
+        assert session.scalars(select(Machine.name).where(
+            Machine.user_id == joined.user.user_id)).all() == ["laptop"]
+        role = session.scalar(
+            select(TeamMember.role).join(Team, Team.team_id == TeamMember.team_id)
+            .where(Team.name == "acme", TeamMember.user_id == joined.user.user_id))
+    assert role is TeamRole.MEMBER
+    assert "acme" in _memberships(session_factory, joined.user.user_id)
+
+
+def test_a_replaced_team_invite_code_admits_nobody(session_factory):
+    admin = _join(session_factory, username="dimitris")
+    old = _team_code(session_factory, admin.user.user_id)
+    with session_factory.begin() as session:
+        team_service.new_invite_code(session, admin.user.user_id, "acme")
+
+    with pytest.raises(NotFound) as rejection:
+        with session_factory.begin() as session:
+            onboarding_service.join(session, "maria", "laptop", "LINUX", team_invite=old)
+
+    assert old not in str(rejection.value)
+    with session_factory() as session:
+        assert session.scalars(select(User.username)).all() == ["dimitris"]
+        assert len(session.scalars(select(Machine)).all()) == 1
+
+
+def test_the_server_invite_code_joins_no_shared_team(session_factory):
+    admin = _join(session_factory, username="dimitris")
+    _team_code(session_factory, admin.user.user_id)
+
+    joined = _join(session_factory, username="maria", machine_name="laptop")
+
+    assert joined.team is None
+    assert "acme" not in _memberships(session_factory, joined.user.user_id)

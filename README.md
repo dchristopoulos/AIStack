@@ -113,11 +113,11 @@ Sync itself only reports, and the agent acts through other tools; the one thing 
 
 ## Connecting a computer
 
-Paste this into Claude Code or Codex, with your server's address and the invite code its operator gave you:
+Paste this into Claude Code or Codex, with your server's address and an invite code: the one its operator gave you, or a team's, which also puts you in that team:
 
 ```text
 Set up AIStack: fetch https://aistack.example.com/setup and follow it.
-Invite code: <the server's invite code>. Call me <your name>.
+Invite code: <the invite code>. Call me <your name>.
 ```
 
 The agent registers this computer, installs the `sync-aistack` skill, and connects itself to the server. Restart it once when it says so. That restart is the only one: the agent reads its server list at startup, and skills installed afterwards load live.
@@ -169,7 +169,7 @@ MCP carries what is worth saying in a sentence. Anything that would need many ty
 
 | | Tool | What it does |
 |---|---|---|
-| **Connect** | `join` | Redeem the server's invite code, register your first machine, get its token |
+| **Connect** | `join` | Redeem the server's or a team's invite code, register your first machine, get its token |
 | | `add_machine` | Register another computer and return a ready command to paste there |
 | **Library** | `sync` | Compare one skills folder on this machine with the Library and report what to do. Changes no skill and no decision |
 | | `push_skill` | Get a signed URL to back a skill up to. A repeated name becomes a new revision |

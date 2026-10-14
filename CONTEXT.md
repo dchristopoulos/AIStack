@@ -73,7 +73,7 @@ Asking not to be offered team updates from a group or the groups under it. It hi
 _Avoid_: Mute, leave (that is for teams), hide
 
 **Invite code**:
-Two different things. The server's invite code is operator config and admits a new person to the server (`join`). A team's invite code is made by a team admin, starts with `aistinv_`, and admits an existing user to that team (`join_team`). Say which one.
+Two different things. The server's invite code is operator config and admits a new person to the server (`join`). A team's invite code is made by a team admin, starts with `aistinv_`, and admits an existing user to that team (`join_team`), or a new person to the server and that team at once (`join`, ADR-0019). Say which one.
 _Avoid_: Bare "invite code" where both could be meant, password, key
 
 **Dashboard**:

@@ -135,18 +135,39 @@ async def test_a_team_is_created_by_its_admin_and_joined_with_its_invite_code(se
     ]
 
 
-async def test_a_team_invite_code_is_not_a_bearer(server_url):
-    """It admits a registered user to one team. It registers nobody and calls nothing."""
+async def test_a_team_invite_code_admits_a_new_person_to_that_team(server_url, session_factory):
+    """ADR-0019: one paste creates the account, registers the computer, and joins the team."""
     dimitris = await join(server_url)
     await call(server_url, dimitris, "create_team", name="acme")
     code = (await call(server_url, dimitris, "invite_to_team", team="acme"))["code"]
 
+    async with client_for(server_url, code) as client:
+        assert {tool.name for tool in await client.list_tools()} == BOOTSTRAP_ONLY_TOOLS
+        joined = (await client.call_tool("join", {"username": "maria", "machine_name": "laptop",
+                                                  "os": "LINUX"})).structured_content
+
+    assert joined["team"] == "acme"
+    assert {team["name"]: team["role"] for team in
+            (await call(server_url, joined["token"], "list_teams"))["teams"]}["acme"] == "MEMBER"
+    with session_factory() as session:
+        assert session.scalars(select(User.username).order_by(User.username)).all() == [
+            "dimitris", "maria"]
+
+
+async def test_a_replaced_team_invite_code_is_not_a_bearer(server_url, session_factory):
+    dimitris = await join(server_url)
+    await call(server_url, dimitris, "create_team", name="acme")
+    old = (await call(server_url, dimitris, "invite_to_team", team="acme"))["code"]
+    await call(server_url, dimitris, "invite_to_team", team="acme")
+
     with pytest.raises(Exception) as rejection:
-        async with client_for(server_url, code) as client:
+        async with client_for(server_url, old) as client:
             await client.list_tools()
 
     assert "401" in str(rejection.value)
-    assert code not in str(rejection.value)
+    assert old not in str(rejection.value)
+    with session_factory() as session:
+        assert session.scalars(select(User.username)).all() == ["dimitris"]
 
 
 async def test_a_new_invite_code_stops_the_old_one_working(server_url):
@@ -353,7 +374,7 @@ async def test_open_dashboard_returns_a_sign_in_link_on_this_server(server_url):
 
 
 async def test_a_team_invite_code_appears_in_no_log_line(server_url, caplog):
-    """Issued, used, refused once replaced, and tried as a bearer: every path it travels."""
+    """Issued, used, refused once replaced, and used as a bearer: every path it travels."""
     dimitris = await join(server_url, "dimitris", "macbook")
     maria = await join(server_url, "maria", "laptop")
     await call(server_url, dimitris, "create_team", name="acme")
@@ -363,8 +384,11 @@ async def test_a_team_invite_code_appears_in_no_log_line(server_url, caplog):
         new = (await call(server_url, dimitris, "invite_to_team", team="acme"))["code"]
         await _refusal(server_url, maria, "join_team", code=old)
         await call(server_url, maria, "join_team", code=new)
+        async with client_for(server_url, new) as client:
+            await client.call_tool("join", {"username": "alex", "machine_name": "thinkpad",
+                                            "os": "WINDOWS"})
         with pytest.raises(Exception):
-            async with client_for(server_url, new) as client:
+            async with client_for(server_url, old) as client:
                 await client.list_tools()
 
     messages = _server_log(caplog)

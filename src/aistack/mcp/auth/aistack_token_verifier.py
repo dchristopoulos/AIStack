@@ -8,8 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from aistack.db.models.machine import Machine
+from aistack.db.models.team import Team
 from aistack.mcp.auth.scopes import BOOTSTRAP_SCOPE, MACHINE_SCOPE
-from aistack.services.token_service import hash_token, matches_invite_code
+from aistack.services.token_service import TEAM_INVITE_PREFIX, hash_token, matches_invite_code
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +43,25 @@ class AIStackTokenVerifier(TokenVerifier):
             )
             return AIStackAccessToken(token=token, client_id="bootstrap", scopes=[BOOTSTRAP_SCOPE])
 
+        if token.startswith(TEAM_INVITE_PREFIX):
+            # A team's invite code reaches `join` and nothing else (ADR-0019). The claim says
+            # only which kind of invite this is: `join` resolves the team again in its own
+            # transaction, so no team or user identity rides on a bearer that is shared.
+            invited = await asyncio.to_thread(self._is_team_invite, hash_token(token))
+            if invited:
+                logger.debug(
+                    "Bearer authenticated. Principal: 'bootstrap'. Invite: 'team'. "
+                    f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
+                )
+                return AIStackAccessToken(token=token, client_id="bootstrap",
+                                          scopes=[BOOTSTRAP_SCOPE], claims={"invite": "team"})
+
         # FastMCP requires async here; keep the blocking driver off the event loop.
         machine = await asyncio.to_thread(self._find_machine, hash_token(token))
         if machine is None:
             # Rejections must never echo the presented bearer.
             logger.info(
-                "Bearer rejected: not the invite code and no machine holds it. "
+                "Bearer rejected: not an invite code that works and no machine holds it. "
                 f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
             )
             return None
@@ -63,6 +77,12 @@ class AIStackTokenVerifier(TokenVerifier):
             scopes=[MACHINE_SCOPE],
             claims={"machine_id": str(machine.machine_id), "user_id": str(machine.user_id)},
         )
+
+    def _is_team_invite(self, invite_hash: str) -> bool:
+        """Look up a team invite's hash through its unique index, like a machine token."""
+        with self._session_factory() as session:
+            return session.scalar(select(Team.team_id).where(Team.invite_hash == invite_hash)
+                                  ) is not None
 
     def _find_machine(self, token_hash: str) -> Machine | None:
         """Look up the token hash through its unique index.

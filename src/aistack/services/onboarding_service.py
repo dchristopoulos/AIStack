@@ -14,6 +14,7 @@ from aistack.db.models.machine import MACHINE_NAME_MAX_LENGTH, Machine
 from aistack.db.models.operating_system import OperatingSystem
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.user import USERNAME_MAX_LENGTH, User
+from aistack.services import team_service
 from aistack.services.token_service import generate_machine_token, hash_token
 
 logger = logging.getLogger(__name__)
@@ -28,14 +29,24 @@ class JoinedMachine:
     user: User
     machine: Machine
     token: str = field(repr=False)
+    # The team whose invite code admitted them, or None for the server's own code.
+    team: str | None = None
 
 
-def join(session: Session, username: str, machine_name: str, os: str) -> JoinedMachine:
-    """Create a user and first machine within the caller's transaction."""
+def join(session: Session, username: str, machine_name: str, os: str,
+         team_invite: str | None = None) -> JoinedMachine:
+    """Create a user and first machine within the caller's transaction.
+
+    With `team_invite`, the bearer the caller presented was that team's invite code, and the
+    new user is also made a member of the team (ADR-0019).
+    """
     started_at = perf_counter()
     username = _validated_username(username)
     machine_name = _validated_name(machine_name, "machine_name", MACHINE_NAME_MAX_LENGTH)
     operating_system = _validated_operating_system(os)
+    # Resolved in this transaction, before anything is written: a code replaced since the
+    # bearer was verified admits nobody.
+    invited_to = None if team_invite is None else team_service.invited_to(session, team_invite)
 
     user = User(username=username)
     session.add(user)
@@ -65,13 +76,18 @@ def join(session: Session, username: str, machine_name: str, os: str) -> JoinedM
 
     _claim_admin(session, user)
     _join_teams(session, user, personal_team)
+    if invited_to is not None:
+        session.add(TeamMember(team_id=invited_to.team_id, user_id=user.user_id,
+                               role=TeamRole.MEMBER))
+        session.flush()
 
     logger.debug(
         f"Join persisted. Username: '{loggable(username)}'. "
         f"Machine: '{loggable(machine_name)}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
-    return JoinedMachine(user=user, machine=machine, token=token)
+    return JoinedMachine(user=user, machine=machine, token=token,
+                         team=None if invited_to is None else invited_to.name)
 
 
 @dataclass(frozen=True)
