@@ -8,11 +8,13 @@ You see and manage all of it on a web dashboard. Your coding agent is connected 
 
 Open source, one container, no passwords.
 
-![My skills: every skill, and which of your computers has it](docs/images/dashboard-my-skills.jpg)
+![My skills: every skill, where it came from, and which of your computers has it](docs/images/dashboard-my-skills.png)
 
 | A team, with nested groups | Managing groups |
 |---|---|
-| ![A team's skills by group](docs/images/dashboard-team.jpg) | ![Groups: open or private, and who is in them](docs/images/dashboard-groups.jpg) |
+| ![A team's skills by group](docs/images/dashboard-team.png) | ![Groups: open or private, and who is in them](docs/images/dashboard-groups.png) |
+
+![An update a teammate pushed, offered and not applied](docs/images/dashboard-update-dark.png)
 
 ## The problem
 
@@ -218,7 +220,7 @@ What the repository itself shows:
 What it does not show, stated plainly:
 
 - The first release, before teams, was also run end to end by fresh agents that were given only what a real client gets: the tool descriptions and the `/setup` page. That exercise has not been repeated for sharing, taking, team updates, or the dashboard. Those rest on the tests above.
-- No test drives a signed-in Claude Code session. "A skill is usable in the session that installed it" rests on Claude Code's own live reloading of skills, not on a run of this project.
+- A signed-in Claude Code session was run once by hand against a local server (2026-10-14): it listed a team's skills over MCP, installed one with the tool's own `curl` and `tar` steps, executable bit intact, and used it in the same session without a restart. The first attempt to use the skill straight after installing it answered "Unknown skill"; a moment later it was found. No automated test repeats this, and a full sync from a real session has not been run.
 
 ## How this compares
 

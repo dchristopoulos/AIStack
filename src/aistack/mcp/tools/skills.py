@@ -242,9 +242,9 @@ class GetSkillResult(TypedDict):
         delete <stage>/<name>.tgz
 
     Create <stage> first and clear any leftover <stage>/<name>. If tar fails, the .tgz is a
-    JSON error message: read it. On Windows the commands are curl.exe and tar.exe. The
-    final move is a rename, so a failed download never leaves half a skill in place, and
-    the skill is usable as soon as it completes. tar restores file modes, so run no chmod.
+    JSON error message: read it. On Windows use curl.exe and tar.exe. The final move is a
+    rename, so a failed download never leaves half a skill. It is usable without a
+    restart; if it is not found at once, try again. tar restores file modes: no chmod.
     Leave <stage> itself in place; sync ignores it. The listed hashes need no checking.
 
     Args:

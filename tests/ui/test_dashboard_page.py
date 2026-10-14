@@ -53,7 +53,7 @@ async def test_a_skill_is_switched_per_computer(sign_in):
 async def test_a_skill_is_shared_into_a_nested_group_from_a_dialog(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    row = page.get_by_role("listitem").filter(has_text="meeting-notes")
+    row = page.get_by_role("row").filter(has_text="meeting-notes")
 
     await row.get_by_role("button", name="Share").click()
     dialog = page.get_by_role("dialog")
@@ -164,3 +164,18 @@ async def test_nothing_scrolls_sideways_on_a_phone(sign_in, route):
         "document.documentElement.scrollWidth - window.innerWidth")
     assert overflow <= 0
     assert dimitris.console_errors == []
+
+
+async def test_the_phone_menu_opens_and_closes_with_a_control_you_can_see(sign_in):
+    dimitris = await sign_in("dimitris", viewport=(390, 844))
+    page = dimitris.page
+    navigation = page.get_by_role("navigation", name="Main")
+    await expect(navigation).to_be_hidden()
+
+    await page.get_by_role("button", name="Open navigation").click()
+    await expect(navigation.get_by_role("link", name="acme")).to_be_visible()
+    close = page.get_by_label("Navigation").get_by_role("button", name="Close navigation")
+    await expect(close).to_be_visible()
+    await close.click()
+
+    await expect(navigation).to_be_hidden()
