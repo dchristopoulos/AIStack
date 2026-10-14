@@ -1,6 +1,6 @@
 # Older releases keep working through additive upgrades
 
-Status: proposed, 2026-10-15. Amends ADR-0016 and ADR-0020, where a release refuses any schema newer than it knows. Research: [docs/research/schema-upgrades-across-releases.md](../research/schema-upgrades-across-releases.md).
+Status: accepted, 2026-10-15. Amends ADR-0016 and ADR-0020, where a release refuses any schema newer than it knows. Research: [docs/research/schema-upgrades-across-releases.md](../research/schema-upgrades-across-releases.md).
 
 In local mode several computers share one database and update AIStack at different times. Today the first computer to update migrates the database, and every computer still on the older release then refuses to start, with a traceback its user never sees: the coding agent started the process, so the agent just reports a server that failed.
 
