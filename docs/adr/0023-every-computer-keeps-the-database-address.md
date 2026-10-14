@@ -1,6 +1,6 @@
 # In local mode every computer keeps the database's own address
 
-Status: proposed, 2026-10-15. Amends ADR-0020, which gave each computer its own database login, handed out by pairing.
+Status: accepted, 2026-10-15. Amends ADR-0020, which gave each computer its own database login, handed out by pairing.
 
 ADR-0020 had the owner's connection string pasted once and used to create a login role per computer, so that a lost laptop is one `DROP ROLE`. Those roles cannot change the schema or create the next computer's role; only the owner can. So the owner's credential would either be stored on one computer, which then alone adds computers and upgrades, or pasted again for every new computer and every schema change. Each version adds a feature, a failure mode, and a step someone must remember, to protect one person's skills from that same person's lost laptop.
 
