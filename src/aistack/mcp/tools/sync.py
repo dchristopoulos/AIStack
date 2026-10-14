@@ -63,6 +63,7 @@ class SyncResult(TypedDict):
     team_updates: list[TeamUpdateEntry]
     up_to_date: int
     sync_skill_url: str | None
+    first_sync: bool
 
 
 @mcp.tool(
@@ -82,10 +83,9 @@ class SyncResult(TypedDict):
         updated, between which revisions, and who pushed it.
       - backup: local skills not yet in the user's own skills. push_skill each, without
         asking: that space is private and mirrors this computer. Nothing is shared.
-      - ask (name, desired, local, local_revision, latest_revision, pushed_by, options):
-        put each to the user and act only on their answer. desired: enabled, disabled, or
-        undecided here; local: current, stale, or unknown (edited). Offer exactly the
-        listed options. overwrites_local: say local files will be replaced;
+      - ask: put each to the user and act only on their answer. desired: enabled,
+        disabled, or undecided here; local: current, stale, or unknown (edited). Offer
+        exactly the listed options. overwrites_local: say local files will be replaced;
         loses_local_edits: say their edits will be lost. enable, restore = get_skill and
         install; push = push_skill; remove = delete the folder; skip = nothing.
       - team_updates: a team has a newer version of a skill the user took from it. Ask
@@ -93,6 +93,7 @@ class SyncResult(TypedDict):
       - up_to_date: how many enabled skills match.
       - sync_skill_url: null, or where the server's own sync-aistack skill is. Without
         asking, curl -sS -o it to <folder>/sync-aistack/SKILL.md.
+      - first_sync: true the first time this folder syncs here. See the sync-aistack skill.
 
     Args:
         local: {skill folder: {relative file path: sha256 hex}}. {} if there are none.
@@ -150,4 +151,5 @@ def sync(local: dict[str, dict[str, str]],
                       for entry in report.team_updates],
         up_to_date=report.up_to_date,
         sync_skill_url=sync_skill_url,
+        first_sync=report.first_sync,
     )

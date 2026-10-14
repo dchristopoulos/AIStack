@@ -1,5 +1,6 @@
 import json
 import re
+import tomllib
 
 import httpx
 import pytest
@@ -72,6 +73,19 @@ async def test_the_setup_page_gets_the_details_that_are_easy_to_get_wrong(server
     # Already set up is checked before anything is created.
     assert text.index("claude mcp get aistack") < text.index("mkdir -p")
     assert "Restart Claude Code once" in text
+
+
+async def test_the_setup_page_connects_codex_with_one_block_of_valid_toml(server_url):
+    """Codex cannot set a header from its CLI, so the agent writes this block (ADR-0021)."""
+    text = (await _get(f"{_base(server_url)}/setup")).text
+    block = re.search(r"```toml\n(.*?)\n```", text, re.S).group(1)
+
+    server = tomllib.loads(block)["mcp_servers"]["aistack"]
+    assert server["url"] == server_url
+    assert server["http_headers"] == {"Authorization": "Bearer <token>"}
+    # Codex reads skills from the shared folder, so that is where setup puts the sync skill.
+    assert "mkdir -p ~/.agents/skills/sync-aistack" in text
+    assert text.index("codex mcp get aistack") < text.index("mkdir -p ~/.agents/skills")
 
 
 async def test_the_setup_page_offers_a_session_start_hook_that_only_prompts_a_sync(server_url):

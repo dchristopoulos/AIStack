@@ -98,6 +98,9 @@ class SyncReport:
     # The sync skill on this machine is missing or is not the one this server ships. Setup
     # fetched it once and add_machine never did, so this is the only way it stays current.
     refresh_sync_skill: bool
+    # This folder has never synced on this machine before. The agent offers, once, to put
+    # the skills its other folder has here too (ADR-0021).
+    first_sync: bool
 
 
 @dataclass(frozen=True)
@@ -157,10 +160,13 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
                                  {name for name, enabled in decisions.items() if enabled})
 
     # A user who keeps their own sync skill manages it like any other; otherwise the server's
-    # copy is the reference.
+    # copy is the reference. It belongs in Claude Code's folder, and in the agents folder only
+    # where an agent there talks to AIStack itself, which setup marked by putting it there:
+    # elsewhere it would tell an agent with no connection to sync (ADR-0021).
     refresh_sync_skill = (SYNC_SKILL_NAME not in revisions
+                          and (harness is Harness.CLAUDE_CODE or SYNC_SKILL_NAME in local_hashes)
                           and local_hashes.get(SYNC_SKILL_NAME) != _bundled_sync_skill_hash())
-    _record_sync(session, machine_id, harness)
+    first_sync = _record_sync(session, machine_id, harness)
 
     logger.debug(
         f"Sync reconciled. Machine: '{machine_id}'. Harness: '{harness}'. "
@@ -172,7 +178,7 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
     )
     return SyncReport(install=tuple(install), update=tuple(update), ask=tuple(ask),
                       backup=backup, team_updates=team_updates, up_to_date=up_to_date,
-                      refresh_sync_skill=refresh_sync_skill)
+                      refresh_sync_skill=refresh_sync_skill, first_sync=first_sync)
 
 
 def _bundled_sync_skill_hash() -> str:
@@ -233,8 +239,11 @@ def _decisions(session: Session, machine_id: uuid.UUID, harness: Harness) -> dic
     return dict(rows)
 
 
-def _record_sync(session: Session, machine_id: uuid.UUID, harness: Harness) -> None:
-    """Remember that this harness is on this machine, and when it last synced."""
+def _record_sync(session: Session, machine_id: uuid.UUID, harness: Harness) -> bool:
+    """Remember that this harness is on this machine, and when it last synced.
+
+    True when this is its first sync here. Of two first syncs at once, only one says so.
+    """
     now = utc_now()
     synced = _machine_harness(session, machine_id, harness)
     if synced is None:
@@ -243,10 +252,11 @@ def _record_sync(session: Session, machine_id: uuid.UUID, harness: Harness) -> N
             with session.begin_nested():
                 session.add(MachineHarness(machine_id=machine_id, harness=harness,
                                            last_synced_on=now))
-            return
+            return True
         except IntegrityError:
             synced = _machine_harness(session, machine_id, harness)
     synced.last_synced_on = now
+    return False
 
 
 def _machine_harness(session: Session, machine_id: uuid.UUID,

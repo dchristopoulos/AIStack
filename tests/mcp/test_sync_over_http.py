@@ -31,7 +31,8 @@ async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(serv
     before = await _call(server_url, machine_b, "sync", local=on_machine_b)
     skill_url = f"{server_url.removesuffix('/mcp')}/setup/sync-aistack/SKILL.md"
     assert before == {"install": [], "update": [], "ask": [], "backup": [],
-                      "team_updates": [], "up_to_date": 1, "sync_skill_url": skill_url}
+                      "team_updates": [], "up_to_date": 1, "sync_skill_url": skill_url,
+                      "first_sync": True}
 
     await _push(server_url, machine_a, files={"notes.md": "two\n"})
 
@@ -45,6 +46,7 @@ async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(serv
         "team_updates": [],
         "up_to_date": 0,
         "sync_skill_url": skill_url,
+        "first_sync": False,
     }
 
 
