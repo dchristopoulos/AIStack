@@ -365,12 +365,16 @@ A group's path contains slashes, so it always travels in the body and never in t
         }
       ]
     }
-  ]
+  ],
+  "server": true,
+  "library": {"kind": "server"}
 }
 ```
 
 | Field | Meaning |
 |---|---|
+| `server` | False on `aistack dashboard` in local mode, where the page hides what only a server can do: creating, joining, and sharing with a team |
+| `library` | Where the Library lives: `{"kind": "server"}`, `{"kind": "this_computer"}`, or `{"kind": "postgresql", "provider": "Neon", "host": "…"}`. Never an address or a password |
 | `machines` | The user's computers, oldest first. `os` is `MACOS`, `WINDOWS`, or `LINUX` |
 | `machines[].harnesses` | The harnesses on that computer, in the server's order: those that have synced there and those holding a decision about a skill. `["claude_code"]` for a computer with neither, which has not synced since harnesses existed |
 | `skills` | The Library, by name, without the ones removed from it |

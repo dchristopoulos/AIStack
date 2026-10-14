@@ -509,6 +509,9 @@ a.link:hover { text-decoration-color: var(--text); }
 .card-body { padding: 24px; }
 .card h2 { font-size: 18px; font-weight: 600; letter-spacing: -.02em; }
 .card h2.small { font-size: 14px; letter-spacing: -.01em; }
+.choices { margin: 12px 0; padding-left: 18px; }
+.choices li { margin: 0 0 10px; }
+.choices p { margin: 2px 0 0; color: var(--muted); }
 .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 16px; margin: 16px 0 0; font-size: 13px; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
@@ -1056,6 +1059,7 @@ function route() {
   if (team) return { view: 'team', team, tab, group };
   const machine = parts[0] === 'f' && state.machines.find(m => m.id === parts[1]);
   if (machine && agentsOf(machine).includes(parts[2])) return { view: 'folder', machine, agent: parts[2] };
+  if (parts[0] === 'storage') return { view: 'storage' };
   return { view: 'library' };
 }
 const teamHash = (name, tab = 'skills', group) => `#/t/${enc(name)}/${tab}` + (group ? '/' + group.split('/').map(enc).join('/') : '');
@@ -1083,9 +1087,9 @@ function render() {
   const fk = active && active.dataset ? active.dataset.fk : null;
   const r = route();
   renderSidebar(r);
-  $main.replaceChildren(el('div', { class: 'page' }, r.view === 'team' ? teamView(r.team, r.tab, r.group) : r.view === 'folder' ? folderView(r.machine, r.agent) : libraryView()));
+  $main.replaceChildren(el('div', { class: 'page' }, r.view === 'team' ? teamView(r.team, r.tab, r.group) : r.view === 'folder' ? folderView(r.machine, r.agent) : r.view === 'storage' ? storageView() : libraryView()));
   document.title = (r.view === 'team' ? (r.group ? r.group + ' · ' : '') + r.team.name
-    : r.view === 'folder' ? `${AGENTS[r.agent].name} on ${r.machine.name}` : 'Library') + ' · AIStack';
+    : r.view === 'folder' ? `${AGENTS[r.agent].name} on ${r.machine.name}` : r.view === 'storage' ? 'Where your Library lives' : 'Library') + ' · AIStack';
   if (fk && !document.querySelector('dialog[open]')) { const t = byFk(fk); if (t) t.focus(); }
 }
 
@@ -1102,7 +1106,7 @@ function renderSidebar(r) {
                     el('li', null, el('span', { class: 'crumb cur mono', 'aria-current': 'page', title: r.group }, r.group))]
                  : here(TAB_LABELS[r.tab])]
       : r.view === 'folder' ? [personalCrumb(), sep(), el('li', null, el('span', { class: 'crumb mono' }, r.machine.name)), sep(), here(AGENTS[r.agent].name)]
-      : [personalCrumb(), sep(), here('Library')]));
+      : [personalCrumb(), sep(), here(r.view === 'storage' ? 'Where it lives' : 'Library')]));
   document.getElementById('top-right').replaceChildren(
     ...(DEMO ? [el('span', { class: 'badge' }, el('span', { class: 'dot amber' }), 'Demo data')] : []));
 
@@ -1133,6 +1137,7 @@ function renderSidebar(r) {
         link('#/library', r.view === 'library', icon('layers'), el('span', { class: 'label' }, 'Library'),
           updates ? el('span', { class: 'count upd', title: plural(updates, 'update') + ' waiting' }, el('span', { class: 'dot blue' }), String(updates))
             : el('span', { class: 'count' }, String(state.skills.length))),
+        link('#/storage', r.view === 'storage', icon('globe'), el('span', { class: 'label' }, 'Where it lives')),
         el('div', { class: 'nav-heading' }, 'Computers',
           btn(null, { class: 'btn ghost icon', fk: 'add-computer', title: 'Add a computer', 'aria-label': 'Add a computer', on: { click: addComputerDialog } }, 'plus')),
         // One row per harness on each computer: the skills folders it syncs (ADR-0018).
@@ -1863,6 +1868,41 @@ function groupPeopleDialog(team, g) {
       return changed.length ? `Updated who is in ${g.path}.` : null;
     },
   });
+}
+
+/* ---------- where the Library lives (ADR-0020) ---------- */
+
+// The three answers to "Where should your Library live?", each with what it costs.
+const STORAGE = {
+  this_computer: { title: 'Only this computer', cost: 'Free and nothing to keep switched on. No other computer reaches it.' },
+  postgresql: { title: 'A free PostgreSQL database', cost: 'Every computer of yours uses it, and nothing has to stay on. Each computer keeps its address; if a laptop is lost, reset the database password and paste the new address on the others.' },
+  server: { title: 'An AIStack server', cost: 'Your computers reach it over the network, so it must stay on. The only choice that works for a team.' },
+};
+
+function storageView() {
+  const lib = state.library || { kind: 'server' };
+  const here = STORAGE[lib.kind];
+  const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
+  const facts = lib.kind === 'postgresql'
+    ? [fact('Database', lib.provider), fact('Host', el('span', { class: 'mono' }, lib.host))]
+    : lib.kind === 'server' ? [fact('Server', el('span', { class: 'mono' }, location.host))]
+    : [fact('Computer', 'The one showing this page')];
+  const choice = key => el('li', null, el('strong', null, STORAGE[key].title, key === lib.kind ? ' (now)' : ''), el('p', null, STORAGE[key].cost));
+  const move = lib.kind === 'server'
+    ? 'Everyone on this server shares it, and the operator backs it up. To keep a Library of your own instead, set AIStack up again on your computer and choose where it lives there.'
+    : 'To move it, ask your coding agent to run "uvx aistack-mcp export". It writes every skill to a folder. Connect your computer to the new place, copy the skills into its skills folder, and say "sync aistack": sync backs them up there.';
+  return [
+    el('div', { class: 'band' }, el('div', { class: 'wrap page-head' }, el('div', { class: 'titles' },
+      el('h1', null, 'Where your Library lives'),
+      el('p', { class: 'subtitle' }, 'The one place every computer of yours reads your skills from.')))),
+    el('div', { class: 'wrap body' }, el('div', { class: 'settings' }, el('div', null,
+      el('section', { class: 'card', 'aria-label': 'Now' }, el('div', { class: 'card-body' },
+        el('h2', null, here.title), el('p', null, here.cost), el('dl', { class: 'facts' }, facts))),
+      el('section', { class: 'card', 'aria-label': 'The choices' }, el('div', { class: 'card-body' },
+        el('h2', null, 'The choices'),
+        el('ul', { class: 'choices' }, Object.keys(STORAGE).map(choice)),
+        el('p', null, move)))))),
+  ];
 }
 
 /* ---------- settings ---------- */
