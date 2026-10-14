@@ -23,6 +23,7 @@ from aistack.bootstrap.context.application_context import (
     get_session_factory,
     get_ticket_signer,
     is_local_mode,
+    library_description,
 )
 from aistack.bundled import dashboard_page
 from aistack.commons.exceptions import InvalidTicket, SignedOut, ValidationError
@@ -120,7 +121,7 @@ async def state(request: Request) -> Response:
     user_id = _signed_in(request)
     shown = await asyncio.to_thread(_in_transaction, dashboard_service.state, user_id)
     # The page hides what only a server can do, such as creating a team, when this is false.
-    return _json(shown | {"server": not is_local_mode()})
+    return _json(shown | {"server": not is_local_mode(), "library": library_description()})
 
 
 @_route(API_PATH + "/logout", methods=["POST"])

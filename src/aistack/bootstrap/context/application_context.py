@@ -8,7 +8,7 @@ import socket
 import uuid
 from pathlib import Path
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -33,12 +33,17 @@ _session_factory: sessionmaker[Session] | None = None
 _ticket_signer: TicketSigner | None = None
 # Local mode only: the one caller every tool call comes from.
 _local_principal: MachinePrincipal | None = None
+# What the dashboard says about where the Library lives; never the address itself.
+_library: dict[str, str] = {"kind": "server"}
 # Local mode on a Library a newer release changed beyond what this one can run on (ADR-0024).
 _local_refusal: str | None = None
 
 _MACHINE_ID_FILE = "machine-id"
 
 _OPERATING_SYSTEMS = {"Darwin": "MACOS", "Windows": "WINDOWS"}
+
+# Named on the dashboard by the end of the database's host name.
+_PROVIDERS = {".neon.tech": "Neon", ".supabase.com": "Supabase", ".supabase.co": "Supabase"}
 
 _NOT_BUILT = ("The application context has not been built. Call build_application_context() "
               "before serving requests.")
@@ -75,8 +80,10 @@ def build_local_context(settings: LocalSettings) -> None:
     is whoever could start this process (ADR-0020).
     """
     global _engine, _session_factory, _ticket_signer, _local_principal, _local_refusal
+    global _library
 
     settings.home.mkdir(parents=True, exist_ok=True)
+    _library = _described(settings.library_url())
     _engine = build_engine(settings.library_url())
     try:
         migrate_schema(_engine)
@@ -117,6 +124,21 @@ def build_local_context(settings: LocalSettings) -> None:
 
 def is_local_mode() -> bool:
     return _local_principal is not None or _local_refusal is not None
+
+
+def library_description() -> dict[str, str]:
+    """Where the Library lives, for the dashboard: the kind, and a host but never a password."""
+    return _library
+
+
+def _described(database_url: str) -> dict[str, str]:
+    url = make_url(database_url)
+    if url.get_backend_name() == "sqlite":
+        return {"kind": "this_computer"}
+    host = url.host or ""
+    provider = next((name for suffix, name in _PROVIDERS.items() if host.endswith(suffix)),
+                    "PostgreSQL")
+    return {"kind": "postgresql", "provider": provider, "host": host}
 
 
 def get_public_url() -> str | None:
@@ -188,7 +210,7 @@ def get_ticket_signer() -> TicketSigner:
 def dispose_application_context() -> None:
     """Drop the engine and its pool. Used by tests between temporary databases."""
     global _settings, _engine, _session_factory, _ticket_signer, _local_principal
-    global _local_refusal
+    global _local_refusal, _library
 
     if _engine is not None:
         _engine.dispose()
@@ -198,3 +220,4 @@ def dispose_application_context() -> None:
     _ticket_signer = None
     _local_principal = None
     _local_refusal = None
+    _library = {"kind": "server"}
