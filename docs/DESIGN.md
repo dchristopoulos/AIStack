@@ -594,7 +594,7 @@ src/aistack/
                            # sync-aistack skill a new machine needs before it can ask the
                            # server for anything, and the dashboard page
   bootstrap/               # app assembly & entrypoint
-    __main__.py            #   `aistack` (local mode) and `aistack serve` (the server)
+    __main__.py            #   `aistack` (local mode), `aistack dashboard`, `aistack serve`
     configuration/
       settings/            #   env config: DATABASE_URL, invite code, etc.
     context/               #   application context / wiring
