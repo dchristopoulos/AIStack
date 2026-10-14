@@ -11,7 +11,7 @@ from aistack.bootstrap.context.application_context import (
 from aistack.mcp.auth.principal import current_machine
 from aistack.mcp.mcp import mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
-from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH, server_base_url
+from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH, INVITE_PATH, server_base_url
 from aistack.services import team_service
 from aistack.services.transfer_ticket import DASHBOARD_LINK_LIFETIME_SECONDS
 
@@ -87,15 +87,18 @@ def create_team(name: str) -> CreateTeamResult:
 class InviteResult(TypedDict):
     team: str
     code: str
+    link: str
 
 
 @mcp.tool(
     description="""Make a new invite code for a team. Only the team's admins can.
 
-    Use when the user wants to let someone into a team they administer. Show the code to
-    the user exactly as returned, in a code block, and tell them to send it to the person,
-    who then says "join a team with this code" to their own agent. Anyone holding the code
-    can join, so it goes to the people meant to have it and nowhere public.
+    Use when the user wants to let someone into a team they administer. Show the link to
+    the user exactly as returned and tell them to send it to the person: opening it says
+    what to paste into their coding agent, which creates their account if they have none and
+    puts them in the team. Someone already on this server can instead say "join a team with
+    this code". Anyone holding the link can join, so it goes to the people meant to have it
+    and nowhere public.
 
     Each call replaces the previous code, which stops working. That is also how to cancel a
     code that reached the wrong person. The code is shown here and never again: the server
@@ -108,15 +111,17 @@ class InviteResult(TypedDict):
         InviteResult containing:
             - team: the team the code admits to
             - code: the invite code
+            - link: the invite link, a page on this server for the person being invited
     """)
 @handle_mcp_errors
 def invite_to_team(team: str) -> InviteResult:
     caller = current_machine()
+    server = server_base_url(get_http_request())
     with get_session_factory().begin() as session:
         code = team_service.new_invite_code(session, caller.user_id, team)
     # The result carries the code, so it is returned and never logged.
     logger.info(f"Team invite issued. User: '{caller.user_id}'.")
-    return InviteResult(team=team, code=code)
+    return InviteResult(team=team, code=code, link=f"{server}{INVITE_PATH}/{code}")
 
 
 class JoinTeamResult(TypedDict):

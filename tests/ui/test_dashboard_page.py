@@ -281,6 +281,10 @@ async def test_a_team_is_created_and_joined_with_its_invite_code(sign_in):
     await page.get_by_role("dialog").get_by_role("button", name="Create new code").click()
     code = await page.get_by_role("dialog").get_by_label("Invite code").input_value()
     assert code.startswith("aistinv_") and len(code) > 20
+    link = await page.get_by_role("dialog").get_by_label("Invite link").input_value()
+    assert link.endswith(f"/invite/{code}")
+    response = await page.request.get(link)
+    assert response.status == 200 and "design" in await response.text()
     await page.get_by_role("dialog").get_by_role("button", name="Done").click()
 
     alex = await sign_in("alex")

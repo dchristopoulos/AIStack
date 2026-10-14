@@ -1911,21 +1911,25 @@ function settingsTab(team, admin) {
 }
 
 function inviteCodeDialog(team, code) {
-  const input = el('input', { class: 'input', type: 'text', readOnly: true, value: code, 'aria-label': 'Invite code', on: { focus: () => input.select() } });
+  // The link opens a page on this server that says what to paste; it creates the account too (ADR-0019).
+  const link = `${location.origin}/invite/${code}`;
+  const input = el('input', { class: 'input', type: 'text', readOnly: true, value: link, 'aria-label': 'Invite link', on: { focus: () => input.select() } });
+  const codeInput = el('input', { class: 'input mono', type: 'text', readOnly: true, value: code, 'aria-label': 'Invite code', on: { focus: () => codeInput.select() } });
   const copied = el('span', { class: 'help', role: 'status' });
   const copy = btn('Copy', { on: { click: async () => {
-    try { await navigator.clipboard.writeText(code); }
+    try { await navigator.clipboard.writeText(link); }
     catch (_) { input.select(); document.execCommand('copy'); }
     copied.textContent = 'Copied to the clipboard.';
   } } }, 'copy');
   openDialog({
-    title: `Invite code for ${team.name}`,
+    title: `Invite to ${team.name}`,
     submitLabel: 'Done',
     cancelLabel: null,
     returnFk: 'invite',
     body: [
-      el('p', null, 'Send this code to the people you want in the team. It will not be shown again: copy it now. If you lose it, create a new one.'),
+      el('p', null, 'Send this link to the people you want in the team. It says what to paste into their coding agent, and makes them an account if they have none. It will not be shown again: copy it now. If you lose it, create a new one.'),
       el('div', { class: 'field' }, el('div', { class: 'code-box' }, input, copy), copied),
+      field('Invite code', codeInput, 'For someone already on this server: they say "join a team with this code".'),
     ],
   });
   copy.focus();

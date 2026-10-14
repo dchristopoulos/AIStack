@@ -127,7 +127,7 @@ async def test_a_team_is_created_by_its_admin_and_joined_with_its_invite_code(se
     joined = await call(server_url, maria, "join_team", code=invite["code"])
 
     assert created == {"name": "acme", "role": "ADMIN"}
-    assert invite == {"team": "acme", "code": invite["code"]}
+    assert invite == {"team": "acme", "code": invite["code"], "link": invite["link"]}
     assert joined == {"team": "acme"}
     assert (await call(server_url, maria, "list_teams"))["teams"] == [
         {"name": "acme", "kind": "SHARED", "role": "MEMBER", "members": 2},
