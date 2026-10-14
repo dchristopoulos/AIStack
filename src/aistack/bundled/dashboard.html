@@ -1135,11 +1135,16 @@ function renderSidebar(r) {
         el('div', { class: 'nav-heading' }, 'Computers',
           btn(null, { class: 'btn ghost icon', fk: 'add-computer', title: 'Add a computer', 'aria-label': 'Add a computer', on: { click: addComputerDialog } }, 'plus')),
         // One row per harness on each computer: the skills folders it syncs (ADR-0018).
-        targets().map(t => link(folderHash(t.m, t.agent), r.view === 'folder' && r.machine === t.m && r.agent === t.agent,
-          icon(t.m.os === 'MACOS' ? 'laptop' : 'monitor'),
-          el('span', { class: 'label mono' }, t.m.name),
-          el('span', { class: 'agent-tag', title: AGENTS[t.agent].name }, AGENTS[t.agent].glyph),
-          el('span', { class: 'count' }, String(placedOn(t).length))))),
+        targets().map(t => {
+          const a = link(folderHash(t.m, t.agent), r.view === 'folder' && r.machine === t.m && r.agent === t.agent,
+            icon(t.m.os === 'MACOS' ? 'laptop' : 'monitor'),
+            el('span', { class: 'label mono' }, t.m.name),
+            el('span', { class: 'agent-tag', title: AGENTS[t.agent].name }, AGENTS[t.agent].glyph),
+            el('span', { class: 'count' }, String(placedOn(t).length)));
+          // The glyph is two letters; a screen reader hears the agent's name instead.
+          a.setAttribute('aria-label', `${targetName(t)}, ${plural(placedOn(t).length, 'skill')}`);
+          return a;
+        })),
     ];
   } else {
     const t = r.team;
@@ -1203,10 +1208,12 @@ function addComputerDialog() {
 
 /* ---------- Library and computers ---------- */
 
-// The harnesses the server knows, by key (ADR-0018). A computer lists the ones that have synced there.
+// The harnesses the server knows, by key (ADR-0018), and the coding agents that read each folder.
+// A computer lists the ones that have synced there.
 const AGENTS = {
-  claude_code: { name: 'Claude Code', glyph: 'CC', folder: '~/.claude/skills' },
-  agents: { name: 'Agents folder', glyph: 'AG', folder: '~/.agents/skills' },
+  claude_code: { name: 'Claude Code', glyph: 'CC', folder: '~/.claude/skills', readers: 'Claude Code' },
+  agents: { name: 'Agents folder', glyph: 'AG', folder: '~/.agents/skills',
+            readers: 'Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode, and Amp' },
 };
 const agentsOf = m => m.harnesses;
 const targets = () => state.machines.flatMap(m => agentsOf(m).map(agent => ({ m, agent })));
@@ -1363,7 +1370,8 @@ function folderView(m, agent) {
         el('span', { class: 'avatar lg', style: 'font:600 16px var(--mono)', 'aria-hidden': 'true' }, AGENTS[agent].glyph),
         el('div', { class: 'titles' },
           el('h1', null, AGENTS[agent].name, el('span', { class: 'muted', style: 'font-weight:400' }, ' on '), el('span', { class: 'mono' }, m.name)),
-          el('div', { class: 'folder-path' }, el('code', null, AGENTS[agent].folder)))),
+          el('div', { class: 'folder-path' }, el('code', null, AGENTS[agent].folder),
+            el('span', { class: 't2' }, 'Read by ' + AGENTS[agent].readers)))),
       el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
         others.length ? btn('Copy from…', { fk: 'copy-from', on: { click: () => copyFromDialog(t, others) } }, 'copy') : null,
         btn('Add skills', { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(t) } }, 'plus')))),
@@ -2040,11 +2048,11 @@ const DB = (() => {
   const P = machine => ({ machine, harness: 'claude_code' });
   return {
     user: { username: 'dimitris' },
-    machines: [{ id: MAC, name: 'macbook', os: 'MACOS', harnesses: ['claude_code'] }, { id: DESK, name: 'desktop', os: 'LINUX', harnesses: ['claude_code'] }],
+    machines: [{ id: MAC, name: 'macbook', os: 'MACOS', harnesses: ['claude_code', 'agents'] }, { id: DESK, name: 'desktop', os: 'LINUX', harnesses: ['claude_code'] }],
     skills: [
       { name: 'code-review', description: 'Reviews a diff against team standards and flags risky changes.', revision: 2, pushed_by: 'maria', updated_on: ago(30), files: 4, placements: [P(MAC)],
         source: { team: 'aistack', group: 'developers', revision: 2, latest_revision: 3, latest_pushed_by: 'maria', update_available: true } },
-      { name: 'commit-messages', description: 'Writes commit messages in the house style: imperative subject, why before what.', revision: 2, pushed_by: 'dimitris', updated_on: ago(96), files: 1, placements: [P(MAC), P(DESK)],
+      { name: 'commit-messages', description: 'Writes commit messages in the house style: imperative subject, why before what.', revision: 2, pushed_by: 'dimitris', updated_on: ago(96), files: 1, placements: [P(MAC), P(DESK), { machine: MAC, harness: 'agents' }],
         source: { team: 'aistack', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'dimitris', update_available: false } },
       { name: 'pr-description', description: 'Drafts a pull request description from the branch diff and linked issue.', revision: 1, pushed_by: 'eve', updated_on: ago(200), files: 2, placements: [P(MAC), P(DESK)],
         source: { team: 'everyone', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'eve', update_available: false } },
