@@ -594,7 +594,7 @@ src/aistack/
                            # sync-aistack skill a new machine needs before it can ask the
                            # server for anything, and the dashboard page
   bootstrap/               # app assembly & entrypoint
-    __main__.py            #   python -m aistack.bootstrap
+    __main__.py            #   `aistack` (local mode) and `aistack serve` (the server)
     configuration/
       settings/            #   env config: DATABASE_URL, invite code, etc.
     context/               #   application context / wiring
@@ -605,7 +605,9 @@ src/aistack/
     migrations/versions/   # numbered Alembic migrations, shipped in the package
     models/                # SQLAlchemy models for the twelve tables
   mcp/                     # FastMCP server + auth
-    tools/                 # the thirteen MCP tools (onboarding, skills, sync, teams)
+    local.py               # local mode's stdio server, with no auth (ADR-0020)
+    tools/                 # the thirteen MCP tools (onboarding, skills, sync, teams),
+                           # and local.py: local mode's five, doing the disk work itself
     routes/                # plain HTTP beside MCP: the two transfer routes (ADR-0010),
                            # setup, and health; as thin as the tools
   services/                # business logic: push validation, sync reconciliation,

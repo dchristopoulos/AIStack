@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
@@ -89,6 +90,59 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_log_level(cls, value: str) -> str:
         return value.upper() if isinstance(value, str) else value
+
+
+class LocalSettings(BaseSettings):
+    """Local mode (ADR-0020): `aistack` started by a coding agent on the person's computer.
+
+    Every variable is AISTACK_-prefixed and nothing is read from a .env file. The agent starts
+    this process in whatever project is open, and that project's own DATABASE_URL or .env
+    names its application's database, which AIStack would otherwise migrate.
+    """
+
+    model_config = SettingsConfigDict(
+        case_sensitive=False,
+        hide_input_in_errors=True,
+        extra="ignore"
+    )
+
+    home: Path = Field(
+        default=Path.home() / ".aistack",
+        validation_alias="aistack_home",
+        description="Where this computer keeps its machine id, and the SQLite Library by "
+                    "default."
+    )
+
+    database_url: str | None = Field(
+        default=None,
+        repr=False,
+        validation_alias="aistack_database_url",
+        description="The Library's database, shared by the person's computers: a "
+                    "postgresql+psycopg:// URL. Unset, a SQLite file in AISTACK_HOME, which "
+                    "only this computer sees."
+    )
+
+    username: str | None = Field(
+        default=None,
+        validation_alias="aistack_username",
+        description="The name the Library is created under, on the first computer only. "
+                    "Unset, this computer's login name."
+    )
+
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
+        default="WARNING",
+        validation_alias="aistack_log_level",
+        description="Root log level. The coding agent keeps what the process writes to "
+                    "stderr, so the default is quiet."
+    )
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def normalize_log_level(cls, value: str) -> str:
+        return value.upper() if isinstance(value, str) else value
+
+    def library_url(self) -> str:
+        return self.database_url or f"sqlite:///{(self.home / 'aistack.db').as_posix()}"
 
 
 def validate_invite_code(invite_code: SecretStr) -> None:

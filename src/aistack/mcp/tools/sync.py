@@ -122,6 +122,11 @@ def sync(local: dict[str, dict[str, str]],
         f"Up to date: '{report.up_to_date}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
+    return sync_result(report, sync_skill_url)
+
+
+def sync_result(report: sync_service.SyncReport, sync_skill_url: str | None) -> SyncResult:
+    """The report as the tool returns it; local mode's sync returns the same shape."""
     return SyncResult(
         install=[InstallEntry(name=entry.name, revision=entry.revision,
                               pushed_by=entry.pushed_by) for entry in report.install],

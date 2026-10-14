@@ -53,4 +53,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --start-interval=2s -
     CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ['AISTACK_PORT'] + '/health', timeout=4)"
 
 # AISTACK_INVITE_CODE has no default on purpose: the server refuses to start without one.
-CMD ["python", "-m", "aistack.bootstrap"]
+CMD ["python", "-m", "aistack.bootstrap", "serve"]

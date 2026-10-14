@@ -15,7 +15,7 @@ No coding agent and no Docker needed to look around. This starts a server on you
 ```bash
 git clone https://github.com/dchristopoulos/AIStack && cd AIStack
 poetry install
-AISTACK_INVITE_CODE=try-it-out-locally-1234 poetry run python -m aistack.bootstrap &
+AISTACK_INVITE_CODE=try-it-out-locally-1234 poetry run aistack serve &
 poetry run python scripts/demo_seed.py http://127.0.0.1:8000 try-it-out-locally-1234
 ```
 
@@ -258,6 +258,7 @@ What it does not show, stated plainly:
   - The `codex` 0.146 on the PATH rejected the model configured in that file, so the run used the CLI the ChatGPT app ships.
 
   The skills folder was a scratch home directory, and the config file was restored from a backup afterwards. This is one run with one model, and no automated test repeats it.
+- Local mode was run once by hand (2026-10-15, Claude Code 2.1.241, headless). Two scratch home folders stood in for a laptop and a desktop, each starting the built package with `uvx --from <wheel> aistack-mcp` over stdio, and both pointed at one SQLite Library. Told "sync aistack", the laptop's session backed up its one skill. Asked what was in the Library and to install it, the desktop's session listed it, synced, and installed it byte for byte with its executable bit, in six turns. No server ran at any point. This is one run with one model; `tests/mcp/test_local_mode.py` repeats the same flow without an agent.
 
 ## How this compares
 
