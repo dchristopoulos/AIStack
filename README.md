@@ -120,7 +120,7 @@ Set up AIStack: fetch https://aistack.example.com/setup and follow it.
 Invite code: <the server's invite code>. Call me <your name>.
 ```
 
-The agent registers this computer, installs the `sync-aistack` skill, and connects Claude Code to the server. Restart Claude Code once when it says so. That restart is the only one: Claude Code reads its server list at startup, and skills installed afterwards load live.
+The agent registers this computer, installs the `sync-aistack` skill, and connects Claude Code to the server. Restart Claude Code once when it says so. That restart is the only one: Claude Code reads its server list at startup, and skills installed afterwards load live. It also offers to sync at the start of every session: a `SessionStart` hook that only reminds the agent to run `sync-aistack`, so your computers stay current without anyone asking.
 
 For a second computer, say "add my other computer to aistack" on one that is already connected. It returns one command to paste there. No invite code is involved.
 
@@ -128,7 +128,7 @@ For a second computer, say "add my other computer to aistack" on one that is alr
 
 | Say | What happens |
 |---|---|
-| "sync aistack" | Backs up what is new on this computer, installs and updates what it should have, and asks about the rest. Do it when you start work, like `git pull` |
+| "sync aistack" | Backs up what is new on this computer, installs and updates what it should have, and asks about the rest. Do it when you start work, like `git pull`, or let the session-start hook ask for it |
 | "open my aistack dashboard" | Gives you a link that opens the dashboard, signed in |
 | "what skills do my teams have?" | Lists your own skills, then each team's, with who pushed each |
 | "install code-review from backend" | Takes the team's copy into the Library and installs it here. Usable in the same session |
@@ -237,6 +237,7 @@ What it does not show, stated plainly:
 
 - The first release, before teams, was also run end to end by fresh agents that were given only what a real client gets: the tool descriptions and the `/setup` page. That exercise has not been repeated for sharing, taking, team updates, or the dashboard. Those rest on the tests above.
 - A signed-in Claude Code session was run once by hand against a local server (2026-10-14): it listed a team's skills over MCP, installed one with the tool's own `curl` and `tar` steps, executable bit intact, and used it in the same session without a restart. The first attempt to use the skill straight after installing it answered "Unknown skill"; a moment later it was found. No automated test repeats this.
+- The session-start hook was checked in a headless Claude Code session (2026-10-14): its line reached the model's context at startup.
 - A whole sync was run once from a signed-in Claude Code session (2026-10-14, Claude Code 2.1.241, headless, against a local server). The computer's skills folder held 25 real skills and the server was arranged so one sync met every part of the report. Told only "sync aistack", and given its two answers in advance, the session hashed the folder, called `sync`, and then:
 
   | The report said | What the session did |

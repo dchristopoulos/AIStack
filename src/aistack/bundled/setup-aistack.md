@@ -63,7 +63,19 @@ claude mcp add --transport http --scope user aistack {mcp_url} --header "Authori
 
 Then delete both temporary files. The response file holds the token.
 
-## 5. Finish
+## 5. Offer to sync at the start of every session
+
+Ask the user whether Claude Code should sync AIStack at the start of every session, and recommend it: their computers then stay current without anyone remembering to ask. If they decline, skip to step 6.
+
+If they agree, add a `SessionStart` hook to `~/.claude/settings.json`. It runs no program and holds no token: it only puts one line in front of you when a session starts, telling you to sync. Read the file first, or start from `{}` if it does not exist, and keep everything already in it. Add this entry to the list under `hooks.SessionStart`, creating the keys that are missing. If an entry with this exact command is already there, change nothing.
+
+```json
+{"matcher": "startup", "hooks": [{"type": "command", "command": "echo AIStack: before the first task, run the sync-aistack skill.", "timeout": 10}]}
+```
+
+Check that the file is still valid JSON before saving it.
+
+## 6. Finish
 
 Do not save the invite code anywhere, and do not repeat the token back to the user. It is now in Claude Code's own configuration, which is the only place it needs to be.
 
@@ -71,7 +83,7 @@ Tell the user:
 
 - This computer is connected to AIStack as `<username>` / `<computer name>`.
 - **Restart Claude Code once.** It reads its server list at startup, so the new connection appears after a restart. This is the only restart: skills installed from now on load without one.
-- After restarting, say **"sync aistack"**. It backs up the skills on this computer to the Library, a private space only they see, and installs whatever their other computers already put there. Syncing at the start of a work session, like `git pull`, keeps everything current.
+- After restarting, say **"sync aistack"**. It backs up the skills on this computer to the Library, a private space only they see, and installs whatever their other computers already put there. If they agreed to step 5, every new session starts with a sync; otherwise syncing at the start of a work session, like `git pull`, keeps everything current.
 - **"open my aistack dashboard"** gives a link to the web dashboard, where they see every skill and which computer has it, and manage teams, groups, and members.
 - To work with other people: **"what skills do my teams have?"** to browse, **"install <skill> from <team>"** to take one, **"share <skill> with <team>"** to give a team a copy of theirs, **"create a team called <name>"** to start one, and **"join a team with this code"** when someone sends them a team invite code. Everyone on this server is already in the team `everyone`.
 - A teammate's change to a shared skill never reaches this computer by itself. Sync reports it as an offer, and they decide each time.

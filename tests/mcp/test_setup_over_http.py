@@ -74,6 +74,20 @@ async def test_the_setup_page_gets_the_details_that_are_easy_to_get_wrong(server
     assert "Restart Claude Code once" in text
 
 
+async def test_the_setup_page_offers_a_session_start_hook_that_only_prompts_a_sync(server_url):
+    """A hook cannot call an MCP tool at startup, and sync stays read-only (ADR-0018)."""
+    text = (await _get(f"{_base(server_url)}/setup")).text
+    hook = json.loads(re.search(r"```json\n(\{\"matcher\".*?)\n```", text, re.S).group(1))
+
+    assert hook["matcher"] == "startup"
+    assert [handler["type"] for handler in hook["hooks"]] == ["command"]
+    assert hook["hooks"][0]["command"].startswith("echo ")
+    assert "sync-aistack" in hook["hooks"][0]["command"]
+    # Offered, not imposed, and only once the server is connected.
+    assert text.index("claude mcp add") < text.index("SessionStart")
+    assert "If they decline" in text
+
+
 async def test_the_sync_skill_is_served_exactly_as_shipped(server_url):
     """A fresh vault cannot install the skill that talks to it, so setup fetches it here."""
     response = await _get(f"{_base(server_url)}/setup/sync-aistack/SKILL.md")
