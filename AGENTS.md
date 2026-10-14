@@ -118,6 +118,7 @@ Layered layout under `src/aistack/` (see `docs/DESIGN.md` §8): MCP tool handler
 
 - `docs/OPERATING.md` is for whoever runs the server. An admin operation documented there is a script that goes through `build_engine`, never a bare `sqlite3` shell: SQLite only cascades deletes with a per-connection pragma that the engine sets. Run a documented script against a real database before committing a change to it.
 - The image is published to `ghcr.io/dchristopoulos/aistack` only by the `publish` job in `tests.yaml`, which needs every test job and runs only on a push to `main` or a version tag. Never push an image by hand: `latest` must only ever be a commit that passed.
+- The package is published to PyPI as `aistack-mcp` (the name `aistack` belongs to another project) only by the `pypi` job in `tests.yaml`, on a `v<version>` tag that matches `pyproject.toml`. Never upload by hand: PyPI never takes a version back.
 - CI builds the image and drives it with `scripts/container_smoke.py`: a fresh volume, a restart, the unprivileged uid, a grep of the container's logs for every kind of secret, and the same image against PostgreSQL. A change to the Dockerfile is verified there, not by reading it.
 
 ## Running tests

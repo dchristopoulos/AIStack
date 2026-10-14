@@ -16,6 +16,8 @@ WORKDIR /app
 COPY pyproject.toml poetry.lock ./
 RUN poetry install --only main --no-root
 
+# The package's metadata names the README and LICENSE, so installing it needs both.
+COPY README.md LICENSE ./
 COPY src ./src
 RUN poetry install --only main
 

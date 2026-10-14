@@ -176,9 +176,23 @@ jobs:
           scripts/wait_until_healthy.sh aistack-postgres
           poetry run python scripts/container_smoke.py fresh http://127.0.0.1:8001 "$INVITE_CODE" state-postgres.json
 
+      # The package `uvx aistack-mcp` installs, driven the same way. Built from this commit and
+      # installed with pip into an environment of its own, resolving dependencies as a user's
+      # computer would, so a file left out of the wheel fails here and not after a release.
+      - name: The PyPI package runs
+        run: |
+          poetry build
+          python -m venv "$RUNNER_TEMP/wheel"
+          "$RUNNER_TEMP/wheel/bin/pip" install --quiet dist/*.whl
+          AISTACK_INVITE_CODE="$INVITE_CODE" AISTACK_PORT=8002 \
+            DATABASE_URL="sqlite:///$RUNNER_TEMP/wheel.db" \
+            "$RUNNER_TEMP/wheel/bin/aistack-mcp" > wheel.log 2>&1 &
+          for _ in $(seq 1 60); do curl -sf http://127.0.0.1:8002/health && break; sleep 1; done
+          poetry run python scripts/container_smoke.py fresh http://127.0.0.1:8002 "$INVITE_CODE" state-wheel.json
+
       - name: Container logs, if anything failed
         if: failure()
-        run: docker logs aistack 2>&1 || true; docker logs aistack-postgres 2>&1 || true
+        run: docker logs aistack 2>&1 || true; docker logs aistack-postgres 2>&1 || true; cat wheel.log 2>/dev/null || true
 
   # The image people run, published only from a commit every job above passed on: a push to
   # main, or a version tag. A pull request never publishes, whatever its branch holds.
@@ -224,3 +238,36 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  # The package behind `uvx aistack-mcp`, published only from a version tag every job above
+  # passed on. PyPI trusts this job by its OIDC identity (trusted publishing), so no upload
+  # token exists to leak. To release: set `version` in pyproject.toml, merge it, then tag that
+  # commit `v<version>` and push the tag. The image gets the same version from the same tag.
+  pypi:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [pytest, browsers, container]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Named on pypi.org's trusted publisher, so only this job, in this environment, can upload.
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: pipx install poetry
+
+      # PyPI never accepts a version twice, so a tag that disagrees with the package would
+      # publish a release that cannot be corrected under its own number.
+      - name: The tag names the package's version
+        run: test "$GITHUB_REF_NAME" = "v$(poetry version -s)"
+
+      - run: poetry build
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

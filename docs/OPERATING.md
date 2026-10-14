@@ -15,6 +15,12 @@ docker run -d --name aistack \
 
 The image is published by CI from every commit on `main` that passed the tests, for `linux/amd64` and `linux/arm64`. `latest` follows `main`; each commit is also tagged `sha-<commit>`, and version tags such as `0.1.0` arrive with releases. To build it yourself instead, `docker build -t aistack .` in a checkout and run `aistack` in place of the published name.
 
+Without Docker, the same server runs from PyPI with [uv](https://docs.astral.sh/uv/), which fetches Python 3.13 if it needs to. The database is a SQLite file in the current folder unless `DATABASE_URL` says otherwise:
+
+```bash
+AISTACK_INVITE_CODE="$(openssl rand -base64 24)" uvx aistack-mcp
+```
+
 Or with Compose, which reads `AISTACK_INVITE_CODE` from the environment or a `.env` file:
 
 ```bash

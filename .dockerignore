@@ -1,7 +1,10 @@
-# The image is built from pyproject.toml, poetry.lock, and src/. Everything else stays out,
-# most of all a developer's .env and database.
+# The image is built from pyproject.toml, poetry.lock, and src/, plus the README and LICENSE
+# the package metadata names. Everything else stays out, most of all a developer's .env and
+# database.
 *
 !pyproject.toml
 !poetry.lock
+!README.md
+!LICENSE
 !src/
 **/__pycache__/
