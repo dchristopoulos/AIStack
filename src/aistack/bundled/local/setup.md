@@ -65,12 +65,13 @@ In Codex, add this to `~/.codex/config.toml`, creating the file if needed and ke
 command = "uvx"
 args = ["aistack-mcp@latest"]
 env = { AISTACK_DATABASE_URL = "<address>" }
+startup_timeout_sec = 60
 tools.sync.approval_mode = "approve"
 tools.get_skill.approval_mode = "approve"
 tools.push_skill.approval_mode = "approve"
 ```
 
-The three `tools` lines approve only what sync does without asking: comparing, installing, and backing up to the user's private Library. Tell the user so in one line. `@latest` keeps every computer on the same release, so when one upgrades the shared Library, the others follow at their next start.
+`startup_timeout_sec` gives AIStack time to download a new release when it starts after an update; Codex otherwise stops waiting after a few seconds. The three `tools` lines approve only what sync does without asking: comparing, installing, and backing up to the user's private Library. Tell the user so in one line. `@latest` keeps every computer on the same release, so when one upgrades the shared Library, the others follow at their next start.
 
 ## 7. Offer to sync at the start of every session
 
