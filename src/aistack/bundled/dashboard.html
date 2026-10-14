@@ -2019,14 +2019,12 @@ function fullPage(...kids) {
   $toasts.replaceChildren();
 }
 function sessionEnded() {
-  const local = state && state.server === false;
   state = null;
   document.title = 'Session ended · AIStack';
   fullPage(
     el('span', { class: 'logo', style: 'width:40px;height:40px;border-radius:8px' }, icon('layers', 22)),
     el('h1', null, 'Your session has ended.'),
-    el('p', null, local ? 'Run "aistack dashboard" again for a new link.'
-      : 'Ask your coding agent to "open my aistack dashboard" for a new link.'),
+    el('p', null, 'Ask your coding agent to "open my aistack dashboard" for a new link.'),
     DEMO && btn('Restart the demo', { on: { click: () => location.reload() } }));
 }
 

@@ -7,6 +7,7 @@ every other session on this computer wait.
 """
 
 import logging
+import webbrowser
 from pathlib import Path
 from typing import TypedDict
 
@@ -15,6 +16,7 @@ from aistack.bootstrap.context.application_context import (
     get_session_factory,
 )
 from aistack.bundled import SYNC_SKILL_NAME, local_sync_skill_document
+from aistack.mcp import local_dashboard
 from aistack.mcp.local import local_mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.mcp.tools.skills import ListSkillsResult, SkillListing
@@ -22,6 +24,7 @@ from aistack.mcp.tools.sync import SyncResult, sync_result
 from aistack.services import local_skills, skill_service, sync_service
 from aistack.services.harnesses import HarnessKey, validated_harness
 from aistack.services.skill_validation import validated_origin, validated_skill_name
+from aistack.services.transfer_ticket import DASHBOARD_LINK_LIFETIME_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -228,3 +231,33 @@ def disable_skill(name: str, harness: HarnessKey = "claude_code") -> LocalDisabl
     removed = local_skills.remove(_folder(harness), disabled)
     logger.info(f"Skill disabled. Skill: '{disabled}'. Removed: '{removed}'.")
     return LocalDisableSkillResult(name=disabled, enabled=False, removed=removed)
+
+
+class LocalDashboardResult(TypedDict):
+    url: str
+    expires_in_seconds: int
+
+
+@local_mcp.tool(
+    description="""Open the user's Library in their browser, signed in.
+
+    Use when the user wants to see or manage their skills on a screen ("open my aistack
+    dashboard"): every skill in their Library and which of their computers has it. It opens
+    the browser itself; also give the user the link, in case it did not. The link signs in
+    for a few minutes, and the page runs on this computer for as long as this session does.
+
+    Returns:
+        LocalDashboardResult containing:
+            - url: the sign-in link. A credential: show it to the user only.
+            - expires_in_seconds: how long the link can be used to sign in
+    """)
+@handle_mcp_errors
+def open_dashboard() -> LocalDashboardResult:
+    url = local_dashboard.dashboard_link()
+    try:
+        webbrowser.open(url)
+    except webbrowser.Error:
+        # No browser this process can reach; the agent hands the link over instead.
+        pass
+    logger.info("Dashboard link issued.")
+    return LocalDashboardResult(url=url, expires_in_seconds=DASHBOARD_LINK_LIFETIME_SECONDS)
