@@ -371,6 +371,29 @@ def archive_of(session: Session, machine_id: uuid.UUID,
     )
 
 
+@dataclass(frozen=True)
+class ExportedSkill:
+    name: str
+    content_hash: str
+    archive: bytes
+
+
+def export_library(session: Session, machine_id: uuid.UUID,
+                   user_id: uuid.UUID) -> list[ExportedSkill]:
+    """The latest revision of every skill in the user's Library, packed as an install gets it.
+
+    Removed skills stay out, and so does the history: what moves to another Library is what
+    this one would install today.
+    """
+    exported = []
+    for skill in session.scalars(visibility.my_skills(user_id)
+                                 .where(Skill.archived.is_(False)).order_by(Skill.name)):
+        version = _latest_version(session, skill.skill_id)
+        _, archive = archive_of(session, machine_id, version.skill_version_id)
+        exported.append(ExportedSkill(skill.name, version.content_hash, archive))
+    return exported
+
+
 def set_enabled(session: Session, machine_id: uuid.UUID, harness: Harness,
                 skill_id: uuid.UUID, enabled: bool) -> None:
     """Record a decision about a skill in one harness of a machine, keeping exactly one row

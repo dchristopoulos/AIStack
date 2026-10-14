@@ -1,9 +1,11 @@
 import argparse
 import asyncio
 import logging
+import shutil
 import socket
 import sys
 import webbrowser
+from pathlib import Path
 
 import uvicorn
 from sqlalchemy.exc import OperationalError
@@ -87,6 +89,35 @@ async def serve_dashboard() -> None:
     await uvicorn.Server(dashboard_server_config(settings.log_level)).serve(sockets=[listener])
 
 
+def export_library(destination: Path) -> None:
+    """`aistack export <folder>`: every skill in this Library as a skill folder (ADR-0020).
+
+    To move them into another Library, a team's server above all, copy the folders into a
+    skills folder on a computer connected to it and sync: sync backs up what is new.
+    """
+    if destination.exists() and any(destination.iterdir()):
+        sys.exit(f"{destination} already has files in it. Export into a new or empty folder, "
+                 "so nothing there is replaced.")
+    settings = LocalSettings()
+    configure_logging(settings.log_level)
+    build_local_context(settings)
+
+    from aistack.bootstrap.context.application_context import (
+        get_local_principal,
+        get_session_factory,
+    )
+    from aistack.services import local_skills, skill_service
+
+    caller = get_local_principal()
+    with get_session_factory().begin() as session:
+        skills = skill_service.export_library(session, caller.machine_id, caller.user_id)
+    # Written after the transaction, through the same checks an install makes.
+    for skill in skills:
+        local_skills.install(destination, skill.name, skill.archive, skill.content_hash)
+    shutil.rmtree(destination / local_skills.STAGING_FOLDER, ignore_errors=True)
+    print(f"Exported {len(skills)} skills to {destination}.")
+
+
 def run() -> None:
     """The `aistack` command: `aistack` is local mode, `aistack serve` the server."""
     parser = argparse.ArgumentParser(
@@ -94,10 +125,14 @@ def run() -> None:
         description="With no command, serve your own Library to the coding agent that started "
                     "this over stdio. 'dashboard' opens it in the browser; 'setup' prints "
                     "setup steps for a coding agent, and 'sync-skill' the skill they install; "
-                    "'serve' runs the AIStack server.")
+                    "'export' writes every skill in the Library to a folder; 'serve' runs the "
+                    "AIStack server.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
-                                                       "sync-skill"])
-    command = parser.parse_args().command
+                                                       "sync-skill", "export"])
+    parser.add_argument("folder", nargs="?", type=Path, default=Path("aistack-library"),
+                        help="Where 'export' writes the skills. Default: ./aistack-library")
+    arguments = parser.parse_args()
+    command = arguments.command
 
     # Printed for an agent to follow or save: local mode has no server to fetch them from.
     if command == "setup":
@@ -112,6 +147,8 @@ def run() -> None:
             asyncio.run(main())
         elif command == "dashboard":
             asyncio.run(serve_dashboard())
+        elif command == "export":
+            export_library(arguments.folder)
         else:
             serve_local()
     except ValueError as error:

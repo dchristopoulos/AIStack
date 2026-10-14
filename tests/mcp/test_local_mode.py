@@ -19,7 +19,7 @@ from aistack.db.models.machine import Machine
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.user import User
 from aistack.mcp.local import local_mcp
-from aistack.services import onboarding_service
+from aistack.services import onboarding_service, skill_service
 from aistack.services.skill_archive import ArchivedFile
 from aistack.services.skill_validation import validated_skill
 
@@ -295,3 +295,33 @@ def test_the_command_prints_local_setup_and_its_skill(command, starts):
     printed = subprocess.run([sys.executable, "-m", "aistack.bootstrap", command],
                              capture_output=True, text=True, check=True).stdout
     assert printed.startswith(starts)
+
+
+async def test_export_writes_the_library_as_skill_folders(computer, tmp_path, library_url):
+    """The way a Library moves onto a team's server: export, copy into a skills folder, sync."""
+    async with computer("laptop") as (laptop, home):
+        _write_skill(home)
+        await _call(laptop, "push_skill", name="wizard")
+        _write_skill(home, "retired")
+        (home / ".claude" / "skills" / "retired" / "SKILL.md").write_bytes(
+            SKILL_MD.replace(b"wizard", b"retired"))
+        await _call(laptop, "push_skill", name="retired")
+        with application_context.get_session_factory().begin() as session:
+            skill_service.remove_from_my_skills(
+                session, application_context.get_local_principal().user_id, "retired")
+
+    environment = {**os.environ, "HOME": str(tmp_path / "laptop"),
+                   "AISTACK_HOME": str(tmp_path / "laptop" / ".aistack"),
+                   "AISTACK_DATABASE_URL": library_url}
+    destination = tmp_path / "exported"
+    exported = subprocess.run([sys.executable, "-m", "aistack.bootstrap", "export",
+                               str(destination)], env=environment, capture_output=True,
+                              text=True)
+
+    assert exported.returncode == 0, exported.stderr
+    assert sorted(path.name for path in destination.iterdir()) == ["wizard"]
+    assert (destination / "wizard" / "scripts" / "run.sh").read_bytes() == SCRIPT
+
+    again = subprocess.run([sys.executable, "-m", "aistack.bootstrap", "export",
+                            str(destination)], env=environment, capture_output=True, text=True)
+    assert again.returncode == 1 and "already has files" in again.stderr
