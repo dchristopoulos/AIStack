@@ -6,12 +6,14 @@ import sys
 import webbrowser
 
 import uvicorn
+from sqlalchemy.exc import OperationalError
 
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings, Settings
 from aistack.bootstrap.context.application_context import (
     build_application_context,
     build_local_context,
 )
+from aistack.bundled import local_setup_instructions, local_sync_skill_document
 from aistack.commons.exceptions import AIStackError
 
 logger = logging.getLogger(__name__)
@@ -54,7 +56,7 @@ def serve_local() -> None:
 
     from aistack.mcp.local import local_mcp
 
-    local_mcp.run(transport="stdio", show_banner=False)
+    local_mcp.run(transport="stdio", show_banner=False, log_level=settings.log_level)
 
 
 async def serve_dashboard() -> None:
@@ -90,10 +92,20 @@ def run() -> None:
     parser = argparse.ArgumentParser(
         prog="aistack",
         description="With no command, serve your own Library to the coding agent that started "
-                    "this over stdio. 'dashboard' opens it in the browser; 'serve' runs the "
-                    "AIStack server.")
-    parser.add_argument("command", nargs="?", choices=["serve", "dashboard"])
+                    "this over stdio. 'dashboard' opens it in the browser; 'setup' prints "
+                    "setup steps for a coding agent, and 'sync-skill' the skill they install; "
+                    "'serve' runs the AIStack server.")
+    parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
+                                                       "sync-skill"])
     command = parser.parse_args().command
+
+    # Printed for an agent to follow or save: local mode has no server to fetch them from.
+    if command == "setup":
+        print(local_setup_instructions(), end="")
+        return
+    if command == "sync-skill":
+        print(local_sync_skill_document(), end="")
+        return
 
     try:
         if command == "serve":
@@ -108,6 +120,13 @@ def run() -> None:
         # both a field pydantic rejected and the invite-code check that deliberately is not one.
         logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
         logger.error(f"AIStack cannot start: its configuration is invalid.\n{error}")
+        sys.exit(1)
+    except OperationalError as error:
+        # The usual first-run mistake in local mode: an address that is wrong or a password
+        # that changed. The driver's last line names which, and holds no password.
+        logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
+        reason = str(error.orig).strip().splitlines()[-1]
+        logger.error(f"AIStack cannot start: it could not reach the Library's database. {reason}")
         sys.exit(1)
     except AIStackError as error:
         # Local mode's start asks the database who this is, and the answer can be a refusal

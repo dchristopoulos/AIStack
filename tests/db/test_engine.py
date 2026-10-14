@@ -123,3 +123,14 @@ def test_a_postgres_connection_closed_while_pooled_is_replaced_not_used(postgres
         pids = {connection.exec_driver_sql("SELECT pg_backend_pid()").scalar()
                 for connection in (first, second)}
     assert pid not in pids
+
+
+@pytest.mark.parametrize("pasted", ["postgresql://u:p@db.example/aistack",
+                                    "postgres://u:p@db.example/aistack"])
+def test_a_providers_postgres_address_uses_the_shipped_driver(pasted):
+    """Neon and Supabase hand out postgresql://, which SQLAlchemy would read as psycopg2."""
+    engine = build_engine(pasted)
+    try:
+        assert engine.url.drivername == "postgresql+psycopg"
+    finally:
+        engine.dispose()

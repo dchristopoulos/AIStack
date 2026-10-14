@@ -1,5 +1,5 @@
 """Files AIStack ships and serves as they are: the setup instructions, the sync skill, and
-the dashboard page.
+the dashboard page, plus local mode's own setup and sync skill.
 
 They live inside the package so the container image carries them, and a new user's agent can
 fetch them from the server it is joining. A fresh vault cannot install the skill that talks
@@ -23,6 +23,16 @@ def dashboard_page() -> str:
 
 def sync_skill_document() -> str:
     return _read(f"skills/{SYNC_SKILL_NAME}/SKILL.md")
+
+
+def local_setup_instructions() -> str:
+    """`aistack setup`: local mode's setup, which has no server to fetch it from (ADR-0020)."""
+    return _read("local/setup.md")
+
+
+def local_sync_skill_document() -> str:
+    """The sync skill for local mode, where the tools read and write the folders themselves."""
+    return _read(f"local/{SYNC_SKILL_NAME}/SKILL.md")
 
 
 def _read(relative_path: str) -> str:

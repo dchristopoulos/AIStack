@@ -14,6 +14,7 @@ from aistack.bootstrap.context.application_context import (
     get_local_principal,
     get_session_factory,
 )
+from aistack.bundled import SYNC_SKILL_NAME, local_sync_skill_document
 from aistack.mcp.local import local_mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.mcp.tools.skills import ListSkillsResult, SkillListing
@@ -33,7 +34,8 @@ def _folder(harness: HarnessKey) -> Path:
     description="""Compare one skills folder on this computer with the user's Library.
 
     Use when the user says "sync aistack" or starts work. It reads the folder itself and
-    changes nothing. Then, per field, passing the same harness to each tool:
+    changes nothing but AIStack's own sync-aistack skill, which it keeps current. Then, per
+    field, passing the same harness to each tool:
       - install and update: call get_skill for each, without asking. Then say what
         updated, between which revisions.
       - backup: skills on this computer not yet in the Library. push_skill each, without
@@ -53,7 +55,12 @@ def _folder(harness: HarnessKey) -> Path:
 @handle_mcp_errors
 def sync(harness: HarnessKey = "claude_code") -> SyncResult:
     caller = get_local_principal()
-    local = local_skills.observed(_folder(harness))
+    folder = _folder(harness)
+    local = local_skills.observed(folder)
+    # AIStack's own skill, where setup put it, is kept at this release's copy: the server
+    # mode equivalent is sync_skill_url, which here would have nowhere to point.
+    if SYNC_SKILL_NAME in local:
+        local_skills.refresh(folder, SYNC_SKILL_NAME, local_sync_skill_document())
 
     with get_session_factory().begin() as session:
         report = sync_service.sync(session, caller.machine_id, caller.user_id, local, harness)
