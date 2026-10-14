@@ -57,7 +57,7 @@ No FastAPI and no frontend framework: the dashboard is one HTML file with its ow
 - **ADR-0015 — A personal space per user, teams to share into, and groups inside a team.** A machine installs only from its user's own skills. Sharing copies a skill into a team; taking copies it back out. A teammate's change is an offer, never applied by sync.
 - **ADR-0016 — Schema changes are Alembic migrations, applied at startup in one transaction.** All pending migrations land or none do, a failed one stops the server, and there are no downgrades.
 - **ADR-0017 — The dashboard is served by the server, and a link from chat signs you in.** Same process, same services, no second framework, no build step, no passwords.
-- **ADR-0018 (proposed) — One account for every coding agent on a computer, Codex first.** A harness is a named skills folder; the token and the per-computer decision are shared by every harness on a computer, with a rare per-harness exception; sync runs per harness. Projects and tools without `SKILL.md` are left out.
+- **ADR-0018 (proposed) — One account for every coding agent on a computer, Codex first.** A harness is a named skills folder. A skill is placed per computer and harness, each placement its own decision, so the reconciliation table is unchanged and applies per folder. One token per computer. Projects, tools without `SKILL.md`, and a generic resource model are left out.
 
 ## 4. What is built
 
