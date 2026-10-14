@@ -58,7 +58,7 @@ No FastAPI and no frontend framework: the dashboard is one HTML file with its ow
 - **ADR-0016 — Schema changes are Alembic migrations, applied at startup in one transaction.** All pending migrations land or none do, a failed one stops the server, and there are no downgrades.
 - **ADR-0017 — The dashboard is served by the server, and a link from chat signs you in.** Same process, same services, no second framework, no build step, no passwords.
 - **ADR-0018 — One account for every coding agent on a computer, Codex first.** A harness is a named skills folder: `claude_code` (`~/.claude/skills`) or `agents` (`~/.agents/skills`, read by Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode and Amp). A skill is placed per computer and harness, each placement its own decision, so the reconciliation table is unchanged and applies per folder. One token per computer. Setup offers a session-start hook that tells the agent to sync. Projects, tools without `SKILL.md`, and a generic resource model are left out.
-- **ADR-0019 (proposed) — Invites are the way in.** A team invite link creates the account, registers the computer and joins the team in one paste. Sign-up is invite-only; the server's own code is for the person running it. An admin can let chosen members invite. The `everyone` team is removed; existing ones become ordinary teams.
+- **ADR-0019 — Invites are the way in.** A team invite link creates the account, registers the computer and joins the team in one paste. Sign-up is invite-only; the server's own code is for the person running it. An admin can let chosen members invite. The `everyone` team is removed; existing ones become ordinary teams.
 
 ## 4. What is built
 
