@@ -1,16 +1,20 @@
 import os
 import pathlib
 import shutil
+import threading
 import uuid
 from datetime import datetime, timezone
+from importlib import resources
 
 import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import MetaData, func, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
 import aistack.db
+import aistack.db.schema
 from aistack.db.engine import build_engine, build_session_factory
 from aistack.db.models import Base
 from aistack.db.models.harness import Harness
@@ -45,6 +49,11 @@ def empty_engine_fixture(request, sqlite_url):
 def _revision(engine) -> str | None:
     with engine.connect() as connection:
         return MigrationContext.configure(connection).get_current_revision()
+
+
+def _head() -> str:
+    return ScriptDirectory(str(resources.files("aistack.db").joinpath("migrations"))
+                           ).get_current_head()
 
 
 def _tables(engine) -> set[str]:
@@ -268,3 +277,50 @@ def test_rebuilding_a_table_does_not_cascade_into_the_rows_that_reference_it(emp
 def test_foreign_keys_are_enforced_again_after_a_migration(engine):
     with engine.connect() as connection:
         assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
+
+
+# --- one database, several processes (ADR-0020) --------------------------------------------
+
+def test_a_database_upgraded_by_a_newer_release_refuses_this_one(empty_engine):
+    """A computer that has not upgraded must not write to a schema it does not know."""
+    migrate_schema(empty_engine)
+    with empty_engine.begin() as connection:
+        connection.execute(text("UPDATE alembic_version SET version_num = '9999'"))
+
+    with pytest.raises(RuntimeError) as refusal:
+        migrate_schema(empty_engine)
+
+    assert "newer release of AIStack" in str(refusal.value)
+    assert "'9999'" in str(refusal.value) and "Upgrade AIStack" in str(refusal.value)
+    assert _revision(empty_engine) == "9999"
+
+
+def test_two_processes_starting_at_once_migrate_the_database_once(empty_engine, monkeypatch):
+    if empty_engine.dialect.name == "sqlite":
+        pytest.skip("SQLite admits one writer at a time (ADR-0014), so two migrations never "
+                    "overlap; the lock is for PostgreSQL")
+    # Both are inside their transaction, about to take the lock, before either has migrated.
+    both_began = threading.Barrier(2)
+    take_lock = aistack.db.schema._hold_migration_lock
+
+    def after_both_began(connection):
+        both_began.wait(timeout=5)
+        take_lock(connection)
+
+    monkeypatch.setattr(aistack.db.schema, "_hold_migration_lock", after_both_began)
+    failures = []
+
+    def start():
+        try:
+            migrate_schema(empty_engine)
+        except Exception as error:  # noqa: BLE001 - the assertion reports which one
+            failures.append(error)
+
+    threads = [threading.Thread(target=start) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert failures == []
+    assert _revision(empty_engine) == _head()
