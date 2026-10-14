@@ -31,3 +31,6 @@ htmlcov/
 .idea/
 .vscode/
 .serena/
+
+# Design explorations: screenshots and throwaway copies of the page, never shipped.
+design-variants/

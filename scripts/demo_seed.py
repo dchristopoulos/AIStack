@@ -75,10 +75,11 @@ class Person:
             stored = (await http.put(issued["upload_url"], content=archive(name, extra))).json()
         assert "revision" in stored, stored
 
-    async def sign_in(self) -> str:
-        link = (await self.tool("open_dashboard"))["url"]
-        assert (await self.browser.get(link)).status_code == 303
+    async def dashboard_link(self) -> str:
         return (await self.tool("open_dashboard"))["url"]
+
+    async def sign_in(self) -> None:
+        assert (await self.browser.get(await self.dashboard_link())).status_code == 303
 
     async def page(self, route: str, **body) -> dict:
         response = await self.browser.post(f"/api{route}", json=body, headers=REQUEST_HEADER)
@@ -86,7 +87,8 @@ class Person:
         return response.json()
 
 
-async def seed(base_url: str, invite_code: str) -> None:
+async def seed(base_url: str, invite_code: str) -> dict[str, str]:
+    """Fill the server and return a dashboard link per person, each good for five minutes."""
     dimitris, maria, alex = (Person(base_url, name) for name in ("dimitris", "maria", "alex"))
     await dimitris.join(invite_code, "macbook", "MACOS")
     await dimitris.tool("add_machine", name="desktop", os="LINUX")
@@ -96,7 +98,8 @@ async def seed(base_url: str, invite_code: str) -> None:
     for name in ("code-review", "release-notes", "sql-style", "aistack-api-notes",
                  "pentest-checklist", "meeting-notes", "commit-messages"):
         await dimitris.push(name)
-    links = {person.username: await person.sign_in() for person in (dimitris, maria, alex)}
+    for person in (dimitris, maria, alex):
+        await person.sign_in()
 
     # A company team, with a group per discipline and a project inside one of them.
     await dimitris.page("/teams", name="acme")
@@ -130,7 +133,11 @@ async def seed(base_url: str, invite_code: str) -> None:
 
     for person in (dimitris, maria, alex):
         await person.browser.aclose()
+    return {person.username: await person.dashboard_link() for person in (dimitris, maria, alex)}
 
+
+def main() -> None:
+    links = asyncio.run(seed(sys.argv[1].rstrip("/"), sys.argv[2]))
     print("Seeded: 3 people, 4 computers, teams 'acme' and 'friends', 3 groups (one nested, "
           "one private).")
     print("Maria has an update to 'code-review' waiting. Alex is in 'acme' and in no group, "
@@ -141,4 +148,4 @@ async def seed(base_url: str, invite_code: str) -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(seed(sys.argv[1].rstrip("/"), sys.argv[2]))
+    main()
