@@ -1,5 +1,6 @@
 import gzip
 import io
+import os
 import tarfile
 import time
 
@@ -44,8 +45,10 @@ def test_a_built_archive_is_one_any_tar_can_extract(tmp_path):
         tar.extractall(tmp_path, filter="data")
 
     assert (tmp_path / "SKILL.md").read_bytes() == b"x"
-    assert (tmp_path / "bin" / "tool").stat().st_mode & 0o111
-    assert not (tmp_path / "SKILL.md").stat().st_mode & 0o111
+    # Windows has no executable bit to restore; the archive still carries it for the rest.
+    if os.name != "nt":
+        assert (tmp_path / "bin" / "tool").stat().st_mode & 0o111
+        assert not (tmp_path / "SKILL.md").stat().st_mode & 0o111
 
 
 def test_directories_and_a_leading_dot_slash_are_what_tar_dash_c_produces():
