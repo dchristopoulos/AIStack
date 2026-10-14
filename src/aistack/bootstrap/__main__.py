@@ -1,7 +1,11 @@
 import argparse
 import asyncio
 import logging
+import socket
 import sys
+import webbrowser
+
+import uvicorn
 
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings, Settings
 from aistack.bootstrap.context.application_context import (
@@ -53,17 +57,51 @@ def serve_local() -> None:
     local_mcp.run(transport="stdio", show_banner=False)
 
 
+async def serve_dashboard() -> None:
+    """`aistack dashboard`: the same page as a server's, for this computer's Library, on
+    127.0.0.1, opened in the browser with a sign-in link that works once, for five minutes."""
+    settings = LocalSettings()
+    configure_logging(settings.log_level)
+    build_local_context(settings)
+
+    from aistack.bootstrap.context.application_context import (
+        get_local_principal,
+        get_ticket_signer,
+    )
+    from aistack.mcp.mcp import dashboard_server_config
+    from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH
+
+    # Port 0: the system picks a free one, so a second dashboard or another program on a
+    # fixed port never stops this one starting. The link names whichever it picked.
+    listener = socket.create_server(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    ticket = get_ticket_signer().sign_dashboard_link(get_local_principal().user_id)
+    link = f"http://127.0.0.1:{port}{DASHBOARD_LOGIN_PATH}/{ticket}"
+
+    # The link is a credential, so it goes to this terminal and the browser, never a log.
+    print(f"AIStack dashboard: http://127.0.0.1:{port}/app (Ctrl-C stops it)\n"
+          f"Sign-in link, good for five minutes: {link}", flush=True)
+    webbrowser.open(link)
+    await uvicorn.Server(dashboard_server_config(settings.log_level)).serve(sockets=[listener])
+
+
 def run() -> None:
     """The `aistack` command: `aistack` is local mode, `aistack serve` the server."""
     parser = argparse.ArgumentParser(
         prog="aistack",
         description="With no command, serve your own Library to the coding agent that started "
-                    "this over stdio. 'serve' runs the AIStack server.")
-    parser.add_argument("command", nargs="?", choices=["serve"])
+                    "this over stdio. 'dashboard' opens it in the browser; 'serve' runs the "
+                    "AIStack server.")
+    parser.add_argument("command", nargs="?", choices=["serve", "dashboard"])
     command = parser.parse_args().command
 
     try:
-        asyncio.run(main()) if command == "serve" else serve_local()
+        if command == "serve":
+            asyncio.run(main())
+        elif command == "dashboard":
+            asyncio.run(serve_dashboard())
+        else:
+            serve_local()
     except ValueError as error:
         # Configuration is wrong, not the code. A traceback would bury the one line that says
         # which variable to set, so this exits loudly and readably instead. ValueError covers

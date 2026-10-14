@@ -16,11 +16,13 @@ from typing import Any
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.routing import Route
 
 from aistack.bootstrap.context.application_context import (
+    get_public_url,
     get_session_factory,
-    get_settings,
     get_ticket_signer,
+    is_local_mode,
 )
 from aistack.bundled import dashboard_page
 from aistack.commons.exceptions import InvalidTicket, SignedOut, ValidationError
@@ -57,8 +59,22 @@ _PAGE_HEADERS = {
 }
 _API_HEADERS = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 
+# The routes `aistack dashboard` serves on 127.0.0.1 (ADR-0020): the person's own Library and
+# computers. A team needs a server everyone reaches, so its routes are left out, not refused.
+LOCAL_ROUTES: list[Route] = []
 
-@mcp.custom_route(DASHBOARD_LOGIN_PATH + "/{ticket}", methods=["GET"])
+
+def _route(path: str, methods: list[str], local: bool = True):
+    """Register a route on the server, and with `local`, on the localhost dashboard too."""
+    def register(endpoint):
+        mcp.custom_route(path, methods=methods)(endpoint)
+        if local:
+            LOCAL_ROUTES.append(Route(path, endpoint, methods=methods))
+        return endpoint
+    return register
+
+
+@_route(DASHBOARD_LOGIN_PATH + "/{ticket}", methods=["GET"])
 async def sign_in(request: Request) -> Response:
     """Turn a link from `open_dashboard` into a session, then leave the link behind.
 
@@ -88,7 +104,7 @@ async def sign_in(request: Request) -> Response:
     return response
 
 
-@mcp.custom_route(APP_PATH, methods=["GET"])
+@_route(APP_PATH, methods=["GET"])
 async def app(request: Request) -> Response:
     """The page itself. It holds no data: everything it shows comes from `/api/state`."""
     try:
@@ -98,14 +114,16 @@ async def app(request: Request) -> Response:
     return HTMLResponse(dashboard_page(), headers=_PAGE_HEADERS)
 
 
-@mcp.custom_route(API_PATH + "/state", methods=["GET"])
+@_route(API_PATH + "/state", methods=["GET"])
 @handle_route_errors
 async def state(request: Request) -> Response:
     user_id = _signed_in(request)
-    return _json(await asyncio.to_thread(_in_transaction, dashboard_service.state, user_id))
+    shown = await asyncio.to_thread(_in_transaction, dashboard_service.state, user_id)
+    # The page hides what only a server can do, such as creating a team, when this is false.
+    return _json(shown | {"server": not is_local_mode()})
 
 
-@mcp.custom_route(API_PATH + "/logout", methods=["POST"])
+@_route(API_PATH + "/logout", methods=["POST"])
 @handle_route_errors
 async def sign_out(request: Request) -> Response:
     _require_request_header(request)
@@ -117,11 +135,12 @@ async def sign_out(request: Request) -> Response:
 Action = Callable[[Session, uuid.UUID, dict[str, str], dict[str, Any]], dict[str, Any] | None]
 
 
-def _action(path: str) -> Callable[[Action], Action]:
+def _action(path: str, local: bool = True) -> Callable[[Action], Action]:
     """Register a POST route that runs `function` for the signed-in user in one transaction.
 
     The function takes the session, the caller's user id, the path parameters, and the JSON
-    body. The user id comes from the session cookie and from nowhere else.
+    body. The user id comes from the session cookie and from nowhere else. `local` false keeps
+    a team action off the localhost dashboard.
     """
     def register(function: Action) -> Action:
         @wraps(function)
@@ -133,7 +152,7 @@ def _action(path: str) -> Callable[[Action], Action]:
                                              dict(request.path_params), body)
             return _json(result or {"ok": True})
 
-        mcp.custom_route(API_PATH + path, methods=["POST"])(handle_route_errors(route))
+        _route(API_PATH + path, methods=["POST"], local=local)(handle_route_errors(route))
         return function
     return register
 
@@ -145,7 +164,7 @@ def set_skill_on_machine(session, user_id, path, body):
                                      _text(body, "harness", required=False))
 
 
-@_action("/skills/{name}/share")
+@_action("/skills/{name}/share", local=False)
 def share_skill(session, user_id, path, body):
     shared = skill_service.share(session, user_id, path["name"], _text(body, "team"),
                                  _text(body, "group", required=False))
@@ -162,38 +181,38 @@ def remove_my_skill(session, user_id, path, body):
     skill_service.remove_from_my_skills(session, user_id, path["name"])
 
 
-@_action("/teams")
+@_action("/teams", local=False)
 def create_team(session, user_id, path, body):
     return {"name": team_service.create_team(session, user_id, _text(body, "name"))}
 
 
-@_action("/teams/join")
+@_action("/teams/join", local=False)
 def join_team(session, user_id, path, body):
     return {"team": team_service.join_team(session, user_id, _text(body, "code"))}
 
 
-@_action("/teams/{team}/leave")
+@_action("/teams/{team}/leave", local=False)
 def leave_team(session, user_id, path, body):
     team_service.leave_team(session, user_id, path["team"])
 
 
-@_action("/teams/{team}/invite")
+@_action("/teams/{team}/invite", local=False)
 def new_invite_code(session, user_id, path, body):
     # Returned to the admin who asked, once, and never logged.
     return {"code": team_service.new_invite_code(session, user_id, path["team"])}
 
 
-@_action("/teams/{team}/invites/{invite_id}/cancel")
+@_action("/teams/{team}/invites/{invite_id}/cancel", local=False)
 def cancel_invite(session, user_id, path, body):
     team_service.cancel_invite(session, user_id, path["team"], path["invite_id"])
 
 
-@_action("/teams/{team}/take")
+@_action("/teams/{team}/take", local=False)
 def take_from_team(session, user_id, path, body):
     skill_service.take_from_team(session, user_id, _text(body, "name"), path["team"])
 
 
-@_action("/teams/{team}/members/{username}")
+@_action("/teams/{team}/members/{username}", local=False)
 def change_member(session, user_id, path, body):
     team_service.set_member(
         session, user_id, path["team"], path["username"],
@@ -203,12 +222,12 @@ def change_member(session, user_id, path, body):
     )
 
 
-@_action("/teams/{team}/members/{username}/remove")
+@_action("/teams/{team}/members/{username}/remove", local=False)
 def remove_member(session, user_id, path, body):
     team_service.remove_member(session, user_id, path["team"], path["username"])
 
 
-@_action("/teams/{team}/groups")
+@_action("/teams/{team}/groups", local=False)
 def create_group(session, user_id, path, body):
     return {"path": team_service.create_group(
         session, user_id, path["team"], _text(body, "name"),
@@ -218,7 +237,7 @@ def create_group(session, user_id, path, body):
 
 
 # A group's path has slashes in it, so it travels in the body and not in the URL.
-@_action("/teams/{team}/group")
+@_action("/teams/{team}/group", local=False)
 def change_group(session, user_id, path, body):
     group = _text(body, "path")
     private = _flag(body, "private", required=False)
@@ -229,19 +248,19 @@ def change_group(session, user_id, path, body):
         team_service.set_subscribed(session, user_id, path["team"], group, subscribed)
 
 
-@_action("/teams/{team}/group/members")
+@_action("/teams/{team}/group/members", local=False)
 def change_group_member(session, user_id, path, body):
     team_service.set_group_member(session, user_id, path["team"], _text(body, "path"),
                                   _text(body, "username"), _flag(body, "member"))
 
 
-@_action("/teams/{team}/skills/{name}/move")
+@_action("/teams/{team}/skills/{name}/move", local=False)
 def move_team_skill(session, user_id, path, body):
     team_service.move_skill(session, user_id, path["team"], path["name"],
                             _text(body, "group", required=False))
 
 
-@_action("/teams/{team}/skills/{name}/remove")
+@_action("/teams/{team}/skills/{name}/remove", local=False)
 def remove_team_skill(session, user_id, path, body):
     team_service.remove_skill(session, user_id, path["team"], path["name"])
 
@@ -306,19 +325,22 @@ def _json(payload: dict[str, Any]) -> JSONResponse:
 
 
 def _signed_out_page() -> Response:
+    remedy = ("Run <strong>aistack dashboard</strong> again. It opens a link that signs you in."
+              if is_local_mode() else
+              "Ask your coding agent to <strong>open my aistack dashboard</strong>. It will "
+              "give you a link that signs you in.")
     return HTMLResponse(
         "<!doctype html><meta charset=utf-8><title>AIStack</title>"
         "<body style=\"font:16px system-ui;margin:15vh auto;max-width:32rem;padding:0 1rem\">"
         "<h1 style=\"font-size:1.25rem\">You are not signed in</h1>"
-        "<p>Ask your coding agent to <strong>open my aistack dashboard</strong>. It will give "
-        "you a link that signs you in.</p>",
+        f"<p>{remedy}</p>",
         status_code=401,
         headers=_PAGE_HEADERS,
     )
 
 
 def _served_over_https(request: Request) -> bool:
-    public_url = get_settings().public_url
+    public_url = get_public_url()
     if public_url is not None:
         return public_url.startswith("https://")
     return request.url.scheme == "https"

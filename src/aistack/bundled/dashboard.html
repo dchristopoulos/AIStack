@@ -1121,7 +1121,9 @@ function renderSidebar(r) {
       title: t.name, 'aria-current': r.view === 'team' && r.team === t ? 'page' : null },
       el('span', { class: 'rail-btn', 'aria-hidden': 'true' }, t.name[0]),
       el('span', { class: 'rail-name' }, t.name))),
-    el('button', { type: 'button', class: 'rail-btn ghost', fk: 'add-team', title: 'Add a team', 'aria-label': 'Add a team', on: { click: addTeamDialog } }, icon('plus', 18)));
+    // A team needs a server everyone reaches; `aistack dashboard` on this computer has none (ADR-0020).
+    ...(state.server === false ? []
+      : [el('button', { type: 'button', class: 'rail-btn ghost', fk: 'add-team', title: 'Add a team', 'aria-label': 'Add a team', on: { click: addTeamDialog } }, icon('plus', 18))]));
 
   let list;
   if (personal) {
@@ -1322,9 +1324,9 @@ function libraryRow(s) {
     td('row end',
       btn('Add to…', { class: 'btn sm', fk: 'addto:' + s.name, on: { click: () => addToDialog(s) } }),
       menu(`More actions for ${s.name}`, 'lm:' + s.name, [
-        { label: 'Share with a team…', icon: 'share', run: () => shareDialog(s) },
+        state.server !== false && { label: 'Share with a team…', icon: 'share', run: () => shareDialog(s) },
         { label: 'Remove from library', icon: 'trash', danger: true, run: () => removeMineDialog(s) },
-      ])),
+      ].filter(Boolean))),
     update && td('update-cell',
       el('div', { class: 'update' },
         el('span', { class: 'dot blue' }),
@@ -2017,12 +2019,14 @@ function fullPage(...kids) {
   $toasts.replaceChildren();
 }
 function sessionEnded() {
+  const local = state && state.server === false;
   state = null;
   document.title = 'Session ended · AIStack';
   fullPage(
     el('span', { class: 'logo', style: 'width:40px;height:40px;border-radius:8px' }, icon('layers', 22)),
     el('h1', null, 'Your session has ended.'),
-    el('p', null, 'Ask your coding agent to "open my aistack dashboard" for a new link.'),
+    el('p', null, local ? 'Run "aistack dashboard" again for a new link.'
+      : 'Ask your coding agent to "open my aistack dashboard" for a new link.'),
     DEMO && btn('Restart the demo', { on: { click: () => location.reload() } }));
 }
 

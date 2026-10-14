@@ -29,7 +29,6 @@ _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
 _ticket_signer: TicketSigner | None = None
 # Local mode only: the one caller every tool call comes from.
-_local_settings: LocalSettings | None = None
 _local_principal: MachinePrincipal | None = None
 
 _MACHINE_ID_FILE = "machine-id"
@@ -70,12 +69,14 @@ def build_local_context(settings: LocalSettings) -> None:
     Never attaches a token verifier, and the local server takes none: over stdio the caller
     is whoever could start this process (ADR-0020).
     """
-    global _engine, _session_factory, _local_settings, _local_principal
+    global _engine, _session_factory, _ticket_signer, _local_principal
 
     settings.home.mkdir(parents=True, exist_ok=True)
     _engine = build_engine(settings.library_url())
     migrate_schema(_engine)
     _session_factory = build_session_factory(_engine)
+    # Signs `aistack dashboard`'s sign-in link and session, fresh per process as on a server.
+    _ticket_signer = TicketSigner(secrets.token_bytes(SIGNING_KEY_BYTES))
 
     id_file = settings.home / _MACHINE_ID_FILE
     known_id = _read_machine_id(id_file)
@@ -92,15 +93,17 @@ def build_local_context(settings: LocalSettings) -> None:
         staged.write_text(f"{principal.machine_id}\n")
         os.replace(staged, id_file)
 
-    _local_settings = settings
     _local_principal = principal
     logger.info(f"Local mode context built. Machine: '{principal.machine_id}'.")
 
 
-def get_local_settings() -> LocalSettings:
-    if _local_settings is None:
-        raise RuntimeError(_NOT_BUILT)
-    return _local_settings
+def is_local_mode() -> bool:
+    return _local_principal is not None
+
+
+def get_public_url() -> str | None:
+    """The server's configured address; local mode has none, and serves on 127.0.0.1."""
+    return None if is_local_mode() else get_settings().public_url
 
 
 def get_local_principal() -> MachinePrincipal:
@@ -142,8 +145,7 @@ def get_ticket_signer() -> TicketSigner:
 
 def dispose_application_context() -> None:
     """Drop the engine and its pool. Used by tests between temporary databases."""
-    global _settings, _engine, _session_factory, _ticket_signer, _local_settings
-    global _local_principal
+    global _settings, _engine, _session_factory, _ticket_signer, _local_principal
 
     if _engine is not None:
         _engine.dispose()
@@ -151,5 +153,4 @@ def dispose_application_context() -> None:
     _engine = None
     _session_factory = None
     _ticket_signer = None
-    _local_settings = None
     _local_principal = None
