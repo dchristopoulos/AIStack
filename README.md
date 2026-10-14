@@ -144,13 +144,12 @@ Everything else is on the dashboard: which of your computers has which skill, gr
 ## Running a server
 
 ```bash
-docker build -t aistack .
 docker run -d --name aistack -p 8000:8000 \
   -e AISTACK_INVITE_CODE="$(openssl rand -base64 24)" \
-  -v aistack-data:/data aistack
+  -v aistack-data:/data ghcr.io/dchristopoulos/aistack:latest
 ```
 
-One container, one volume, SQLite inside. The dashboard needs no second service and no extra port. Point `DATABASE_URL` at PostgreSQL and the same image uses that instead ([ADR-0002](docs/adr/0002-sqlite-default-postgres-optional.md)). An upgrade is starting the new image: the server migrates its database at startup, in one transaction ([ADR-0016](docs/adr/0016-alembic-migrations-in-one-transaction.md)).
+The image is published from every commit on `main` that passed the tests, for Intel and ARM machines; `docker build -t aistack .` builds the same thing from a checkout. One container, one volume, SQLite inside. The dashboard needs no second service and no extra port. Point `DATABASE_URL` at PostgreSQL and the same image uses that instead ([ADR-0002](docs/adr/0002-sqlite-default-postgres-optional.md)). An upgrade is starting the new image: the server migrates its database at startup, in one transaction ([ADR-0016](docs/adr/0016-alembic-migrations-in-one-transaction.md)).
 
 To look around without setting anything up, fill a fresh server with a small demo team. It prints a dashboard link for each of three people, and everything it creates goes through the same tools and routes a real user's agent and browser use:
 

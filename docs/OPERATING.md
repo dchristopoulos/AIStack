@@ -5,15 +5,15 @@ For whoever runs the server. Everything here is one container and one volume: th
 ## Run it
 
 ```bash
-docker build -t aistack .
-
 docker run -d --name aistack \
   -p 8000:8000 \
   -e AISTACK_INVITE_CODE="$(openssl rand -base64 24)" \
   -v aistack-data:/data \
   --restart unless-stopped \
-  aistack
+  ghcr.io/dchristopoulos/aistack:latest
 ```
+
+The image is published by CI from every commit on `main` that passed the tests, for `linux/amd64` and `linux/arm64`. `latest` follows `main`; each commit is also tagged `sha-<commit>`, and version tags such as `0.1.0` arrive with releases. To build it yourself instead, `docker build -t aistack .` in a checkout and run `aistack` in place of the published name.
 
 Or with Compose, which reads `AISTACK_INVITE_CODE` from the environment or a `.env` file:
 
@@ -244,14 +244,16 @@ The same image runs against PostgreSQL. Nothing else changes:
 docker run -d --name aistack -p 8000:8000 \
   -e AISTACK_INVITE_CODE="..." \
   -e DATABASE_URL="postgresql+psycopg://aistack:password@db.internal:5432/aistack" \
-  aistack
+  ghcr.io/dchristopoulos/aistack:latest
 ```
+
+It is the one image either way: there is no separate PostgreSQL build, and the volume is simply unused.
 
 SQLite is the default because one container is easier to run than two, and the write volume of people pushing skills is tiny. Move to PostgreSQL when you already run one and want AIStack's data with the rest of yours, not for performance. The test suite runs every service and HTTP test against both.
 
 ## Upgrading
 
-Back up, then pull, rebuild, and restart. At startup the server brings the database to the schema its release expects, before it accepts a request. Every pending change is applied in one transaction: either all of it lands or the database is exactly as it was.
+Back up, then pull the new image (`docker pull ghcr.io/dchristopoulos/aistack:latest`, or rebuild a checkout) and recreate the container. At startup the server brings the database to the schema its release expects, before it accepts a request. Every pending change is applied in one transaction: either all of it lands or the database is exactly as it was.
 
 If an upgrade fails, the server does not start and the log says which step failed. Nothing has been changed, so starting the previous image again is safe. A database created before this mechanism existed is recognized and carried forward without a manual step.
 

@@ -5,8 +5,9 @@
 # or put AISTACK_INVITE_CODE in a .env file next to this one. See docs/OPERATING.md.
 services:
   aistack:
+    # The published image. `docker compose up --build` builds this checkout instead.
+    image: ghcr.io/dchristopoulos/aistack:latest
     build: .
-    image: aistack:latest
     restart: unless-stopped
     ports:
       - "8000:8000"

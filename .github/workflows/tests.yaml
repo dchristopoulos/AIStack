@@ -3,6 +3,7 @@ name: tests
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 jobs:
@@ -177,3 +178,48 @@ jobs:
       - name: Container logs, if anything failed
         if: failure()
         run: docker logs aistack 2>&1 || true; docker logs aistack-postgres 2>&1 || true
+
+  # The image people run, published only from a commit every job above passed on: a push to
+  # main, or a version tag. A pull request never publishes, whatever its branch holds.
+  publish:
+    if: github.event_name == 'push'
+    needs: [pytest, browsers, container]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # arm64 as well, for ARM servers and a Raspberry Pi. It is built under emulation.
+      - uses: docker/setup-qemu-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # latest follows main, which only ever moves to a commit that passed. A vX.Y.Z tag
+      # adds X.Y.Z and X.Y for whoever wants to stay on a release.
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/aistack
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
