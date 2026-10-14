@@ -7,6 +7,7 @@ import pytest
 
 from aistack.bootstrap.context import application_context
 from aistack.bundled import sync_skill_document
+from aistack.mcp.mcp import mcp
 from tests.conftest import INVITE_CODE
 from tests.mcp.conftest import client_for
 
@@ -83,6 +84,10 @@ async def test_the_setup_page_connects_codex_with_one_block_of_valid_toml(server
     server = tomllib.loads(block)["mcp_servers"]["aistack"]
     assert server["url"] == server_url
     assert server["http_headers"] == {"Authorization": "Bearer <token>"}
+    # Only what sync does without asking is pre-approved; sharing and teams still ask.
+    approved = {name for name, tool in server["tools"].items() if tool["approval_mode"] == "approve"}
+    assert approved == {"sync", "get_skill", "push_skill"}
+    assert approved <= {tool.name for tool in await mcp._list_tools()}
     # Codex reads skills from the shared folder, so that is where setup puts the sync skill.
     assert "mkdir -p ~/.agents/skills/sync-aistack" in text
     assert text.index("codex mcp get aistack") < text.index("mkdir -p ~/.agents/skills")
