@@ -1,6 +1,6 @@
 # AIStack runs on your own computers, and you choose where your Library lives
 
-Status: proposed, 2026-10-14. Not built. Amends ADR-0002 and ADR-0017. Research: [docs/research/personal-library-storage.md](../research/personal-library-storage.md) and [docs/research/free-personal-hosting.md](../research/free-personal-hosting.md).
+Status: accepted, 2026-10-14. Not built yet. Amends ADR-0002 and ADR-0017. Research: [docs/research/personal-library-storage.md](../research/personal-library-storage.md) and [docs/research/free-personal-hosting.md](../research/free-personal-hosting.md).
 
 AIStack is free and open source, and there is no hosted service: everyone runs it themselves. Today that means one server that every computer reaches, so a person alone must keep a machine switched on, or pay a few dollars a month for a host, to share one Library between a laptop and a desktop. For one person that is the hardest part of setting AIStack up, and it is avoidable.
 
