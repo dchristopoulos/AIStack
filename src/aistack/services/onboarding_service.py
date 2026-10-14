@@ -34,11 +34,12 @@ class JoinedMachine:
 
 
 def join(session: Session, username: str, machine_name: str, os: str,
-         team_invite: str | None = None) -> JoinedMachine:
+         team_invite: str | None = None, machine_id: uuid.UUID | None = None) -> JoinedMachine:
     """Create a user and first machine within the caller's transaction.
 
     With `team_invite`, the bearer the caller presented was that team's invite code, and the
-    new user is also made a member of the team (ADR-0019).
+    new user is also made a member of the team (ADR-0019). `machine_id` is local mode's id
+    the computer already claimed; a server always makes a new one.
     """
     started_at = perf_counter()
     username = _validated_username(username)
@@ -66,6 +67,7 @@ def join(session: Session, username: str, machine_name: str, os: str,
 
     token = generate_machine_token()
     machine = Machine(
+        machine_id=machine_id,
         user_id=user.user_id,
         name=machine_name,
         os=operating_system,
@@ -97,7 +99,8 @@ class AddedMachine:
     token: str = field(repr=False)
 
 
-def add_machine(session: Session, user_id: uuid.UUID, machine_name: str, os: str) -> AddedMachine:
+def add_machine(session: Session, user_id: uuid.UUID, machine_name: str, os: str,
+                machine_id: uuid.UUID | None = None) -> AddedMachine:
     """Register another machine for `user_id` within the caller's transaction.
 
     `user_id` comes from the verified bearer, never from a tool argument: a machine can only
@@ -109,6 +112,7 @@ def add_machine(session: Session, user_id: uuid.UUID, machine_name: str, os: str
 
     token = generate_machine_token()
     machine = Machine(
+        machine_id=machine_id,
         user_id=user_id,
         name=machine_name,
         os=operating_system,

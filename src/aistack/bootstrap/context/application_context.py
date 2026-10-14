@@ -6,8 +6,10 @@ import re
 import secrets
 import socket
 import uuid
+from pathlib import Path
 
 from sqlalchemy import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from aistack.bootstrap.configuration.settings.settings_config import (
@@ -15,7 +17,7 @@ from aistack.bootstrap.configuration.settings.settings_config import (
     Settings,
     validate_invite_code,
 )
-from aistack.commons.exceptions import AIStackError
+from aistack.commons.exceptions import AIStackError, Conflict
 from aistack.db.engine import build_engine, build_session_factory
 from aistack.db.schema import NewerSchema, migrate_schema
 from aistack.mcp.auth.principal import MachinePrincipal
@@ -91,20 +93,23 @@ def build_local_context(settings: LocalSettings) -> None:
     # Signs `aistack dashboard`'s sign-in link and session, fresh per process as on a server.
     _ticket_signer = TicketSigner(secrets.token_bytes(SIGNING_KEY_BYTES))
 
-    id_file = settings.home / _MACHINE_ID_FILE
-    known_id = _read_machine_id(id_file)
-    with _session_factory.begin() as session:
-        machine = local_machine(session, known_id,
-                                username=settings.username or _login_name(),
-                                machine_name=socket.gethostname().split(".")[0] or "computer",
-                                os=_OPERATING_SYSTEMS.get(platform.system(), "LINUX"))
-        principal = MachinePrincipal(machine_id=machine.machine_id, user_id=machine.user_id)
-    if principal.machine_id != known_id:
-        # ponytail: two first starts in the same second each register a machine and the
-        # last write wins, leaving one unused row; a lock file would close that.
-        staged = id_file.with_suffix(".tmp")
-        staged.write_text(f"{principal.machine_id}\n")
-        os.replace(staged, id_file)
+    machine_id = _claimed_machine_id(settings.home / _MACHINE_ID_FILE)
+    for attempt in range(2):
+        try:
+            with _session_factory.begin() as session:
+                machine = local_machine(
+                    session, machine_id,
+                    username=settings.username or _login_name(),
+                    machine_name=socket.gethostname().split(".")[0] or "computer",
+                    os=_OPERATING_SYSTEMS.get(platform.system(), "LINUX"))
+                principal = MachinePrincipal(machine_id=machine.machine_id,
+                                             user_id=machine.user_id)
+            break
+        except (IntegrityError, Conflict):
+            # Another process on this computer registered the same id first, in a database
+            # that let both look before either wrote (PostgreSQL). Its row is there now.
+            if attempt:
+                raise
 
     _local_principal = principal
     logger.info(f"Local mode context built. Machine: '{principal.machine_id}'.")
@@ -125,6 +130,28 @@ def get_local_principal() -> MachinePrincipal:
     if _local_principal is None:
         raise RuntimeError(_NOT_BUILT)
     return _local_principal
+
+
+def _claimed_machine_id(id_file: Path) -> uuid.UUID:
+    """This computer's machine id. The first process ever to start here claims one, and every
+    other, even one starting in the same instant, reads that same id."""
+    known = _read_machine_id(id_file)
+    if known is not None:
+        return known
+    staged = id_file.with_name(f"{id_file.name}.{uuid.uuid4().hex}.tmp")
+    staged.write_text(f"{uuid.uuid4()}\n")
+    try:
+        # A hard link is made whole or not at all, and fails if the name is taken: the first
+        # process to link owns the id, and a reader never sees half of it.
+        os.link(staged, id_file)
+    except FileExistsError:
+        if _read_machine_id(id_file) is None:
+            # Not a claim in progress, since a claim is never partial: a damaged file, by
+            # hand or a full disk.
+            os.replace(staged, id_file)
+    finally:
+        staged.unlink(missing_ok=True)
+    return _read_machine_id(id_file)
 
 
 def _read_machine_id(id_file) -> uuid.UUID | None:
