@@ -220,7 +220,19 @@ What the repository itself shows:
 What it does not show, stated plainly:
 
 - The first release, before teams, was also run end to end by fresh agents that were given only what a real client gets: the tool descriptions and the `/setup` page. That exercise has not been repeated for sharing, taking, team updates, or the dashboard. Those rest on the tests above.
-- A signed-in Claude Code session was run once by hand against a local server (2026-10-14): it listed a team's skills over MCP, installed one with the tool's own `curl` and `tar` steps, executable bit intact, and used it in the same session without a restart. The first attempt to use the skill straight after installing it answered "Unknown skill"; a moment later it was found. No automated test repeats this, and a full sync from a real session has not been run.
+- A signed-in Claude Code session was run once by hand against a local server (2026-10-14): it listed a team's skills over MCP, installed one with the tool's own `curl` and `tar` steps, executable bit intact, and used it in the same session without a restart. The first attempt to use the skill straight after installing it answered "Unknown skill"; a moment later it was found. No automated test repeats this.
+- A whole sync was run once from a signed-in Claude Code session (2026-10-14, Claude Code 2.1.241, headless, against a local server). The computer's skills folder held 25 real skills and the server was arranged so one sync met every part of the report. Told only "sync aistack", and given its two answers in advance, the session hashed the folder, called `sync`, and then:
+
+  | The report said | What the session did |
+  |---|---|
+  | 24 skills already current | Nothing |
+  | 1 to install, pushed from another computer and switched on from the dashboard | Installed it, executable bit intact |
+  | 1 to update, an untouched older revision | Replaced it with revision 2 |
+  | 2 on disk and not yet in My skills | Backed both up without asking |
+  | 1 edited locally | Left it alone, as answered, and said the edits exist only on that computer |
+  | 1 update offered by a team, pushed by a teammate | Took it, as answered, and named who pushed it |
+
+  A second sync straight afterwards reported nothing to do except the edited skill, which it asks about again. It took 14 turns, about three minutes, and $0.95. One thing went wrong on the way: the session wrote its install commands with shell variables in an `rm`, Claude Code refused that as unsafe, and the session rewrote them with plain paths and carried on. The folders the run added were removed afterwards and the skills folder was checked to be file for file what it had been. This is one run with one model, and no automated test repeats it.
 
 ## How this compares
 
