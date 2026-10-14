@@ -325,15 +325,12 @@ def _json(payload: dict[str, Any]) -> JSONResponse:
 
 
 def _signed_out_page() -> Response:
-    remedy = ("Run <strong>aistack dashboard</strong> again. It opens a link that signs you in."
-              if is_local_mode() else
-              "Ask your coding agent to <strong>open my aistack dashboard</strong>. It will "
-              "give you a link that signs you in.")
     return HTMLResponse(
         "<!doctype html><meta charset=utf-8><title>AIStack</title>"
         "<body style=\"font:16px system-ui;margin:15vh auto;max-width:32rem;padding:0 1rem\">"
         "<h1 style=\"font-size:1.25rem\">You are not signed in</h1>"
-        f"<p>{remedy}</p>",
+        "<p>Ask your coding agent to <strong>open my aistack dashboard</strong>. It will "
+        "give you a link that signs you in.</p>",
         status_code=401,
         headers=_PAGE_HEADERS,
     )
