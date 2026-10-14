@@ -26,6 +26,8 @@ It asks which choice you want, walks you through creating the Neon database if y
 
 For a team, run a server and connect each computer to it: see [Connecting a computer to a server](#connecting-a-computer-to-a-server).
 
+To move your own Library onto a team's server later, run `uvx aistack-mcp export` on a computer that has it. It writes every skill in the Library, at its latest revision, to `./aistack-library`, with each skill's files checked against the hash recorded when they were pushed. Then connect that computer to the server, copy the skill folders you want into `~/.claude/skills`, and say "sync aistack": sync backs up whatever the new Library lacks, without asking. Revision history and which computer had which skill stay behind.
+
 ## Try it in two minutes
 
 No coding agent and no Docker needed to look around. This starts a server on your machine and fills it with a small demo team:
