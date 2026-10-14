@@ -264,6 +264,8 @@ The web application is the product; MCP connects an agent to the account. The da
 | Team admin | Invite code; members, roles, and sight of every group; create groups and nest them; make one private; add people; move or remove a skill |
 | Teams | Create a team; join one with a code; leave one |
 
+**The sidebar is the map.** It lists My skills, then each team with its groups nested under it, a step in for each level, the way a chat application lists channels. A private group has a lock, every group shows how many skills are in it and below it, and a blue dot marks one with an update waiting for a skill the user took. Choosing a group opens the team's skills narrowed to that group and the groups under it, at `#/t/<team>/skills/<group path>`, an address that can be reloaded or sent to a teammate. A team's groups fold away with the button beside its name, and the browser remembers which teams are folded. The tree is built from the groups `/api/state` sends, so a private group the user is not in is absent from it, and its address opens the whole team exactly as an unknown one does.
+
 ### Schema
 
 Portability: runs identically on SQLite and Postgres. Enums are `VARCHAR + CHECK` (SQLAlchemy `Enum(native_enum=False)`), JSON is SQLAlchemy `JSON` (JSONB variant on PG), timestamps are `DateTime(timezone=True)` (timestamptz on PG, ISO text on SQLite).

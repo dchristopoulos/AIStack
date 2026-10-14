@@ -162,6 +162,16 @@ a.crumb.home:hover { background: none; }
 .nav-item .label.mono { font-size: 13px; }
 .nav-item .count { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
 .nav-item .count.upd { color: var(--blue); }
+.nav-row { display: flex; align-items: center; gap: 2px; }
+.nav-row .nav-item { flex: 1; }
+.nav-fold { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--faint); cursor: pointer; }
+.nav-fold:hover { background: var(--active); color: var(--text); }
+.nav-fold svg { transition: transform .15s; }
+.nav-fold[aria-expanded="true"] svg { transform: rotate(90deg); }
+.nav-fold.none { visibility: hidden; }
+/* A team's groups sit under its name, a step in for each level. */
+.nav-item.sub { --d: 0; width: auto; height: 28px; margin-right: 26px; padding-left: calc(34px + var(--d) * 14px); font-size: 13px; }
+.nav-item.sub .label.mono { font-size: 12.5px; }
 .nav-heading { display: flex; align-items: center; height: 32px; margin-top: 16px; padding: 0 8px; font-size: 12px; font-weight: 500; color: var(--faint); }
 .nav-actions { display: flex; flex-direction: column; gap: 1px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 .sidebar-foot {
@@ -561,6 +571,8 @@ dialog.dlg::backdrop { background: var(--scrim); }
   .btn.icon { width: 36px; }
   .switch { min-height: 36px; }
   .nav-item, .nav-btn { height: 40px; }
+  .nav-item.sub { height: 36px; margin-right: 34px; }
+  .nav-fold { width: 32px; height: 32px; }
   .avatar.lg { width: 40px; height: 40px; }
   .stats { margin-bottom: 16px; }
   .stat { padding: 12px 12px 10px; }
@@ -661,6 +673,12 @@ let DEMO = new URLSearchParams(location.search).has('demo');
 let state = null;          // the last GET /api/state
 let search = '';
 const collapsed = new Set(); // "team\npath" of collapsed groups in the Skills tree
+const folded = new Set();    // teams whose groups are folded away in the sidebar
+try { JSON.parse(localStorage.getItem('aistack.folded') || '[]').forEach(name => folded.add(String(name))); } catch (_) { /* no storage: nothing is folded */ }
+function fold(name, on) {
+  if (on) folded.add(name); else folded.delete(name);
+  try { localStorage.setItem('aistack.folded', JSON.stringify([...folded])); } catch (_) { /* it lasts until the page is closed */ }
+}
 
 const $app = document.getElementById('app');
 const $main = document.getElementById('main');
@@ -976,10 +994,13 @@ function route() {
   try { parts = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent); } catch (_) { /* malformed hash: My skills */ }
   const team = parts[0] === 't' && teamBy(parts[1]);
   const tab = Object.hasOwn(TAB_LABELS, parts[2]) && (parts[2] !== 'settings' || (team && team.kind !== 'SERVER')) ? parts[2] : 'skills';
-  if (team) return { view: 'team', team, tab };
+  // A group the user cannot see is not in team.groups, so it opens the whole team like any unknown one.
+  const path = parts.slice(3).join('/');
+  const group = team && tab === 'skills' && team.groups.some(g => g.path === path) ? path : null;
+  if (team) return { view: 'team', team, tab, group };
   return { view: 'mine' };
 }
-const teamHash = (name, tab = 'skills') => `#/t/${enc(name)}/${tab}`;
+const teamHash = (name, tab = 'skills', group) => `#/t/${enc(name)}/${tab}` + (group ? '/' + group.split('/').map(enc).join('/') : '');
 function go(hash) {
   if (location.hash === hash) render();
   else location.hash = hash;
@@ -1003,8 +1024,8 @@ function render() {
   const fk = active && active.dataset ? active.dataset.fk : null;
   const r = route();
   renderSidebar(r);
-  $main.replaceChildren(el('div', { class: 'page' }, r.view === 'team' ? teamView(r.team, r.tab) : mineView()));
-  document.title = (r.view === 'team' ? r.team.name : 'My skills') + ' · AIStack';
+  $main.replaceChildren(el('div', { class: 'page' }, r.view === 'team' ? teamView(r.team, r.tab, r.group) : mineView()));
+  document.title = (r.view === 'team' ? (r.group ? r.group + ' · ' : '') + r.team.name : 'My skills') + ' · AIStack';
   if (fk && !document.querySelector('dialog[open]')) { const t = byFk(fk); if (t) t.focus(); }
 }
 
@@ -1015,25 +1036,58 @@ function renderSidebar(r) {
     el('li', null, el('a', { class: 'crumb home', href: '#/mine', 'aria-label': 'AIStack' }, logo(), el('span', { class: 'home-text' }, 'AIStack'))),
     sep(),
     r.view === 'team'
-      ? [el('li', null, el('a', { class: 'crumb mono', href: teamHash(r.team.name), title: r.team.name }, r.team.name)), sep(), here(TAB_LABELS[r.tab])]
+      ? [el('li', null, el('a', { class: 'crumb mono', href: teamHash(r.team.name), title: r.team.name }, r.team.name)), sep(),
+         r.group ? [el('li', null, el('a', { class: 'crumb', href: teamHash(r.team.name) }, TAB_LABELS.skills)), sep(),
+                    el('li', null, el('span', { class: 'crumb cur mono', 'aria-current': 'page', title: r.group }, r.group))]
+                 : here(TAB_LABELS[r.tab])]
       : here('My skills')));
   document.getElementById('top-right').replaceChildren(
     ...(DEMO ? [el('span', { class: 'badge' }, el('span', { class: 'dot amber' }), 'Demo data')] : []));
 
   const link = (hash, current, ...kids) => el('a', { class: 'nav-item', href: hash, 'aria-current': current ? 'page' : null }, kids);
   const updates = state.skills.filter(s => s.source && s.source.update_available).length;
+  const noFold = () => el('span', { class: 'nav-fold none', 'aria-hidden': 'true' });
+  // One team: its name, a button that folds its groups away, and the groups, a step in per level.
+  const teamNav = t => {
+    const here = r.view === 'team' && r.team === t;
+    const groups = flatten(groupTree(t)).filter(n => n.node.g);
+    const open = !folded.has(t.name) || (here && !!r.group); // the group being shown is never folded away
+    const waiting = path => state.skills.some(s => s.source && s.source.update_available && s.source.team === t.name
+      && s.source.group && (s.source.group === path || isUnder(s.source.group, path)));
+    return [
+      el('div', { class: 'nav-row' },
+        link(teamHash(t.name), here && !r.group,
+          t.kind === 'SERVER' ? icon('globe') : el('span', { class: 'avatar xs' }, t.name[0]),
+          el('span', { class: 'label mono' }, t.name),
+          el('span', { class: 'count' }, String(t.skills.length))),
+        groups.length ? el('button', {
+          type: 'button', class: 'nav-fold', fk: 'fold:' + t.name, 'aria-expanded': String(open), 'aria-label': `Groups of ${t.name}`,
+          on: { click: () => { fold(t.name, open); render(); } },
+        }, icon('chev', 12)) : noFold()),
+      open && groups.map(({ node, depth }) => {
+        const a = link(teamHash(t.name, 'skills', node.path), here && r.group === node.path,
+          icon(node.g.private ? 'lock' : 'folder', 14),
+          el('span', { class: 'label mono', title: node.path }, node.host ? node.path.slice(node.host.path.length + 1) : node.path),
+          node.g.private && el('span', { class: 'sr-only' }, '(private)'),
+          waiting(node.path) ? el('span', { class: 'count upd', title: 'An update is waiting' }, el('span', { class: 'dot blue' }), String(countSkills(node)))
+            : el('span', { class: 'count' }, String(countSkills(node))));
+        a.classList.add('sub');
+        a.style.setProperty('--d', Math.min(depth, 6));
+        return a;
+      }),
+    ];
+  };
   $sidebar.replaceChildren(
     el('div', { class: 'side-brand' }, logo(), el('span', { class: 'grow' }, 'AIStack'),
       btn(null, { class: 'btn ghost icon', 'aria-label': 'Close navigation', on: { click: () => { setDrawer(false); $drawerBtn.focus(); } } }, 'x')),
     el('nav', { class: 'nav', 'aria-label': 'Main' },
-      link('#/mine', r.view === 'mine', icon('layers'), el('span', { class: 'label' }, 'My skills'),
-        updates ? el('span', { class: 'count upd', title: plural(updates, 'update') + ' available' }, el('span', { class: 'dot blue' }), String(updates))
-          : el('span', { class: 'count' }, String(state.skills.length))),
+      el('div', { class: 'nav-row' },
+        link('#/mine', r.view === 'mine', icon('layers'), el('span', { class: 'label' }, 'My skills'),
+          updates ? el('span', { class: 'count upd', title: plural(updates, 'update') + ' available' }, el('span', { class: 'dot blue' }), String(updates))
+            : el('span', { class: 'count' }, String(state.skills.length))),
+        noFold()),
       el('div', { class: 'nav-heading', id: 'nav-teams' }, 'Teams'),
-      state.teams.map(t => link(teamHash(t.name), r.view === 'team' && r.team === t,
-        t.kind === 'SERVER' ? icon('globe') : el('span', { class: 'avatar xs' }, t.name[0]),
-        el('span', { class: 'label mono' }, t.name),
-        el('span', { class: 'count' }, String(t.skills.length)))),
+      state.teams.map(teamNav),
       el('div', { class: 'nav-actions' },
         el('button', { type: 'button', class: 'nav-btn', fk: 'new-team', on: { click: newTeamDialog } }, icon('plus'), 'New team'),
         el('button', { type: 'button', class: 'nav-btn', fk: 'join-team', on: { click: joinDialog } }, icon('key'), 'Join with code'))),
@@ -1231,7 +1285,7 @@ function removeMineDialog(s) {
 
 /* ---------- team ---------- */
 
-function teamView(team, tab) {
+function teamView(team, tab, group) {
   const admin = team.role === 'ADMIN';
   const shared = team.kind !== 'SERVER';
   const tabs = [['skills', 'Skills', team.skills.length], ['members', 'Members', members(team).length], ['groups', 'Groups', team.groups.length]];
@@ -1267,7 +1321,7 @@ function teamView(team, tab) {
         !shared && el('div', { class: 'note' }, icon('info', 14),
           el('span', null, 'Everyone on this server is in this team. It has no invite code, and nobody can leave it or be removed from it.')),
         tablist)),
-    el('div', { class: 'wrap body', id: 'tabpanel', role: 'tabpanel', 'aria-labelledby': 'tab-' + tab }, panels[tab](team, admin)),
+    el('div', { class: 'wrap body', id: 'tabpanel', role: 'tabpanel', 'aria-labelledby': 'tab-' + tab }, panels[tab](team, admin, group)),
   ];
 }
 
@@ -1310,8 +1364,21 @@ function foldRow(key, depth, { title, ic, label, plain, badge, count, side }) {
       side));
 }
 
-function skillsTab(team, admin) {
+function skillsTab(team, admin, group) {
   const roots = groupTree(team);
+  const only = group && flatten(roots).map(n => n.node).find(n => n.path === group);
+  if (only) {
+    const rows = [];
+    groupRows(team, only, admin, 0, rows);
+    return [
+      el('div', { class: 'panel-head' },
+        el('p', { class: 'muted' }, 'The group ', el('span', { class: 'mono' }, group), only.children.length ? ' and the groups under it.' : '.'),
+        el('a', { class: 'btn', href: teamHash(team.name) }, `All of ${team.name}`)),
+      el('div', { class: 'tbl tree', role: 'table', 'aria-label': `Skills in ${group}` },
+        el('div', { class: 'tr th-row', role: 'row' }, th('Skill'), th('Revision'), th('Pushed by'), thActions()),
+        rows),
+    ];
+  }
   if (!team.skills.length && !roots.length) {
     return empty('layers', 'No skills in this team yet',
       el('p', null, 'Share one of your skills to get it started: open My skills and choose "Share…". The team gets its own copy.'),

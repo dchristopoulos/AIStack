@@ -179,3 +179,51 @@ async def test_the_phone_menu_opens_and_closes_with_a_control_you_can_see(sign_i
     await close.click()
 
     await expect(navigation).to_be_hidden()
+
+
+async def test_a_group_is_opened_from_the_sidebar_and_shows_only_what_is_in_it(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    navigation = page.get_by_role("navigation", name="Main")
+
+    await navigation.get_by_role("link", name="aistack").click()
+
+    await expect(page.get_by_role("table", name="Skills in backend/aistack")).to_be_visible()
+    await expect(page.get_by_text("aistack-api-notes")).to_be_visible()
+    await expect(page.get_by_text("sql-style")).to_have_count(0)
+    assert page.url.endswith("#/t/acme/skills/backend/aistack")
+
+    await page.reload()
+    await expect(page.get_by_role("table", name="Skills in backend/aistack")).to_be_visible()
+
+    await page.get_by_role("link", name="All of acme").click()
+    await expect(page.get_by_text("sql-style")).to_be_visible()
+    assert dimitris.console_errors == []
+
+
+async def test_a_folded_team_hides_its_groups_and_stays_folded_after_a_reload(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    navigation = page.get_by_role("navigation", name="Main")
+    await expect(navigation.get_by_role("link", name="security")).to_be_visible()
+
+    await navigation.get_by_role("button", name="Groups of acme").click()
+    await expect(navigation.get_by_role("link", name="security")).to_have_count(0)
+
+    await page.reload()
+    await page.get_by_role("heading", name="My skills", level=1).wait_for()
+    await expect(navigation.get_by_role("link", name="security")).to_have_count(0)
+    await expect(navigation.get_by_role("button", name="Groups of acme")
+                 ).to_have_attribute("aria-expanded", "false")
+
+
+async def test_the_sidebar_shows_a_member_no_private_group_they_are_not_in(sign_in):
+    alex = await sign_in("alex")
+    navigation = alex.page.get_by_role("navigation", name="Main")
+
+    await expect(navigation.get_by_role("link", name="backend")).to_be_visible()
+    await expect(navigation.get_by_role("link", name="security")).to_have_count(0)
+
+    await alex.page.goto(f"{alex.base_url}/app#/t/acme/skills/security")
+    await expect(alex.page.get_by_role("table", name="Skills in acme")).to_be_visible()
+    await expect(alex.page.get_by_text("pentest-checklist")).to_have_count(0)
