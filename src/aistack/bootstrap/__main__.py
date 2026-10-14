@@ -36,7 +36,8 @@ async def main() -> None:
                                  path=settings.mcp_path, log_level=settings.log_level)
 
 
-if __name__ == "__main__":
+def run() -> None:
+    """The `aistack` command, and `python -m aistack.bootstrap` in the container."""
     try:
         asyncio.run(main())
     except ValueError as error:
@@ -48,3 +49,7 @@ if __name__ == "__main__":
         sys.exit(1)
     except KeyboardInterrupt:
         logger.info("Received interrupt signal, shutting down...")
+
+
+if __name__ == "__main__":
+    run()

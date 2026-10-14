@@ -1,7 +1,12 @@
 [project]
-name = "aistack"
+# "aistack" on PyPI belongs to an unrelated project, and PyPI refuses look-alikes of it.
+# The import package and the command are still `aistack`.
+name = "aistack-mcp"
 version = "0.1.0"
-description = ""
+description = "A self-hosted home for your AI coding skills, shared with your team over MCP."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "dchristopoulos",email = "dimitrisgr56@gmail.com"}
 ]
@@ -23,6 +28,15 @@ dependencies = [
     "alembic>=1.16,<2.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/dchristopoulos/AIStack"
+
+# Both names start the same program: `uvx aistack-mcp` runs the command named after the
+# package, and once it is installed people type `aistack`.
+[project.scripts]
+aistack = "aistack.bootstrap.__main__:run"
+aistack-mcp = "aistack.bootstrap.__main__:run"
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1,<10.0.0",
@@ -34,8 +48,11 @@ dev = [
     "playwright>=1.50,<2.0",
 ]
 
+[tool.poetry]
+packages = [{include = "aistack", from = "src"}]
+
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+requires = ["poetry-core>=2.2.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
