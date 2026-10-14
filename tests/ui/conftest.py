@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import pathlib
 
 import pytest
@@ -12,6 +13,9 @@ from tests.mcp.conftest import (  # noqa: F401
 )
 
 playwright_api = pytest.importorskip("playwright.async_api")
+
+# Chromium unless told otherwise: AISTACK_UI_BROWSER=firefox or webkit runs the same tests there.
+BROWSER = os.environ.get("AISTACK_UI_BROWSER", "chromium")
 
 _SEED_SCRIPT = pathlib.Path(__file__).parents[2] / "scripts" / "demo_seed.py"
 
@@ -37,10 +41,10 @@ async def links_fixture(server_url) -> dict[str, str]:
 async def browser_fixture():
     async with playwright_api.async_playwright() as playwright:
         try:
-            browser = await playwright.chromium.launch()
+            browser = await getattr(playwright, BROWSER).launch()
         except playwright_api.Error as error:
-            pytest.skip(f"Chromium for Playwright is not installed: run "
-                        f"'poetry run playwright install chromium'. ({error.message[:80]})")
+            pytest.skip(f"{BROWSER} for Playwright is not installed: run "
+                        f"'poetry run playwright install {BROWSER}'. ({error.message[:80]})")
         yield browser
         await browser.close()
 

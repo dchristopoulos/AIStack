@@ -214,7 +214,7 @@ What the repository itself shows:
 
 - The test suite covers each service directly and each flow over real HTTP with real bearer tokens: join, push, install, sync, teams and invite codes, share and take, team updates, and the dashboard from sign-in to an update taken there.
 - The upgrade from a single shared vault is tested on a database built at the old schema: afterwards everyone sees what they saw before, and a failed migration leaves the database as it was.
-- The dashboard page is driven in a real browser against the real server: sign-in from a link, taking an update, sharing into a nested group, creating and joining a team, what a member is not shown, and a phone-width layout.
+- The dashboard page is driven in a real browser against the real server: sign-in from a link, taking an update, sharing into a nested group, creating and joining a team, what a member is not shown, and a phone-width layout. The same tests run in Chromium, Firefox, and WebKit.
 - The container job runs the built image, not the source tree.
 
 What it does not show, stated plainly:

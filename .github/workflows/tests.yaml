@@ -64,6 +64,41 @@ jobs:
       # a hang that meets the job timeout has already named itself in the log.
       - run: poetry run pytest -q -p no:cacheprovider --no-header -rs -o faulthandler_timeout=120
 
+  # The same browser tests in the two other engines. A job of its own, beside pytest and not
+  # inside it, so the pull request waits no longer than before: this finishes first.
+  browsers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: pipx install poetry
+
+      - run: poetry install
+
+      - run: poetry run playwright install --with-deps ${{ matrix.browser }}
+
+      # A missing browser skips these tests, which is right on a laptop and would be a green
+      # job that tested nothing here. "17 passed" is not asserted, only that nothing skipped.
+      - name: Run the dashboard's tests in ${{ matrix.browser }}
+        env:
+          AISTACK_UI_BROWSER: ${{ matrix.browser }}
+        # Named, because only then does the step run with pipefail: without it tee's exit
+        # status would stand in for pytest's and a failing test would pass.
+        shell: bash
+        run: |
+          poetry run pytest tests/ui -q -p no:cacheprovider --no-header -rs -o faulthandler_timeout=120 | tee result.txt
+          ! grep -q "skipped" result.txt
+
   container:
     runs-on: ubuntu-latest
     timeout-minutes: 15
