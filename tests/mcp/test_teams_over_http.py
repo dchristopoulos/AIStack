@@ -99,6 +99,7 @@ async def test_every_machine_tool_has_a_stated_view_for_an_outsider(server_url):
 async def test_a_pushed_skill_is_seen_by_nobody_else_until_it_is_shared(server_url):
     dimitris = await join(server_url, "dimitris", "macbook")
     maria = await join(server_url, "maria", "laptop")
+    await _team(server_url, dimitris, maria, name="everyone")
     await push(server_url, dimitris)
 
     assert (await call(server_url, maria, "list_skills")) == {"skills": []}
@@ -131,7 +132,6 @@ async def test_a_team_is_created_by_its_admin_and_joined_with_its_invite_code(se
     assert joined == {"team": "acme"}
     assert (await call(server_url, maria, "list_teams"))["teams"] == [
         {"name": "acme", "kind": "SHARED", "role": "MEMBER", "members": 2},
-        {"name": "everyone", "kind": "SERVER", "role": "MEMBER", "members": 2},
     ]
 
 
@@ -315,7 +315,7 @@ async def test_a_team_you_are_not_in_is_left_out_of_every_listing(server_url):
     report = await call(server_url, eve, "sync", local={"wizard": local_digests()})
 
     assert listed == {"skills": []}
-    assert [team["name"] for team in teams["teams"]] == ["everyone"]
+    assert teams["teams"] == []
     # A folder of the same name on her disk is hers to back up, and nothing else.
     assert report["backup"] == ["wizard"]
     assert report["team_updates"] == [] and report["ask"] == [] and report["install"] == []
@@ -338,7 +338,8 @@ async def test_a_download_url_serves_only_the_machines_users_own_skills(server_u
     """No tool mints a ticket for someone else's revision, so this one is signed here, with
     the server's own key, to prove the route checks ownership and not just the signature."""
     dimitris = await join(server_url, "dimitris", "macbook")
-    await join(server_url, "maria", "laptop")
+    maria = await join(server_url, "maria", "laptop")
+    await _team(server_url, dimitris, maria, name="everyone")
     await push(server_url, dimitris)
     await call(server_url, dimitris, "share_skill", name="wizard", team="everyone")
     own_url = (await call(server_url, dimitris, "get_skill", name="wizard"))["download_url"]

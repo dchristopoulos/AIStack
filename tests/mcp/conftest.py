@@ -7,14 +7,17 @@ import httpx
 import pytest
 import uvicorn
 from fastmcp.client import BearerAuth, Client, StreamableHttpTransport
+from sqlalchemy import select
 
 from aistack.bootstrap.configuration.settings.settings_config import Settings
 from aistack.bootstrap.context import application_context
 from aistack.db.engine import build_session_factory
+from aistack.db.models.machine import Machine
 from aistack.mcp.mcp import http_server_config
+from aistack.services.token_service import hash_token
 from tests.archives import skill_archive
 from tests.conftest import INVITE_CODE
-from tests.teams import SERVER_TEAM
+from tests.teams import SERVER_TEAM, everyone
 
 
 @pytest.fixture(name="anyio_backend")
@@ -97,4 +100,8 @@ async def push(server_url: str, token: str, name: str = "wizard", **archive) -> 
 
 async def share_with_everyone(server_url: str, token: str, name: str = "wizard") -> dict:
     """What one shared vault used to do by itself: put a skill in front of every user."""
+    with application_context.get_session_factory().begin() as session:
+        user_id = session.scalar(select(Machine.user_id)
+                                 .where(Machine.token_hash == hash_token(token)))
+        everyone(session, user_id)
     return await call(server_url, token, "share_skill", name=name, team=SERVER_TEAM)

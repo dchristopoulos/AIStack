@@ -1,6 +1,6 @@
 # Invites are the way in: an invite link creates the account and joins the team
 
-Status: accepted, 2026-10-14. Not built yet (#64). Amends ADR-0003 and ADR-0015.
+Status: accepted, 2026-10-14. Built under #64. Amends ADR-0003 and ADR-0015.
 
 A new person needs two codes today: the server's invite code to get an account (ADR-0003), then a team's invite code to join a team (ADR-0015). And every account lands in `everyone`, a team nobody created or asked for. It feels like two sign-ups and a default chat room nobody uses.
 

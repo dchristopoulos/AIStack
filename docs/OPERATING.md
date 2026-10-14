@@ -25,7 +25,7 @@ Write the invite code down before you run either. You chose it, the server never
 
 The volume at `/data` holds the SQLite database, which is every user, machine, team, group, skill, and revision. Stopping, removing, and recreating the container keeps all of it as long as the volume stays.
 
-Then join first, alone, before you share the code: the first user to join becomes the server's admin, and with that the admin of `everyone`, the team every account is in. The README has the one-paste setup.
+Then join first, alone, before you share the code: the first user to join becomes the server's admin. The README has the one-paste setup. After that, people usually arrive through a team's invite link, which creates their account; your own code is for admitting someone directly.
 
 ## Configuration
 
@@ -196,7 +196,7 @@ print(f"Registered '{MACHINE}' for {USERNAME}. Token: {added.token}")
 
 Delete each of their machines with the script above. With no machine they have no token, so they can reach neither the MCP endpoint nor the dashboard, and a dashboard session they still hold ends within eight hours, or at once if you restart. Their account, the skills they shared, and the `pushed_by` on each revision stay. Then rotate the server's invite code, below.
 
-A team's admin removes a person from that team in the dashboard. Nobody can be removed from `everyone`, which is why leaving the server is this operation.
+A team's admin removes a person from that team in the dashboard. Leaving the server altogether is this operation.
 
 ### List teams and who is in them
 
@@ -279,6 +279,10 @@ What changes for your users, and is worth telling them before you upgrade:
 - Sync backs up the skills it finds on a computer to that private space without asking.
 - A change someone else makes to a shared skill no longer arrives by itself. Sync reports it as an offer and the user accepts or declines each time.
 - The `sync-aistack` skill on each computer replaces itself with the new server's copy on the first sync after the upgrade.
+
+### The upgrade that retires `everyone` (ADR-0019)
+
+New accounts no longer join a server-wide team. If your server's `everyone` has members or skills, it becomes an ordinary team: you are its admin, everything in it stays where people see it, and anyone may now leave it. If it is empty, it is removed.
 
 There is no downgrade. The way back from an upgrade you regret is the backup you took before it.
 

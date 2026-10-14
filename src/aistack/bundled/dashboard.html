@@ -1049,7 +1049,7 @@ function route() {
   let parts = [];
   try { parts = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent); } catch (_) { /* malformed hash: the Library */ }
   const team = parts[0] === 't' && teamBy(parts[1]);
-  const tab = Object.hasOwn(TAB_LABELS, parts[2]) && (parts[2] !== 'settings' || (team && team.kind !== 'SERVER')) ? parts[2] : 'skills';
+  const tab = Object.hasOwn(TAB_LABELS, parts[2]) && true ? parts[2] : 'skills';
   // A group the user cannot see is not in team.groups, so it opens the whole team like any unknown one.
   const path = parts.slice(3).join('/');
   const group = team && tab === 'skills' && team.groups.some(g => g.path === path) ? path : null;
@@ -1117,11 +1117,10 @@ function renderSidebar(r) {
       el('span', { class: 'rail-name' }, 'Personal'),
       updates ? el('span', { class: 'sr-only' }, `, ${plural(updates, 'update')} waiting`) : null),
     el('span', { class: 'rail-sep', 'aria-hidden': 'true' }),
-    // Your teams first; the server-wide team, which every account is in, last.
-    ...[...state.teams].sort((x, y) => (x.kind === 'SERVER') - (y.kind === 'SERVER')).map(t => el('a', { class: 'rail-item', href: teamHash(t.name),
-      title: t.kind === 'SERVER' ? 'Everyone on this server' : t.name, 'aria-current': r.view === 'team' && r.team === t ? 'page' : null },
-      el('span', { class: 'rail-btn', 'aria-hidden': 'true' }, t.kind === 'SERVER' ? icon('users', 18) : t.name[0]),
-      el('span', { class: 'rail-name' }, t.kind === 'SERVER' ? 'Everyone' : t.name))),
+    ...state.teams.map(t => el('a', { class: 'rail-item', href: teamHash(t.name),
+      title: t.name, 'aria-current': r.view === 'team' && r.team === t ? 'page' : null },
+      el('span', { class: 'rail-btn', 'aria-hidden': 'true' }, t.name[0]),
+      el('span', { class: 'rail-name' }, t.name))),
     el('button', { type: 'button', class: 'rail-btn ghost', fk: 'add-team', title: 'Add a team', 'aria-label': 'Add a team', on: { click: addTeamDialog } }, icon('plus', 18)));
 
   let list;
@@ -1170,7 +1169,7 @@ function renderSidebar(r) {
         }),
         el('div', { class: 'nav-heading' }, 'Team'),
         link(teamHash(t.name, 'members'), r.tab === 'members', icon('users'), el('span', { class: 'label' }, 'Members'), el('span', { class: 'count' }, String(members(t).length))),
-        t.kind !== 'SERVER' && link(teamHash(t.name, 'settings'), r.tab === 'settings', icon('key'), el('span', { class: 'label' }, 'Settings'))),
+        link(teamHash(t.name, 'settings'), r.tab === 'settings', icon('key'), el('span', { class: 'label' }, 'Settings'))),
     ];
   }
   $sidebar.replaceChildren(
@@ -1463,7 +1462,7 @@ function groupPicker(team, { name, value = '', legend, noneLabel, allow = () => 
 const picked = root => { const c = root.querySelector('input[type=radio]:checked'); return c && c.value ? c.value : null; };
 
 function shareDialog(s) {
-  let team = (s.source && teamBy(s.source.team)) || state.teams.find(t => t.kind !== 'SERVER') || state.teams[0];
+  let team = (s.source && teamBy(s.source.team)) || state.teams[0];
   const holder = el('div');
   const fill = () => holder.replaceChildren(groupPicker(team, {
     name: 'share-group', legend: 'Group (optional)', noneLabel: 'Team level (no group)',
@@ -1514,9 +1513,7 @@ function removeMineDialog(s) {
 
 function teamView(team, tab, group) {
   const admin = team.role === 'ADMIN';
-  const shared = team.kind !== 'SERVER';
-  const tabs = [['skills', 'Skills', team.skills.length], ['members', 'Members', members(team).length], ['groups', 'Groups', team.groups.length]];
-  if (shared) tabs.push(['settings', 'Settings', null]);
+  const tabs = [['skills', 'Skills', team.skills.length], ['members', 'Members', members(team).length], ['groups', 'Groups', team.groups.length], ['settings', 'Settings', null]];
   if (!tabs.some(t => t[0] === tab)) tab = 'skills';
   const panels = { skills: skillsTab, members: membersTab, groups: groupsTab, settings: settingsTab };
   const tablist = el('div', { class: 'tabs', role: 'tablist', 'aria-label': team.name },
@@ -1539,14 +1536,12 @@ function teamView(team, tab, group) {
     el('div', { class: 'band has-tabs' },
       el('div', { class: 'wrap' },
         el('div', { class: 'team-head' },
-          el('span', { class: 'avatar lg' }, shared ? team.name[0] : icon('globe', 20)),
+          el('span', { class: 'avatar lg' }, team.name[0]),
           el('div', { class: 'titles' },
             el('div', { class: 'line' },
               el('h1', null, team.name),
               el('span', { class: 'badge' + (admin ? ' solid' : '') }, admin ? 'Admin' : 'Member')),
             el('p', { class: 'subtitle' }, plural(members(team).length, 'member'), ' · ', plural(team.skills.length, 'skill'), ' · ', plural(team.groups.length, 'group')))),
-        !shared && el('div', { class: 'note' }, icon('info', 14),
-          el('span', null, 'Everyone on this server is in this team. It has no invite code, and nobody can leave it or be removed from it.')),
         tablist)),
     el('div', { class: 'wrap body', id: 'tabpanel', role: 'tabpanel', 'aria-labelledby': 'tab-' + tab }, panels[tab](team, admin, group)),
   ];
@@ -1699,12 +1694,11 @@ function removeTeamSkillDialog(team, s) {
 /* ---------- members ---------- */
 
 function membersTab(team, admin) {
-  const shared = team.kind !== 'SERVER';
   const patch = (control, m, body, done) => run(control, async () => {
     await api(`/api/teams/${enc(team.name)}/members/${enc(m.username)}`, body);
     return done;
   });
-  const removable = admin && shared;
+  const removable = admin;
   const cols = 'minmax(180px, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) auto auto' + (removable ? ' auto' : '');
   return el('div', { class: 'tbl', role: 'table', 'aria-label': 'Members', style: 'grid-template-columns:' + cols },
     el('div', { class: 'tr th-row', role: 'row' }, th('Member'), th('Groups'),
@@ -1727,7 +1721,7 @@ function membersTab(team, admin) {
           })
         : m.sees_all_groups ? el('span', { class: 'badge' }, 'Sees all groups') : el('span', { class: 't2' }, 'Own groups');
       // An admin can always invite; the switch is for members (ADR-0019).
-      const invites = !shared || isAdmin ? null : admin
+      const invites = isAdmin ? null : admin
         ? sw(!!m.can_invite, 'Can invite', {
             fk: `invites:${m.username}`, label: `${m.username} can invite`,
             tip: 'May create invite links for this team, and nothing else an admin can.',
@@ -2067,7 +2061,7 @@ const DB = (() => {
       { name: 'commit-messages', description: 'Writes commit messages in the house style: imperative subject, why before what.', revision: 2, pushed_by: 'dimitris', updated_on: ago(96), files: 1, placements: [P(MAC), P(DESK), { machine: MAC, harness: 'agents' }],
         source: { team: 'aistack', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'dimitris', update_available: false } },
       { name: 'pr-description', description: 'Drafts a pull request description from the branch diff and linked issue.', revision: 1, pushed_by: 'eve', updated_on: ago(200), files: 2, placements: [P(MAC), P(DESK)],
-        source: { team: 'everyone', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'eve', update_available: false } },
+        source: { team: 'friends', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'eve', update_available: false } },
       { name: 'sqlalchemy-migrations', description: 'Plans and writes Alembic migrations that run identically on SQLite and Postgres.', revision: 4, pushed_by: 'maria', updated_on: ago(52), files: 6, placements: [P(DESK)],
         source: { team: 'aistack', group: 'developers/backend', revision: 4, latest_revision: 4, latest_pushed_by: 'maria', update_available: false } },
       { name: 'wizard', description: 'Generates an interactive bash wizard for steps only a human can perform.', revision: 1, pushed_by: 'dimitris', updated_on: ago(5), files: 3, placements: [P(MAC)], source: null },
@@ -2076,7 +2070,7 @@ const DB = (() => {
         source: { team: 'aistack', group: null, revision: 1, latest_revision: 1, latest_pushed_by: 'dimitris', update_available: false } },
     ],
     teams: [
-      { name: 'everyone', kind: 'SERVER', role: 'MEMBER', sees_all_groups: false,
+      { name: 'friends', kind: 'SHARED', role: 'MEMBER', sees_all_groups: false,
         members: [person('dimitris', 'MEMBER', []), person('maria', 'ADMIN', []), person('eve', 'MEMBER', [])],
         groups: [],
         skills: [
@@ -2115,7 +2109,6 @@ const dTeamSkill = (t, name) => t.skills.find(s => s.name === name) || fail(`${t
 const dMember = (t, username) => t.members.find(m => m.username === username) || fail(`${username} is not in ${t.name}.`);
 const dGroup = (t, path) => t.groups.find(g => g.path === path) || fail(`${t.name} has no group ${path}.`);
 const dAdmin = t => { if (t.role !== 'ADMIN') fail(`Only an admin of ${t.name} can do that.`); };
-const dShared = t => { if (t.kind === 'SERVER') fail(`Everyone on this server is in ${t.name}; nobody can leave it or be removed from it.`); };
 
 const DEMO_ROUTES = [
   [/^\/api\/skills\/([^/]+)\/machines\/([^/]+)$/, (b, name, id) => {
@@ -2157,13 +2150,13 @@ const DEMO_ROUTES = [
     return { team: 'design' };
   }],
   [/^\/api\/teams\/([^/]+)\/leave$/, (b, team) => {
-    const t = dTeam(team); dShared(t);
+    const t = dTeam(team);
     if (t.role === 'ADMIN' && t.members.filter(m => m.role === 'ADMIN').length === 1 && t.members.length > 1) fail(`You are the only admin of ${t.name}. Make someone else an admin before you leave.`);
     DB.teams = DB.teams.filter(x => x !== t);
     DB.skills.forEach(s => { if (s.source && s.source.team === team) s.source = null; });
   }],
   [/^\/api\/teams\/([^/]+)\/invite$/, (b, team) => {
-    const t = dTeam(team); dAdmin(t); dShared(t);
+    const t = dTeam(team); dAdmin(t);
     const bytes = crypto.getRandomValues(new Uint8Array(18));
     return { code: 'aistinv_' + Array.from(bytes, x => x.toString(36).padStart(2, '0')).join('').slice(0, 32) };
   }],
@@ -2194,7 +2187,7 @@ const DEMO_ROUTES = [
     }
   }],
   [/^\/api\/teams\/([^/]+)\/members\/([^/]+)\/remove$/, (b, team, username) => {
-    const t = dTeam(team); dAdmin(t); dShared(t);
+    const t = dTeam(team); dAdmin(t);
     dMember(t, username);
     t.members = t.members.filter(m => m.username !== username);
   }],

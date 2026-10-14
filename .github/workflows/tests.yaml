@@ -154,13 +154,14 @@ jobs:
         run: test "$(docker exec aistack id -u)" = "10001"
 
       # The secrets rule, checked on what the container actually wrote: not the invite code,
-      # not a machine token, not a transfer ticket.
+      # not a machine token, not a team's invite code, not a transfer ticket.
       - name: No secret reached the logs
         run: |
           docker logs aistack > container.log 2>&1
           cat container.log
           ! grep -F "$INVITE_CODE" container.log
           ! grep -E "aist_[A-Za-z0-9_-]{20,}" container.log
+          ! grep -E "aistinv_[A-Za-z0-9_-]{20,}" container.log
           ! grep -E "eyJ[A-Za-z0-9_-]{10,}\." container.log
           grep -F "Invite code: 'configured'" container.log
 

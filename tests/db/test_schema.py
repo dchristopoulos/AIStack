@@ -151,9 +151,18 @@ def test_a_database_from_before_migrations_is_adopted_with_its_data(empty_engine
         assert connection.scalars(select(User.username)).all() == ["dimitris"]
 
 
+def test_a_fresh_server_has_no_team_at_all(empty_engine):
+    """`everyone` was made by migration 0002 and retired by 0005 while still empty."""
+    migrate_schema(empty_engine)
+
+    with empty_engine.connect() as connection:
+        assert connection.scalars(select(Team.name)).all() == []
+
+
 def test_an_upgraded_server_shows_everyone_what_it_showed_them_before(empty_engine, tmp_path):
-    """Teams arrive (ADR-0015). What was shared stays shared, in the server's team, and what
-    a user's machine had installed becomes one of their own skills, history and all."""
+    """Teams arrive (ADR-0015). What was shared stays shared, in what was the server's team and
+    is an ordinary one since ADR-0019, and what a user's machine had installed becomes one of
+    their own skills, history and all."""
     _a_database_the_mvp_wrote(empty_engine, tmp_path)
 
     migrate_schema(empty_engine)
@@ -169,9 +178,9 @@ def test_an_upgraded_server_shows_everyone_what_it_showed_them_before(empty_engi
         listing = skill_service.list_skills(session, user_id)
         report = sync_service.sync(session, machine_id, user_id, {})
 
-    assert teams == {TeamKind.SERVER: "everyone", TeamKind.PERSONAL: "dimitris"}
-    # The server's admin is the admin of the server's team.
-    assert roles == {TeamKind.SERVER: TeamRole.ADMIN, TeamKind.PERSONAL: TeamRole.ADMIN}
+    assert teams == {TeamKind.SHARED: "everyone", TeamKind.PERSONAL: "dimitris"}
+    # The server's admin is the admin of what was the server's team.
+    assert roles == {TeamKind.SHARED: TeamRole.ADMIN, TeamKind.PERSONAL: TeamRole.ADMIN}
     assert [(skill.team, skill.name, skill.revision) for skill in listing] == [
         (None, "wizard", 1), ("everyone", "wizard", 1)]
     # Still enabled on the machine that had it, now from his own copy, which is level with

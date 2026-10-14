@@ -41,7 +41,7 @@ A user's personal team: private, a mirror of what is on their computers, and the
 _Avoid_: My skills (its name until #62), personal vault, private team, workspace, home
 
 **Team**:
-A set of people who share skills (ADR-0015). A member shares into it and takes from it; nothing installs from it directly. Every user is in the server's team, `everyone`; the rest are created by a user and joined with an invite code.
+A set of people who share skills (ADR-0015). A member shares into it and takes from it; nothing installs from it directly. Every team is created by a user and joined with its invite code or invite link. Until ADR-0019 every user was also in a server-wide team, `everyone`; an upgraded server keeps it as an ordinary team.
 _Avoid_: Org, tenant, workspace, account
 
 **Group**:
@@ -113,5 +113,5 @@ Enabling a skill on this machine that already exists both on disk and in the Lib
 _Avoid_: Auto-enable, link
 
 **Admin**:
-The server's operator role, distinct from a team admin: the first user to join (`is_admin`). The server can only observe join order, not who deployed it — in practice the operator joins first, alone, before sharing the invite code. The server's admin is also the admin of `everyone`. Server-level powers are documented scripts in `docs/OPERATING.md` (revoke a machine, recover a locked-out user); the dashboard has no page for them.
+The server's operator role, distinct from a team admin: the first user to join (`is_admin`). The server can only observe join order, not who deployed it — in practice the operator joins first, alone, before sharing the invite code. Server-level powers are documented scripts in `docs/OPERATING.md` (revoke a machine, recover a locked-out user); the dashboard has no page for them.
 _Avoid_: Owner, superuser

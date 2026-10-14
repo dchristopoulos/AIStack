@@ -9,7 +9,7 @@ from aistack.db.models.skill import Skill
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.services import onboarding_service, skill_service, sync_service, team_service
 from tests.archives import local_digests, skill_archive
-from tests.teams import SERVER_TEAM, make_team
+from tests.teams import make_team
 
 
 @pytest.fixture(name="session_factory")
@@ -82,22 +82,21 @@ def _same_sentence(first, name, second, other_name) -> bool:
 
 # --- joining --------------------------------------------------------------------------------
 
-def test_joining_puts_a_user_in_their_own_team_and_the_servers(session_factory, dimitris, maria):
+def test_joining_puts_a_user_in_their_own_team_and_no_other(session_factory, dimitris, maria):
     with session_factory() as session:
         memberships = session.execute(
             select(Team.name, Team.kind, TeamMember.role)
             .join(TeamMember, TeamMember.team_id == Team.team_id)
             .where(TeamMember.user_id == maria.user.user_id).order_by(Team.name)).all()
 
-    assert memberships == [(SERVER_TEAM, TeamKind.SERVER, TeamRole.MEMBER),
-                           ("maria", TeamKind.PERSONAL, TeamRole.ADMIN)]
+    # No server-wide team any more (ADR-0019): a team is joined with its invite.
+    assert memberships == [("maria", TeamKind.PERSONAL, TeamRole.ADMIN)]
 
 
 def test_a_username_that_is_already_a_team_is_taken(session_factory, dimitris, acme):
     """A personal team carries its user's name, so the two share one namespace."""
-    for taken in (SERVER_TEAM, "acme"):
-        with pytest.raises(Conflict, match="already taken"):
-            _join(session_factory, taken)
+    with pytest.raises(Conflict, match="already taken"):
+        _join(session_factory, "acme")
 
 
 # --- my skills are mine ---------------------------------------------------------------------
@@ -275,8 +274,7 @@ def test_a_team_you_are_not_in_reads_exactly_like_one_that_does_not_exist(sessio
         with pytest.raises(NotFound, match="not in a team named 'acme'"):
             _do(session_factory, function, eve.user.user_id, "acme", *args)
     assert _listing(session_factory, eve) == [(None, None, "wizard")]
-    assert [team.name for team in _do(session_factory, team_service.list_teams,
-                                      eve.user.user_id)] == [SERVER_TEAM]
+    assert _do(session_factory, team_service.list_teams, eve.user.user_id) == []
 
 
 def test_a_personal_team_cannot_be_reached_as_a_team(session_factory, dimitris, maria):
@@ -345,13 +343,6 @@ def test_a_member_who_may_no_longer_invite_cannot(session_factory, dimitris, mar
 
     with pytest.raises(ValidationError, match="Only an admin"):
         _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
-
-
-def test_the_servers_team_has_no_invite_code_and_cannot_be_left(session_factory, dimitris):
-    with pytest.raises(ValidationError, match="server's own team"):
-        _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, SERVER_TEAM)
-    with pytest.raises(ValidationError, match="nothing to leave"):
-        _do(session_factory, team_service.leave_team, dimitris.user.user_id, SERVER_TEAM)
 
 
 # --- admins and members ---------------------------------------------------------------------

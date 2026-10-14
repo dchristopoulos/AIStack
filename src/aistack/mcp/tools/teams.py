@@ -32,16 +32,15 @@ class ListTeamsResult(TypedDict):
 @mcp.tool(
     description="""List the teams the user is in.
 
-    Use when the user asks which teams they have, or before share_skill to name one. Every
-    user is in the server's own team (kind SERVER), which everyone on this server shares.
-    Teams they created or joined have kind SHARED. Their own skills are not a team here:
-    list_skills shows those.
+    Use when the user asks which teams they have, or before share_skill to name one. These
+    are the teams they created or joined, all of kind SHARED. Their own skills are not a
+    team here: list_skills shows those.
 
     Returns:
         ListTeamsResult containing:
             - teams: one entry per team, by name, each with:
                 - name: the team's name, used with share_skill, get_skill, invite_to_team
-                - kind: SERVER or SHARED
+                - kind: SHARED
                 - role: ADMIN or MEMBER, the user's role in it
                 - members: how many people are in it
     """)

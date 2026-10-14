@@ -148,7 +148,7 @@ async def test_a_change_needs_the_header_a_cross_site_page_cannot_send(server_ur
 
     assert forged.status_code == 400 and "did not come from the dashboard" in forged.text
     assert real.status_code == 200
-    assert teams == ["acme", "everyone"]
+    assert teams == ["acme"]
 
 
 async def test_signing_out_ends_the_session_in_that_browser(server_url):
@@ -264,7 +264,7 @@ async def test_someone_outside_a_team_is_told_what_they_would_be_told_if_it_did_
                                 response.json()["error"].replace(team, "X")))
             assert answers[0] == answers[1] and answers[0][0] == 404, path
 
-        assert [team["name"] for team in (await _state(eve))["teams"]] == ["everyone"]
+        assert (await _state(eve))["teams"] == []
 
 
 async def test_a_computer_that_is_not_yours_is_one_that_does_not_exist(server_url):

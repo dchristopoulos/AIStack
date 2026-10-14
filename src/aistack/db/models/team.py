@@ -21,8 +21,6 @@ INVITE_HASH_LENGTH = 64
 class TeamKind(StrEnum):
     """What a team is for. Code asks this, never the team's name, so a rename changes nothing."""
 
-    # The one team every account on the server joins. It is what "the vault" was before teams.
-    SERVER = "SERVER"
     # One per user, created at join: the Library. Mirrors what is on their computers, and is
     # the only team a machine ever installs from.
     PERSONAL = "PERSONAL"
@@ -47,8 +45,8 @@ class Team(Base):
              validate_strings=True, name="ck_team_kind"),
         nullable=False
     )
-    # The personal team's user, or whoever created a shared one. Null for the server's team,
-    # which nobody created.
+    # The personal team's user, or whoever created a shared one. Null only for a team that was
+    # the server's own before ADR-0019, on a server that had no admin then.
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user.user_id"),
                                                          nullable=True)
     # Only the sha256 of the team's invite code is stored, and joining is one indexed lookup,

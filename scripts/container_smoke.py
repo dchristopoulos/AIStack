@@ -20,8 +20,7 @@ from fastmcp.client import BearerAuth, Client, StreamableHttpTransport
 from aistack.services.skill_archive import build_archive
 
 SKILL_NAME = "container-proof"
-# The team every user is in.
-SERVER_TEAM = "everyone"
+TEAM = "ci"
 SKILL_FILES = [
     ("SKILL.md", f"---\nname: {SKILL_NAME}\ndescription: Proves the container works.\n---\n"
                  "\n# Container proof\n".encode(), False),
@@ -36,7 +35,7 @@ async def call(base_url: str, bearer: str, tool: str, **arguments) -> dict:
 
 
 async def fresh(base_url: str, invite_code: str, state_file: pathlib.Path) -> None:
-    """A joins, pushes, and shares with everyone; B joins, takes it, and gets the same bytes."""
+    """A joins and invites B with a team link; A pushes and shares, B takes the same bytes."""
     # The setup page and the sync skill are package data: this is what proves the image
     # actually carries them.
     async with httpx.AsyncClient() as http:
@@ -47,8 +46,13 @@ async def fresh(base_url: str, invite_code: str, state_file: pathlib.Path) -> No
 
     machine_a = (await call(base_url, invite_code, "join", username="ci-a",
                             machine_name="runner-a", os="LINUX"))["token"]
-    machine_b = (await call(base_url, invite_code, "join", username="ci-b",
-                            machine_name="runner-b", os="LINUX"))["token"]
+    await call(base_url, machine_a, "create_team", name=TEAM)
+    team_code = (await call(base_url, machine_a, "invite_to_team", team=TEAM))["code"]
+    # B's account comes from the team's invite code alone (ADR-0019).
+    joined_b = await call(base_url, team_code, "join", username="ci-b",
+                          machine_name="runner-b", os="LINUX")
+    assert joined_b["team"] == TEAM, joined_b
+    machine_b = joined_b["token"]
 
     issued = await call(base_url, machine_a, "push_skill", name=SKILL_NAME)
     async with httpx.AsyncClient() as http:
@@ -57,12 +61,12 @@ async def fresh(base_url: str, invite_code: str, state_file: pathlib.Path) -> No
 
     # A push is private: the other user sees it only once it is shared.
     assert (await call(base_url, machine_b, "list_skills"))["skills"] == []
-    await call(base_url, machine_a, "share_skill", name=SKILL_NAME, team=SERVER_TEAM)
+    await call(base_url, machine_a, "share_skill", name=SKILL_NAME, team=TEAM)
     listing = await call(base_url, machine_b, "list_skills")
     assert [(skill["name"], skill["team"]) for skill in listing["skills"]] == [
-        (SKILL_NAME, SERVER_TEAM)], listing
+        (SKILL_NAME, TEAM)], listing
 
-    skill = await call(base_url, machine_b, "get_skill", name=SKILL_NAME, team=SERVER_TEAM)
+    skill = await call(base_url, machine_b, "get_skill", name=SKILL_NAME, team=TEAM)
     async with httpx.AsyncClient() as http:
         archive = (await http.get(skill["download_url"])).content
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:

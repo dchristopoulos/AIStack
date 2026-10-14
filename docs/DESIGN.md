@@ -251,7 +251,7 @@ Three places hold skills, and they nest in that order of privacy.
 | Place | Who sees it | How a skill gets there | What installs from it |
 |---|---|---|---|
 | **Library** (a personal team per user) | Only that user | Backed up from their computers by sync, without asking | Their machines, and nothing else |
-| **A team** (`everyone`, or one a user created) | Its members | A member shares one of their own skills | Nothing directly: a member takes a copy into the Library |
+| **A team** (one a user created) | Its members | A member shares one of their own skills | Nothing directly: a member takes a copy into the Library |
 | **A group** in a team (`backend`, `backend/aistack`) | Open: whoever sees the group above. Private: the people added to it | A member of it, or of a group above it, shares into it | As a team |
 
 **The four verbs.** *Back up* (`push_skill`): a local skill goes into the Library. *Share* (`share_skill`, or a tick on the dashboard): the team gets a copy of the latest revision. *Take* (`get_skill` with a team): the team's latest revision is copied into the Library and installed. *Remove*: from one computer (`disable_skill`), from the Library on every computer (dashboard), or from a team (its admin).
@@ -374,7 +374,7 @@ A group's path contains slashes, so it always travels in the body and never in t
 | `skills[].placements` | Where the skill is switched on: each a computer's id and a harness, oldest computer first. On is a decision the server holds, not proof the files are there yet |
 | `skills[].source` | The team skill this copy was taken from or shared to, or null. Null also when the user can no longer see that skill: the copy is then simply theirs |
 | `source.revision` | The team's revision this copy came from. `latest_revision` and `latest_pushed_by` describe the team's newest, and `update_available` is true when it is newer |
-| `teams` | The teams the user is in, by name. The Library is not among them. `kind` is `SERVER` for `everyone` and `SHARED` for a team somebody created |
+| `teams` | The teams the user is in, by name. The Library is not among them. `kind` is `SHARED`: every team is one somebody created (ADR-0019) |
 | `teams[].role`, `sees_all_groups` | The user's own role in that team, `ADMIN` or `MEMBER`, and whether they were given sight of every group |
 | `teams[].members` | Everyone in the team. A member's private groups are listed only for an admin and for people in those groups |
 | `teams[].groups` | The groups the user may see, by path; an admin sees all of them. `member` is whether the user is in it, `subscribed` whether they are offered its updates |
@@ -395,8 +395,6 @@ USER
                                                       -- is the fast path only: on Postgres READ
                                                       -- COMMITTED it lets two concurrent joins both
                                                       -- win. The update runs in a savepoint.
-                                                      -- Read at join: the server's admin is the
-                                                      -- admin of the server's team
   created_on    TIMESTAMPTZ  NOT NULL
 
 MACHINE
@@ -411,8 +409,8 @@ MACHINE
 TEAM                                           -- ADR-0015
   team_id       UUID PK
   name          VARCHAR(64)  NOT NULL UNIQUE   -- a personal team carries its user's name
-  kind          ENUM(SERVER, PERSONAL, SHARED) NOT NULL  -- code asks the kind, never the name
-  created_by    UUID FK → USER NULL            -- null for the server's team
+  kind          ENUM(PERSONAL, SHARED) NOT NULL  -- code asks the kind, never the name
+  created_by    UUID FK → USER NULL            -- null only for a retired server team (0005)
   invite_hash   VARCHAR(64)  NULL UNIQUE       -- sha256 of the invite code; the join lookup
   created_on    TIMESTAMPTZ  NOT NULL
 

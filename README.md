@@ -47,7 +47,7 @@ Three places hold skills. Each is more widely seen than the one before.
 
 **The Library** is yours alone and mirrors your computers. It is the only place a machine ever installs from, so what runs on your laptop is always your own copy.
 
-**Teams** are created by any user, who becomes the team's admin, and joined with the team's invite code. Every account is also in the server's team, `everyone`. Sharing gives the team its own copy of a skill, with its own history, and every revision says who shared it.
+**Teams** are created by any user, who becomes the team's admin, and joined with the team's invite code. A team's invite link also creates the account of someone new to the server. Sharing gives the team its own copy of a skill, with its own history, and every revision says who shared it.
 
 **Groups** sit inside a team like channels, and nest. A private group is seen only by the people added to it. Two roles exist, admin and member; "backend developer" is not a role, it is being in the `backend` group.
 

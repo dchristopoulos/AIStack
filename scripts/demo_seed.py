@@ -122,7 +122,7 @@ async def seed(base_url: str, invite_code: str) -> dict[str, str]:
                         ("sql-style", "developers"), ("aistack-api-notes", "developers/backend"),
                         ("pentest-checklist", "security")):
         await dimitris.page(f"/skills/{name}/share", team="aistack", group=group)
-    await dimitris.page("/skills/commit-messages/share", team="everyone")
+    await dimitris.page("/skills/commit-messages/share", team="aistack")
 
     # Maria takes two skills and switches them on; then one of them changes under her.
     maria_laptop = (await maria.browser.get("/api/state")).json()["machines"][0]["id"]

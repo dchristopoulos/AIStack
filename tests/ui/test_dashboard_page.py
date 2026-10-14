@@ -226,7 +226,7 @@ async def test_escape_closes_a_dialog_and_gives_focus_back(sign_in):
 
     await expect(page.get_by_role("dialog")).to_have_count(0)
     await expect(opener).to_be_focused()
-    assert [team["name"] for team in (await dimitris.state())["teams"]] == ["aistack", "everyone"]
+    assert [team["name"] for team in (await dimitris.state())["teams"]] == ["aistack"]
 
 
 async def test_an_admin_makes_a_group_inside_a_group(sign_in):

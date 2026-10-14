@@ -75,11 +75,12 @@ def join(session: Session, username: str, machine_name: str, os: str,
     session.flush()
 
     _claim_admin(session, user)
-    _join_teams(session, user, personal_team)
+    session.add(TeamMember(team_id=personal_team.team_id, user_id=user.user_id,
+                           role=TeamRole.ADMIN))
     if invited_to is not None:
         session.add(TeamMember(team_id=invited_to.team_id, user_id=user.user_id,
                                role=TeamRole.MEMBER))
-        session.flush()
+    session.flush()
 
     logger.debug(
         f"Join persisted. Username: '{loggable(username)}'. "
@@ -129,23 +130,6 @@ def add_machine(session: Session, user_id: uuid.UUID, machine_name: str, os: str
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return AddedMachine(machine=machine, token=token)
-
-
-def _join_teams(session: Session, user: User, personal_team: Team) -> None:
-    """Put a new user in their own team and in the server's (ADR-0015).
-
-    The server's team is what the server's invite code admits to: everyone who joined this
-    server shares it. The server's admin is that team's admin.
-    """
-    session.refresh(user, ["is_admin"])
-    server_team_id = session.scalars(
-        select(Team.team_id).where(Team.kind == TeamKind.SERVER)).one()
-    session.add_all([
-        TeamMember(team_id=personal_team.team_id, user_id=user.user_id, role=TeamRole.ADMIN),
-        TeamMember(team_id=server_team_id, user_id=user.user_id,
-                   role=TeamRole.ADMIN if user.is_admin else TeamRole.MEMBER),
-    ])
-    session.flush()
 
 
 def _claim_admin(session: Session, user: User) -> None:

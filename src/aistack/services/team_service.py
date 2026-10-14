@@ -99,11 +99,6 @@ def new_invite_code(session: Session, user_id: uuid.UUID, team: str) -> str:
     if me.role is not TeamRole.ADMIN and not me.can_invite:
         raise ValidationError(f"Only an admin of team '{found.name}', or a member an admin "
                               "lets invite, can make an invite code. Ask one of its admins.")
-    if found.kind is not TeamKind.SHARED:
-        raise ValidationError(
-            f"'{found.name}' is the server's own team: everyone who joins this server is in "
-            "it already. Create a team to invite people to."
-        )
     code = f"{TEAM_INVITE_PREFIX}{secrets.token_urlsafe(24)}"
     found.invite_hash = hash_token(code)
     logger.info(f"Team invite code replaced. Team: '{found.team_id}'. User: '{user_id}'.")
@@ -215,9 +210,6 @@ def set_subscribed(session: Session, user_id: uuid.UUID, team: str, group: str,
 def leave_team(session: Session, user_id: uuid.UUID, team: str) -> str:
     """Leave a team. The skills already taken from it stay in the caller's own skills."""
     found, me = visibility.membership(session, user_id, team)
-    if found.kind is not TeamKind.SHARED:
-        raise ValidationError(f"'{found.name}' is the server's own team; everyone on this "
-                              "server is in it. There is nothing to leave.")
     _keep_an_admin(session, found, me, leaving=True)
     _drop_member(session, found.team_id, user_id)
     return found.name
@@ -226,10 +218,6 @@ def leave_team(session: Session, user_id: uuid.UUID, team: str) -> str:
 def remove_member(session: Session, user_id: uuid.UUID, team: str, username: str) -> None:
     """Remove someone from a team. Admins only."""
     found, _ = _as_admin(session, user_id, team)
-    if found.kind is not TeamKind.SHARED:
-        raise ValidationError(f"Nobody can be removed from '{found.name}': it is the "
-                              "server's own team. Revoking a person's machines is an "
-                              "operator task; see docs/OPERATING.md.")
     their = _member(session, found, username)
     _keep_an_admin(session, found, their, leaving=True)
     _drop_member(session, found.team_id, their.user_id)
