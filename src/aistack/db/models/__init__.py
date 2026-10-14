@@ -5,6 +5,7 @@ from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.operating_system import OperatingSystem
+from aistack.db.models.schema_compatibility import SchemaCompatibility
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.skill_version import SkillVersion
@@ -32,6 +33,7 @@ __all__ = [
     "MachineHarness",
     "MachineSkill",
     "OperatingSystem",
+    "SchemaCompatibility",
     "Skill",
     "SkillFile",
     "SkillVersion",

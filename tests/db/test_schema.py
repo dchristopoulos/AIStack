@@ -4,7 +4,7 @@ import shutil
 import threading
 import uuid
 from datetime import datetime, timezone
-from importlib import resources
+from importlib import metadata, resources
 
 import pytest
 from alembic.autogenerate import compare_metadata
@@ -24,7 +24,7 @@ from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.user import User
-from aistack.db.schema import BASELINE_REVISION, migrate_schema
+from aistack.db.schema import BASELINE_REVISION, NewerSchema, migrate_schema
 from aistack.services import skill_service, sync_service
 from tests.conftest import _drop_everything
 
@@ -281,18 +281,53 @@ def test_foreign_keys_are_enforced_again_after_a_migration(engine):
 
 # --- one database, several processes (ADR-0020) --------------------------------------------
 
-def test_a_database_upgraded_by_a_newer_release_refuses_this_one(empty_engine):
-    """A computer that has not upgraded must not write to a schema it does not know."""
+def test_a_breaking_upgrade_by_a_newer_release_refuses_this_one(empty_engine):
+    """A computer that has not upgraded must not write to a schema it cannot run on."""
+    migrate_schema(empty_engine)
+    with empty_engine.begin() as connection:
+        connection.execute(text("UPDATE alembic_version SET version_num = '9999'"))
+        connection.execute(text("UPDATE schema_compatibility SET "
+                                "oldest_compatible_revision = '9999', "
+                                "written_by_release = '9.9.0'"))
+
+    with pytest.raises(NewerSchema) as refusal:
+        migrate_schema(empty_engine)
+
+    assert "upgraded by AIStack 9.9.0 (schema '9999')" in str(refusal.value)
+    assert "restore the backup" in str(refusal.value)
+    assert _revision(empty_engine) == "9999"
+
+
+def test_an_additive_upgrade_by_a_newer_release_leaves_this_one_running(empty_engine):
+    """ADR-0024: everything since a schema this release knows only added, so it runs on it."""
     migrate_schema(empty_engine)
     with empty_engine.begin() as connection:
         connection.execute(text("UPDATE alembic_version SET version_num = '9999'"))
 
-    with pytest.raises(RuntimeError) as refusal:
-        migrate_schema(empty_engine)
+    migrate_schema(empty_engine)
 
-    assert "newer release of AIStack" in str(refusal.value)
-    assert "'9999'" in str(refusal.value) and "Upgrade AIStack" in str(refusal.value)
     assert _revision(empty_engine) == "9999"
+
+
+def test_an_upgrade_records_the_oldest_schema_that_can_use_the_database(empty_engine):
+    migrate_schema(empty_engine)
+    with empty_engine.connect() as connection:
+        oldest, release = connection.execute(text(
+            "SELECT oldest_compatible_revision, written_by_release FROM schema_compatibility"
+        )).one()
+
+    # 0007 only added, and every migration before ADR-0024 counts as breaking.
+    assert oldest == "0006"
+    assert release == metadata.version("aistack-mcp")
+
+
+def test_every_migration_since_adr_0024_says_whether_older_releases_still_work():
+    scripts = ScriptDirectory(str(resources.files("aistack.db").joinpath("migrations")))
+    undeclared = [script.revision for script in scripts.walk_revisions()
+                  if script.revision >= "0007"
+                  and not isinstance(getattr(script.module, "older_releases_compatible", None),
+                                     bool)]
+    assert undeclared == []
 
 
 def test_two_processes_starting_at_once_migrate_the_database_once(empty_engine, monkeypatch):

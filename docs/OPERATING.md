@@ -267,6 +267,8 @@ SQLite is the default because one container is easier to run than two, and the w
 
 Back up, then pull the new image (`docker pull ghcr.io/dchristopoulos/aistack:latest`, or rebuild a checkout) and recreate the container. At startup the server brings the database to the schema its release expects, before it accepts a request. Every pending change is applied in one transaction: either all of it lands or the database is exactly as it was.
 
+A server still on an older release keeps working after another process upgraded the database, as long as every change since only added something; after a change that removed or reshaped something, it refuses to start and says which release to run (ADR-0024).
+
 If an upgrade fails, the server does not start and the log says which step failed. Nothing has been changed, so starting the previous image again is safe. A database created before this mechanism existed is recognized and carried forward without a manual step.
 
 ### The upgrade that introduces teams
