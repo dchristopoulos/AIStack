@@ -57,6 +57,7 @@ class MemberSummary:
     username: str
     role: TeamRole
     sees_all_groups: bool
+    can_invite: bool
     groups: tuple[str, ...]
 
 
@@ -88,12 +89,16 @@ def create_team(session: Session, user_id: uuid.UUID, name: str) -> str:
 
 
 def new_invite_code(session: Session, user_id: uuid.UUID, team: str) -> str:
-    """Replace the team's invite code and return the new one. Admins only.
+    """Replace the team's invite code and return the new one.
 
     Only its hash is stored, so this is the one moment the code can be read. Asking again
     makes a new code and the old one stops working, which is also how a leaked one is revoked.
+    Admins may, and members an admin lets invite (ADR-0019).
     """
-    found, _ = _as_admin(session, user_id, team)
+    found, me = visibility.membership(session, user_id, team)
+    if me.role is not TeamRole.ADMIN and not me.can_invite:
+        raise ValidationError(f"Only an admin of team '{found.name}', or a member an admin "
+                              "lets invite, can make an invite code. Ask one of its admins.")
     if found.kind is not TeamKind.SHARED:
         raise ValidationError(
             f"'{found.name}' is the server's own team: everyone who joins this server is in "
@@ -157,19 +162,20 @@ def members(session: Session, user_id: uuid.UUID, team: str) -> list[MemberSumma
     """
     found, me = visibility.membership(session, user_id, team)
     rows = session.execute(
-        select(User.user_id, User.username, TeamMember.role, TeamMember.sees_all_groups)
+        select(User.user_id, User.username, TeamMember.role, TeamMember.sees_all_groups,
+               TeamMember.can_invite)
         .join(TeamMember, TeamMember.user_id == User.user_id)
         .where(TeamMember.team_id == found.team_id)
         .order_by(User.username)
     ).all()
     mine = _groups_of(session, found.team_id, user_id)
     result = []
-    for member_id, username, role, sees_all in rows:
+    for member_id, username, role, sees_all, can_invite in rows:
         theirs = _groups_of(session, found.team_id, member_id)
         shown = tuple(sorted(
             name for name, private in theirs.items()
             if not private or me.role is TeamRole.ADMIN or name in mine))
-        result.append(MemberSummary(username, role, sees_all, shown))
+        result.append(MemberSummary(username, role, sees_all, can_invite, shown))
     return result
 
 
@@ -232,8 +238,12 @@ def remove_member(session: Session, user_id: uuid.UUID, team: str, username: str
 
 
 def set_member(session: Session, user_id: uuid.UUID, team: str, username: str,
-               role: str | None = None, sees_all_groups: bool | None = None) -> None:
-    """Change a member's role or whether they see every group. Admins only."""
+               role: str | None = None, sees_all_groups: bool | None = None,
+               can_invite: bool | None = None) -> None:
+    """Change a member's role, whether they see every group, or whether they may invite.
+
+    Admins only.
+    """
     found, _ = _as_admin(session, user_id, team)
     their = _member(session, found, username)
     if role is not None:
@@ -247,6 +257,8 @@ def set_member(session: Session, user_id: uuid.UUID, team: str, username: str,
         their.role = new_role
     if sees_all_groups is not None:
         their.sees_all_groups = bool(sees_all_groups)
+    if can_invite is not None:
+        their.can_invite = bool(can_invite)
     logger.info(f"Team member changed. Team: '{found.team_id}'. Member: '{their.user_id}'. "
                 f"By: '{user_id}'.")
 

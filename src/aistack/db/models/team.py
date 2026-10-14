@@ -75,6 +75,8 @@ class TeamMember(Base):
     # Sees the skills of every group in the team, private ones included, without being added
     # to each. Reading only: sharing into a group still takes membership of it.
     sees_all_groups: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # May make the team's invite link, and nothing else an admin can (ADR-0019).
+    can_invite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                  default=utc_now)
 

@@ -322,6 +322,31 @@ def test_only_an_admin_can_make_an_invite_code(session_factory, maria, acme):
         _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
 
 
+def test_a_member_an_admin_lets_invite_can_make_an_invite_code_and_nothing_else(
+        session_factory, dimitris, maria, eve, acme):
+    _do(session_factory, team_service.set_member, dimitris.user.user_id, acme, "maria",
+        can_invite=True)
+
+    code = _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
+
+    assert _do(session_factory, team_service.join_team, eve.user.user_id, code) == acme
+    with pytest.raises(ValidationError, match="Only an admin"):
+        _do(session_factory, team_service.create_group, maria.user.user_id, acme, "design")
+    with pytest.raises(ValidationError, match="Only an admin"):
+        _do(session_factory, team_service.set_member, maria.user.user_id, acme, "eve",
+            can_invite=True)
+
+
+def test_a_member_who_may_no_longer_invite_cannot(session_factory, dimitris, maria, acme):
+    _do(session_factory, team_service.set_member, dimitris.user.user_id, acme, "maria",
+        can_invite=True)
+    _do(session_factory, team_service.set_member, dimitris.user.user_id, acme, "maria",
+        can_invite=False)
+
+    with pytest.raises(ValidationError, match="Only an admin"):
+        _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
+
+
 def test_the_servers_team_has_no_invite_code_and_cannot_be_left(session_factory, dimitris):
     with pytest.raises(ValidationError, match="server's own team"):
         _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, SERVER_TEAM)

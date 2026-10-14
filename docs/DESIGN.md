@@ -260,7 +260,7 @@ Three places hold skills, and they nest in that order of privacy.
 
 **What leaving a team changes:** what the user can list and take. Nothing they already took is touched, because their machines never ran the team's copy.
 
-**Roles.** Admin and member. An admin manages the invite code, members and their roles, groups and their members, and where a team's skill sits. A team keeps at least one admin.
+**Roles.** Admin and member. An admin manages the invite code, members and their roles, groups and their members, and where a team's skill sits. A team keeps at least one admin. An admin can mark a member "can invite" (`team_member.can_invite`, migration 0004): that member may make the team's invite link and nothing else an admin can (ADR-0019).
 
 **Where the rule lives.** `services/visibility.py` decides who sees what; `services/team_service.py` is team administration. A team, group, or skill the caller may not see answers exactly like one that does not exist.
 

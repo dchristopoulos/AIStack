@@ -299,6 +299,28 @@ async def test_a_team_is_created_and_joined_with_its_invite_code(sign_in):
     assert "design" in [team["name"] for team in (await alex.state())["teams"]]
 
 
+async def test_an_admin_lets_a_member_invite_and_the_member_can(sign_in):
+    dimitris = await sign_in("dimitris")
+    await _open_team(dimitris, "aistack")
+    await dimitris.page.get_by_role("tab", name="Members").click()
+
+    await dimitris.page.get_by_role("switch", name="maria can invite").click()
+
+    await expect(dimitris.page.get_by_role("switch", name="maria can invite")
+                 ).to_have_attribute("aria-checked", "true")
+    members = _team(await dimitris.state(), "aistack")["members"]
+    assert next(m for m in members if m["username"] == "maria")["can_invite"] is True
+
+    maria = await sign_in("maria")
+    await _open_team(maria, "aistack")
+    await maria.page.get_by_role("tab", name="Settings").click()
+    await maria.page.get_by_role("button", name="Create new invite code").click()
+    await maria.page.get_by_role("dialog").get_by_role("button", name="Create new code").click()
+    link = await maria.page.get_by_role("dialog").get_by_label("Invite link").input_value()
+    assert "/invite/aistinv_" in link
+    assert maria.console_errors == []
+
+
 async def test_signing_out_closes_the_dashboard_in_that_browser(sign_in):
     maria = await sign_in("maria")
 

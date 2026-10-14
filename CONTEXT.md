@@ -49,7 +49,7 @@ A named set of skills and members inside a team, identified by its path: `backen
 _Avoid_: Folder, sub-team, role, channel
 
 **Team admin**:
-A member who manages a team's invite code, members, groups, and where its skills sit. Whoever creates a team is its first admin, and a team always has one.
+A member who manages a team's invite code, members, groups, and where its skills sit. Whoever creates a team is its first admin, and a team always has one. An admin can let a member invite, which lets them make the invite link and nothing else.
 _Avoid_: Owner, moderator
 
 **Back up**:

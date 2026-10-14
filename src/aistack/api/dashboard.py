@@ -194,6 +194,7 @@ def change_member(session, user_id, path, body):
         session, user_id, path["team"], path["username"],
         role=_text(body, "role", required=False),
         sees_all_groups=_flag(body, "sees_all_groups", required=False),
+        can_invite=_flag(body, "can_invite", required=False),
     )
 
 

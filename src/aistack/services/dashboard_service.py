@@ -44,9 +44,11 @@ def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
             "kind": team.kind.value,
             "role": team.role.value,
             "sees_all_groups": me.sees_all_groups,
+            "can_invite": me.can_invite,
             "members": [
                 {"username": member.username, "role": member.role.value,
-                 "sees_all_groups": member.sees_all_groups, "groups": list(member.groups)}
+                 "sees_all_groups": member.sees_all_groups, "can_invite": member.can_invite,
+                 "groups": list(member.groups)}
                 for member in team_service.members(session, user_id, team.name)
             ],
             "groups": [

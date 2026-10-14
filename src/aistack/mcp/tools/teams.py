@@ -91,7 +91,8 @@ class InviteResult(TypedDict):
 
 
 @mcp.tool(
-    description="""Make a new invite code for a team. Only the team's admins can.
+    description="""Make a new invite code for a team. Its admins can, and members an admin
+    has let invite.
 
     Use when the user wants to let someone into a team they administer. Show the link to
     the user exactly as returned and tell them to send it to the person: opening it says

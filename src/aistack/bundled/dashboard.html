@@ -1726,6 +1726,14 @@ function membersTab(team, admin) {
             onToggle: (b, next) => patch(b, m, { sees_all_groups: next }, next ? `${m.username} now sees every group in ${team.name}.` : `${m.username} now sees only open groups and the ones they are in.`),
           })
         : m.sees_all_groups ? el('span', { class: 'badge' }, 'Sees all groups') : el('span', { class: 't2' }, 'Own groups');
+      // An admin can always invite; the switch is for members (ADR-0019).
+      const invites = !shared || isAdmin ? null : admin
+        ? sw(!!m.can_invite, 'Can invite', {
+            fk: `invites:${m.username}`, label: `${m.username} can invite`,
+            tip: 'May create invite links for this team, and nothing else an admin can.',
+            onToggle: (b, next) => patch(b, m, { can_invite: next }, next ? `${m.username} can now invite people to ${team.name}.` : `${m.username} can no longer invite people to ${team.name}.`),
+          })
+        : m.can_invite ? el('span', { class: 'badge' }, 'Can invite') : null;
       const groups = m.groups || [];
       const pushed = team.skills.filter(s => s.pushed_by === m.username).map(s => s.name);
       return el('div', { class: 'tr', role: 'row' },
@@ -1740,7 +1748,7 @@ function membersTab(team, admin) {
         td('extra',
           el('span', { class: 't2' }, pushed.length ? plural(pushed.length, 'skill') : 'Nothing yet'),
           pushed.length ? el('span', { class: 't2 mono', title: pushed.join(', ') }, some(pushed)) : null),
-        td('row', seesAll),
+        td('row', seesAll, invites),
         td('row', role),
         removable && td('row end', me
           ? el('span', { class: 'btn ghost icon push', style: 'visibility:hidden', 'aria-hidden': 'true' })
@@ -1883,9 +1891,9 @@ function settingsTab(team, admin) {
     el('div', { class: 'card-foot' }, el('span', null,
       admin ? 'As an admin you see every group, private ones included.' : 'These count the skills and groups you can see.')));
   return el('div', { class: 'settings' }, el('div', null,
-    admin && card('', 'Invite code',
-      'People join this team by entering its invite code under "Join with code". A code is shown only once, when it is created.',
-      'Creating a new one makes the previous code stop working.',
+    (admin || team.can_invite) && card('', 'Invite people',
+      'An invite link lets someone into this team, and makes them an account on this server if they have none. It is shown only once, when it is created.',
+      'Creating a new one makes the previous link stop working.',
       btn('Create new invite code', { fk: 'invite', on: { click: () => confirmDialog({
         title: 'Create a new invite code?',
         submitLabel: 'Create new code',
@@ -2048,7 +2056,7 @@ document.addEventListener('keydown', ev => {
 const DB = (() => {
   const ago = h => new Date(Date.now() - h * 3600e3).toISOString();
   const MAC = '0b1f6c1e-52a7-4c0e-9d0b-6f2f3c1a9e10', DESK = '7c9e2a44-1d3b-4f6a-8a55-0e4d2b7f6c21';
-  const person = (username, role, groups) => ({ username, role, sees_all_groups: false, groups });
+  const person = (username, role, groups) => ({ username, role, sees_all_groups: false, can_invite: false, groups });
   const P = machine => ({ machine, harness: 'claude_code' });
   return {
     user: { username: 'dimitris' },
@@ -2179,6 +2187,10 @@ const DEMO_ROUTES = [
     if (typeof b.sees_all_groups === 'boolean') {
       m.sees_all_groups = b.sees_all_groups;
       if (username === dMe()) t.sees_all_groups = b.sees_all_groups;
+    }
+    if (typeof b.can_invite === 'boolean') {
+      m.can_invite = b.can_invite;
+      if (username === dMe()) t.can_invite = b.can_invite;
     }
   }],
   [/^\/api\/teams\/([^/]+)\/members\/([^/]+)\/remove$/, (b, team, username) => {
