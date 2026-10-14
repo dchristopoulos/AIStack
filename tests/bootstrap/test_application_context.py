@@ -44,3 +44,14 @@ def test_a_placeholder_invite_code_stops_assembly_before_a_database_is_touched(s
 def test_using_the_context_before_assembly_says_what_to_do(sqlite_url):
     with pytest.raises(RuntimeError, match="build_application_context"):
         application_context.get_session_factory()
+
+
+
+def test_the_dashboard_names_the_librarys_provider_but_never_its_password():
+    from aistack.bootstrap.context.application_context import _described
+
+    described = _described("postgresql://maria:s3cret@ep-cool-1.eu-central-1.aws.neon.tech/aistack")
+
+    assert described == {"kind": "postgresql", "provider": "Neon",
+                         "host": "ep-cool-1.eu-central-1.aws.neon.tech"}
+    assert _described("sqlite:////home/maria/.aistack/aistack.db") == {"kind": "this_computer"}

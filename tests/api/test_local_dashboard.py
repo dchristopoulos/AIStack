@@ -35,6 +35,7 @@ async def test_the_link_signs_in_to_the_persons_own_library(dashboard):
         state = (await client.get("/api/state")).json()
 
     assert state["server"] is False
+    assert state["library"]["kind"] in ("this_computer", "postgresql")
     assert state["user"]["username"] == "maria"
     assert [skill["name"] for skill in state["skills"]] == ["wizard"]
 
