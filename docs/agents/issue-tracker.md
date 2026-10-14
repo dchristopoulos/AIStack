@@ -13,6 +13,10 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
 
+## Work in steps
+
+A piece of work bigger than one pull request is one issue whose body is a numbered list of steps, one pull request per step, in order (#62, #64, #79 are examples). Each step is shippable on its own and says what it changes for a person. A design decision the steps rest on is an ADR first, linked from the issue. Each PR names its step (`Step 2 of #79.`), and the last one closes the issue (`Closes #79.`).
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
