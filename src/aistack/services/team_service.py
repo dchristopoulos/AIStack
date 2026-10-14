@@ -10,13 +10,15 @@ import re
 import secrets
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from aistack.commons.exceptions import Conflict, NotFound, ValidationError
 from aistack.commons.text import loggable
+from aistack.db.models.invite import INVITE_LIFETIME, Invite
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.skill_version import SkillVersion
@@ -33,6 +35,7 @@ from aistack.db.models.team import (
     TeamMember,
     TeamRole,
 )
+from aistack.db.models.timestamps import as_utc, utc_now
 from aistack.db.models.user import User
 from aistack.services import visibility
 from aistack.services.token_service import TEAM_INVITE_PREFIX, hash_token
@@ -41,6 +44,9 @@ logger = logging.getLogger(__name__)
 
 # The username rule. A personal team carries its user's name, so the two share a namespace.
 _NAME = re.compile(r"[a-z0-9]+([._-][a-z0-9]+)*")
+
+_NOT_AN_INVITE = ("That is not a team invite code that works. An invite admits one person and "
+                  "lasts seven days; ask someone in the team for a new one.")
 
 
 
@@ -59,6 +65,19 @@ class MemberSummary:
     sees_all_groups: bool
     can_invite: bool
     groups: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class InviteSummary:
+    """One invite as its team's admins and its maker see it. Never the code (ADR-0022)."""
+
+    invite_id: str
+    created_by: str
+    created_on: datetime
+    expires_on: datetime
+    # PENDING, ACCEPTED, CANCELLED, or EXPIRED.
+    status: str
+    used_by: str | None
 
 
 @dataclass(frozen=True)
@@ -89,49 +108,132 @@ def create_team(session: Session, user_id: uuid.UUID, name: str) -> str:
 
 
 def new_invite_code(session: Session, user_id: uuid.UUID, team: str) -> str:
-    """Replace the team's invite code and return the new one.
+    """Make a new invite into the team and return its code (ADR-0022).
 
-    Only its hash is stored, so this is the one moment the code can be read. Asking again
-    makes a new code and the old one stops working, which is also how a leaked one is revoked.
-    Admins may, and members an admin lets invite (ADR-0019).
+    Only its hash is stored, so this is the one moment the code can be read. Every invite is
+    its own: one use, seven days, and making another cancels nothing. Admins may, and members
+    an admin lets invite (ADR-0019).
     """
-    found, me = visibility.membership(session, user_id, team)
-    if me.role is not TeamRole.ADMIN and not me.can_invite:
-        raise ValidationError(f"Only an admin of team '{found.name}', or a member an admin "
-                              "lets invite, can make an invite code. Ask one of its admins.")
+    found, _ = _as_inviter(session, user_id, team)
     code = f"{TEAM_INVITE_PREFIX}{secrets.token_urlsafe(24)}"
-    found.invite_hash = hash_token(code)
-    logger.info(f"Team invite code replaced. Team: '{found.team_id}'. User: '{user_id}'.")
+    now = utc_now()
+    session.add(Invite(team_id=found.team_id, code_hash=hash_token(code), created_by=user_id,
+                       created_on=now, expires_on=now + INVITE_LIFETIME))
+    session.flush()
+    logger.info(f"Team invite made. Team: '{found.team_id}'. User: '{user_id}'.")
     return code
 
 
 def join_team(session: Session, user_id: uuid.UUID, code: str) -> str:
-    """Join the team an invite code belongs to."""
-    team = invited_to(session, code)
-    try:
-        with session.begin_nested():
-            session.add(TeamMember(team_id=team.team_id, user_id=user_id,
-                                   role=TeamRole.MEMBER))
-    except IntegrityError:
-        pass  # Already a member: joining again is not an error.
-    logger.info(f"Team joined. Team: '{team.team_id}'. User: '{user_id}'.")
-    return team.name
+    """Join the team an invite belongs to, using the invite up."""
+    return admit(session, invited_to(session, code), user_id)
 
 
-def invited_to(session: Session, code: str) -> Team:
-    """The team a working invite code belongs to. Resolved by indexed lookup on its hash.
+def invited_to(session: Session, code: str) -> Invite:
+    """The pending invite a code belongs to. Resolved by indexed lookup on its hash.
 
     It also admits a new person at `join` (ADR-0019), so it is read again inside that
     transaction rather than trusted from the moment the bearer was verified.
     """
-    team = None
+    invite = None
     if isinstance(code, str) and code.strip().startswith(TEAM_INVITE_PREFIX):
-        team = session.scalar(select(Team).where(Team.invite_hash == hash_token(code.strip())))
-    if team is None:
-        # Never echoes what was presented: a near-miss of a real code is still a secret.
-        raise NotFound("That is not a team invite code that works. Ask a team admin for a "
-                       "new one; a code stops working when a newer one is made.")
-    return team
+        invite = session.scalar(select(Invite).where(Invite.code_hash == hash_token(code.strip())))
+    if invite is None or _status(invite) != "PENDING":
+        # Used, cancelled, expired and unknown read alike, and the code is never repeated: a
+        # near-miss of a real one is still a secret.
+        raise NotFound(_NOT_AN_INVITE)
+    return invite
+
+
+def is_open_invite(session: Session, code: str) -> bool:
+    """Whether a code may stand as a bearer: an invite not cancelled and not expired.
+
+    A used one still may, though it reaches only `join`, which refuses it: the client that
+    used it sends one more request on the same connection after `join` returns.
+    """
+    if not (isinstance(code, str) and code.startswith(TEAM_INVITE_PREFIX)):
+        return False
+    invite = session.scalar(select(Invite).where(Invite.code_hash == hash_token(code)))
+    return invite is not None and _status(invite) in ("PENDING", "ACCEPTED")
+
+
+def invited_team(session: Session, code: str) -> str:
+    """The name of the team a pending invite is for. The invite page shows it to the holder."""
+    return session.get(Team, invited_to(session, code).team_id).name
+
+
+def admit(session: Session, invite: Invite, user_id: uuid.UUID) -> str:
+    """Make `user_id` a member of the invite's team, and mark the invite used by them.
+
+    Someone already in the team leaves the invite for whoever it was meant for.
+    """
+    team = session.get(Team, invite.team_id)
+    if session.scalar(select(TeamMember.team_member_id).where(
+            TeamMember.team_id == team.team_id, TeamMember.user_id == user_id)) is not None:
+        return team.name
+
+    # Conditional on still being pending: of two people using one code at once, the second
+    # waits for the first's row lock and then matches nothing.
+    used = session.execute(
+        update(Invite)
+        .where(Invite.invite_id == invite.invite_id, Invite.used_on.is_(None),
+               Invite.cancelled_on.is_(None))
+        .values(used_by=user_id, used_on=utc_now())
+        .execution_options(synchronize_session=False))
+    if used.rowcount != 1:
+        raise NotFound(_NOT_AN_INVITE)
+    session.add(TeamMember(team_id=team.team_id, user_id=user_id, role=TeamRole.MEMBER))
+    session.flush()
+    logger.info(f"Team joined. Team: '{team.team_id}'. User: '{user_id}'.")
+    return team.name
+
+
+def invites(session: Session, user_id: uuid.UUID, team: str) -> list[InviteSummary]:
+    """The team's invites, newest first: every one to an admin, their own to an inviter."""
+    found, me = _as_inviter(session, user_id, team)
+    creator, user = aliased(User), aliased(User)
+    query = (select(Invite, creator.username, user.username)
+             .join(creator, creator.user_id == Invite.created_by)
+             .outerjoin(user, user.user_id == Invite.used_by)
+             .where(Invite.team_id == found.team_id)
+             .order_by(Invite.created_on.desc()))
+    if me.role is not TeamRole.ADMIN:
+        query = query.where(Invite.created_by == user_id)
+    return [InviteSummary(invite_id=str(invite.invite_id), created_by=made_by,
+                          created_on=as_utc(invite.created_on),
+                          expires_on=as_utc(invite.expires_on), status=_status(invite),
+                          used_by=used_by)
+            for invite, made_by, used_by in session.execute(query).all()]
+
+
+def cancel_invite(session: Session, user_id: uuid.UUID, team: str, invite_id: str) -> None:
+    """Cancel a pending invite: one's own, or any of the team's for an admin."""
+    found, me = _as_inviter(session, user_id, team)
+    try:
+        invite = session.get(Invite, uuid.UUID(invite_id))
+    except (ValueError, TypeError, AttributeError):
+        invite = None
+    # Another team's invite, or another inviter's to a member, reads like one that is not there.
+    if (invite is None or invite.team_id != found.team_id
+            or (me.role is not TeamRole.ADMIN and invite.created_by != user_id)):
+        raise NotFound(f"Team '{found.name}' has no invite '{loggable(str(invite_id))}' of "
+                       "yours to cancel.")
+    if invite.used_on is not None:
+        raise ValidationError("That invite was already used, so there is nothing to cancel. "
+                              "Remove the member instead if they should not be in the team.")
+    if invite.cancelled_on is None:
+        invite.cancelled_on = utc_now()
+    logger.info(f"Team invite cancelled. Team: '{found.team_id}'. User: '{user_id}'.")
+
+
+def _status(invite: Invite) -> str:
+    if invite.used_on is not None:
+        return "ACCEPTED"
+    if invite.cancelled_on is not None:
+        return "CANCELLED"
+    if as_utc(invite.expires_on) <= utc_now():
+        return "EXPIRED"
+    return "PENDING"
 
 
 def list_teams(session: Session, user_id: uuid.UUID) -> list[TeamSummary]:
@@ -324,6 +426,14 @@ def remove_skill(session: Session, user_id: uuid.UUID, team: str, name: str) -> 
     session.delete(skill)
     logger.info(f"Team skill removed. Team: '{found.team_id}'. Skill: '{skill.name}'. "
                 f"By: '{user_id}'.")
+
+
+def _as_inviter(session: Session, user_id: uuid.UUID, team: str) -> tuple[Team, TeamMember]:
+    found, me = visibility.membership(session, user_id, team)
+    if me.role is not TeamRole.ADMIN and not me.can_invite:
+        raise ValidationError(f"Only an admin of team '{found.name}', or a member an admin "
+                              "lets invite, can do that. Ask one of its admins.")
+    return found, me
 
 
 def _as_admin(session: Session, user_id: uuid.UUID, team: str) -> tuple[Team, TeamMember]:

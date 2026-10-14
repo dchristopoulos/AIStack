@@ -14,7 +14,7 @@ GROUP_NAME_MAX_LENGTH = 64
 GROUP_PATH_MAX_LENGTH = 255
 GROUP_MAX_DEPTH = 8
 
-# sha256 hex, like a machine token's.
+# sha256 hex of an invite code, like a machine token's (ADR-0022).
 INVITE_HASH_LENGTH = 64
 
 
@@ -49,10 +49,6 @@ class Team(Base):
     # the server's own before ADR-0019, on a server that had no admin then.
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user.user_id"),
                                                          nullable=True)
-    # Only the sha256 of the team's invite code is stored, and joining is one indexed lookup,
-    # exactly as a machine token is resolved. Null until an admin asks for a code.
-    invite_hash: Mapped[str | None] = mapped_column(String(INVITE_HASH_LENGTH), nullable=True,
-                                                    unique=True)
     created_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                  default=utc_now)
 

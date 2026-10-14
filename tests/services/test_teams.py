@@ -1,12 +1,17 @@
 """Teams, groups, and a personal space per user (ADR-0015), as rules a user would state."""
 
+import threading
+from datetime import timedelta
+
 import pytest
 from sqlalchemy import func, select
 
 from aistack.commons.exceptions import Conflict, NotFound, ValidationError
 from aistack.db.engine import build_session_factory
 from aistack.db.models.skill import Skill
+from aistack.db.models.invite import Invite
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
+from aistack.db.models.timestamps import as_utc, utc_now
 from aistack.services import onboarding_service, skill_service, sync_service, team_service
 from tests.archives import local_digests, skill_archive
 from tests.teams import make_team
@@ -291,21 +296,128 @@ def test_a_personal_team_cannot_be_reached_as_a_team(session_factory, dimitris, 
 
 # --- invite codes ---------------------------------------------------------------------------
 
-def test_an_invite_code_admits_to_its_team_until_a_newer_one_is_made(session_factory, dimitris,
-                                                                    maria, eve, acme):
+def _members_of(session_factory, team) -> int:
+    with session_factory() as session:
+        return session.scalar(select(func.count()).select_from(TeamMember).join(
+            Team, Team.team_id == TeamMember.team_id).where(Team.name == team))
+
+
+def _statuses(session_factory, joined, team) -> list[str]:
+    return [invite.status for invite in
+            _do(session_factory, team_service.invites, joined.user.user_id, team)]
+
+
+def test_every_invite_admits_one_person_and_a_newer_one_cancels_nothing(session_factory,
+                                                                        dimitris, eve, acme):
+    frank = _join(session_factory, "frank")
     first = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, acme)
     second = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, acme)
 
+    assert _do(session_factory, team_service.join_team, eve.user.user_id, first) == "acme"
+    assert _do(session_factory, team_service.join_team, frank.user.user_id, second) == "acme"
+
+    # Used once, it admits nobody else, and says so without repeating the code.
+    late = _join(session_factory, "late")
     with pytest.raises(NotFound) as rejection:
-        _do(session_factory, team_service.join_team, eve.user.user_id, first)
+        _do(session_factory, team_service.join_team, late.user.user_id, first)
     assert first not in str(rejection.value)
-    assert _do(session_factory, team_service.join_team, eve.user.user_id, second) == "acme"
-    # Joining twice is not an error and does not make two memberships.
-    assert _do(session_factory, team_service.join_team, eve.user.user_id, second) == "acme"
-    with session_factory() as session:
-        assert session.scalar(select(func.count()).select_from(TeamMember).join(
-            Team, Team.team_id == TeamMember.team_id).where(Team.name == "acme")) == 3
-        assert session.scalar(select(Team.invite_hash).where(Team.name == "acme")) != second
+    assert _members_of(session_factory, "acme") == 4
+
+
+def test_a_member_using_an_invite_again_leaves_it_for_someone_else(session_factory, dimitris,
+                                                                   maria, eve, acme):
+    code = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, acme)
+
+    assert _do(session_factory, team_service.join_team, maria.user.user_id, code) == "acme"
+    assert _do(session_factory, team_service.join_team, eve.user.user_id, code) == "acme"
+    assert _members_of(session_factory, "acme") == 3
+
+
+def test_a_cancelled_invite_admits_nobody(session_factory, dimitris, maria, eve, acme):
+    _do(session_factory, team_service.set_member, dimitris.user.user_id, acme, "maria",
+        can_invite=True)
+    hers = _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
+    his = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, acme)
+    ids = {invite.created_by: invite.invite_id for invite in
+           _do(session_factory, team_service.invites, dimitris.user.user_id, acme)
+           if invite.status == "PENDING"}
+
+    # She may cancel her own and not his; an admin may cancel anyone's.
+    with pytest.raises(NotFound):
+        _do(session_factory, team_service.cancel_invite, maria.user.user_id, acme,
+            ids["dimitris"])
+    _do(session_factory, team_service.cancel_invite, dimitris.user.user_id, acme, ids["maria"])
+    _do(session_factory, team_service.cancel_invite, dimitris.user.user_id, acme,
+        ids["dimitris"])
+
+    for code in (hers, his):
+        with pytest.raises(NotFound, match="not a team invite code"):
+            _do(session_factory, team_service.join_team, eve.user.user_id, code)
+
+
+def test_an_invite_expires_after_seven_days(session_factory, dimitris, eve, acme):
+    code = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, acme)
+    with session_factory.begin() as session:
+        # The fixture's invite, which maria used, is the other one.
+        invite = session.scalar(select(Invite).where(Invite.used_on.is_(None)))
+        assert as_utc(invite.expires_on) - as_utc(invite.created_on) == timedelta(days=7)
+        invite.expires_on = utc_now() - timedelta(seconds=1)
+
+    with pytest.raises(NotFound, match="not a team invite code"):
+        _do(session_factory, team_service.join_team, eve.user.user_id, code)
+    assert sorted(_statuses(session_factory, dimitris, acme)) == ["ACCEPTED", "EXPIRED"]
+
+
+def test_two_people_using_one_invite_at_once_let_exactly_one_in(session_factory, portable_engine,
+                                                                dimitris, acme):
+    if portable_engine.dialect.name == "sqlite":
+        pytest.skip("SQLite admits one writer at a time (ADR-0014), so the second never reads "
+                    "the invite pending; this race exists on PostgreSQL")
+    code = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, acme)
+    people = [_join(session_factory, name) for name in ("ann", "bob")]
+    both_read_it = threading.Barrier(2)
+    outcomes = []
+
+    def use(person):
+        try:
+            with session_factory.begin() as session:
+                # Both have seen the invite pending before either marks it used.
+                team_service.invited_to(session, code)
+                both_read_it.wait(timeout=5)
+                outcomes.append(team_service.join_team(session, person.user.user_id, code))
+        except NotFound:
+            outcomes.append("refused")
+
+    threads = [threading.Thread(target=use, args=(person,)) for person in people]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(outcomes) == ["acme", "refused"]
+    assert _members_of(session_factory, "acme") == 3
+
+
+def test_an_admin_sees_every_invite_and_an_inviter_only_their_own(session_factory, dimitris,
+                                                                  maria, eve, acme):
+    _do(session_factory, team_service.set_member, dimitris.user.user_id, acme, "maria",
+        can_invite=True)
+    used = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, acme)
+    _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
+    _do(session_factory, team_service.join_team, eve.user.user_id, used)
+
+    everything = _do(session_factory, team_service.invites, dimitris.user.user_id, acme)
+    hers = _do(session_factory, team_service.invites, maria.user.user_id, acme)
+
+    # The fixture's invite, which maria used, is among them.
+    assert sorted((invite.created_by, invite.status, invite.used_by)
+                  for invite in everything) == [("dimitris", "ACCEPTED", "eve"),
+                                                ("dimitris", "ACCEPTED", "maria"),
+                                                ("maria", "PENDING", None)]
+    assert [(invite.created_by, invite.status) for invite in hers] == [("maria", "PENDING")]
+    assert used not in repr(everything)
+    with pytest.raises(ValidationError, match="Only an admin"):
+        _do(session_factory, team_service.invites, eve.user.user_id, acme)
 
 
 @pytest.mark.parametrize("code", ["", "aistinv_", "aistinv_wrong", "not-a-code", None])

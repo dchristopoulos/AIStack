@@ -1886,18 +1886,13 @@ function settingsTab(team, admin) {
       admin ? 'As an admin you see every group, private ones included.' : 'These count the skills and groups you can see.')));
   return el('div', { class: 'settings' }, el('div', null,
     (admin || team.can_invite) && card('', 'Invite people',
-      'An invite link lets someone into this team, and makes them an account on this server if they have none. It is shown only once, when it is created.',
-      'Creating a new one makes the previous link stop working.',
-      btn('Create new invite code', { fk: 'invite', on: { click: () => confirmDialog({
-        title: 'Create a new invite code?',
-        submitLabel: 'Create new code',
-        danger: false,
-        lines: [`The previous invite code for ${team.name} stops working straight away. Anyone who has not joined yet will need the new one.`],
-        onSubmit: async () => {
-          const res = await api(`/api/teams/${enc(team.name)}/invite`, {});
-          return () => inviteCodeDialog(team, res.code);
-        },
+      'Each invite link lets one person into this team, and makes them an account on this server if they have none. It lasts seven days.',
+      'Make one per person. Cancel any you no longer need.',
+      btn('Create invite link', { fk: 'invite', on: { click: ev => run(ev.currentTarget, async () => {
+        const res = await api(`/api/teams/${enc(team.name)}/invite`, {});
+        return () => inviteCodeDialog(team, res.code);
       }) } }, 'key')),
+    (admin || team.can_invite) && invitesList(team, admin),
     card(' danger', 'Leave team',
       'You stop seeing this team\'s skills and groups. Skills you added to your library stay yours.',
       'To come back you need an invite code.',
@@ -1910,6 +1905,29 @@ function settingsTab(team, admin) {
           return () => { toast(`You left ${team.name}.`); go('#/library'); };
         },
       }) } }, 'logout'))), about);
+}
+
+// Invites are records (ADR-0022): pending until someone uses one, and each can be cancelled.
+const INVITE_STATUS = { PENDING: 'Pending', ACCEPTED: 'Accepted', CANCELLED: 'Cancelled', EXPIRED: 'Expired' };
+
+function invitesList(team, admin) {
+  const invites = team.invites || [];
+  if (!invites.length) return null;
+  return el('div', { class: 'tbl', role: 'table', 'aria-label': 'Invites', style: 'grid-template-columns:auto minmax(0, 1fr) minmax(0, 1fr) auto' },
+    el('div', { class: 'tr th-row', role: 'row' }, th('Status'), th('Made by'), th('When'), thActions()),
+    invites.map(i => el('div', { class: 'tr', role: 'row' },
+      td('row', el('span', { class: 'badge' + (i.status === 'PENDING' ? ' solid' : '') }, INVITE_STATUS[i.status])),
+      td('meta', el('span', { class: 't1 mono' }, i.created_by), el('span', { class: 't2' }, 'made ', when(i.created_on))),
+      td('meta', i.status === 'ACCEPTED' ? el('span', { class: 't1' }, 'Used by ', el('span', { class: 'mono' }, i.used_by))
+        : i.status === 'PENDING' ? el('span', { class: 't1' }, 'Expires ', when(i.expires_on))
+        : el('span', { class: 't2' }, i.status === 'EXPIRED' ? 'Nobody used it in time' : 'Nobody can use it')),
+      td('row end', i.status === 'PENDING' && (admin || i.created_by === state.user.username)
+        ? btn('Cancel', { class: 'btn ghost sm', fk: 'cancel-invite:' + i.id, 'aria-label': `Cancel the invite ${i.created_by} made`,
+            on: { click: ev => run(ev.currentTarget, async () => {
+              await api(`/api/teams/${enc(team.name)}/invites/${enc(i.id)}/cancel`, {});
+              return 'Cancelled. That link no longer lets anyone in.';
+            }) } }, 'x')
+        : null))));
 }
 
 function inviteCodeDialog(team, code) {
@@ -2156,9 +2174,15 @@ const DEMO_ROUTES = [
     DB.skills.forEach(s => { if (s.source && s.source.team === team) s.source = null; });
   }],
   [/^\/api\/teams\/([^/]+)\/invite$/, (b, team) => {
-    const t = dTeam(team); dAdmin(t);
+    const t = dTeam(team);
+    if (t.role !== 'ADMIN' && !t.can_invite) fail(`Only an admin of ${t.name}, or a member an admin lets invite, can do that.`);
     const bytes = crypto.getRandomValues(new Uint8Array(18));
+    (t.invites = t.invites || []).unshift({ id: String(Date.now()), created_by: dMe(), created_on: dNow(), expires_on: new Date(Date.now() + 7 * 86400e3).toISOString(), status: 'PENDING', used_by: null });
     return { code: 'aistinv_' + Array.from(bytes, x => x.toString(36).padStart(2, '0')).join('').slice(0, 32) };
+  }],
+  [/^\/api\/teams\/([^/]+)\/invites\/([^/]+)\/cancel$/, (b, team, id) => {
+    const i = (dTeam(team).invites || []).find(x => x.id === id) || fail('That invite is not there.');
+    i.status = 'CANCELLED';
   }],
   [/^\/api\/teams\/([^/]+)\/take$/, (b, team) => {
     const t = dTeam(team), ts = dTeamSkill(t, b.name);

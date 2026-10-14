@@ -66,7 +66,7 @@ async def invite(request: Request) -> Response:
 
 def _team_name(code: str) -> str:
     with get_session_factory().begin() as session:
-        return team_service.invited_to(session, code).name
+        return team_service.invited_team(session, code)
 
 
 def _page(title: str, status: int, body: str) -> Response:

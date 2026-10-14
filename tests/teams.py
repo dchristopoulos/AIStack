@@ -47,11 +47,10 @@ def enable(session: Session, machine_id: uuid.UUID, name: str):
 
 
 def make_team(session: Session, name: str, admin: uuid.UUID, *members: uuid.UUID) -> None:
-    """A team created by `admin`, with `members` joined through its invite code."""
+    """A team created by `admin`, with `members` each joined through an invite of their own."""
     team_service.create_team(session, admin, name)
-    code = team_service.new_invite_code(session, admin, name)
     for member in members:
-        team_service.join_team(session, member, code)
+        team_service.join_team(session, member, team_service.new_invite_code(session, admin, name))
 
 
 def machines_of_one_user(session: Session, count: int, username: str = "pusher") -> list:

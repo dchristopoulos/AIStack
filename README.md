@@ -179,7 +179,7 @@ MCP carries what is worth saying in a sentence. Anything that would need many ty
 | **Teams** | `share_skill` | Copy your latest revision into a team or a group |
 | | `list_teams` | The teams you are in, your role, and their size |
 | | `create_team` | Create a team with you as its admin |
-| | `invite_to_team` | Make a new invite link for a team you administer. It creates the account of someone new and joins them to the team; the previous link stops working |
+| | `invite_to_team` | Make an invite link for a team. It lets in one person, creating their account if they are new, and lasts seven days. Cancel one in the dashboard |
 | | `join_team` | Join a team with its invite code |
 | **Dashboard** | `open_dashboard` | Return a link that signs a browser in for you |
 

@@ -46,15 +46,17 @@ async def test_the_invite_page_names_the_team_and_what_to_paste(server_url):
     assert "default-src 'none'" in response.headers["content-security-policy"]
 
 
-async def test_a_wrong_or_replaced_code_reads_exactly_like_any_other_wrong_code(server_url):
+async def test_a_wrong_or_used_code_reads_exactly_like_any_other_wrong_code(server_url):
     dimitris = await join(server_url)
+    maria = await join(server_url, "maria", "laptop")
     await call(server_url, dimitris, "create_team", name="acme")
-    replaced = (await call(server_url, dimitris, "invite_to_team", team="acme"))
+    used = (await call(server_url, dimitris, "invite_to_team", team="acme"))
     current = (await call(server_url, dimitris, "invite_to_team", team="acme"))["code"]
+    await call(server_url, maria, "join_team", code=used["code"])
 
     answers = [await _get(f"{_base(server_url)}/invite/{code}")
                for code in ("aistinv_nothing", current[:-1], "anything")]
-    answers.append(await _get(replaced["link"]))
+    answers.append(await _get(used["link"]))
 
     assert {(answer.status_code, answer.text) for answer in answers} == {
         (404, answers[0].text)}

@@ -61,6 +61,7 @@ No FastAPI and no frontend framework: the dashboard is one HTML file with its ow
 - **ADR-0019 — Invites are the way in.** A team invite link creates the account, registers the computer and joins the team in one paste. Sign-up is invite-only; the server's own code is for the person running it. An admin can let chosen members invite. The `everyone` team is removed; existing ones become ordinary teams.
 - **ADR-0020 — AIStack runs on your own computers, and you choose where your Library lives.** Server mode as today, the only mode for teams; and a local mode where each computer runs AIStack over stdio and shares only the storage. A person picks a computer that stays on, a free PostgreSQL (Neon or Supabase), or a private GitHub repository, and setup does the work wherever a tool already can. Google Drive and a SQLite file in a synced folder are rejected.
 - **ADR-0021 — One connected agent syncs every skills folder on its computer.** The server tracks folders, not callers. The `sync-aistack` skill finds the folders the computer's agents read and syncs each, so Codex on a computer where Claude Code is connected needs no connection of its own. A folder's first sync is reported, and the agent asks once whether both folders should hold the same skills. Setup runs from Claude Code or Codex.
+- **ADR-0022 — An invite is a record.** Each invite is its own row: one use, pending until accepted, seven days, and cancellable by its maker or an admin. Making another cancels nothing.
 
 ## 4. What is built
 
@@ -307,7 +308,8 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/teams` | `name` | `name`. The caller is the new team's admin |
 | `POST /api/teams/join` | `code` (a team's invite code) | `team` |
 | `POST /api/teams/{team}/leave` | `{}` | |
-| `POST /api/teams/{team}/invite` | `{}` | `code`, shown this once. The previous code stops working. Admin only |
+| `POST /api/teams/{team}/invite` | `{}` | `code`, shown this once: a new invite, one use, seven days. Admins and members who can invite (ADR-0022) |
+| `POST /api/teams/{team}/invites/{invite_id}/cancel` | `{}` | `ok`. Its maker, or an admin |
 | `POST /api/teams/{team}/take` | `name` | Copies the team's latest revision of that skill into the Library |
 | `POST /api/teams/{team}/members/{username}` | `role` (`ADMIN` or `MEMBER`) and/or `sees_all_groups` (true or false) | Admin only |
 | `POST /api/teams/{team}/members/{username}/remove` | `{}` | Admin only |
@@ -411,8 +413,18 @@ TEAM                                           -- ADR-0015
   name          VARCHAR(64)  NOT NULL UNIQUE   -- a personal team carries its user's name
   kind          ENUM(PERSONAL, SHARED) NOT NULL  -- code asks the kind, never the name
   created_by    UUID FK → USER NULL            -- null only for a retired server team (0005)
-  invite_hash   VARCHAR(64)  NULL UNIQUE       -- sha256 of the invite code; the join lookup
   created_on    TIMESTAMPTZ  NOT NULL
+
+INVITE                                         -- ADR-0022: one use, seven days
+  invite_id     UUID PK
+  team_id       UUID FK → TEAM ON DELETE CASCADE NOT NULL
+  code_hash     VARCHAR(64)  NOT NULL UNIQUE   -- sha256 of the code; the join lookup
+  created_by    UUID FK → USER NOT NULL
+  created_on    TIMESTAMPTZ  NOT NULL
+  expires_on    TIMESTAMPTZ  NOT NULL          -- read, not swept
+  used_by       UUID FK → USER NULL            -- set by a conditional update: one winner
+  used_on       TIMESTAMPTZ  NULL
+  cancelled_on  TIMESTAMPTZ  NULL
 
 TEAM_MEMBER
   team_member_id UUID PK
@@ -521,7 +533,7 @@ Trusted team, honestly stated:
 - A machine updates to the latest revision of its user's own skill without confirmation. Only that user's pushes, and team revisions they chose to take, create such a revision. A teammate's change never arrives unasked: it is an offer that names who pushed it (ADR-0015).
 - Any member may share over a team's skill. The control is visibility, not restriction: the revision carries their name, and nobody receives it without accepting it.
 - Machine tokens: sha256-hashed at rest, revocable by row deletion, never logged.
-- The server's invite code is a static long-lived shared secret: rotate by changing the env var and restarting; share it over something better than a group chat. A team's invite code is stored hashed and replaced whenever an admin asks for a new one. Since ADR-0019 it also creates accounts, so a leaked one is replaced, not ignored. Expiry and single-use codes are not built.
+- The server's invite code is a static long-lived shared secret: rotate by changing the env var and restarting; share it over something better than a group chat. A team's invite is a row with a hashed code (ADR-0022): it admits one person, expires after seven days, and can be cancelled on its own. Since ADR-0019 it also creates accounts, which the expiry bounds even when a link lands in a proxy's log.
 - The dashboard has no passwords. A sign-in link is a credential for five minutes, the session cookie for eight hours, and both die with the process because the signing key is in memory.
 
 Deferred deliberately: audit trail, signing, approval workflows, per-skill push permissions.

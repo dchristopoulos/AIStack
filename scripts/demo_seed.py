@@ -109,8 +109,8 @@ async def seed(base_url: str, invite_code: str) -> dict[str, str]:
 
     # A company team, with a group per discipline and a narrower one inside it.
     await dimitris.page("/teams", name="aistack")
-    code = (await dimitris.page("/teams/aistack/invite"))["code"]
     for person in (maria, alex):
+        code = (await dimitris.page("/teams/aistack/invite"))["code"]
         await person.page("/teams/join", code=code)
     await dimitris.page("/teams/aistack/groups", name="developers")
     await dimitris.page("/teams/aistack/groups", name="backend", parent="developers")

@@ -276,9 +276,7 @@ async def test_a_team_is_created_and_joined_with_its_invite_code(sign_in):
     await expect(page.get_by_role("heading", name="design", level=1)).to_be_visible()
 
     await page.get_by_role("tab", name="Settings").click()
-    await page.get_by_role("button", name="Create new invite code").click()
-    # It asks first: a new code stops the previous one working.
-    await page.get_by_role("dialog").get_by_role("button", name="Create new code").click()
+    await page.get_by_role("button", name="Create invite link").click()
     code = await page.get_by_role("dialog").get_by_label("Invite code").input_value()
     assert code.startswith("aistinv_") and len(code) > 20
     link = await page.get_by_role("dialog").get_by_label("Invite link").input_value()
@@ -314,11 +312,28 @@ async def test_an_admin_lets_a_member_invite_and_the_member_can(sign_in):
     maria = await sign_in("maria")
     await _open_team(maria, "aistack")
     await maria.page.get_by_role("tab", name="Settings").click()
-    await maria.page.get_by_role("button", name="Create new invite code").click()
-    await maria.page.get_by_role("dialog").get_by_role("button", name="Create new code").click()
+    await maria.page.get_by_role("button", name="Create invite link").click()
     link = await maria.page.get_by_role("dialog").get_by_label("Invite link").input_value()
     assert "/invite/aistinv_" in link
     assert maria.console_errors == []
+
+
+async def test_an_invite_is_listed_as_pending_and_cancelled_from_the_list(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    await _open_team(dimitris, "aistack")
+    await page.get_by_role("tab", name="Settings").click()
+    await page.get_by_role("button", name="Create invite link").click()
+    await page.get_by_role("dialog").get_by_role("button", name="Done").click()
+    invites = page.get_by_role("table", name="Invites")
+    await expect(invites.get_by_text("Pending")).to_be_visible()
+
+    await invites.get_by_role("button", name="Cancel the invite dimitris made").click()
+
+    await expect(invites.get_by_text("Cancelled")).to_be_visible()
+    assert [invite["status"] for invite in _team(await dimitris.state(), "aistack")["invites"]
+            if invite["created_by"] == "dimitris"][0] == "CANCELLED"
+    assert dimitris.console_errors == []
 
 
 async def test_signing_out_closes_the_dashboard_in_that_browser(sign_in):
