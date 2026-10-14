@@ -15,17 +15,17 @@ from aistack.db.models.user import User
 from aistack.services import onboarding_service
 
 
-def local_machine(session: Session, machine_id: uuid.UUID | None, username: str,
+def local_machine(session: Session, machine_id: uuid.UUID, username: str,
                   machine_name: str, os: str) -> Machine:
-    """The machine this computer is, registering it, and on a new database its user, if needed.
+    """The machine with the id this computer claimed, registering it, and on a new database
+    its user, if this is its first start.
 
     Registering goes through `join` and `add_machine`, so a local Library holds exactly what a
     server's would. The machine token they mint is dropped: nothing in local mode reads one.
     """
-    if machine_id is not None:
-        machine = session.get(Machine, machine_id)
-        if machine is not None:
-            return machine
+    machine = session.get(Machine, machine_id)
+    if machine is not None:
+        return machine
 
     users = session.scalars(select(User).limit(2)).all()
     if len(users) > 1:
@@ -35,10 +35,12 @@ def local_machine(session: Session, machine_id: uuid.UUID | None, username: str,
             "server instead, or point AISTACK_DATABASE_URL at a database of your own."
         )
     if not users:
-        return onboarding_service.join(session, username, machine_name, os).machine
+        return onboarding_service.join(session, username, machine_name, os,
+                                       machine_id=machine_id).machine
     user_id = users[0].user_id
     return onboarding_service.add_machine(session, user_id,
-                                          _free_name(session, user_id, machine_name), os).machine
+                                          _free_name(session, user_id, machine_name), os,
+                                          machine_id=machine_id).machine
 
 
 def _free_name(session: Session, user_id: uuid.UUID, wanted: str) -> str:

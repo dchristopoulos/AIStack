@@ -4,6 +4,7 @@ import os
 import stat
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -346,3 +347,34 @@ async def test_a_breaking_upgrade_elsewhere_is_explained_through_the_agent(compu
     async with computer("laptop") as (laptop, _):
         with pytest.raises(ToolError, match="updated by AIStack 9.9.0 on another computer"):
             await _call(laptop, "sync")
+
+
+def test_processes_starting_at_once_on_a_new_computer_claim_one_machine_id(tmp_path):
+    """Two agent sessions opened together on a fresh computer must not become two machines."""
+    id_file = tmp_path / "machine-id"
+    starting = threading.Barrier(8)
+    claimed = []
+
+    def start():
+        starting.wait()
+        claimed.append(application_context._claimed_machine_id(id_file))
+
+    threads = [threading.Thread(target=start) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(set(claimed)) == 1
+    assert id_file.read_text().strip() == str(claimed[0])
+    assert [path.name for path in tmp_path.iterdir()] == ["machine-id"]
+
+
+async def test_two_computers_named_alike_with_ids_claimed_apart_stay_two(computer):
+    async with computer("laptop"):
+        first = application_context.get_local_principal()
+    async with computer("desktop"):
+        second = application_context.get_local_principal()
+
+    assert first.machine_id != second.machine_id
+    assert first.user_id == second.user_id
