@@ -22,7 +22,9 @@ htmlcov/
 !.env.example
 
 # Agent tooling
-.claude/
+# Claude Code's local state, except the project skills it shares with .agents/skills.
+.claude/*
+!.claude/skills/
 .codex/
 .overnight/
 

@@ -49,3 +49,10 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
 > _Contradicts ADR-0007 (event-sourced orders), but worth reopening because…_
+
+## An ADR's life in this repo
+
+1. **Proposed.** The next free number, `Status: proposed, <date>.`, and a commit "Propose …" on its own branch, so the owner reviews the decision before any code depends on it. Add the one-paragraph summary to `docs/DESIGN.md` §3 with `(proposed)` after the number.
+2. **Accepted** only by the owner, in a separate commit "Accept ADR-NNNN: <decision>" that changes the status line and drops `(proposed)` from DESIGN. An agent never marks its own ADR accepted.
+3. **Built.** The status line says where (`Built under #64.`).
+4. **Amended or reversed** by a newer ADR, never by editing an accepted one's decisions: the older one's status line gains `Amended by ADR-NNNN: <what changed>.`
