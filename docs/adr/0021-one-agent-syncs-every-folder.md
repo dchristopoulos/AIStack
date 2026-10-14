@@ -1,6 +1,6 @@
 # One connected agent syncs every skills folder on its computer
 
-Status: proposed, 2026-10-14. Amends ADR-0018, which planned a separate "add Codex to aistack" step per agent.
+Status: accepted, 2026-10-14. Amends ADR-0018, which planned a separate "add Codex to aistack" step per agent.
 
 ADR-0018 made a harness a skills folder: `claude_code` (`~/.claude/skills`) and `agents` (`~/.agents/skills`, read by Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode and Amp). It still pictured each agent connecting to AIStack on its own, and a second agent on a computer being added by a command that copied the first one's placements. That is a step the person should not have to know about.
 
