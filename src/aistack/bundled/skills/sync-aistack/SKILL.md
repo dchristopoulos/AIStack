@@ -7,14 +7,33 @@ description: Sync this machine's skills with the user's own skills on AIStack. U
 
 Bring this machine's skills in line with the Library, the user's private space on the AIStack server. It mirrors their computers and is the only place this machine installs from. Sync when work starts, the way you would `git pull`.
 
-## 1. List what is on disk
+## 1. Find the skills folders on this computer
 
-Get the sha256 of every file under the global skills directory from a shell. Do not read the files yourself; you only need their digests.
+AIStack keeps two skills folders in line, and every tool call names one of them as its `harness`:
+
+| `harness` | macOS and Linux | Windows | read by |
+|---|---|---|---|
+| `claude_code` | `~/.claude/skills` | `$HOME\.claude\skills` | Claude Code |
+| `agents` | `~/.agents/skills` | `$HOME\.agents\skills` | Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode, Amp |
+
+See which agents this computer has:
+
+```bash
+ls -d ~/.claude ~/.agents/skills ~/.codex ~/.gemini ~/.kimi-code ~/.cursor ~/.copilot ~/.config/opencode ~/.config/amp 2>/dev/null
+```
+
+On Windows, run `Test-Path` on the same paths under `$HOME`.
+
+Sync `claude_code` when `~/.claude` exists. Sync `agents` when `~/.agents/skills` exists or any of the other paths does. Do steps 2 to 4 for each of those folders in turn, `claude_code` first, then step 5 once, and pass that folder's `harness` to every `sync`, `get_skill`, `push_skill`, and `disable_skill` call. Do not ask the user which folders to sync, and say nothing about a folder no agent here reads.
+
+## 2. List what is on disk
+
+Get the sha256 of every file in the folder (`<folder>` below) from a shell. Do not read the files yourself; you only need their digests.
 
 macOS and Linux:
 
 ```bash
-cd ~/.claude/skills 2>/dev/null && find -L . -mindepth 2 -type f \
+cd <folder> 2>/dev/null && find -L . -mindepth 2 -type f \
   ! -name .DS_Store ! -path './.*' ! -path './synced/*' \
   -exec shasum -a 256 {} +
 ```
@@ -24,7 +43,7 @@ If `shasum` is missing, use `sha256sum` with the same arguments.
 Windows (PowerShell):
 
 ```powershell
-Get-ChildItem "$HOME\.claude\skills" -Recurse -File |
+Get-ChildItem "<folder>" -Recurse -File |
   Where-Object { $_.FullName -notmatch '\\(synced|\.[^\\]*)\\' } |
   Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $($_.Path)" }
 ```
@@ -33,29 +52,30 @@ Each line is a digest and a path. The first folder in the path is the skill; the
 
 Leave out the `synced` folder (Claude Code manages it for claude.ai skills) and any folder starting with a dot. No output means no local skills, which is a valid answer.
 
-## 2. Call `sync`
+## 3. Call `sync`
 
-Pass every skill, including ones that did not come from AIStack:
+Pass every skill, including ones that did not come from AIStack, and the folder's harness:
 
 ```json
-{"local": {"wizard": {"SKILL.md": "<sha256>", "scripts/run.sh": "<sha256>"}}}
+{"local": {"wizard": {"SKILL.md": "<sha256>", "scripts/run.sh": "<sha256>"}}, "harness": "claude_code"}
 ```
 
-With no local skills, pass `{"local": {}}`. Copy digests exactly as the shell printed them.
+With no local skills, pass `{"local": {}}` and the harness. Copy digests exactly as the shell printed them.
 
-## 3. Act on the report
+## 4. Act on the report
 
-Work through the fields in this order.
+Work through the fields in this order, passing the same harness to every tool you call.
 
-1. **`sync_skill_url`**: usually `null`. When it is a URL, this file is missing or differs from the server's. Download it without asking, then carry on: `curl -sS -o ~/.claude/skills/sync-aistack/SKILL.md "<sync_skill_url>"`. It is AIStack's own file, so nothing of the user's is lost.
-2. **`install`** and **`update`**: call `get_skill` with each entry's `name` and follow its install steps. Do not ask first. This machine already chose these skills, and the local copy is missing or is an unmodified older revision, so nothing can be lost.
+1. **`sync_skill_url`**: usually `null`. When it is a URL, this folder's copy of this skill is missing or differs from the server's. Download it only if `<folder>` is the folder this very file, `sync-aistack/SKILL.md`, was loaded from: `curl -sS -o <folder>/sync-aistack/SKILL.md "<sync_skill_url>"`, without asking. It is AIStack's own file, so nothing of the user's is lost. For any other folder, ignore the URL and never create `sync-aistack` there: the agents reading that folder are not connected to AIStack, and the skill would tell them to sync. Step 5 never copies it either.
+2. **`install`** and **`update`**: call `get_skill` with each entry's `name` and follow its install steps, into the `folder` it returns. Do not ask first. This folder already chose these skills, and the local copy is missing or is an unmodified older revision, so nothing can be lost.
 3. **`backup`**: names of skills on disk that are not yet in the Library. For each, call `push_skill` with the name and follow its upload steps. Do not ask first. The Library is private, so a backup shares nothing with anyone. (An older server called this field `orphans` and asked before pushing; that rule is retired.)
 4. **`ask`**: sync found something it will not decide for the user. Put each entry to them as described under "Asking" and act only on their answer.
 5. **`team_updates`**: a team holds a newer revision of a skill the user took from it or shared with it. Each is an offer, described under "Team updates". Ask every time, including for an offer the user declined on an earlier sync.
+6. **`first_sync`**: true only the first time this folder syncs on this computer. Note it; it is used once both folders are done (step 5).
 
 **`up_to_date`** is a count of enabled skills that already match. It needs no action.
 
-Sync itself changes nothing on the server and deletes nothing. Only the calls you make afterwards do.
+Sync changes no decision and deletes nothing. Only the calls you make afterwards do.
 
 ### Asking
 
@@ -105,6 +125,10 @@ If the same skill is also in `ask` with `local` `unknown`, settle that entry fir
 
 To share a change the other way, the user asks for it ("share wizard with backend"), which is `share_skill`. Sync never shares.
 
-## 4. Tell the user what happened
+## 5. Make the two folders match, once
 
-One short summary: what was installed, what was updated, what was backed up, what was asked and decided, and which team updates were accepted or left. For each update, say which revision it moved from and to, and who pushed the new one; a skill is instructions to an agent, so the user should know whose instructions just changed. If nothing needed doing, say that everything is up to date and how many skills that covers.
+Only when you synced both folders and at least one reported `first_sync`. Take the skills from the Library in each folder: its skill folders on disk after this sync, less anything still under `ask`, less `sync-aistack`. If one folder has skills the other lacks, ask once, naming them: "Use the same skills in Claude Code and in Codex and the other agents? That adds <names> to Claude Code and <names> to the agents folder." Yes: `get_skill` each missing skill with the harness of the folder that lacks it, and install. No: nothing, and it is not asked again, because `first_sync` is true only once.
+
+## 6. Tell the user what happened
+
+One short summary per folder, naming the agents that read it: what was installed, what was updated, what was backed up, what was asked and decided, and which team updates were accepted or left. For each update, say which revision it moved from and to, and who pushed the new one; a skill is instructions to an agent, so the user should know whose instructions just changed. If nothing needed doing, say that everything is up to date and how many skills that covers.

@@ -1,6 +1,6 @@
 # One account for every coding agent on a computer, Codex first
 
-Status: accepted, 2026-10-14. Revised before acceptance with what each agent actually reads ([docs/research/coding-agent-config-layout.md](../research/coding-agent-config-layout.md)). Built in the steps #62 lists; the navigation in step 1 is merged.
+Status: accepted, 2026-10-14; amended by ADR-0021 (one connected agent syncs every folder, no "add Codex" step). Revised before acceptance with what each agent actually reads ([docs/research/coding-agent-config-layout.md](../research/coding-agent-config-layout.md)). Built in the steps #62 lists; the navigation in step 1 is merged.
 
 AIStack installs skills for Claude Code only. A person who also uses Codex keeps a second copy of the same skills by hand, which is the drift AIStack exists to end. Codex reads the same `SKILL.md` format (a `name` and a `description`) from `~/.agents/skills`, and so do Gemini CLI, Kimi Code, opencode, Cursor, GitHub Copilot CLI and Amp: that folder is the shared Agent Skills convention. Claude Code does not read it. Two folders therefore reach nearly every coding agent in use.
 

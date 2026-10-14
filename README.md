@@ -113,14 +113,16 @@ Sync itself only reports, and the agent acts through other tools; the one thing 
 
 ## Connecting a computer
 
-Paste this into Claude Code, with your server's address and the invite code its operator gave you:
+Paste this into Claude Code or Codex, with your server's address and the invite code its operator gave you:
 
 ```text
 Set up AIStack: fetch https://aistack.example.com/setup and follow it.
 Invite code: <the server's invite code>. Call me <your name>.
 ```
 
-The agent registers this computer, installs the `sync-aistack` skill, and connects Claude Code to the server. Restart Claude Code once when it says so. That restart is the only one: Claude Code reads its server list at startup, and skills installed afterwards load live. It also offers to sync at the start of every session: a `SessionStart` hook that only reminds the agent to run `sync-aistack`, so your computers stay current without anyone asking.
+The agent registers this computer, installs the `sync-aistack` skill, and connects itself to the server. Restart it once when it says so. That restart is the only one: the agent reads its server list at startup, and skills installed afterwards load live.
+
+One connected agent is enough for the whole computer. Sync keeps Claude Code's skills folder and the shared `~/.agents/skills` folder in line, and that shared folder is what Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode, and Amp read. The first time, it asks once whether both folders should hold the same skills ([ADR-0021](docs/adr/0021-one-agent-syncs-every-folder.md)). Setup also offers to sync at the start of every session: a `SessionStart` hook that only reminds the agent to run `sync-aistack`, so your computers stay current without anyone asking.
 
 For a second computer, say "add my other computer to aistack" on one that is already connected. It returns one command to paste there. No invite code is involved.
 
@@ -267,11 +269,11 @@ For one developer on one harness, Claude Code's own sync is the simpler choice, 
 
 ## Status and roadmap
 
-Built: skills for Claude Code, a private space per user, teams with invite codes, nested groups that are open or private, share and take, team updates as offers, schema migrations, and the dashboard.
+Built: skills for Claude Code, Codex, and every agent that reads `~/.agents/skills`, a private space per user, teams with invite codes, nested groups that are open or private, share and take, team updates as offers, schema migrations, and the dashboard.
 
 Not built, in the order they are likely to arrive:
 
-1. **A second harness**, Codex first. The skill format is shared, so the work is mostly a target directory.
+1. **Every agent on a computer on the dashboard**: a page per skills folder, and agents in the Add to… dialog.
 2. **Rules**, the second resource type, projected into `CLAUDE.md`, `AGENTS.md`, and `.cursor/rules/`.
 3. **Background sync.** Today nothing happens until you say "sync aistack".
 4. **More on the dashboard**: server administration as buttons, version pinning, deleting a single revision.
@@ -281,7 +283,8 @@ Deliberately left out ([ADR-0015](docs/adr/0015-teams-and-groups.md)): automatic
 
 Known limits today:
 
-- Claude Code only, and its global skills directory only.
+- Two skills folders: Claude Code's and the shared `~/.agents/skills`. Project folders are not managed.
+- "Add my other computer" returns a Claude Code command. A second computer where Codex is the only agent is not connected that way yet.
 - No version pinning: a machine always gets the latest revision of your own copy.
 - One machine belongs to one server.
 - Restarting the server signs everyone out of the dashboard, because the signing key lives in memory. Machines stay connected.
@@ -316,6 +319,9 @@ Decisions are written down before code, with the reasoning kept.
   - [0015 A personal space per user, teams to share into, and groups inside a team](docs/adr/0015-teams-and-groups.md)
   - [0016 Schema changes are Alembic migrations, applied at startup in one transaction](docs/adr/0016-alembic-migrations-in-one-transaction.md)
   - [0017 The dashboard is served by the server, and a link from chat signs you in](docs/adr/0017-dashboard-in-the-same-process.md)
+  - [0018 One account for every coding agent on a computer](docs/adr/0018-one-account-for-every-coding-agent.md)
+  - [0019 Invites are the way in](docs/adr/0019-invites-are-the-way-in.md)
+  - [0021 One connected agent syncs every skills folder on its computer](docs/adr/0021-one-agent-syncs-every-folder.md)
 
 ## Stack
 

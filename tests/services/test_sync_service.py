@@ -1,3 +1,4 @@
+from dataclasses import replace
 import hashlib
 import unicodedata
 from types import SimpleNamespace
@@ -253,7 +254,8 @@ def test_sync_is_not_discovery(session_factory, dimitris, maria):
     report = _sync(session_factory, maria, {})
 
     assert report == sync_service.SyncReport(install=(), update=(), ask=(), backup=(), team_updates=(),
-                                             up_to_date=0, refresh_sync_skill=True)
+                                             up_to_date=0, refresh_sync_skill=True,
+                                             first_sync=True)
 
 
 def test_sync_is_scoped_to_the_calling_machine(session_factory, dimitris, maria):
@@ -361,7 +363,7 @@ def test_skipping_means_being_asked_again(session_factory, dimitris):
     first = _sync(session_factory, dimitris, EDITED)
     second = _sync(session_factory, dimitris, EDITED)
 
-    assert first == second
+    assert replace(first, first_sync=False) == second
     assert len(second.ask) == 1
 
 
@@ -463,7 +465,8 @@ def test_the_three_absent_states_produce_no_report_at_all(session_factory, dimit
     report = _sync(session_factory, dimitris, {})
 
     assert report == sync_service.SyncReport(install=(), update=(), ask=(), backup=(), team_updates=(),
-                                             up_to_date=0, refresh_sync_skill=True)
+                                             up_to_date=0, refresh_sync_skill=True,
+                                             first_sync=True)
 
 
 # --- backup ---------------------------------------------------------------------------------

@@ -5,6 +5,7 @@ from typing import get_args
 import pytest
 from sqlalchemy import select
 
+from aistack.bundled import SYNC_SKILL_NAME
 from aistack.commons.exceptions import NotFound, ValidationError
 from aistack.db.engine import build_session_factory
 from aistack.db.models.harness import Harness
@@ -109,6 +110,7 @@ def test_naming_no_harness_means_claude_code(session_factory, dimitris):
     _push(session_factory, dimitris)
 
     assert _decisions(session_factory) == [(Harness.CLAUDE_CODE, True)]
+    _sync(session_factory, dimitris, {})
     assert _sync(session_factory, dimitris, {}) == _sync(session_factory, dimitris, {},
                                                          CLAUDE_CODE)
 
@@ -206,6 +208,23 @@ def test_sync_records_the_harness_and_when_it_last_synced(session_factory, dimit
     assert set(first) == {Harness.AGENTS}
     assert set(second) == {Harness.AGENTS, Harness.CLAUDE_CODE}
     assert second[Harness.AGENTS] > first[Harness.AGENTS]
+
+
+def test_a_folders_first_sync_on_a_machine_is_reported_once(session_factory, dimitris):
+    """It is when the agent offers to put the other folder's skills here too (ADR-0021)."""
+    assert _sync(session_factory, dimitris, {}).first_sync is True
+    assert _sync(session_factory, dimitris, {}).first_sync is False
+    assert _sync(session_factory, dimitris, {}, AGENTS).first_sync is True
+    assert _sync(session_factory, dimitris, {}, AGENTS).first_sync is False
+
+
+def test_the_sync_skill_goes_into_the_agents_folder_only_where_setup_put_it(session_factory,
+                                                                         dimitris):
+    """There it would tell an agent with no connection to AIStack to sync (ADR-0021)."""
+    assert _sync(session_factory, dimitris, {}).refresh_sync_skill is True
+    assert _sync(session_factory, dimitris, {}, AGENTS).refresh_sync_skill is False
+    stale = {SYNC_SKILL_NAME: local_digests(SYNC_SKILL_NAME)}
+    assert _sync(session_factory, dimitris, stale, AGENTS).refresh_sync_skill is True
 
 
 def _state(session_factory, joined):
