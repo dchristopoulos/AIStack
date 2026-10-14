@@ -34,6 +34,8 @@
   --scrim: rgba(0, 0, 0, .4);
   --shadow-menu: 0 0 0 1px rgba(0, 0, 0, .03), 0 2px 4px rgba(0, 0, 0, .04), 0 12px 28px -6px rgba(0, 0, 0, .14);
   --shadow-lg: 0 0 0 1px rgba(0, 0, 0, .03), 0 2px 4px rgba(0, 0, 0, .04), 0 16px 32px -8px rgba(0, 0, 0, .12), 0 40px 80px -16px rgba(0, 0, 0, .2);
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235e5e5e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
   --r-sm: 6px;
   --r: 8px;
   --top: 56px;
@@ -71,6 +73,8 @@
     --scrim: rgba(0, 0, 0, .72);
     --shadow-menu: 0 0 0 1px rgba(255, 255, 255, .04), 0 12px 28px -6px rgba(0, 0, 0, .9);
     --shadow-lg: 0 0 0 1px rgba(255, 255, 255, .04), 0 24px 64px -8px rgba(0, 0, 0, 1);
+    --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1a1' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000000' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
   }
 }
 
@@ -232,8 +236,24 @@ h1 { font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -.04em
 .input:hover { border-color: var(--faint); }
 .input:focus-visible { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 14%, transparent); }
 .input[type="search"]::-webkit-search-cancel-button { display: none; }
-select.input { padding-right: 8px; }
-select.input.compact { width: auto; height: 28px; padding-left: 8px; font-size: 13px; }
+select.input {
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+  padding-right: 32px; text-overflow: ellipsis;
+  background-image: var(--chevron); background-repeat: no-repeat;
+  background-position: right 10px center; background-size: 12px;
+}
+select.input.compact { width: auto; height: 28px; padding-left: 8px; padding-right: 26px; background-position: right 8px center; font-size: 13px; }
+input[type="radio"], input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: none;
+  width: 16px; height: 16px; margin: 0;
+  border: 1px solid var(--track); background: var(--surface) center / 12px no-repeat;
+  cursor: pointer; transition: border-color .12s, background-color .12s;
+}
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"] { border-radius: 4px; }
+input[type="radio"]:hover, input[type="checkbox"]:hover { border-color: var(--text); }
+input[type="radio"]:checked { border-color: var(--text); background-image: radial-gradient(circle, var(--text) 0 3.5px, transparent 4px); }
+input[type="checkbox"]:checked { border-color: var(--text); background-color: var(--text); background-image: var(--tick); }
 .search { position: relative; flex: 0 1 300px; min-width: 180px; }
 .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--faint); pointer-events: none; }
 .search .input { padding-left: 32px; padding-right: 36px; }
@@ -256,16 +276,19 @@ select.input.compact { width: auto; height: 28px; padding-left: 8px; font-size: 
 .switch[aria-checked="true"] { color: var(--text); }
 .switch[aria-checked="true"] .track { background: var(--text); }
 .switch[aria-checked="true"] .track::after { transform: translateX(12px); background: var(--inverse); }
-.switch:disabled .track { opacity: .6; }
+.switch:disabled { opacity: 1; }
+.switch:disabled > span { opacity: .5; }
 .switch .mono { font-size: 12.5px; }
 [data-tip]:hover::after, [data-tip]:focus-visible::after {
   content: attr(data-tip);
-  position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 20;
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20;
   width: max-content; max-width: 260px; padding: 6px 10px;
   border-radius: var(--r-sm); background: var(--text); color: var(--inverse);
   font: 400 12px/1.4 var(--font); white-space: normal; text-align: left;
   box-shadow: var(--shadow-menu); pointer-events: none;
 }
+/* Near the bottom of the window there is no room below, and the bars are far away. */
+[data-tip].tip-up::after { top: auto; bottom: calc(100% + 6px); }
 
 .badge {
   display: inline-flex; align-items: center; gap: 5px;
@@ -289,7 +312,7 @@ select.input.compact { width: auto; height: 28px; padding-left: 8px; font-size: 
 
 /* ---------- tables ---------- */
 .tbl { display: grid; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
-.tbl.mine { grid-template-columns: minmax(220px, 1fr) fit-content(200px) auto auto fit-content(280px) auto; }
+.tbl.mine { grid-template-columns: minmax(260px, 1fr) fit-content(180px) auto fit-content(280px) auto; }
 .tbl.tree { grid-template-columns: minmax(0, 1fr) auto auto auto; }
 .tbl.groups { --gx: 8px; }
 .tr {
@@ -331,7 +354,8 @@ select.input.compact { width: auto; height: 28px; padding-left: 8px; font-size: 
 .name { font: 600 13.5px/1.5 var(--mono); letter-spacing: -.01em; overflow-wrap: anywhere; }
 .name-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .t1 { color: var(--text); overflow-wrap: anywhere; }
-.t1.rev { display: inline-flex; align-items: center; gap: 6px; }
+.t1.rev { display: inline-flex; align-items: center; gap: 8px; }
+.t1.rev .mono { color: var(--muted); }
 .t2 { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 a.link { text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
 a.link:hover { text-decoration-color: var(--text); }
@@ -406,6 +430,7 @@ a.link:hover { text-decoration-color: var(--text); }
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
   box-shadow: var(--shadow-menu);
 }
+.menu.up { top: auto; bottom: calc(100% + 4px); }
 .menu-item {
   display: flex; align-items: center; gap: 10px; width: 100%;
   height: 32px; padding: 0 8px; border: 0; border-radius: 5px;
@@ -417,10 +442,16 @@ a.link:hover { text-decoration-color: var(--text); }
 .menu-item.danger:hover, .menu-item.danger:focus-visible { background: var(--danger-soft); }
 
 /* ---------- cards (settings) ---------- */
-.card { max-width: 760px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
+.settings { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (min-width: 1180px) { .settings { grid-template-columns: minmax(0, 1fr) 320px; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
 .card + .card { margin-top: 24px; }
 .card-body { padding: 24px; }
 .card h2 { font-size: 18px; font-weight: 600; letter-spacing: -.02em; }
+.card h2.small { font-size: 14px; letter-spacing: -.01em; }
+.facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 16px; margin: 16px 0 0; font-size: 13px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
 .card-body p { color: var(--muted); margin-top: 8px; max-width: 600px; }
 .card-foot {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px;
@@ -463,10 +494,9 @@ dialog.dlg::backdrop { background: var(--scrim); }
 }
 .picker-opt:hover, .picker-opt:has(input:checked) { background-color: var(--surface-2); }
 .picker-opt span { overflow-wrap: anywhere; min-width: 0; }
-.picker-opt input { flex: none; margin: 0; accent-color: var(--text); width: 15px; height: 15px; }
 .picker-opt svg { color: var(--muted); }
 .check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
-.check input { margin: 3px 0 0; accent-color: var(--text); width: 15px; height: 15px; flex: none; }
+.check input { margin-top: 2px; }
 .check small { display: block; color: var(--muted); font-size: 12.5px; }
 .code-box { display: flex; gap: 8px; }
 .code-box .input, .input.mono { font-family: var(--mono); font-size: 13px; }
@@ -542,7 +572,7 @@ dialog.dlg::backdrop { background: var(--scrim); }
   .tbl > .th-row { display: none; }
   .tr:not(.grp):not(.hint-row):not(.th-row) {
     display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px;
-    padding: 14px 16px 12px calc(16px + var(--d) * var(--step));
+    padding: 12px 16px 10px calc(16px + var(--d) * var(--step));
     background-image: repeating-linear-gradient(90deg, var(--border-strong) 0 1px, transparent 1px var(--step));
     background-repeat: no-repeat;
     background-size: max(0px, calc(var(--d) * var(--step) - var(--step) + 1px)) 100%;
@@ -552,10 +582,22 @@ dialog.dlg::backdrop { background: var(--scrim); }
   .tr > .td { flex: 0 1 auto; padding: 0; }
   .tr > .c-main { background: none; }
   .tr > .c-main, .td.wide { flex: 1 1 100%; }
-  .tr > .c-main { margin-bottom: 4px; }
+  .tr > .c-main { margin-bottom: 2px; }
+  /* What a wide table has room for and a card does not. */
+  .extra { display: none !important; }
+  /* Controls in a row are a size down, and a row's last line is shared: switches, then actions. */
+  .tr .btn, .tr select.input.compact { height: 32px; }
+  .tr .btn.icon, .tr .btn.collapse { width: 32px; }
+  .tr .switch { min-height: 32px; }
+  .tr > .td.grow { flex: 1 1 calc(100% - 100px); } /* a line of its own, less the two buttons beside it */
+  .btn.collapse { padding: 0; }
+  .btn.collapse span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .td.meta { flex-direction: row; align-items: baseline; gap: 6px; font-size: 13px; }
   .td.src .t2::before { content: "/"; color: var(--faint); margin-right: 6px; }
   .tr > .td.end { flex: 1 1 auto; justify-content: flex-start; }
+  .tr > .td.acts { flex: 0 0 auto; margin-left: auto; }
+  .tbl.groups .td.acts { order: 1; }
+  .tbl.groups .td.row:not(.acts) { order: 2; }
   .tr > .td.wide { flex: 1 1 100%; }
   .td.end .menu-wrap, .td.end .push { margin-left: auto; }
   .tr > .td.update-cell { flex: 1 1 100%; margin-top: 6px; }
@@ -862,6 +904,9 @@ function menu(label, fk, items) {
   const outside = ev => { if (!wrap.contains(ev.target)) close(); };
   function open() {
     list.hidden = false;
+    // Open upward only when the window ends below and the sticky bars are not in the way above.
+    const at = trigger.getBoundingClientRect(), need = list.offsetHeight + 12;
+    list.classList.toggle('up', innerHeight - at.bottom < need && at.top - 100 > need);
     trigger.setAttribute('aria-expanded', 'true');
     list.firstChild.focus();
     document.addEventListener('pointerdown', outside, true);
@@ -950,6 +995,7 @@ const th = label => el('div', { class: 'th', role: 'columnheader' }, label);
 const thActions = () => th(el('span', { class: 'sr-only' }, 'Actions'));
 const logo = (size = 14) => el('span', { class: 'logo' }, icon('layers', size));
 const people = n => plural(n, 'person').replace('persons', 'people');
+const some = (names, max = 3) => names.slice(0, max).join(', ') + (names.length > max ? ` and ${names.length - max} more` : '');
 
 function render() {
   if (!state) return;
@@ -1037,7 +1083,7 @@ function mineView() {
       list.replaceChildren(
         el('div', { class: 'tbl mine', role: 'table', 'aria-label': 'My skills' },
           el('div', { class: 'tr th-row', role: 'row' },
-            sortTh('name', 'Skill'), sortTh('source', 'Source'), th('Revision'), sortTh('pushed', 'Pushed by'), th('Computers'), thActions()),
+            sortTh('name', 'Skill'), sortTh('source', 'Source'), sortTh('pushed', 'Pushed by'), th('Computers'), thActions()),
           shown.map(mySkillRow)),
         el('div', { class: 'tbl-foot' },
           el('span', null, 'Changes reach a computer the next time your coding agent runs ', el('code', null, SYNC), ' on it.'),
@@ -1095,14 +1141,12 @@ function mySkillRow(s) {
              el('span', { class: 't2' + (src.group ? ' mono' : '') }, src.group || 'Team level')]
         : [el('span', { class: 't2', 'aria-hidden': 'true' }, '—'), el('span', { class: 'sr-only' }, 'Not from a team')]),
     td('meta nowrap',
-      el('span', { class: 't1 mono rev', title: 'Revision ' + s.revision }, 'r' + s.revision, update && el('span', { class: 'dot blue' })),
-      el('span', { class: 't2' }, plural(s.files, 'file'))),
-    td('meta nowrap',
-      el('span', { class: 't1' }, s.pushed_by),
+      el('span', { class: 't1 rev' }, s.pushed_by,
+        el('span', { class: 'mono', title: `Revision ${s.revision}, ${plural(s.files, 'file')}` }, 'r' + s.revision), update && el('span', { class: 'dot blue' })),
       el('span', { class: 't2' }, when(s.updated_on))),
-    td('wide', el('div', { class: 'machines', role: 'group', 'aria-label': 'Computers for ' + s.name }, toggles)),
-    td('row end wide',
-      btn('Share…', { fk: 'share:' + s.name, on: { click: () => shareDialog(s) } }, 'share'),
+    td('grow', el('div', { class: 'machines', role: 'group', 'aria-label': 'Computers for ' + s.name }, toggles)),
+    td('row end acts',
+      btn('Share…', { class: 'btn collapse', fk: 'share:' + s.name, title: 'Share with a team', on: { click: () => shareDialog(s) } }, 'share'),
       btn(null, { class: 'btn ghost icon push', fk: 'rm:' + s.name, 'aria-label': `Remove ${s.name} from My skills`, title: 'Remove', on: { click: () => removeMineDialog(s) } }, 'trash')),
     update && td('update-cell',
       el('div', { class: 'update' },
@@ -1321,7 +1365,7 @@ function teamSkillRow(team, s, admin, depth) {
     td('meta nowrap',
       el('span', { class: 't1' }, s.pushed_by),
       el('span', { class: 't2' }, when(s.updated_on))),
-    td('row end wide',
+    td('row end',
       action,
       admin && menu(`More actions for ${s.name}`, 'tsm:' + fk, [
         { label: 'Move to group…', icon: 'move', run: () => moveDialog(team, s) },
@@ -1367,9 +1411,11 @@ function membersTab(team, admin) {
     return done;
   });
   const removable = admin && shared;
-  const cols = 'minmax(180px, 1fr) minmax(0, 1.4fr) auto auto' + (removable ? ' auto' : '');
+  const cols = 'minmax(180px, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) auto auto' + (removable ? ' auto' : '');
   return el('div', { class: 'tbl', role: 'table', 'aria-label': 'Members', style: 'grid-template-columns:' + cols },
-    el('div', { class: 'tr th-row', role: 'row' }, th('Member'), th('Groups'), th('Access'), th('Role'), removable && thActions()),
+    el('div', { class: 'tr th-row', role: 'row' }, th('Member'), th('Groups'),
+      el('div', { class: 'th extra', role: 'columnheader', title: 'Skills in this team whose latest revision this person pushed' }, 'Pushed'),
+      th('Access'), th('Role'), removable && thActions()),
     members(team).map(m => {
       const me = m.username === state.user.username;
       const isAdmin = m.role === 'ADMIN';
@@ -1387,6 +1433,7 @@ function membersTab(team, admin) {
           })
         : m.sees_all_groups ? el('span', { class: 'badge' }, 'Sees all groups') : el('span', { class: 't2' }, 'Own groups');
       const groups = m.groups || [];
+      const pushed = team.skills.filter(s => s.pushed_by === m.username).map(s => s.name);
       return el('div', { class: 'tr', role: 'row' },
         td('c-main',
           el('div', { class: 'name-line' },
@@ -1396,6 +1443,9 @@ function membersTab(team, admin) {
         td('wide',
           el('div', { class: 'chips', 'aria-label': `Groups of ${m.username}` },
             groups.length ? groups.map(g => el('span', { class: 'badge mono' }, g)) : el('span', { class: 't2' }, 'In no groups'))),
+        td('extra',
+          el('span', { class: 't2' }, pushed.length ? plural(pushed.length, 'skill') : 'Nothing yet'),
+          pushed.length ? el('span', { class: 't2 mono', title: pushed.join(', ') }, some(pushed)) : null),
         td('row', seesAll),
         td('row', role),
         removable && td('row end', me
@@ -1428,21 +1478,29 @@ function groupsTab(team, admin) {
         admin && el('code', null, 'backend/aistack'), admin && '.'),
       admin && btn('New group', { on: { click: () => newGroupDialog(team) } }, 'plus'))];
   }
-  const cols = 'minmax(0, 1fr) auto auto auto auto' + (admin ? ' auto' : '');
+  const cols = 'minmax(300px, 1.6fr) minmax(0, .8fr) minmax(0, 1fr) auto auto' + (admin ? ' auto' : '');
   return [head, el('div', { class: 'tbl groups', role: 'table', 'aria-label': 'Groups', style: 'grid-template-columns:' + cols },
     el('div', { class: 'tr th-row', role: 'row' }, th('Group'), th('People'), th('Skills'), th('Subscription'), th('Visibility'), admin && thActions()),
     rows.map(({ node, depth }) => {
       const g = node.g;
       const cut = g.path.lastIndexOf('/');
-      const count = members(team).filter(m => (m.groups || []).includes(g.path)).length;
+      const inIt = members(team).filter(m => (m.groups || []).includes(g.path)).map(m => m.username);
+      const holds = node.skills.map(s => s.name);
+      const seenBy = g.private ? 'Seen only by the people added to it'
+        : cut > 0 ? `Open to everyone who sees ${g.path.slice(0, cut)}` : `Open to everyone in ${team.name}`;
       return el('div', { class: 'tr', role: 'row', style: `--d:${Math.min(depth, 6)}` },
         td('c-main',
           el('div', { class: 'tree-name' },
             el('span', { class: 'gicon' }, icon(g.private ? 'lock' : 'folder', 16)),
             el('span', { class: 'path' }, cut > 0 && el('span', { class: 'parent' }, g.path.slice(0, cut + 1)), g.path.slice(cut + 1)),
-            g.member && el('span', { class: 'badge' }, icon('check', 11), 'You are in it'))),
-        td('meta nowrap', el('span', { class: 't2' }, people(count))),
-        td('meta nowrap', el('span', { class: 't2' }, plural(node.skills.length, 'skill'))),
+            g.member && el('span', { class: 'badge' }, icon('check', 11), 'You are in it')),
+          el('span', { class: 't2 extra' }, seenBy)),
+        td('meta',
+          el('span', { class: 't2' }, people(inIt.length)),
+          inIt.length ? el('span', { class: 't2 mono extra', title: inIt.join(', ') }, some(inIt)) : null),
+        td('meta',
+          el('span', { class: 't2' }, plural(holds.length, 'skill')),
+          holds.length ? el('span', { class: 't2 mono extra', title: holds.join(', ') }, some(holds)) : null),
         td('row', subscribeSwitch(team, g)),
         td('row', admin
           ? sw(g.private, 'Private', {
@@ -1454,7 +1512,7 @@ function groupsTab(team, admin) {
               }),
             })
           : g.private ? privateBadge() : el('span', { class: 'badge' }, 'Open')),
-        admin && td('row end', btn('People…', { class: 'btn push', fk: `ppl:${g.path}`, on: { click: () => groupPeopleDialog(team, g) } }, 'users')));
+        admin && td('row end acts', btn('People…', { class: 'btn push', fk: `ppl:${g.path}`, on: { click: () => groupPeopleDialog(team, g) } }, 'users')));
     }))];
 }
 
@@ -1515,7 +1573,22 @@ function settingsTab(team, admin) {
   const card = (cls, title, text, hint, action) => el('section', { class: 'card' + cls },
     el('div', { class: 'card-body' }, el('h2', null, title), el('p', null, text)),
     el('div', { class: 'card-foot' }, el('span', null, hint), action));
-  return [
+  const admins = members(team).filter(m => m.role === 'ADMIN').map(m => m.username);
+  const closed = team.groups.filter(g => g.private).length;
+  const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
+  const about = el('section', { class: 'card', 'aria-label': 'About this team' },
+    el('div', { class: 'card-body' },
+      el('h2', { class: 'small' }, 'About this team'),
+      el('dl', { class: 'facts' },
+        fact('Your role', admin ? 'Admin' : 'Member'),
+        fact('Members', String(members(team).length)),
+        fact(admins.length === 1 ? 'Admin' : 'Admins', el('span', { class: 'mono', title: admins.join(', ') }, some(admins))),
+        fact('Skills', String(team.skills.length)),
+        fact('Groups', team.groups.length ? `${team.groups.length}, ${closed} private` : 'None'),
+        fact('Joining', 'With an invite code'))),
+    el('div', { class: 'card-foot' }, el('span', null,
+      admin ? 'As an admin you see every group, private ones included.' : 'These count the skills and groups you can see.')));
+  return el('div', { class: 'settings' }, el('div', null,
     admin && card('', 'Invite code',
       'People join this team by entering its invite code under "Join with code". A code is shown only once, when it is created.',
       'Creating a new one makes the previous code stop working.',
@@ -1540,8 +1613,7 @@ function settingsTab(team, admin) {
           await api(`/api/teams/${enc(team.name)}/leave`, {});
           return () => { toast(`You left ${team.name}.`); go('#/mine'); };
         },
-      }) } }, 'logout')),
-  ];
+      }) } }, 'logout'))), about);
 }
 
 function inviteCodeDialog(team, code) {
@@ -1640,6 +1712,14 @@ document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape' && $app.classList.contains('drawer-open')) { setDrawer(false); $drawerBtn.focus(); }
 });
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+
+// A tooltip opens below its control, clear of the sticky bars, unless the window ends there.
+for (const type of ['pointerover', 'focusin']) {
+  document.addEventListener(type, ev => {
+    const tip = ev.target.closest && ev.target.closest('[data-tip]');
+    if (tip) tip.classList.toggle('tip-up', innerHeight - tip.getBoundingClientRect().bottom < 90);
+  });
+}
 
 // "/" jumps to the search box, unless the user is already typing somewhere.
 document.addEventListener('keydown', ev => {
