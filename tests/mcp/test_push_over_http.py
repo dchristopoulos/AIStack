@@ -116,7 +116,7 @@ async def test_no_file_content_crosses_mcp(server_url):
     async with client_for(server_url, token) as client:
         push_skill = next(tool for tool in await client.list_tools() if tool.name == "push_skill")
 
-    assert set(push_skill.inputSchema["properties"]) == {"name", "origin"}
+    assert set(push_skill.inputSchema["properties"]) == {"name", "origin", "harness"}
 
 
 @pytest.mark.parametrize("name", ["Wizard", "../wizard", "code review", "x" * 65])

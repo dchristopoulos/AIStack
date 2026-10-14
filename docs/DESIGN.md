@@ -62,11 +62,11 @@ No FastAPI and no frontend framework: the dashboard is one HTML file with its ow
 
 ## 4. What is built
 
-One Docker container. One volume (SQLite file + config). FastMCP served over streamable HTTP, plus plain HTTP routes on the same port: two that carry skill archives (ADR-0010), setup, health, and the dashboard with its JSON API (ADR-0017). No CLI, no daemon. Claude Code is the only supported harness.
+One Docker container. One volume (SQLite file + config). FastMCP served over streamable HTTP, plus plain HTTP routes on the same port: two that carry skill archives (ADR-0010), setup, health, and the dashboard with its JSON API (ADR-0017). No CLI, no daemon. Claude Code is the only harness tested end to end; the server also places skills in the shared agents folder that Codex and others read (ADR-0018), and connecting Codex is the next step of #62.
 
 ### State model (ADR-0004)
 
-The server holds **desired** state: which of a user's own skills are enabled per machine. The local disk is **actual** state. Sync reconciles the two. Each machine belongs to one user and authenticates with its own permanent token — one lookup identifies both user and machine.
+The server holds **desired** state: which of a user's own skills are enabled per machine and harness. The local disk is **actual** state. Sync reconciles the two. Each machine belongs to one user and authenticates with its own permanent token — one lookup identifies both user and machine.
 
 ### Auth
 
@@ -95,17 +95,19 @@ add_machine(name, os)         → registers another machine for this user; retur
 list_skills                   → the caller's own skills, then every team skill they may
                                 see (this is also the search — and the only discovery
                                 mechanism, sync is not)
-get_skill(name, team?)        → with a team, first takes that team's latest revision into
-                                the caller's own skills. Then enables the skill for the
-                                calling machine and returns the
-                                latest revision's metadata, its file list, and a signed
-                                download URL for the archive. The one "enable + give me
-                                the files" verb — install, restore, re-enable, adopt all
-                                resolve to it
-push_skill(name, origin?)     → returns a signed upload URL for that skill name. The
+get_skill(name, team?, harness?)
+                              → with a team, first takes that team's latest revision into
+                                the caller's own skills. Then enables the skill in that
+                                harness of the calling machine and returns the
+                                latest revision's metadata, its file list, the folder to
+                                install into, and a signed download URL for the archive.
+                                The one "enable + give me the files" verb — install,
+                                restore, re-enable, adopt all resolve to it
+push_skill(name, origin?, harness?)
+                              → returns a signed upload URL for that skill name. The
                                 upload creates the revision in the caller's own skills
-                                (existing name = new revision) and enables the skill for
-                                the calling machine. It shares nothing
+                                (existing name = new revision) and enables the skill in
+                                that harness of the calling machine. It shares nothing
 share_skill(name, team, group?)
                               → copies the latest revision of one of the caller's own
                                 skills into a team or one of its groups
@@ -113,11 +115,14 @@ list_teams, create_team(name), invite_to_team(team), join_team(code)
                               → the teams the caller is in; make one; get its invite
                                 code (admins); join one with a code
 open_dashboard                → a short-lived link that signs a browser in (ADR-0017)
-sync(local: {name: {path: sha256}})
-                              → reconcile desired vs actual; see the sync contract
-disable_skill(name)           → enabled = false for this machine; the agent then
-                                deletes the local folder
+sync(local: {name: {path: sha256}}, harness?)
+                              → reconcile desired vs actual for one harness; see the sync
+                                contract
+disable_skill(name, harness?) → enabled = false in that harness of this machine; the agent
+                                then deletes the local folder
 ```
+
+`harness` is `claude_code` (`~/.claude/skills`) or `agents` (`~/.agents/skills`), listed in the tool schema; the registry is `services/harnesses.py`, with each folder spelled per operating system. Omitted, it means `claude_code`, so a computer set up before harnesses existed keeps working with the skill file it already has (ADR-0018). An upload URL carries the harness it was issued for.
 
 There is no `delete_skill` tool. Removal is a dashboard action, in two forms. Removing a skill from the Library keeps its row as a marker (`archived`) and disables it on every machine, so each machine's next sync asks whether to delete the folder and does not back it up again. A team admin removing a skill from a team deletes the team's copy and its history; copies members already took are theirs and are untouched. Deleting a single revision is not offered: a fresh install after deleting the latest would silently receive an older one, and a safe version needs preview-confirm plus tombstones.
 
@@ -144,6 +149,8 @@ There is no `delete_skill` tool. Removal is a dashboard action, in two forms. Re
 ### The sync contract
 
 Sync is **manual**: the user says "sync aistack" (a one-liner local skill, **written directly to disk by the `setup-aistack` snippet** — a fresh vault cannot install the very skill that talks to it — plus the habit documented in the README: sync when you start work, like `git pull`). Nothing runs in the background; the server never polls upstream. Sync is not discovery: it reconciles what this machine manages, `list_skills` finds what it doesn't.
+
+**Per harness.** One sync call covers one harness's folder. The server reads only that harness's decisions for the machine, so every table below applies per folder, unchanged (ADR-0018): a skill enabled in Claude Code and never decided in the agents folder is undecided there. A skill backed up from a folder is placed in that folder only. Sync records that the harness synced, and when, in `machine_harness`; that is the only thing it writes.
 
 One rule: **sync acts silently only on skills enabled for this machine, and only when the local copy is absent or matches a revision the server knows. Everything else is reported, and the user decides.**
 
@@ -176,7 +183,7 @@ A prompt that leads to overwriting local content must say so. "Adopt?" on its ow
 
 Every answer maps to an existing tool: restore / re-enable / adopt → `get_skill` (on the wire, `restore` for a skill already enabled here and `enable` for the other two); push → `push_skill`; remove → the flag is already false, the agent just deletes the folder; skip → nothing. No hidden verbs.
 
-**Wire contract**: the agent sends, for every skill folder in the global skills directory, each file's relative path and the sha256 of its bytes. The server derives the canonical hash from those (ADR-0011) and returns *action metadata only*: skills to install, skills to update, questions, the names to back up, and team updates on offer. For each entry that is the skill name, the target revision, and who pushed it; a question also carries the state that was found, the options the user may choose, and for each option whether it replaces local files and whether it discards local edits (ADR-0012). It never returns file content. The agent then calls `get_skill` per install or update, and `push_skill` per name to back up. This keeps a sync of fifty skills small, and makes `get_skill` the single materialization path rather than a second one hiding inside sync.
+**Wire contract**: the agent sends, for every skill folder in the harness's skills folder, each file's relative path and the sha256 of its bytes. The server derives the canonical hash from those (ADR-0011) and returns *action metadata only*: skills to install, skills to update, questions, the names to back up, and team updates on offer. For each entry that is the skill name, the target revision, and who pushed it; a question also carries the state that was found, the options the user may choose, and for each option whether it replaces local files and whether it discards local edits (ADR-0012). It never returns file content. The agent then calls `get_skill` per install or update, and `push_skill` per name to back up. This keeps a sync of fifty skills small, and makes `get_skill` the single materialization path rather than a second one hiding inside sync.
 
 Two folders are never reported: `synced`, which Claude Code reserves for skills it downloads from claude.ai, and anything starting with a dot. The `sync-aistack` skill leaves them out of what it sends, along with `.DS_Store` files. The `sync-aistack` folder itself is never listed under `backup`: setup wrote it from the server, so it needs no backing up. Instead the server compares it with the copy it ships, and when the machine's is missing or different the report carries `sync_skill_url`, which the agent downloads over it without asking. That is how the skill follows a server upgrade, and how a machine connected with `add_machine`, which never ran setup, gets it at all. If the user pushes their own copy of the skill, it is reconciled like any other and the field stays null.
 
@@ -267,7 +274,7 @@ The web application is the product; MCP connects an agent to the account. The da
 | Team admin | Invite code; members, roles, and sight of every group; create groups and nest them; make one private; add people; move or remove a skill |
 | Teams | Create a team; join one with a code; leave one |
 
-**Two columns are the map.** A rail on the left holds the user's spaces, the way a chat application lists servers: *Personal* on top, then each team, the server-wide one last, then one *+* that creates a team or joins one with a code. The column beside it lists what is in the chosen space, and the account bar with sign-out runs under both at the bottom. For Personal that is the Library, with a blue dot and a count when updates are waiting, and then each computer as one row per coding agent on it, opening that agent's page at `#/f/<machine id>/<agent>`. The *+* beside the Computers heading says what to ask an already connected agent to add another computer. Every computer has exactly one agent, Claude Code, until ADR-0018 gives the server more; the page treats a skill placed on a computer as placed in its agent. For a team it is All skills, the team's groups nested a step in per level, then Members and Settings. A private group has a lock, every group shows how many skills are in it and below it, and a blue dot marks one with an update waiting for a skill the user took. Choosing a group opens the team's skills narrowed to that group and the groups under it, at `#/t/<team>/skills/<group path>`, an address that can be reloaded or sent to a teammate. The tree is built from the groups `/api/state` sends, so a private group the user is not in is absent from it, and its address opens the whole team exactly as an unknown one does.
+**Two columns are the map.** A rail on the left holds the user's spaces, the way a chat application lists servers: *Personal* on top, then each team, the server-wide one last, then one *+* that creates a team or joins one with a code. The column beside it lists what is in the chosen space, and the account bar with sign-out runs under both at the bottom. For Personal that is the Library, with a blue dot and a count when updates are waiting, and then each computer as one row per coding agent on it, opening that agent's page at `#/f/<machine id>/<agent>`. The *+* beside the Computers heading says what to ask an already connected agent to add another computer. A computer's agents are the `harnesses` `/api/state` lists for it, and a skill is placed in one of them, not on the computer as a whole. For a team it is All skills, the team's groups nested a step in per level, then Members and Settings. A private group has a lock, every group shows how many skills are in it and below it, and a blue dot marks one with an update waiting for a skill the user took. Choosing a group opens the team's skills narrowed to that group and the groups under it, at `#/t/<team>/skills/<group path>`, an address that can be reloaded or sent to a teammate. The tree is built from the groups `/api/state` sends, so a private group the user is not in is absent from it, and its address opens the whole team exactly as an unknown one does.
 
 **Placing a skill is three gestures over one route.** A tag per computer on a Library row, with a cross to take it off; Add to… on the row, a box per computer; and on a computer's page, Add skills and Copy from…, which adds what another computer has and removes nothing. Each is a series of `POST /api/skills/{name}/machines/{machine_id}` calls, one per change, and the page reloads its state once they are done.
 
@@ -290,7 +297,7 @@ The page is the only client these were written for, and they are documented so t
 |---|---|---|
 | `GET /api/state` | | Everything the page shows, below |
 | `POST /api/logout` | `{}` | Clears the cookie |
-| `POST /api/skills/{name}/machines/{machine_id}` | `enabled` (true or false) | Switches one of the user's own skills on or off for one of their computers. The files move at that computer's next sync |
+| `POST /api/skills/{name}/machines/{machine_id}` | `enabled` (true or false), optional `harness` (`claude_code`, the default, or `agents`) | Switches one of the user's own skills on or off in one harness of one of their computers. The files move at that harness's next sync there |
 | `POST /api/skills/{name}/share` | `team`, `group` (a path, or null for team level) | `team`, `group`, `revision`, `created`, `unchanged`, `previous_pushed_by`, `possibly_unrelated`: what `share_skill` returns |
 | `POST /api/skills/{name}/remove` | `{}` | Removes the skill from the Library on every computer |
 | `POST /api/teams` | `name` | `name`. The caller is the new team's admin |
@@ -314,7 +321,7 @@ A group's path contains slashes, so it always travels in the body and never in t
 {
   "user": {"username": "dimitris"},
   "machines": [
-    {"id": "af6c2628-…", "name": "macbook", "os": "MACOS"}
+    {"id": "af6c2628-…", "name": "macbook", "os": "MACOS", "harnesses": ["claude_code"]}
   ],
   "skills": [
     {
@@ -324,7 +331,7 @@ A group's path contains slashes, so it always travels in the body and never in t
       "pushed_by": "dimitris",
       "updated_on": "2026-10-14T00:43:56.158183+00:00",
       "files": 2,
-      "machines": ["af6c2628-…"],
+      "placements": [{"machine": "af6c2628-…", "harness": "claude_code"}],
       "source": {
         "team": "acme", "group": null,
         "revision": 2, "latest_revision": 3, "latest_pushed_by": "maria",
@@ -357,9 +364,10 @@ A group's path contains slashes, so it always travels in the body and never in t
 | Field | Meaning |
 |---|---|
 | `machines` | The user's computers, oldest first. `os` is `MACOS`, `WINDOWS`, or `LINUX` |
+| `machines[].harnesses` | The harnesses on that computer, in the server's order: those that have synced there and those holding a decision about a skill. `["claude_code"]` for a computer with neither, which has not synced since harnesses existed |
 | `skills` | The Library, by name, without the ones removed from it |
 | `skills[].revision`, `pushed_by`, `updated_on`, `files` | The latest revision of the user's own copy: its number, who pushed it, when (UTC), and how many files it has |
-| `skills[].machines` | The ids of the computers the skill is switched on for. On is a decision the server holds, not proof the files are there yet |
+| `skills[].placements` | Where the skill is switched on: each a computer's id and a harness, oldest computer first. On is a decision the server holds, not proof the files are there yet |
 | `skills[].source` | The team skill this copy was taken from or shared to, or null. Null also when the user can no longer see that skill: the copy is then simply theirs |
 | `source.revision` | The team's revision this copy came from. `latest_revision` and `latest_pushed_by` describe the team's newest, and `update_available` is true when it is newer |
 | `teams` | The teams the user is in, by name. The Library is not among them. `kind` is `SERVER` for `everyone` and `SHARED` for a team somebody created |
@@ -479,19 +487,29 @@ SKILL_FILE
   executable        BOOLEAN      NOT NULL DEFAULT FALSE  -- preserves +x for scripts
   UNIQUE (skill_version_id, path)
 
-MACHINE_SKILL                                  -- desired state per machine (ADR-0004)
-  machine_skill_id  UUID PK
+MACHINE_SKILL                                  -- desired state per machine and harness
+  machine_skill_id  UUID PK                    -- (ADR-0004, ADR-0018)
   machine_id        FK → MACHINE NOT NULL ON DELETE CASCADE
+  harness           ENUM(claude_code, agents) NOT NULL  -- varchar+check; rows from before
+                                               -- harnesses became claude_code
   skill_id          FK → SKILL   NOT NULL
   enabled           BOOLEAN      NOT NULL      -- row with FALSE = explicit disable;
                                                -- no row = no decision on this machine.
                                                -- The distinction drives the sync contract
   created_on        TIMESTAMPTZ  NOT NULL
   updated_on        TIMESTAMPTZ  NOT NULL
-  UNIQUE (machine_id, skill_id)
+  UNIQUE (machine_id, harness, skill_id)
+
+MACHINE_HARNESS                                -- the harnesses a machine has synced
+  machine_harness_id UUID PK
+  machine_id        FK → MACHINE NOT NULL ON DELETE CASCADE
+  harness           ENUM(claude_code, agents) NOT NULL  -- varchar+check
+  created_on        TIMESTAMPTZ  NOT NULL      -- its first sync
+  last_synced_on    TIMESTAMPTZ  NULL
+  UNIQUE (machine_id, harness)
 ```
 
-Behavior summary: install/adopt/restore/re-enable = `get_skill` (upsert MACHINE_SKILL enabled=true + materialize latest revision); remove = `disable_skill` + local folder deletion by the agent. Enabled skills always resolve to the latest revision (no pinning). One MCP call is one transaction — a push lands whole or not at all.
+Behavior summary: install/adopt/restore/re-enable = `get_skill` (upsert MACHINE_SKILL enabled=true for that harness + materialize latest revision); remove = `disable_skill` + local folder deletion by the agent. Enabled skills always resolve to the latest revision (no pinning). One MCP call is one transaction — a push lands whole or not at all.
 
 ### Security posture
 
@@ -508,7 +526,7 @@ Deferred deliberately: audit trail, signing, approval workflows, per-skill push 
 
 ### Explicitly not built
 
-No FastAPI, no CLI/daemon, no version pinning (always latest), no deleting a single revision (see §4 Tools), no project-scoped sync (global directory only), no rules/hooks/agents/MCP gateway/profiles, no OAuth/passwords, no binary files, no server-admin tools or pages (the `is_admin` column ships; its powers are documented scripts), no harness besides Claude Code. From ADR-0015: no permission matrix of roles × groups, no automatic updates from a team, no merging when both copies changed, no one machine on two servers. Anything needing many typed parameters is a dashboard action, not a tool — chat must stay low-friction.
+No FastAPI, no CLI/daemon, no version pinning (always latest), no deleting a single revision (see §4 Tools), no project-scoped sync (global directory only), no rules/hooks/agents/MCP gateway/profiles, no OAuth/passwords, no binary files, no server-admin tools or pages (the `is_admin` column ships; its powers are documented scripts), no harness besides Claude Code and the shared agents folder (ADR-0018). From ADR-0015: no permission matrix of roles × groups, no automatic updates from a team, no merging when both copies changed, no one machine on two servers. Anything needing many typed parameters is a dashboard action, not a tool — chat must stay low-friction.
 
 ### Proof of the MVP
 
@@ -570,7 +588,7 @@ src/aistack/
   db/
     engine + session setup; schema.py applies the migrations (ADR-0016)
     migrations/versions/   # numbered Alembic migrations, shipped in the package
-    models/                # SQLAlchemy models for the eleven tables
+    models/                # SQLAlchemy models for the twelve tables
   mcp/                     # FastMCP server + auth
     tools/                 # the thirteen MCP tools (onboarding, skills, sync, teams)
     routes/                # plain HTTP beside MCP: the two transfer routes (ADR-0010),

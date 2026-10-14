@@ -15,6 +15,7 @@ from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.mcp.routes.transfer import DOWNLOAD_PATH, UPLOAD_PATH
 from aistack.mcp.server_url import server_base_url
 from aistack.services import skill_service
+from aistack.services.harnesses import HarnessKey, validated_harness
 from aistack.services.skill_validation import validated_origin, validated_skill_name
 from aistack.services.transfer_ticket import (
     TICKET_LIFETIME_SECONDS,
@@ -56,12 +57,13 @@ class PushSkillResult(TypedDict):
       - "unchanged" true: these exact files were already stored, so no revision was added.
         Only content counts: a chmod alone is not a change.
       - otherwise it is now revision "revision" of the user's own skill.
-    The skill is now enabled for this machine, so sync will keep it current.
+    The skill is now enabled in this harness on this machine, so sync keeps it current.
 
     Args:
         name: The skill's name, exactly as in the 'name' field of its SKILL.md frontmatter.
         origin: The http(s) URL the skill came from, when you know it. Omit it for a skill
                the user wrote themselves.
+        harness: The folder it was pushed from, as sync was given. Omit for claude_code.
 
     Returns:
         PushSkillResult containing:
@@ -70,19 +72,22 @@ class PushSkillResult(TypedDict):
             - expires_in_seconds: how long the URL works
     """)
 @handle_mcp_errors
-def push_skill(name: str, origin: str | None = None) -> PushSkillResult:
+def push_skill(name: str, origin: str | None = None,
+               harness: HarnessKey = "claude_code") -> PushSkillResult:
     caller = current_machine()
     logger.debug(f"Preparing push. Skill: '{loggable(name)}'. User: '{caller.user_id}'.")
 
     # Rejected here, a bad name costs one tool call instead of an archive and an upload.
     name = validated_skill_name(name)
     origin = validated_origin(origin)
+    harness = validated_harness(harness)
 
     ticket = get_ticket_signer().sign_upload(UploadTicket(
         machine_id=caller.machine_id,
         user_id=caller.user_id,
         skill_name=name,
         origin=origin,
+        harness=harness,
     ))
 
     # The URL carries the ticket, so it is returned and never logged.
@@ -220,6 +225,7 @@ class GetSkillResult(TypedDict):
     pushed_by: str
     content_hash: str
     files: list[SkillFileEntry]
+    folder: str
     download_url: str
     expires_in_seconds: int
 
@@ -228,13 +234,13 @@ class GetSkillResult(TypedDict):
     description="""Enable a skill on this machine and get a URL to download its files.
 
     Use to install a skill, update it, restore an edited copy, or re-enable a disabled one:
-    each means "this machine should have the latest revision". It replaces the local
+    each means "this folder should have the latest revision". It replaces the local
     folder, so if sync reported local edits, the user must have agreed to lose them. With
     team, the team's latest revision is first copied into the user's own skills: that is
-    how a team's skill is installed, and how an update sync offered is accepted.
+    how a team's skill is installed and an offered update accepted.
 
-    The files are not in this result. Install them from a shell, where <skills> is
-    ~/.claude/skills and <stage> is <skills>/.aistack-staging:
+    Install the files from a shell, where <skills> is the result's folder and <stage> is
+    <skills>/.aistack-staging:
 
         curl -sS -o <stage>/<name>.tgz "<download_url>"
         mkdir <stage>/<name>, then: tar -xzf <stage>/<name>.tgz -C <stage>/<name>
@@ -242,14 +248,15 @@ class GetSkillResult(TypedDict):
         delete <stage>/<name>.tgz
 
     Create <stage> first and clear any leftover <stage>/<name>. If tar fails, the .tgz is a
-    JSON error message: read it. On Windows use curl.exe and tar.exe. The final move is a
-    rename, so a failed download never leaves half a skill. It is usable without a
-    restart; if it is not found at once, try again. tar restores file modes: no chmod.
-    Leave <stage> itself in place; sync ignores it. The listed hashes need no checking.
+    JSON error: read it. On Windows use curl.exe and tar.exe. The move is a rename, so a
+    failed download never leaves half a skill. It is usable without a restart; if it is
+    not found at once, try again. tar restores file modes. Leave <stage> in place; sync
+    ignores it. The listed hashes need no checking.
 
     Args:
         name: The skill's name, as list_skills or sync reported it.
         team: Omit for one of the user's own. Name a team to take its copy.
+        harness: The skills folder, as given to sync. Omit for claude_code.
 
     Returns:
         GetSkillResult containing:
@@ -262,13 +269,15 @@ class GetSkillResult(TypedDict):
             - expires_in_seconds: how long the URL works
     """)
 @handle_mcp_errors
-def get_skill(name: str, team: str | None = None) -> GetSkillResult:
+def get_skill(name: str, team: str | None = None,
+              harness: HarnessKey = "claude_code") -> GetSkillResult:
     started_at = perf_counter()
     caller = current_machine()
     logger.debug(f"Getting skill. Skill: '{loggable(name)}'. Machine: '{caller.machine_id}'.")
 
     with get_session_factory().begin() as session:
-        skill = skill_service.get_skill(session, caller.machine_id, caller.user_id, name, team)
+        skill = skill_service.get_skill(session, caller.machine_id, caller.user_id, name, team,
+                                        harness)
 
     ticket = get_ticket_signer().sign_download(DownloadTicket(
         machine_id=caller.machine_id,
@@ -278,6 +287,7 @@ def get_skill(name: str, team: str | None = None) -> GetSkillResult:
     logger.info(
         f"Skill enabled and download URL issued. Skill: '{skill.name}'. "
         f"Revision: '{skill.revision}'. Machine: '{caller.machine_id}'. "
+        f"Harness: '{loggable(harness)}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return GetSkillResult(
@@ -289,6 +299,7 @@ def get_skill(name: str, team: str | None = None) -> GetSkillResult:
         content_hash=skill.content_hash,
         files=[SkillFileEntry(path=file.path, sha256=file.sha256, executable=file.executable)
                for file in skill.files],
+        folder=skill.folder,
         download_url=f"{server_base_url(get_http_request())}{DOWNLOAD_PATH}/{ticket}",
         expires_in_seconds=TICKET_LIFETIME_SECONDS,
     )
@@ -300,17 +311,20 @@ class DisableSkillResult(TypedDict):
 
 
 @mcp.tool(
-    description="""Disable a skill on this machine, so sync stops installing and updating it.
+    description="""Disable a skill in one harness on this machine, so sync stops installing
+    and updating it there.
 
     Use when the user wants a skill removed from this computer ("remove wizard"). This
     records the decision; it does not touch the disk. After it succeeds, delete the skill's
-    folder from the global skills directory (~/.claude/skills/<name>) to finish the removal.
+    folder from that harness's skills folder (<folder>/<name>, where claude_code is
+    ~/.claude/skills and agents is ~/.agents/skills) to finish the removal.
 
-    The skill stays in their own skills and on their other machines. To bring it back here,
-    call get_skill.
+    The skill stays in their own skills, in this machine's other harnesses, and on their
+    other machines. To bring it back here, call get_skill.
 
     Args:
         name: The skill's name.
+        harness: The folder to remove it from, as sync was given. Omit for claude_code.
 
     Returns:
         DisableSkillResult containing:
@@ -318,15 +332,16 @@ class DisableSkillResult(TypedDict):
             - enabled: always false
     """)
 @handle_mcp_errors
-def disable_skill(name: str) -> DisableSkillResult:
+def disable_skill(name: str, harness: HarnessKey = "claude_code") -> DisableSkillResult:
     started_at = perf_counter()
     caller = current_machine()
     logger.debug(f"Disabling skill. Skill: '{loggable(name)}'. Machine: '{caller.machine_id}'.")
 
     with get_session_factory().begin() as session:
         disabled = skill_service.disable_skill(session, caller.machine_id, caller.user_id,
-                                               name)
+                                               name, harness)
 
     logger.info(f"Skill disabled. Skill: '{disabled}'. Machine: '{caller.machine_id}'. "
+                f"Harness: '{loggable(harness)}'. "
                 f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
     return DisableSkillResult(name=disabled, enabled=False)

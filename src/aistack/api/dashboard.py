@@ -141,7 +141,8 @@ def _action(path: str) -> Callable[[Action], Action]:
 @_action("/skills/{name}/machines/{machine_id}")
 def set_skill_on_machine(session, user_id, path, body):
     dashboard_service.set_on_machine(session, user_id, path["name"], path["machine_id"],
-                                     _flag(body, "enabled"))
+                                     _flag(body, "enabled"),
+                                     _text(body, "harness", required=False))
 
 
 @_action("/skills/{name}/share")

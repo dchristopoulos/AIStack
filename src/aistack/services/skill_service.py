@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from aistack.commons.exceptions import Conflict, InvalidTicket, NotFound
 from aistack.commons.text import loggable
+from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill import Skill
@@ -18,6 +19,7 @@ from aistack.db.models.team import Team, TeamGroup
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
 from aistack.services import visibility
+from aistack.services.harnesses import folder, validated_harness
 from aistack.services.skill_archive import build_archive, read_archive
 from aistack.services.skill_validation import ValidatedFile, ValidatedSkill, validated_skill
 
@@ -46,18 +48,20 @@ class PushedSkill:
 
 
 def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
-         origin: str | None, archive: bytes) -> PushedSkill:
+         origin: str | None, archive: bytes, harness: str | None = None) -> PushedSkill:
     """Store an uploaded archive as the next revision of the user's own skill `name`, and
-    enable it for the machine.
+    enable it for the machine in the harness it was pushed from.
 
     A push only ever lands in the pusher's personal team. Putting a skill in front of other
-    people is `share`, a separate act.
+    people is `share`, a separate act. A skill backed up from one folder is placed in that
+    folder only: the machine's other harnesses have not decided about it (ADR-0018).
 
     Everything about the archive is validated before the first query, so a rejected upload
     costs no database work and leaves no row.
     """
     started_at = perf_counter()
     uploaded = validated_skill(name, read_archive(archive))
+    harness = validated_harness(harness)
     _require_registered_machine(session, machine_id, user_id)
 
     skill, created = _find_or_create_skill(
@@ -72,7 +76,7 @@ def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
     # Pushing a skill the user had removed brings it back.
     skill.archived = False
 
-    set_enabled(session, machine_id, skill.skill_id, enabled=True)
+    set_enabled(session, machine_id, harness, skill.skill_id, enabled=True)
 
     logger.debug(
         f"Push persisted. Skill: '{name}'. Revision: '{version.revision}'. "
@@ -121,6 +125,8 @@ class InstallableSkill:
     pushed_by: str
     content_hash: str
     files: tuple[InstallableFile, ...]
+    # Where the harness keeps its skills on this machine: the agent installs there.
+    folder: str
 
 
 def list_skills(session: Session, user_id: uuid.UUID) -> list[SkillSummary]:
@@ -153,8 +159,9 @@ def list_skills(session: Session, user_id: uuid.UUID) -> list[SkillSummary]:
 
 
 def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
-              team: str | None = None) -> InstallableSkill:
-    """Enable the user's own skill `name` for this machine and describe its latest revision.
+              team: str | None = None, harness: str | None = None) -> InstallableSkill:
+    """Enable the user's own skill `name` in one harness of this machine and describe its
+    latest revision.
 
     Install, restore, re-enable, and adopt are all this call: each one means "this machine
     should have the latest revision", and the answer to each is the same files.
@@ -163,13 +170,14 @@ def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name:
     is how a team skill is installed and how an offered update is accepted, and it is why a
     copy survives its user leaving the team: what a machine runs was always their own.
     """
+    harness = validated_harness(harness)
     # Sync offers "enable" for a skill the user removed whose folder is still on disk.
     # Saying yes brings it back.
     skill = (visibility.required_my_skill(session, user_id, name, removed_too=True)
              if team is None else take_from_team(session, user_id, name, team))
     skill.archived = False
     version = _latest_version(session, skill.skill_id)
-    set_enabled(session, machine_id, skill.skill_id, enabled=True)
+    set_enabled(session, machine_id, harness, skill.skill_id, enabled=True)
 
     files = session.execute(
         select(SkillFile.path, SkillFile.sha256, SkillFile.executable)
@@ -186,6 +194,7 @@ def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name:
         content_hash=version.content_hash,
         files=tuple(InstallableFile(path=path, sha256=sha256, executable=executable)
                     for path, sha256, executable in files),
+        folder=folder(harness, session.get(Machine, machine_id).os),
     )
 
 
@@ -289,9 +298,9 @@ def share(session: Session, user_id: uuid.UUID, name: str, team: str,
 def remove_from_my_skills(session: Session, user_id: uuid.UUID, name: str) -> str:
     """Take a skill out of the user's own skills, on every computer of theirs.
 
-    Nothing on a disk is touched: each machine's decision becomes "not here", and its next
-    sync asks whether to delete the folder. The row is kept so that sync does not take that
-    folder for a new skill and back it up again.
+    Nothing on a disk is touched: the decision in every harness of every machine becomes
+    "not here", and the next sync there asks whether to delete the folder. The row is kept
+    so that sync does not take that folder for a new skill and back it up again.
     """
     skill = visibility.required_my_skill(session, user_id, name)
     skill.archived = True
@@ -304,19 +313,21 @@ def remove_from_my_skills(session: Session, user_id: uuid.UUID, name: str) -> st
 
 
 def disable_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
-                  name: str) -> str:
-    """Record that this machine should not have `name`. The row stays, as `enabled = False`.
+                  name: str, harness: str | None = None) -> str:
+    """Record that this harness on this machine should not have `name`. The row stays, as
+    `enabled = False`.
 
     Keeping the row is the point (ADR-0006): sync tells "the user removed this here" apart
     from "this machine never decided", and only the first is a reason to stay quiet.
     """
+    harness = validated_harness(harness)
     skill = visibility.required_my_skill(session, user_id, name, removed_too=True)
-    decision = _machine_skill(session, machine_id, skill.skill_id)
+    decision = _machine_skill(session, machine_id, harness, skill.skill_id)
     if decision is None:
         raise NotFound(
-            f"'{skill.name}' was never enabled on this machine, so there is nothing to "
-            "disable. If its folder is on disk and the user wants it gone, delete the folder; "
-            "the server holds no decision about it for this machine."
+            f"'{skill.name}' was never enabled on this machine in harness '{harness}', so "
+            "there is nothing to disable. If its folder is on disk and the user wants it gone, "
+            "delete the folder; the server holds no decision about it there."
         )
     decision.enabled = False
     return skill.name
@@ -360,19 +371,20 @@ def archive_of(session: Session, machine_id: uuid.UUID,
     )
 
 
-def set_enabled(session: Session, machine_id: uuid.UUID, skill_id: uuid.UUID,
-                enabled: bool) -> None:
-    """Record this machine's decision about a skill, keeping exactly one row per pair."""
-    decision = _machine_skill(session, machine_id, skill_id)
+def set_enabled(session: Session, machine_id: uuid.UUID, harness: Harness,
+                skill_id: uuid.UUID, enabled: bool) -> None:
+    """Record a decision about a skill in one harness of a machine, keeping exactly one row
+    per machine, harness, and skill."""
+    decision = _machine_skill(session, machine_id, harness, skill_id)
     if decision is None:
         try:
             # A savepoint, so losing a race for the row costs a re-read and not the push.
             with session.begin_nested():
-                session.add(MachineSkill(machine_id=machine_id, skill_id=skill_id,
-                                         enabled=enabled))
+                session.add(MachineSkill(machine_id=machine_id, harness=harness,
+                                         skill_id=skill_id, enabled=enabled))
             return
         except IntegrityError:
-            decision = _machine_skill(session, machine_id, skill_id)
+            decision = _machine_skill(session, machine_id, harness, skill_id)
     decision.enabled = enabled
 
 
@@ -517,9 +529,10 @@ def _latest_version(session: Session, skill_id: uuid.UUID) -> SkillVersion | Non
     )
 
 
-def _machine_skill(session: Session, machine_id: uuid.UUID,
+def _machine_skill(session: Session, machine_id: uuid.UUID, harness: Harness,
                    skill_id: uuid.UUID) -> MachineSkill | None:
     return session.scalar(select(MachineSkill).where(MachineSkill.machine_id == machine_id,
+                                                     MachineSkill.harness == harness,
                                                      MachineSkill.skill_id == skill_id))
 
 

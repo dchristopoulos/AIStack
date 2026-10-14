@@ -7,7 +7,7 @@ from fastmcp.client import BearerAuth, Client, StreamableHttpTransport
 
 from aistack.services.skill_archive import ArchivedFile
 from aistack.services.skill_validation import validated_skill
-from tests.archives import local_digests
+from tests.archives import local_digests, skill_archive
 from tests.mcp.conftest import call as _call
 from tests.mcp.conftest import client_for
 from tests.mcp.conftest import join as _join
@@ -75,8 +75,11 @@ async def test_sync_takes_digests_and_nothing_else(server_url):
     async with client_for(server_url, token) as client:
         sync = next(tool for tool in await client.list_tools() if tool.name == "sync")
 
-    assert set(sync.inputSchema["properties"]) == {"local"}
+    assert set(sync.inputSchema["properties"]) == {"local", "harness"}
     assert sync.inputSchema["required"] == ["local"]
+    # The agent sees which folders there are, and what omitting one means.
+    assert sync.inputSchema["properties"]["harness"]["enum"] == ["claude_code", "agents"]
+    assert sync.inputSchema["properties"]["harness"]["default"] == "claude_code"
 
 
 async def test_every_answer_to_a_question_is_an_existing_tool(server_url, session_factory):
@@ -204,3 +207,27 @@ async def test_the_sync_description_lists_files_the_way_the_skill_does(server_ur
     for exclusion in ("! -name .DS_Store", "! -path './.*'", "! -path './synced/*'"):
         assert exclusion in document
         assert exclusion in description
+
+
+async def test_a_skill_backed_up_from_the_agents_folder_stays_in_that_folder(server_url):
+    """ADR-0018 over the wire: the upload URL carries the harness it was issued for, and each
+    folder on each computer is synced and installed into on its own."""
+    machine_a = await _join(server_url)
+    machine_b = await second_machine(server_url, machine_a)
+    issued = await _call(server_url, machine_a, "push_skill", name="wizard", harness="agents")
+    async with httpx.AsyncClient() as http:
+        pushed = (await http.put(issued["upload_url"], content=skill_archive())).json()
+    assert pushed["revision"] == 1
+
+    agents_a = await _call(server_url, machine_a, "sync", harness="agents",
+                           local={"wizard": local_digests()})
+    claude_code_a = await _call(server_url, machine_a, "sync", local={})
+    assert (agents_a["up_to_date"], claude_code_a["install"]) == (1, [])
+
+    installed = await _call(server_url, machine_b, "get_skill", name="wizard",
+                            harness="agents")
+    assert installed["folder"] == "~/.agents/skills"
+    agents_b = await _call(server_url, machine_b, "sync", harness="agents", local={})
+    claude_code_b = await _call(server_url, machine_b, "sync", local={})
+    assert [entry["name"] for entry in agents_b["install"]] == ["wizard"]
+    assert claude_code_b["install"] == []

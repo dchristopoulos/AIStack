@@ -6,16 +6,21 @@ from dataclasses import dataclass
 from time import perf_counter
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from aistack.bundled import SYNC_SKILL_NAME, sync_skill_document
 from aistack.commons.exceptions import ValidationError
+from aistack.db.models.harness import Harness
+from aistack.db.models.machine_harness import MachineHarness
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_version import SkillVersion
+from aistack.db.models.timestamps import utc_now
 from aistack.db.models.user import User
 from aistack.services import visibility
 from aistack.services.content_hash import canonical_content_hash, normalized_path
+from aistack.services.harnesses import validated_harness
 from aistack.services.reconciliation import Desired, Observed, Option, Step, reconcile
 from aistack.services.skill_archive import is_filesystem_noise
 from aistack.services.skill_validation import CLAUDE_CODE_FOLDER
@@ -103,18 +108,22 @@ class _Revision:
 
 
 def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
-         local: Mapping[str, Mapping[str, str]]) -> SyncReport:
-    """Compare what this machine has with what its user's own skills say it should have.
+         local: Mapping[str, Mapping[str, str]], harness: str | None = None) -> SyncReport:
+    """Compare one harness's folder on this machine with what its user's own skills say it
+    should have.
 
     A machine installs only from its user's personal team, so teams never enter the
-    comparison. They appear once, as updates on offer.
+    comparison. They appear once, as updates on offer. Only this harness's decisions are
+    read: each folder is reconciled on its own, by the same table (ADR-0018).
 
-    Read-only. Sync never changes desired state and never returns file content: every action
-    it reports is carried out by a later get_skill, push_skill, or disable_skill call.
+    Sync never changes desired state and never returns file content: every action it
+    reports is carried out by a later get_skill, push_skill, or disable_skill call. The one
+    thing it writes is that this harness synced, and when.
     """
     started_at = perf_counter()
+    harness = validated_harness(harness)
     local_hashes = _local_hashes(local)
-    decisions = _decisions(session, machine_id)
+    decisions = _decisions(session, machine_id, harness)
     revisions = _revisions(session, user_id, set(local_hashes) | set(decisions))
 
     install: list[Install] = []
@@ -151,9 +160,11 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
     # copy is the reference.
     refresh_sync_skill = (SYNC_SKILL_NAME not in revisions
                           and local_hashes.get(SYNC_SKILL_NAME) != _bundled_sync_skill_hash())
+    _record_sync(session, machine_id, harness)
 
     logger.debug(
-        f"Sync reconciled. Machine: '{machine_id}'. Local: '{len(local_hashes)}'. "
+        f"Sync reconciled. Machine: '{machine_id}'. Harness: '{harness}'. "
+        f"Local: '{len(local_hashes)}'. "
         f"Install: '{len(install)}'. Update: '{len(update)}'. Ask: '{len(ask)}'. "
         f"Backup: '{len(backup)}'. Team updates: '{len(team_updates)}'. "
         f"Current: '{up_to_date}'. "
@@ -211,14 +222,37 @@ def _canonical_hash(files: Mapping[str, str]) -> str | None:
         return None
 
 
-def _decisions(session: Session, machine_id: uuid.UUID) -> dict[str, bool]:
-    """Every skill this machine has decided about: True enabled, False explicitly disabled."""
+def _decisions(session: Session, machine_id: uuid.UUID, harness: Harness) -> dict[str, bool]:
+    """Every skill decided about in this harness of this machine: True enabled, False
+    explicitly disabled. A decision in another harness is no decision here."""
     rows = session.execute(
         select(Skill.name, MachineSkill.enabled)
         .join(MachineSkill, MachineSkill.skill_id == Skill.skill_id)
-        .where(MachineSkill.machine_id == machine_id)
+        .where(MachineSkill.machine_id == machine_id, MachineSkill.harness == harness)
     ).all()
     return dict(rows)
+
+
+def _record_sync(session: Session, machine_id: uuid.UUID, harness: Harness) -> None:
+    """Remember that this harness is on this machine, and when it last synced."""
+    now = utc_now()
+    synced = _machine_harness(session, machine_id, harness)
+    if synced is None:
+        try:
+            # A savepoint, so two first syncs at once cost a re-read and not the report.
+            with session.begin_nested():
+                session.add(MachineHarness(machine_id=machine_id, harness=harness,
+                                           last_synced_on=now))
+            return
+        except IntegrityError:
+            synced = _machine_harness(session, machine_id, harness)
+    synced.last_synced_on = now
+
+
+def _machine_harness(session: Session, machine_id: uuid.UUID,
+                     harness: Harness) -> MachineHarness | None:
+    return session.scalar(select(MachineHarness).where(MachineHarness.machine_id == machine_id,
+                                                       MachineHarness.harness == harness))
 
 
 def _revisions(session: Session, user_id: uuid.UUID,

@@ -8,11 +8,15 @@ import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import MetaData, func, inspect, select, text
+from sqlalchemy.exc import IntegrityError
 
 import aistack.db
 from aistack.db.engine import build_engine, build_session_factory
 from aistack.db.models import Base
+from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
+from aistack.db.models.machine_harness import MachineHarness
+from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.user import User
@@ -47,12 +51,12 @@ def _tables(engine) -> set[str]:
     return set(inspect(engine).get_table_names())
 
 
-def _baseline_only(tmp_path) -> str:
-    """The migrations as the MVP shipped them: the baseline and nothing after it."""
-    location = tmp_path / "baseline"
+def _migrations_up_to(tmp_path, revision: str) -> str:
+    """The migrations as the release that ended at `revision` shipped them."""
+    location = tmp_path / f"up-to-{revision}"
     shutil.copytree(MIGRATIONS, location, ignore=shutil.ignore_patterns("__pycache__"))
     for later in (location / "versions").glob("*.py"):
-        if not later.name.startswith(BASELINE_REVISION):
+        if later.name[:4] > revision:
             later.unlink()
     return str(location)
 
@@ -62,7 +66,7 @@ def _a_database_the_mvp_wrote(engine, tmp_path) -> None:
 
     Raw inserts, never the services: those describe today's schema, and this is yesterday's.
     """
-    migrate_schema(engine, script_location=_baseline_only(tmp_path))
+    migrate_schema(engine, script_location=_migrations_up_to(tmp_path, BASELINE_REVISION))
     now = datetime.now(timezone.utc)
     ids = {name: uuid.uuid4() for name in ("user", "machine", "skill", "version")}
     rows = {
@@ -174,6 +178,39 @@ def test_an_upgraded_server_shows_everyone_what_it_showed_them_before(empty_engi
     # the shared one: nothing to install twice and no update on offer.
     assert [entry.name for entry in report.install] == ["wizard"]
     assert report.team_updates == () and report.backup == ()
+
+
+def test_every_placement_made_before_harnesses_is_claude_codes(empty_engine, tmp_path):
+    """Harnesses arrive (ADR-0018). Claude Code's folder was the only one AIStack installed
+    into, so every decision a machine held is a decision about that folder."""
+    _a_database_the_mvp_wrote(empty_engine, tmp_path)
+    migrate_schema(empty_engine, script_location=_migrations_up_to(tmp_path, "0002"))
+    assert _revision(empty_engine) == "0002"
+
+    migrate_schema(empty_engine)
+
+    with build_session_factory(empty_engine).begin() as session:
+        decisions = session.execute(select(MachineSkill.harness, MachineSkill.enabled)).all()
+        harnesses = session.scalars(select(MachineHarness.harness)).all()
+        user_id = session.scalars(select(User.user_id)).one()
+        machine_id = session.scalars(select(Machine.machine_id)).one()
+        claude_code = sync_service.sync(session, machine_id, user_id, {})
+        agents = sync_service.sync(session, machine_id, user_id, {}, "agents")
+
+    assert decisions == [(Harness.CLAUDE_CODE, True)]
+    # Filled in by each machine's next sync, not guessed at here.
+    assert harnesses == []
+    assert [entry.name for entry in claude_code.install] == ["wizard"]
+    assert agents.install == () and agents.ask == ()
+
+
+def test_the_database_refuses_a_harness_it_does_not_know(empty_engine, tmp_path):
+    _a_database_the_mvp_wrote(empty_engine, tmp_path)
+    migrate_schema(empty_engine)
+
+    with pytest.raises(IntegrityError):
+        with empty_engine.begin() as connection:
+            connection.execute(text("UPDATE machine_skill SET harness = 'codex'"))
 
 
 def test_a_migration_that_fails_leaves_the_database_as_it_was(empty_engine, tmp_path):

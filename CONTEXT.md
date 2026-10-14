@@ -5,8 +5,8 @@ A self-hosted, open-source control plane for AI development configuration. Each 
 ## Language
 
 **Harness**:
-An AI coding tool that consumes configuration (Claude Code, Codex, Cursor, ...).
-_Avoid_: Agent (that means a subagent definition), provider, IDE
+A skills folder with a name, which the coding agents that read it load skills from (ADR-0018). Two exist: `claude_code` (`~/.claude/skills`, read by Claude Code) and `agents` (`~/.agents/skills`, read by Codex, Gemini CLI, Kimi Code, opencode, Cursor, GitHub Copilot CLI, and Amp). A skill is placed in a harness on a computer, and sync runs one harness at a time.
+_Avoid_: Agent (that means a subagent definition), provider, IDE, "Codex" for the `agents` folder (it reaches every agent that reads it)
 
 **Resource**:
 The umbrella term for anything AIStack manages: a skill, rule, agent, hook, or MCP server definition.
@@ -85,7 +85,7 @@ A registered computer belonging to one user, authenticating with its own permane
 _Avoid_: Device, host
 
 **Enabled**:
-Desired state: this one of the user's own skills should exist on this machine. Set by install ("install X" = enable + materialize), by backing a skill up, or by a toggle on the dashboard; cleared by remove. Sync enforces it. A row with `enabled = false` means explicitly disabled; no row means no decision — the sync contract treats these differently.
+Desired state: this one of the user's own skills should exist in this harness on this machine. Set by install ("install X" = enable + materialize), by backing a skill up, or by a toggle on the dashboard; cleared by remove. Sync enforces it. A row with `enabled = false` means explicitly disabled; no row means no decision — the sync contract treats these differently.
 _Avoid_: Installed (that's actual state on disk), active
 
 **Pushed by**:

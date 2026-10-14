@@ -109,7 +109,7 @@ Sync compares one machine with the Library. It acts without asking only when not
 | In the Library and on disk, never chosen on this machine | You are asked whether to manage it here |
 | A team has a newer revision of a skill you took | Offered, with who pushed it. You decide each time |
 
-Sync itself is read-only: it reports, and the agent acts through other tools. It never deletes a file, never changes what a machine has enabled, and never applies a teammate's change. Every answer that would overwrite your files or discard edits says so first. The policy is one table in [`reconciliation.py`](src/aistack/services/reconciliation.py), with tests that state it as invariants over every row ([ADR-0006](docs/adr/0006-explicit-disable-sync-never-deletes.md)).
+Sync itself only reports, and the agent acts through other tools; the one thing it records is when each folder last synced. It never deletes a file, never changes what a machine has enabled, and never applies a teammate's change. Every answer that would overwrite your files or discard edits says so first. The policy is one table in [`reconciliation.py`](src/aistack/services/reconciliation.py), with tests that state it as invariants over every row ([ADR-0006](docs/adr/0006-explicit-disable-sync-never-deletes.md)).
 
 ## Connecting a computer
 
@@ -169,7 +169,7 @@ MCP carries what is worth saying in a sentence. Anything that would need many ty
 |---|---|---|
 | **Connect** | `join` | Redeem the server's invite code, register your first machine, get its token |
 | | `add_machine` | Register another computer and return a ready command to paste there |
-| **Library** | `sync` | Compare this machine with the Library and report what to do. Changes nothing |
+| **Library** | `sync` | Compare one skills folder on this machine with the Library and report what to do. Changes no skill and no decision |
 | | `push_skill` | Get a signed URL to back a skill up to. A repeated name becomes a new revision |
 | | `get_skill` | Enable a skill on this machine and get a signed URL for its files. With a team, take that team's copy first |
 | | `list_skills` | Your own skills, then every team skill you may see. This is also the search |

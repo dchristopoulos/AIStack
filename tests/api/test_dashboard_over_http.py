@@ -200,8 +200,8 @@ async def test_a_team_from_creation_to_an_update_taken_entirely_on_the_dashboard
         machine = (await _state(maria))["machines"][0]["id"]
         await _post(maria, f"/skills/code-review/machines/{machine}", enabled=True)
         mine = (await _state(maria))["skills"][0]
-        assert (mine["name"], mine["machines"], mine["source"]["update_available"]) == (
-            "code-review", [machine], False)
+        assert (mine["name"], mine["placements"], mine["source"]["update_available"]) == (
+            "code-review", [{"machine": machine, "harness": "claude_code"}], False)
 
         # Dimitris changes it and shares again: Maria is offered it, and takes it.
         await _push(server_url, dimitris_token, "code-review", files={"notes.md": "two\n"})
@@ -290,18 +290,29 @@ async def test_a_malformed_request_is_a_sentence_not_a_crash(server_url, body):
     assert response.status_code == 400 and response.json()["error"]
 
 
-async def test_removing_a_skill_and_switching_it_per_computer(server_url):
+async def test_removing_a_skill_and_switching_it_per_computer_and_harness(server_url):
     token = await _join(server_url, "dimitris")
     await _call(server_url, token, "add_machine", name="desktop", os="LINUX")
     await _push(server_url, token)
     async with _browser(server_url, token) as browser:
         state = await _state(browser)
         laptop, desktop = (machine["id"] for machine in state["machines"])
-        assert state["skills"][0]["machines"] == [laptop]
+        assert state["skills"][0]["placements"] == [{"machine": laptop,
+                                                     "harness": "claude_code"}]
 
         await _post(browser, f"/skills/wizard/machines/{desktop}", enabled=True)
+        await _post(browser, f"/skills/wizard/machines/{desktop}", enabled=True,
+                    harness="agents")
         await _post(browser, f"/skills/wizard/machines/{laptop}", enabled=False)
-        assert (await _state(browser))["skills"][0]["machines"] == [desktop]
+        assert (await _state(browser))["skills"][0]["placements"] == [
+            {"machine": desktop, "harness": "agents"},
+            {"machine": desktop, "harness": "claude_code"}]
+
+        unknown = await _post(browser, f"/skills/wizard/machines/{desktop}", enabled=True,
+                              harness="cursor")
+        assert unknown.status_code == 400
+        assert unknown.json()["error"] == (
+            "harness must be one of claude_code, agents. Received: 'cursor'.")
 
         await _post(browser, "/skills/wizard/remove")
         assert (await _state(browser))["skills"] == []

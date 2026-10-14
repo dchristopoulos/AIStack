@@ -1134,7 +1134,7 @@ function renderSidebar(r) {
             : el('span', { class: 'count' }, String(state.skills.length))),
         el('div', { class: 'nav-heading' }, 'Computers',
           btn(null, { class: 'btn ghost icon', fk: 'add-computer', title: 'Add a computer', 'aria-label': 'Add a computer', on: { click: addComputerDialog } }, 'plus')),
-        // One row per coding agent on each computer. Every computer has exactly one until ADR-0018.
+        // One row per harness on each computer: the skills folders it syncs (ADR-0018).
         targets().map(t => link(folderHash(t.m, t.agent), r.view === 'folder' && r.machine === t.m && r.agent === t.agent,
           icon(t.m.os === 'MACOS' ? 'laptop' : 'monitor'),
           el('span', { class: 'label mono' }, t.m.name),
@@ -1203,17 +1203,18 @@ function addComputerDialog() {
 
 /* ---------- Library and computers ---------- */
 
+// The harnesses the server knows, by key (ADR-0018). A computer lists the ones that have synced there.
 const AGENTS = {
-  claude: { name: 'Claude Code', glyph: 'CC', folder: '~/.claude/skills' },
+  claude_code: { name: 'Claude Code', glyph: 'CC', folder: '~/.claude/skills' },
+  agents: { name: 'Agents folder', glyph: 'AG', folder: '~/.agents/skills' },
 };
-// Every computer runs Claude Code, and a skill is placed on the computer, until the server knows about agents (ADR-0018).
-const agentsOf = () => ['claude'];
+const agentsOf = m => m.harnesses;
 const targets = () => state.machines.flatMap(m => agentsOf(m).map(agent => ({ m, agent })));
 const targetName = t => `${t.m.name} / ${AGENTS[t.agent].name}`;
-const isPlaced = (s, t) => s.machines.includes(t.m.id);
+const isPlaced = (s, t) => s.placements.some(p => p.machine === t.m.id && p.harness === t.agent);
 const placedOn = t => state.skills.filter(s => isPlaced(s, t));
 const sameTarget = (a, b) => a.m === b.m && a.agent === b.agent;
-const place = (s, t, on) => api(`/api/skills/${enc(s.name)}/machines/${enc(t.m.id)}`, { enabled: on });
+const place = (s, t, on) => api(`/api/skills/${enc(s.name)}/machines/${enc(t.m.id)}`, { enabled: on, harness: t.agent });
 
 const SORTS = {
   name: s => s.name,
@@ -1265,7 +1266,7 @@ function libraryView() {
     } });
   fill();
 
-  const unplaced = state.skills.filter(s => !s.machines.length);
+  const unplaced = state.skills.filter(s => !s.placements.length);
   const updating = state.skills.filter(s => s.source && s.source.update_available);
   const stat = (k, v, s, mark) => el('div', { class: 'stat' },
     el('div', { class: 'k' }, k), el('div', { class: 'v' }, String(v), mark), el('div', { class: 's', title: s }, s));
@@ -1305,7 +1306,7 @@ function libraryRow(s) {
       ? el('div', { class: 'placed' }, placed.map(t => el('span', { class: 'place-chip' },
           el('a', { href: folderHash(t.m, t.agent) }, targetName(t)),
           el('button', {
-            type: 'button', fk: `unplace:${s.name}:${t.m.id}`, title: 'Remove from ' + targetName(t), 'aria-label': `Remove ${s.name} from ${targetName(t)}`,
+            type: 'button', fk: `unplace:${s.name}:${t.m.id}:${t.agent}`, title: 'Remove from ' + targetName(t), 'aria-label': `Remove ${s.name} from ${targetName(t)}`,
             on: { click: ev => run(ev.currentTarget, async () => {
               await place(s, t, false);
               return `${s.name} leaves ${targetName(t)} at its next sync. It stays in your library.`;
@@ -1391,7 +1392,7 @@ function addSkillsDialog(t) {
   const where = `${AGENTS[t.agent].name} on ${t.m.name}`;
   const rows = state.skills.filter(s => !isPlaced(s, t)).map(s => ({ s, box: el('input', { type: 'checkbox' }) }));
   const labels = rows.map(r => el('label', { class: 'picker-opt' }, r.box, el('span', { class: 'mono' }, r.s.name),
-    el('span', { class: 't2', style: 'margin-left:auto' }, r.s.machines.length ? 'in use elsewhere' : 'only in your library')));
+    el('span', { class: 't2', style: 'margin-left:auto' }, r.s.placements.length ? 'in use elsewhere' : 'only in your library')));
   const filter = el('input', { class: 'input', type: 'search', placeholder: 'Search your library', 'aria-label': 'Search your library',
     on: { input: () => rows.forEach((r, i) => { labels[i].hidden = !r.s.name.includes(filter.value.trim().toLowerCase()); }) } });
   openDialog({
@@ -2036,21 +2037,22 @@ const DB = (() => {
   const ago = h => new Date(Date.now() - h * 3600e3).toISOString();
   const MAC = '0b1f6c1e-52a7-4c0e-9d0b-6f2f3c1a9e10', DESK = '7c9e2a44-1d3b-4f6a-8a55-0e4d2b7f6c21';
   const person = (username, role, groups) => ({ username, role, sees_all_groups: false, groups });
+  const P = machine => ({ machine, harness: 'claude_code' });
   return {
     user: { username: 'dimitris' },
-    machines: [{ id: MAC, name: 'macbook', os: 'MACOS' }, { id: DESK, name: 'desktop', os: 'LINUX' }],
+    machines: [{ id: MAC, name: 'macbook', os: 'MACOS', harnesses: ['claude_code'] }, { id: DESK, name: 'desktop', os: 'LINUX', harnesses: ['claude_code'] }],
     skills: [
-      { name: 'code-review', description: 'Reviews a diff against team standards and flags risky changes.', revision: 2, pushed_by: 'maria', updated_on: ago(30), files: 4, machines: [MAC],
+      { name: 'code-review', description: 'Reviews a diff against team standards and flags risky changes.', revision: 2, pushed_by: 'maria', updated_on: ago(30), files: 4, placements: [P(MAC)],
         source: { team: 'aistack', group: 'developers', revision: 2, latest_revision: 3, latest_pushed_by: 'maria', update_available: true } },
-      { name: 'commit-messages', description: 'Writes commit messages in the house style: imperative subject, why before what.', revision: 2, pushed_by: 'dimitris', updated_on: ago(96), files: 1, machines: [MAC, DESK],
+      { name: 'commit-messages', description: 'Writes commit messages in the house style: imperative subject, why before what.', revision: 2, pushed_by: 'dimitris', updated_on: ago(96), files: 1, placements: [P(MAC), P(DESK)],
         source: { team: 'aistack', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'dimitris', update_available: false } },
-      { name: 'pr-description', description: 'Drafts a pull request description from the branch diff and linked issue.', revision: 1, pushed_by: 'eve', updated_on: ago(200), files: 2, machines: [MAC, DESK],
+      { name: 'pr-description', description: 'Drafts a pull request description from the branch diff and linked issue.', revision: 1, pushed_by: 'eve', updated_on: ago(200), files: 2, placements: [P(MAC), P(DESK)],
         source: { team: 'everyone', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'eve', update_available: false } },
-      { name: 'sqlalchemy-migrations', description: 'Plans and writes Alembic migrations that run identically on SQLite and Postgres.', revision: 4, pushed_by: 'maria', updated_on: ago(52), files: 6, machines: [DESK],
+      { name: 'sqlalchemy-migrations', description: 'Plans and writes Alembic migrations that run identically on SQLite and Postgres.', revision: 4, pushed_by: 'maria', updated_on: ago(52), files: 6, placements: [P(DESK)],
         source: { team: 'aistack', group: 'developers/backend', revision: 4, latest_revision: 4, latest_pushed_by: 'maria', update_available: false } },
-      { name: 'wizard', description: 'Generates an interactive bash wizard for steps only a human can perform.', revision: 1, pushed_by: 'dimitris', updated_on: ago(5), files: 3, machines: [MAC], source: null },
-      { name: 'meeting-notes', description: 'Turns a rough transcript into decisions and actions.', revision: 1, pushed_by: 'dimitris', updated_on: ago(300), files: 1, machines: [], source: null },
-      { name: 'release-notes', description: 'Builds release notes from merged pull requests since the last tag.', revision: 1, pushed_by: 'dimitris', updated_on: ago(300), files: 2, machines: [],
+      { name: 'wizard', description: 'Generates an interactive bash wizard for steps only a human can perform.', revision: 1, pushed_by: 'dimitris', updated_on: ago(5), files: 3, placements: [P(MAC)], source: null },
+      { name: 'meeting-notes', description: 'Turns a rough transcript into decisions and actions.', revision: 1, pushed_by: 'dimitris', updated_on: ago(300), files: 1, placements: [], source: null },
+      { name: 'release-notes', description: 'Builds release notes from merged pull requests since the last tag.', revision: 1, pushed_by: 'dimitris', updated_on: ago(300), files: 2, placements: [],
         source: { team: 'aistack', group: null, revision: 1, latest_revision: 1, latest_pushed_by: 'dimitris', update_available: false } },
     ],
     teams: [
@@ -2098,8 +2100,9 @@ const dShared = t => { if (t.kind === 'SERVER') fail(`Everyone on this server is
 const DEMO_ROUTES = [
   [/^\/api\/skills\/([^/]+)\/machines\/([^/]+)$/, (b, name, id) => {
     const s = dMine(name);
-    s.machines = s.machines.filter(m => m !== id);
-    if (b.enabled) s.machines.push(id);
+    const harness = b.harness || 'claude_code';
+    s.placements = s.placements.filter(p => p.machine !== id || p.harness !== harness);
+    if (b.enabled) s.placements.push({ machine: id, harness });
   }],
   [/^\/api\/skills\/([^/]+)\/share$/, (b, name) => {
     const s = dMine(name), t = dTeam(b.team), group = b.group || null;
@@ -2149,7 +2152,7 @@ const DEMO_ROUTES = [
     const source = { team: t.name, group: ts.group, revision: ts.revision, latest_revision: ts.revision, latest_pushed_by: ts.pushed_by, update_available: false };
     const mine = DB.skills.find(s => s.name === b.name);
     if (mine) Object.assign(mine, { description: ts.description, revision: mine.revision + 1, pushed_by: ts.pushed_by, updated_on: dNow(), source });
-    else DB.skills.push({ name: ts.name, description: ts.description, revision: 1, pushed_by: ts.pushed_by, updated_on: dNow(), files: 3, machines: [], source });
+    else DB.skills.push({ name: ts.name, description: ts.description, revision: 1, pushed_by: ts.pushed_by, updated_on: dNow(), files: 3, placements: [], source });
     DB.skills.sort((a, c) => a.name.localeCompare(c.name));
     ts.in_library = true;
   }],

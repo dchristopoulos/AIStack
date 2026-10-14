@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 
 from aistack.commons.exceptions import NotFound, SignedOut
 from aistack.commons.text import loggable
+from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
+from aistack.db.models.machine_harness import MachineHarness
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
@@ -21,6 +23,7 @@ from aistack.db.models.team import Team, TeamMember
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
 from aistack.services import skill_service, team_service, visibility
+from aistack.services.harnesses import DEFAULT_HARNESS, validated_harness
 
 
 def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
@@ -61,12 +64,7 @@ def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
     return {
         "user": {"username": session.scalar(
             select(User.username).where(User.user_id == user_id))},
-        "machines": [
-            {"id": str(machine_id), "name": name, "os": os.value}
-            for machine_id, name, os in session.execute(
-                select(Machine.machine_id, Machine.name, Machine.os)
-                .where(Machine.user_id == user_id).order_by(Machine.created_on)).all()
-        ],
+        "machines": _machines(session, user_id),
         "skills": [{key: value for key, value in skill.items() if key != "source_id"}
                    for skill in mine],
         "teams": teams,
@@ -86,11 +84,12 @@ def require_a_machine(session: Session, user_id: uuid.UUID) -> None:
 
 
 def set_on_machine(session: Session, user_id: uuid.UUID, name: str, machine_id: str,
-                   enabled: bool) -> None:
-    """Switch one of the user's own skills on or off for one of their computers.
+                   enabled: bool, harness: str | None = None) -> None:
+    """Switch one of the user's own skills on or off in one harness of one of their computers.
 
-    The decision is recorded; the files move the next time that computer syncs.
+    The decision is recorded; the files move the next time that harness syncs there.
     """
+    harness = validated_harness(harness)
     skill = visibility.required_my_skill(session, user_id, name)
     try:
         machine = session.get(Machine, uuid.UUID(machine_id))
@@ -99,7 +98,32 @@ def set_on_machine(session: Session, user_id: uuid.UUID, name: str, machine_id: 
     # Somebody else's computer is answered like one that does not exist.
     if machine is None or machine.user_id != user_id:
         raise NotFound(f"You have no computer '{loggable(str(machine_id))}'.")
-    skill_service.set_enabled(session, machine.machine_id, skill.skill_id, enabled=bool(enabled))
+    skill_service.set_enabled(session, machine.machine_id, harness, skill.skill_id,
+                              enabled=bool(enabled))
+
+
+def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
+    """The user's computers, oldest first, each with its harnesses: those that have synced
+    there and those holding a decision about a skill.
+
+    A computer with neither has not synced since harnesses existed, and is shown with Claude
+    Code, the only harness there was before.
+    """
+    known: dict[uuid.UUID, set[Harness]] = {}
+    for table in (MachineHarness, MachineSkill):
+        for machine_id, harness in session.execute(
+                select(table.machine_id, table.harness).distinct()
+                .join(Machine, Machine.machine_id == table.machine_id)
+                .where(Machine.user_id == user_id)).all():
+            known.setdefault(machine_id, set()).add(harness)
+    return [
+        {"id": str(machine_id), "name": name, "os": os.value,
+         "harnesses": [harness.value for harness in Harness
+                       if harness in known.get(machine_id, {DEFAULT_HARNESS})]}
+        for machine_id, name, os in session.execute(
+            select(Machine.machine_id, Machine.name, Machine.os)
+            .where(Machine.user_id == user_id).order_by(Machine.created_on)).all()
+    ]
 
 
 def _newest() -> Any:
@@ -154,12 +178,14 @@ def _my_skills(session: Session, user_id: uuid.UUID,
         .join(newest, newest.c.skill_id == mine.c.skill_id)
         .order_by(mine.c.name)
     ).all()
-    enabled: dict[uuid.UUID, list[str]] = {}
-    for skill_id, machine_id in session.execute(
-            select(MachineSkill.skill_id, MachineSkill.machine_id)
+    placements: dict[uuid.UUID, list[dict[str, str]]] = {}
+    for skill_id, machine_id, harness in session.execute(
+            select(MachineSkill.skill_id, MachineSkill.machine_id, MachineSkill.harness)
             .join(Machine, Machine.machine_id == MachineSkill.machine_id)
-            .where(Machine.user_id == user_id, MachineSkill.enabled.is_(True))).all():
-        enabled.setdefault(skill_id, []).append(str(machine_id))
+            .where(Machine.user_id == user_id, MachineSkill.enabled.is_(True))
+            .order_by(Machine.created_on, Machine.machine_id, MachineSkill.harness)).all():
+        placements.setdefault(skill_id, []).append({"machine": str(machine_id),
+                                                    "harness": harness.value})
 
     skills = []
     for (skill_id, name, description, source_id, source_revision, revision, pushed_by,
@@ -173,7 +199,7 @@ def _my_skills(session: Session, user_id: uuid.UUID,
             "pushed_by": pushed_by,
             "updated_on": as_utc(pushed_on).isoformat(),
             "files": files,
-            "machines": sorted(enabled.get(skill_id, [])),
+            "placements": placements.get(skill_id, []),
             "source_id": None if source is None else source_id,
             "source": None if source is None else {
                 "team": source["team"],

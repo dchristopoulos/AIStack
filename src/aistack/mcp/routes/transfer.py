@@ -58,6 +58,7 @@ def _store_upload(ticket: UploadTicket, archive: bytes) -> skill_service.PushedS
             name=ticket.skill_name,
             origin=ticket.origin,
             archive=archive,
+            harness=ticket.harness,
         )
 
 

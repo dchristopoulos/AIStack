@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import jwt
 
 from aistack.commons.exceptions import InvalidTicket
+from aistack.db.models.harness import Harness
 
 TICKET_LIFETIME_SECONDS = 300
 SIGNING_KEY_BYTES = 32
@@ -32,12 +33,13 @@ _DASHBOARD_SESSION_AUDIENCE = "aistack:dashboard-session"
 
 @dataclass(frozen=True)
 class UploadTicket:
-    """Permission for one machine to upload one named skill."""
+    """Permission for one machine to upload one named skill, from one harness."""
 
     machine_id: uuid.UUID
     user_id: uuid.UUID
     skill_name: str
     origin: str | None
+    harness: Harness
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,7 @@ class TicketSigner:
             "user_id": str(ticket.user_id),
             "skill_name": ticket.skill_name,
             "origin": ticket.origin,
+            "harness": ticket.harness.value,
         })
 
     def sign_download(self, ticket: DownloadTicket) -> str:
@@ -75,6 +78,7 @@ class TicketSigner:
                 user_id=uuid.UUID(claims["user_id"]),
                 skill_name=claims["skill_name"],
                 origin=claims["origin"],
+                harness=Harness(claims["harness"]),
             )
         except (KeyError, ValueError, TypeError) as error:
             raise _not_valid("push_skill") from error

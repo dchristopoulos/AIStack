@@ -1,5 +1,7 @@
 from aistack.db.models.base import Base
+from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
+from aistack.db.models.machine_harness import MachineHarness
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.operating_system import OperatingSystem
 from aistack.db.models.skill import Skill
@@ -23,7 +25,9 @@ __all__ = [
     "Base",
     "GroupMember",
     "GroupUnsubscribed",
+    "Harness",
     "Machine",
+    "MachineHarness",
     "MachineSkill",
     "OperatingSystem",
     "Skill",

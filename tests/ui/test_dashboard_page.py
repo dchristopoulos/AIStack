@@ -17,7 +17,7 @@ def _skill(state: dict, name: str) -> dict:
 def _on(state: dict, name: str) -> list[str]:
     """The computers a skill in the user's library is placed on, by name."""
     names = {machine["id"]: machine["name"] for machine in state["machines"]}
-    return sorted(names[machine] for machine in _skill(state, name)["machines"])
+    return sorted(names[placement["machine"]] for placement in _skill(state, name)["placements"])
 
 
 def _team(state: dict, name: str) -> dict:
@@ -127,7 +127,7 @@ async def test_a_computer_copies_what_another_one_has(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
     on_macbook = [skill["name"] for skill in (await dimitris.state())["skills"]
-                  if skill["machines"]]
+                  if skill["placements"]]
     await _open_computer(dimitris, "desktop")
 
     await page.get_by_role("button", name="Copy from…").click()
@@ -260,7 +260,7 @@ async def test_signing_out_closes_the_dashboard_in_that_browser(sign_in):
     assert (await maria.page.request.get(f"{maria.base_url}/api/state")).status == 401
 
 
-@pytest.mark.parametrize("route", ["#/library", "#/f/{macbook}/claude", "#/t/aistack/skills",
+@pytest.mark.parametrize("route", ["#/library", "#/f/{macbook}/claude_code", "#/t/aistack/skills",
                                    "#/t/aistack/groups", "#/t/aistack/members"])
 async def test_nothing_scrolls_sideways_on_a_phone(sign_in, route):
     dimitris = await sign_in("dimitris", viewport=(390, 844))

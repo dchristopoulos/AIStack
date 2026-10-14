@@ -5,6 +5,7 @@ import jwt
 import pytest
 
 from aistack.commons.exceptions import InvalidTicket
+from aistack.db.models.harness import Harness
 from aistack.services.transfer_ticket import (
     SIGNING_KEY_BYTES,
     DownloadTicket,
@@ -15,7 +16,7 @@ from aistack.services.transfer_ticket import (
 KEY = secrets.token_bytes(SIGNING_KEY_BYTES)
 
 UPLOAD = UploadTicket(machine_id=uuid.uuid4(), user_id=uuid.uuid4(), skill_name="wizard",
-                      origin="https://github.com/mattpocock/skills")
+                      origin="https://github.com/mattpocock/skills", harness=Harness.AGENTS)
 DOWNLOAD = DownloadTicket(machine_id=uuid.uuid4(), skill_version_id=uuid.uuid4())
 
 
@@ -29,7 +30,8 @@ def test_an_upload_ticket_round_trips(signer):
 
 
 def test_an_upload_ticket_without_an_origin_round_trips(signer):
-    ticket = UploadTicket(UPLOAD.machine_id, UPLOAD.user_id, "wizard", None)
+    ticket = UploadTicket(UPLOAD.machine_id, UPLOAD.user_id, "wizard", None,
+                          Harness.CLAUDE_CODE)
 
     assert signer.verified_upload(signer.sign_upload(ticket)) == ticket
 
@@ -75,7 +77,8 @@ def test_a_ticket_whose_payload_was_edited_is_refused(signer):
     """Change the skill name, keep the signature: the classic attempt."""
     header, _, signature = signer.sign_upload(UPLOAD).split(".")
     _, forged_payload, _ = signer.sign_upload(
-        UploadTicket(UPLOAD.machine_id, UPLOAD.user_id, "someone-elses-skill", None)).split(".")
+        UploadTicket(UPLOAD.machine_id, UPLOAD.user_id, "someone-elses-skill", None,
+                     Harness.CLAUDE_CODE)).split(".")
 
     with pytest.raises(InvalidTicket):
         signer.verified_upload(f"{header}.{forged_payload}.{signature}")
