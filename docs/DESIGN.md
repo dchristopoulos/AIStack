@@ -266,6 +266,103 @@ The web application is the product; MCP connects an agent to the account. The da
 
 **The sidebar is the map.** It lists My skills, then each team with its groups nested under it, a step in for each level, the way a chat application lists channels. A private group has a lock, every group shows how many skills are in it and below it, and a blue dot marks one with an update waiting for a skill the user took. Choosing a group opens the team's skills narrowed to that group and the groups under it, at `#/t/<team>/skills/<group path>`, an address that can be reloaded or sent to a teammate. A team's groups fold away with the button beside its name, and the browser remembers which teams are folded. The tree is built from the groups `/api/state` sends, so a private group the user is not in is absent from it, and its address opens the whole team exactly as an unknown one does.
 
+### The dashboard's routes
+
+The page is the only client these were written for, and they are documented so that it is not the only way to learn them. Everything is under the server's own address. A test fails when a route is added to `api/dashboard.py` and not to this table.
+
+**Signing in.** `GET /app/login/{ticket}` takes the link `open_dashboard` returned, sets the session cookie `aistack_session` (HttpOnly, SameSite=Lax, Secure over https, eight hours), and answers `303` to `/app`, which takes the ticket out of the address bar. `GET /app` is the page. Either one, without a valid ticket or session, answers `401` with a short page saying how to get a link.
+
+**What every `/api` route does.**
+
+- It reads the user from the session cookie and from nowhere else. No route takes a user id.
+- It answers `401` when there is no valid session, or when the user's last computer has been removed from the server.
+- A `POST` must carry the header `X-AIStack-Request` (any value) and a JSON object as its body, at most 16 KiB. `{}` is a valid body for a route that needs nothing.
+- It runs one service call in one transaction and returns what that call returned. A route with nothing to return answers `{"ok": true}`.
+- A refusal is `{"error": "<a sentence saying what to fix>"}` with `400` for a value that is not valid, `404` for something that does not exist or that this user may not see (the two are never told apart), `409` for a conflict such as a name already taken, and `500` with no detail for anything unexpected.
+- Responses are `Cache-Control: no-store`.
+
+| Route | Body | Returns |
+|---|---|---|
+| `GET /api/state` | | Everything the page shows, below |
+| `POST /api/logout` | `{}` | Clears the cookie |
+| `POST /api/skills/{name}/machines/{machine_id}` | `enabled` (true or false) | Switches one of the user's own skills on or off for one of their computers. The files move at that computer's next sync |
+| `POST /api/skills/{name}/share` | `team`, `group` (a path, or null for team level) | `team`, `group`, `revision`, `created`, `unchanged`, `previous_pushed_by`, `possibly_unrelated`: what `share_skill` returns |
+| `POST /api/skills/{name}/remove` | `{}` | Removes the skill from My skills on every computer |
+| `POST /api/teams` | `name` | `name`. The caller is the new team's admin |
+| `POST /api/teams/join` | `code` (a team's invite code) | `team` |
+| `POST /api/teams/{team}/leave` | `{}` | |
+| `POST /api/teams/{team}/invite` | `{}` | `code`, shown this once. The previous code stops working. Admin only |
+| `POST /api/teams/{team}/take` | `name` | Copies the team's latest revision of that skill into My skills |
+| `POST /api/teams/{team}/members/{username}` | `role` (`ADMIN` or `MEMBER`) and/or `sees_all_groups` (true or false) | Admin only |
+| `POST /api/teams/{team}/members/{username}/remove` | `{}` | Admin only |
+| `POST /api/teams/{team}/groups` | `name`, optional `parent` (a path), optional `private` | `path`. Admin only |
+| `POST /api/teams/{team}/group` | `path`, and `private` (admin only) and/or `subscribed` (anyone who sees the group) | |
+| `POST /api/teams/{team}/group/members` | `path`, `username`, `member` (true or false) | Admin only |
+| `POST /api/teams/{team}/skills/{name}/move` | `group` (a path, or null for team level) | Admin only |
+| `POST /api/teams/{team}/skills/{name}/remove` | `{}` | Removes the team's copy. Admin only |
+
+A group's path contains slashes, so it always travels in the body and never in the address.
+
+**`GET /api/state`.** One object, holding only what this user may see: `services/visibility.py` decided that before it was built, and the page filters nothing.
+
+```json
+{
+  "user": {"username": "dimitris"},
+  "machines": [
+    {"id": "af6c2628-…", "name": "macbook", "os": "MACOS"}
+  ],
+  "skills": [
+    {
+      "name": "code-review",
+      "description": "Reviews a diff against the team's standards.",
+      "revision": 2,
+      "pushed_by": "dimitris",
+      "updated_on": "2026-10-14T00:43:56.158183+00:00",
+      "files": 2,
+      "machines": ["af6c2628-…"],
+      "source": {
+        "team": "acme", "group": null,
+        "revision": 2, "latest_revision": 3, "latest_pushed_by": "maria",
+        "update_available": true
+      }
+    }
+  ],
+  "teams": [
+    {
+      "name": "acme", "kind": "SHARED", "role": "ADMIN", "sees_all_groups": false,
+      "members": [
+        {"username": "maria", "role": "MEMBER", "sees_all_groups": false, "groups": ["backend"]}
+      ],
+      "groups": [
+        {"path": "backend/aistack", "private": false, "member": true, "subscribed": true}
+      ],
+      "skills": [
+        {
+          "name": "code-review", "description": "…", "team": "acme", "group": null,
+          "revision": 3, "pushed_by": "maria",
+          "updated_on": "2026-10-14T00:43:56.161865+00:00",
+          "in_my_skills": true
+        }
+      ]
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `machines` | The user's computers, oldest first. `os` is `MACOS`, `WINDOWS`, or `LINUX` |
+| `skills` | My skills, by name, without the ones removed from it |
+| `skills[].revision`, `pushed_by`, `updated_on`, `files` | The latest revision of the user's own copy: its number, who pushed it, when (UTC), and how many files it has |
+| `skills[].machines` | The ids of the computers the skill is switched on for. On is a decision the server holds, not proof the files are there yet |
+| `skills[].source` | The team skill this copy was taken from or shared to, or null. Null also when the user can no longer see that skill: the copy is then simply theirs |
+| `source.revision` | The team's revision this copy came from. `latest_revision` and `latest_pushed_by` describe the team's newest, and `update_available` is true when it is newer |
+| `teams` | The teams the user is in, by name. My skills is not among them. `kind` is `SERVER` for `everyone` and `SHARED` for a team somebody created |
+| `teams[].role`, `sees_all_groups` | The user's own role in that team, `ADMIN` or `MEMBER`, and whether they were given sight of every group |
+| `teams[].members` | Everyone in the team. A member's private groups are listed only for an admin and for people in those groups |
+| `teams[].groups` | The groups the user may see, by path; an admin sees all of them. `member` is whether the user is in it, `subscribed` whether they are offered its updates |
+| `teams[].skills` | The team's skills the user may see, each with its latest revision. `group` is a path, or null at team level. `in_my_skills` is true when one of the user's own skills was taken from it or shared to it |
+
 ### Schema
 
 Portability: runs identically on SQLite and Postgres. Enums are `VARCHAR + CHECK` (SQLAlchemy `Enum(native_enum=False)`), JSON is SQLAlchemy `JSON` (JSONB variant on PG), timestamps are `DateTime(timezone=True)` (timestamptz on PG, ISO text on SQLite).
