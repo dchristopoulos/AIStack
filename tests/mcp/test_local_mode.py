@@ -12,6 +12,7 @@ from fastmcp.exceptions import ToolError
 from sqlalchemy import select, update
 
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings
+from aistack.bundled import local_sync_skill_document
 from aistack.bootstrap.context import application_context
 from aistack.commons.exceptions import Conflict
 from aistack.db.models.machine import Machine
@@ -19,6 +20,8 @@ from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.user import User
 from aistack.mcp.local import local_mcp
 from aistack.services import onboarding_service
+from aistack.services.skill_archive import ArchivedFile
+from aistack.services.skill_validation import validated_skill
 
 pytestmark = pytest.mark.anyio
 
@@ -264,3 +267,31 @@ def test_the_command_serves_over_stdio(tmp_path):
     assert replies[1]["result"]["structuredContent"]["backup"] == ["wizard"]
     assert server.stdout.read() == ""
     assert (tmp_path / ".aistack" / "aistack.db").exists()
+
+
+async def test_sync_keeps_aistacks_own_skill_current_where_setup_put_it(computer):
+    async with computer("laptop") as (laptop, home):
+        skills = home / ".claude" / "skills"
+        (skills / "sync-aistack").mkdir(parents=True)
+        (skills / "sync-aistack" / "SKILL.md").write_text("an older release's copy\n")
+        await _call(laptop, "sync")
+        assert (skills / "sync-aistack" / "SKILL.md").read_text() == local_sync_skill_document()
+
+        # Never created in a folder setup did not put it in.
+        await _call(laptop, "sync", harness="agents")
+        assert not (home / ".agents" / "skills" / "sync-aistack").exists()
+
+
+def test_the_local_sync_skill_is_one_the_library_would_accept():
+    """Setup writes it to disk before AIStack ever sees it, so it must pass push validation."""
+    document = local_sync_skill_document().encode("utf-8")
+    skill = validated_skill("sync-aistack", [ArchivedFile("SKILL.md", document, False)])
+    assert "sync aistack" in skill.description
+
+
+@pytest.mark.parametrize("command, starts", [("setup", "# Set up AIStack on this computer"),
+                                             ("sync-skill", "---\nname: sync-aistack\n")])
+def test_the_command_prints_local_setup_and_its_skill(command, starts):
+    printed = subprocess.run([sys.executable, "-m", "aistack.bootstrap", command],
+                             capture_output=True, text=True, check=True).stdout
+    assert printed.startswith(starts)

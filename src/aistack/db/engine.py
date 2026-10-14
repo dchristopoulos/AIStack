@@ -15,6 +15,10 @@ def build_engine(database_url: str) -> Engine:
     """Build an engine, keeping all database-specific setup here. See ADR-0002."""
     started_at = perf_counter()
     url = make_url(database_url)
+    # Neon and Supabase hand out postgresql:// addresses, which SQLAlchemy reads as psycopg2.
+    # The driver AIStack ships is psycopg 3, so a pasted address is pointed at it.
+    if url.drivername in ("postgresql", "postgres"):
+        url = url.set(drivername="postgresql+psycopg")
 
     if url.get_backend_name() == "sqlite":
         engine = create_engine(url)

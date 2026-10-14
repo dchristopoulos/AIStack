@@ -127,6 +127,17 @@ def install(folder: Path, name: str, packed: bytes, content_hash: str) -> None:
     _discard(replaced)
 
 
+def refresh(folder: Path, name: str, document: str) -> None:
+    """Make `folder/name/SKILL.md` exactly `document`, swapping the file in whole."""
+    target = folder / name / "SKILL.md"
+    content = document.encode("utf-8")
+    if target.is_file() and target.read_bytes() == content:
+        return
+    staged = target.with_name("SKILL.md.aistack-new")
+    staged.write_bytes(content)
+    os.replace(staged, target)
+
+
 def remove(folder: Path, name: str) -> bool:
     """Take the skill folder `name` off this computer. False when it was not there.
 

@@ -6,7 +6,25 @@ A self-hosted home for your AI coding skills. Every skill on your computers is b
 
 You see and manage all of it on a web dashboard. Your coding agent is connected to the same account over MCP, so the everyday actions are also a sentence in chat.
 
-Open source, one container, no passwords.
+Open source and free, with no hosted service: it runs on your own computers, and you choose where your Library lives.
+
+## Where your Library lives
+
+| Choice | What it costs you | For |
+|---|---|---|
+| **Only this computer** | Nothing to set up. No other computer reaches it | Trying it out, or one computer |
+| **A free PostgreSQL database** ([Neon](https://neon.tech) recommended; Supabase works) | A free account and one address pasted on each computer. Nothing to keep switched on. Supabase pauses after about a week unused | Your laptop and your desktop |
+| **A computer that stays on**, running the AIStack server | Free on a computer you own, but it must stay on (or a few dollars a month on a host) | Teams, and the only choice that works for one |
+
+For the first two, your coding agent starts AIStack itself and nothing runs in between ([ADR-0020](docs/adr/0020-local-mode-and-where-the-library-lives.md)). Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then paste this into Claude Code or Codex:
+
+```text
+Set up AIStack: run `uvx aistack-mcp setup` and follow what it prints.
+```
+
+It asks which choice you want, walks you through creating the Neon database if you pick it, connects your agent, and installs the `sync-aistack` skill. On another computer, paste the same and give it the same database address. If a laptop is lost, reset the database password and paste the new address on the others ([ADR-0023](docs/adr/0023-every-computer-keeps-the-database-address.md)). `uvx aistack-mcp dashboard` opens your Library in the browser, on that computer only.
+
+For a team, run a server and connect each computer to it: see [Connecting a computer to a server](#connecting-a-computer-to-a-server).
 
 ## Try it in two minutes
 
@@ -111,7 +129,7 @@ Sync compares one machine with the Library. It acts without asking only when not
 
 Sync itself only reports, and the agent acts through other tools; the one thing it records is when each folder last synced. It never deletes a file, never changes what a machine has enabled, and never applies a teammate's change. Every answer that would overwrite your files or discard edits says so first. The policy is one table in [`reconciliation.py`](src/aistack/services/reconciliation.py), with tests that state it as invariants over every row ([ADR-0006](docs/adr/0006-explicit-disable-sync-never-deletes.md)).
 
-## Connecting a computer
+## Connecting a computer to a server
 
 Paste this into Claude Code or Codex, with your server's address and an invite code: the one its operator gave you, or a team's, which also puts you in that team:
 
@@ -259,6 +277,7 @@ What it does not show, stated plainly:
 
   The skills folder was a scratch home directory, and the config file was restored from a backup afterwards. This is one run with one model, and no automated test repeats it.
 - Local mode was run once by hand (2026-10-15, Claude Code 2.1.241, headless). Two scratch home folders stood in for a laptop and a desktop, each starting the built package with `uvx --from <wheel> aistack-mcp` over stdio, and both pointed at one SQLite Library. Told "sync aistack", the laptop's session backed up its one skill. Asked what was in the Library and to install it, the desktop's session listed it, synced, and installed it byte for byte with its executable bit, in six turns. No server ran at any point. This is one run with one model; `tests/mcp/test_local_mode.py` repeats the same flow without an agent.
+- Local setup was run once by hand (2026-10-15) in a scratch home folder, against the built package and a PostgreSQL address pasted as `postgresql://`. Each step of `aistack setup` worked as written: the start check stayed silent on success and printed one sentence for a wrong password. Claude Code 2.1.241, headless and connected with setup's own command, was then told "sync aistack". It loaded the local `sync-aistack` skill, synced both folders, backed up the one skill on disk, and asked the first-sync question about using the same skills in both folders. Setup's `claude mcp add` itself was not run, because it would have changed the real Claude Code configuration.
 
 ## How this compares
 
