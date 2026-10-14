@@ -23,13 +23,13 @@ It prints a sign-in link for each of three people: an admin, a member with an up
 
 ## What it looks like
 
-![My skills: every skill, where it came from, and which of your computers has it](docs/images/dashboard-my-skills.png)
+![The Library: every skill you keep, where it came from, and which computers have it](docs/images/dashboard-library.png)
 
-| A team, with nested groups | Managing groups |
+| One computer's coding agent | A team, with nested groups |
 |---|---|
-| ![A team's skills by group](docs/images/dashboard-team.png) | ![Groups: open or private, and who is in them](docs/images/dashboard-groups.png) |
-
-![An update a teammate pushed, offered and not applied](docs/images/dashboard-update-dark.png)
+| ![What Claude Code on one computer has, with Add skills and Copy from](docs/images/dashboard-computer.png) | ![A team's skills by group](docs/images/dashboard-team.png) |
+| **Managing groups** | **An update a teammate pushed, offered and not applied** |
+| ![Groups: open or private, and who is in them](docs/images/dashboard-groups.png) | ![An update waiting in the Library, in dark mode](docs/images/dashboard-update-dark.png) |
 
 ## The problem
 
@@ -41,17 +41,17 @@ Three places hold skills. Each is more widely seen than the one before.
 
 | Place | Who sees it | How a skill gets there | What installs from it |
 |---|---|---|---|
-| **My skills** | Only you | Sync backs up what is on your computers, without asking | Your machines, and nothing else |
-| **A team** | Its members | A member shares one of their own skills | Nothing directly: you take a copy into My skills |
+| **Library** | Only you | Sync backs up what is on your computers, without asking | Your machines, and nothing else |
+| **A team** | Its members | A member shares one of their own skills | Nothing directly: you take a copy into the Library |
 | **A group** in a team, such as `backend` or `backend/aistack` | Open: whoever sees the group above it. Private: the people added to it | A member of it, or of a group above it, shares into it | The same as a team |
 
-**My skills** is yours alone and mirrors your computers. It is the only place a machine ever installs from, so what runs on your laptop is always your own copy.
+**The Library** is yours alone and mirrors your computers. It is the only place a machine ever installs from, so what runs on your laptop is always your own copy.
 
 **Teams** are created by any user, who becomes the team's admin, and joined with the team's invite code. Every account is also in the server's team, `everyone`. Sharing gives the team its own copy of a skill, with its own history, and every revision says who shared it.
 
 **Groups** sit inside a team like channels, and nest. A private group is seen only by the people added to it. Two roles exist, admin and member; "backend developer" is not a role, it is being in the `backend` group.
 
-Two rules follow from "a machine installs only from My skills":
+Two rules follow from "a machine installs only from the Library":
 
 - **A teammate's change is an offer.** When a team's copy is newer than the one you took, sync tells you who changed it and asks. It never applies the change. A skill is instructions to an agent, and somebody else's edit does not reach your machine until you say yes.
 - **Leaving a team takes nothing off your computer.** Neither does being removed from one, or an admin deleting the team's copy. What you took is yours.
@@ -70,7 +70,7 @@ flowchart LR
         dash["Dashboard<br/>/app and /api"]
         tools["13 MCP tools<br/>metadata only"]
         routes["2 transfer routes<br/>signed, 5-minute URLs"]
-        mine[("My skills<br/>private, per user")]
+        mine[("Library<br/>private, per user")]
         teams[("Teams and groups<br/>shared copies")]
         desired[("Desired state<br/>per machine")]
     end
@@ -97,16 +97,16 @@ flowchart LR
 
 ## Sync never loses your work
 
-Sync compares one machine with My skills. It acts without asking only when nothing can be lost and nothing is shared.
+Sync compares one machine with the Library. It acts without asking only when nothing can be lost and nothing is shared.
 
 | What sync finds | What happens |
 |---|---|
 | Enabled here, not on disk | Installed |
 | Enabled here, an older unmodified revision | Updated, and you are told who pushed the new one |
-| On disk, not yet in My skills | Backed up to My skills. It is private, so nothing is shared |
+| On disk, not yet in the Library | Backed up to the Library. It is private, so nothing is shared |
 | Enabled here, edited locally | You are asked: restore, back up your version, or leave it |
 | You removed it earlier, and the folder is still there | You are asked: bring it back, or delete the folder |
-| In My skills and on disk, never chosen on this machine | You are asked whether to manage it here |
+| In the Library and on disk, never chosen on this machine | You are asked whether to manage it here |
 | A team has a newer revision of a skill you took | Offered, with who pushed it. You decide each time |
 
 Sync itself is read-only: it reports, and the agent acts through other tools. It never deletes a file, never changes what a machine has enabled, and never applies a teammate's change. Every answer that would overwrite your files or discard edits says so first. The policy is one table in [`reconciliation.py`](src/aistack/services/reconciliation.py), with tests that state it as invariants over every row ([ADR-0006](docs/adr/0006-explicit-disable-sync-never-deletes.md)).
@@ -131,15 +131,15 @@ For a second computer, say "add my other computer to aistack" on one that is alr
 | "sync aistack" | Backs up what is new on this computer, installs and updates what it should have, and asks about the rest. Do it when you start work, like `git pull` |
 | "open my aistack dashboard" | Gives you a link that opens the dashboard, signed in |
 | "what skills do my teams have?" | Lists your own skills, then each team's, with who pushed each |
-| "install code-review from backend" | Takes the team's copy into My skills and installs it here. Usable in the same session |
+| "install code-review from backend" | Takes the team's copy into the Library and installs it here. Usable in the same session |
 | "share wizard with backend" | Gives the team a copy of your latest revision |
 | "create a team called backend" | Creates it with you as admin. "Invite someone to backend" returns its invite code |
 | "join a team with this code" | Joins the team a teammate's invite code belongs to |
-| "remove wizard from this machine" | Disables it here and deletes the local folder. It stays in My skills and on your other machines |
+| "remove wizard from this machine" | Disables it here and deletes the local folder. It stays in the Library and on your other machines |
 
 A revision records who pushed it. That is provenance, not authorship: people back up and share third-party skills, and AIStack never claims you wrote something you only uploaded.
 
-Everything else is on the dashboard: which of your computers has which skill, groups and who is in them, members and roles, moving or removing a team's skill, unsubscribing from a group's updates, leaving a team, and removing a skill from My skills.
+Everything else is on the dashboard: which of your computers has which skill, groups and who is in them, members and roles, moving or removing a team's skill, unsubscribing from a group's updates, leaving a team, and removing a skill from the Library.
 
 ## Running a server
 
@@ -169,7 +169,7 @@ MCP carries what is worth saying in a sentence. Anything that would need many ty
 |---|---|---|
 | **Connect** | `join` | Redeem the server's invite code, register your first machine, get its token |
 | | `add_machine` | Register another computer and return a ready command to paste there |
-| **My skills** | `sync` | Compare this machine with My skills and report what to do. Changes nothing |
+| **Library** | `sync` | Compare this machine with the Library and report what to do. Changes nothing |
 | | `push_skill` | Get a signed URL to back a skill up to. A repeated name becomes a new revision |
 | | `get_skill` | Enable a skill on this machine and get a signed URL for its files. With a team, take that team's copy first |
 | | `list_skills` | Your own skills, then every team skill you may see. This is also the search |
@@ -244,7 +244,7 @@ What it does not show, stated plainly:
   | 24 skills already current | Nothing |
   | 1 to install, pushed from another computer and switched on from the dashboard | Installed it, executable bit intact |
   | 1 to update, an untouched older revision | Replaced it with revision 2 |
-  | 2 on disk and not yet in My skills | Backed both up without asking |
+  | 2 on disk and not yet in the Library | Backed both up without asking |
   | 1 edited locally | Left it alone, as answered, and said the edits exist only on that computer |
   | 1 update offered by a team, pushed by a teammate | Took it, as answered, and named who pushed it |
 

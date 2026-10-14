@@ -31,8 +31,9 @@ def _demo_seed():
 async def links_fixture(server_url) -> dict[str, str]:
     """A server filled by the demo script, and a sign-in link per person.
 
-    dimitris administers `acme`; maria is in its `backend` group and has an update waiting;
-    alex is in `acme` and in no group, so the private `security` group is hidden from him.
+    dimitris administers `aistack`; maria is in its `developers` group and has an update
+    waiting; alex is in `aistack` and in no group, so the private `security` group is hidden
+    from them.
     """
     return await _demo_seed().seed(server_url.removesuffix("/mcp"), INVITE_CODE)
 
@@ -80,7 +81,7 @@ async def sign_in_fixture(browser, server_url, links):
         page = await context.new_page()
         opened = Opened(page, base_url)
         await page.goto(links[username])
-        await page.get_by_role("heading", name="My skills", level=1).wait_for()
+        await page.get_by_role("heading", name="Library", level=1).wait_for()
         return opened
 
     yield sign_in

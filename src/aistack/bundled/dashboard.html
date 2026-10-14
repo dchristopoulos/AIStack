@@ -111,9 +111,9 @@ code, kbd { font-family: var(--mono); font-size: 12px; padding: 1px 5px; border-
 /* ---------- shell ---------- */
 #app {
   display: grid; min-height: 100vh;
-  grid-template-columns: var(--side) minmax(0, 1fr);
+  grid-template-columns: calc(72px + var(--side)) minmax(0, 1fr);
   grid-template-rows: var(--top) 1fr;
-  grid-template-areas: "top top" "side main";
+  grid-template-areas: "top top" "nav main";
 }
 .topbar {
   grid-area: top; position: sticky; top: 0; z-index: 40;
@@ -139,10 +139,63 @@ a.crumb.home:hover { background: none; }
 .logo { flex: none; width: 24px; height: 24px; border-radius: 6px; background: var(--text); color: var(--inverse); display: grid; place-items: center; }
 .top-right { display: flex; align-items: center; gap: 8px; }
 
+/* The rail, the space's list, and the account bar under both: one sticky column. */
+.nav-shell {
+  grid-area: nav; position: sticky; top: var(--top); height: calc(100vh - var(--top));
+  display: grid; grid-template-columns: 72px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas: "rail side" "account account";
+  border-right: 1px solid var(--border);
+}
+.rail {
+  grid-area: rail; min-height: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 14px 0; background: var(--surface-2); border-right: 1px solid var(--border); overflow-y: auto;
+}
+.rail-sep { width: 32px; height: 1px; background: var(--border-strong); margin: 2px 0; flex: none; }
+.rail-btn {
+  position: relative; flex: none; width: 44px; height: 44px; display: grid; place-items: center;
+  border: 1px solid var(--border-strong); border-radius: 50%; background: var(--surface); color: var(--text);
+  font: 600 16px var(--mono); text-transform: uppercase; cursor: pointer;
+  transition: border-radius .15s, background .15s, color .15s;
+}
+.rail-btn:hover { border-radius: 14px; }
+.rail-btn[aria-current="page"] { border-radius: 14px; background: var(--text); color: var(--inverse); border-color: var(--text); }
+.rail-btn::before {
+  content: ""; position: absolute; left: -14px; top: 50%; width: 4px; height: 0; border-radius: 0 4px 4px 0;
+  background: var(--text); transform: translateY(-50%); transition: height .15s;
+}
+.rail-btn:hover::before { height: 18px; }
+.rail-btn[aria-current="page"]::before { height: 34px; }
+.rail-btn.ghost { border-style: dashed; color: var(--muted); }
+.rail-item { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; text-decoration: none; }
+.rail-item .rail-name { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 10.5px var(--font); color: var(--muted); }
+.rail-item[aria-current="page"] .rail-name { color: var(--text); }
+.rail-item:hover .rail-btn { border-radius: 14px; }
+.rail-item:hover .rail-btn::before { height: 18px; }
+.rail-item[aria-current="page"] .rail-btn { border-radius: 14px; background: var(--text); color: var(--inverse); border-color: var(--text); }
+.rail-item[aria-current="page"] .rail-btn::before { height: 34px; }
+.placed { display: flex; flex-wrap: wrap; gap: 4px; }
+.place-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 4px 0 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); font: 12px var(--mono); color: var(--text); }
+.place-chip a { color: inherit; }
+.place-chip button { width: 18px; height: 18px; display: grid; place-items: center; border: 0; border-radius: 4px; background: none; color: var(--faint); cursor: pointer; padding: 0; }
+.place-chip button:hover { background: var(--active); color: var(--danger); }
+.not-placed { color: var(--faint); font-size: 13px; }
+.folder-path { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; }
+.target-group { border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 4px; }
+.target-group + .target-group { margin-top: 8px; }
+.target-group .head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 4px; font-weight: 500; font-size: 13px; }
+.rail-btn .pip { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: var(--blue-dot); border: 2px solid var(--surface-2); }
+.space-head { padding: 2px 8px 12px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
+h1.mono { font-size: 28px; letter-spacing: -.03em; }
+h1 .mono { font-size: inherit; letter-spacing: -.03em; }
+.space-head h2.mono { font-size: 15px; }
+.space-head h2 { font-size: 15px; font-weight: 600; letter-spacing: -.02em; }
+.space-head p { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.agent-tag { font: 500 10.5px/1 var(--mono); padding: 3px 5px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); background: var(--surface); }
 .sidebar {
-  grid-area: side; position: sticky; top: var(--top); height: calc(100vh - var(--top));
+  grid-area: side; min-height: 0;
   display: flex; flex-direction: column;
-  background: var(--bg); border-right: 1px solid var(--border);
+  background: var(--bg);
   padding: 16px 12px 12px;
   overflow-y: auto;
 }
@@ -162,23 +215,20 @@ a.crumb.home:hover { background: none; }
 .nav-item .label.mono { font-size: 13px; }
 .nav-item .count { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
 .nav-item .count.upd { color: var(--blue); }
-.nav-row { display: flex; align-items: center; gap: 2px; }
-.nav-row .nav-item { flex: 1; }
-.nav-fold { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--faint); cursor: pointer; }
-.nav-fold:hover { background: var(--active); color: var(--text); }
-.nav-fold svg { transition: transform .15s; }
-.nav-fold[aria-expanded="true"] svg { transform: rotate(90deg); }
-.nav-fold.none { visibility: hidden; }
 /* A team's groups sit under its name, a step in for each level. */
 .nav-item.sub { --d: 0; width: auto; height: 28px; margin-right: 26px; padding-left: calc(34px + var(--d) * 14px); font-size: 13px; }
 .nav-item.sub .label.mono { font-size: 12.5px; }
 .nav-heading { display: flex; align-items: center; height: 32px; margin-top: 16px; padding: 0 8px; font-size: 12px; font-weight: 500; color: var(--faint); }
-.nav-actions { display: flex; flex-direction: column; gap: 1px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-.sidebar-foot {
-  margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border);
-  display: flex; align-items: center; gap: 8px;
+.account {
+  grid-area: account; display: flex; align-items: center; gap: 10px;
+  height: 56px; padding: 0 12px 0 20px;
+  background: var(--surface-2); border-top: 1px solid var(--border);
 }
-.sidebar-foot .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 13px; padding-left: 2px; }
+.account .avatar { width: 32px; height: 32px; font-size: 13px; }
+.account .who { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.account .who b { font: 600 13px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account .who span { font-size: 12px; color: var(--faint); }
+.nav-heading .btn.icon { width: 24px; height: 24px; margin-left: auto; margin-right: -4px; }
 .avatar {
   flex: none; width: 24px; height: 24px; border-radius: 6px;
   display: grid; place-items: center;
@@ -186,7 +236,6 @@ a.crumb.home:hover { background: none; }
   font: 600 11px var(--mono); text-transform: uppercase;
 }
 .avatar.round { border-radius: 50%; }
-.avatar.xs { width: 16px; height: 16px; border-radius: 4px; font-size: 9px; color: var(--muted); }
 .avatar.lg { width: 44px; height: 44px; border-radius: 8px; font-size: 18px; background: var(--text); color: var(--inverse); border-color: var(--text); }
 .scrim { display: none; }
 
@@ -322,7 +371,8 @@ input[type="checkbox"]:checked { border-color: var(--text); background-color: va
 
 /* ---------- tables ---------- */
 .tbl { display: grid; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
-.tbl.mine { grid-template-columns: minmax(260px, 1fr) fit-content(180px) auto fit-content(280px) auto; }
+.tbl.library { grid-template-columns: minmax(240px, 1fr) fit-content(180px) minmax(0, 1.1fr) auto; }
+.tbl.folder { grid-template-columns: minmax(240px, 1fr) fit-content(180px) auto auto; }
 .tbl.tree { grid-template-columns: minmax(0, 1fr) auto auto auto; }
 .tbl.groups { --gx: 8px; }
 .tr {
@@ -508,6 +558,11 @@ dialog.dlg::backdrop { background: var(--scrim); }
 .check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
 .check input { margin-top: 2px; }
 .check small { display: block; color: var(--muted); font-size: 12.5px; }
+.picker-opt.choice { align-items: flex-start; padding: 10px 12px; }
+.picker-opt.choice input { margin-top: 2px; }
+.picker-opt.choice strong { display: block; font-weight: 500; }
+.picker-opt.choice small { display: block; color: var(--muted); font-size: 12.5px; }
+.steps { list-style: decimal; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); }
 .code-box { display: flex; gap: 8px; }
 .code-box .input, .input.mono { font-family: var(--mono); font-size: 13px; }
 
@@ -548,16 +603,18 @@ dialog.dlg::backdrop { background: var(--scrim); }
   .topbar .drawer-btn { display: inline-flex; }
   .crumb.home { padding: 0 4px; }
   .home-text { display: none; }
-  .sidebar {
+  /* Only the logo and where you are fit: the sidebar shows the rest. */
+  .crumbs li:not(:first-child):not(:nth-last-child(-n+2)) { display: none; }
+  .nav-shell {
     position: fixed; z-index: 60; top: 0; left: 0; bottom: 0; height: auto;
-    width: min(300px, 86vw);
+    width: min(364px, 92vw); grid-template-columns: 64px minmax(0, 1fr);
     transform: translateX(-100%); visibility: hidden;
     transition: transform .2s ease, visibility .2s;
     box-shadow: var(--shadow-lg);
   }
   .side-brand { display: flex; align-items: center; gap: 10px; height: 32px; margin-bottom: 12px; padding: 0 8px; font-weight: 600; font-size: 15px; letter-spacing: -.02em; }
   /* No visibility transition on the way in: the drawer must be focusable at once. */
-  .drawer-open .sidebar { transform: none; visibility: visible; transition: transform .2s ease; }
+  .drawer-open .nav-shell { transform: none; visibility: visible; transition: transform .2s ease; }
   .drawer-open .scrim { display: block; position: fixed; inset: 0; z-index: 50; background: var(--scrim); }
   .band > .wrap { padding-top: 24px; padding-bottom: 24px; }
   .wrap.body { padding-top: 16px; }
@@ -572,7 +629,6 @@ dialog.dlg::backdrop { background: var(--scrim); }
   .switch { min-height: 36px; }
   .nav-item, .nav-btn { height: 40px; }
   .nav-item.sub { height: 36px; margin-right: 34px; }
-  .nav-fold { width: 32px; height: 32px; }
   .avatar.lg { width: 40px; height: 40px; }
   .stats { margin-bottom: 16px; }
   .stat { padding: 12px 12px 10px; }
@@ -630,17 +686,21 @@ dialog.dlg::backdrop { background: var(--scrim); }
 <body>
 <div id="app">
   <header class="topbar">
-    <button type="button" class="btn ghost icon drawer-btn" id="drawer-btn" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">
+    <button type="button" class="btn ghost icon drawer-btn" id="drawer-btn" aria-label="Open navigation" aria-expanded="false" aria-controls="nav-shell">
       <svg class="ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
     </button>
     <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"><div class="skel" style="height:20px;width:180px"></div></nav>
     <div class="top-right" id="top-right"></div>
   </header>
+  <div class="nav-shell" id="nav-shell">
+  <nav class="rail" id="rail" aria-label="Spaces"></nav>
   <aside class="sidebar" id="sidebar" aria-label="Navigation">
     <div class="skel" style="height:28px;margin-bottom:6px"></div>
     <div class="skel" style="height:28px;margin-bottom:6px"></div>
     <div class="skel" style="height:28px;width:70%"></div>
   </aside>
+  <div class="account" id="account"></div>
+  </div>
   <div class="scrim" id="scrim"></div>
   <main id="main" tabindex="-1">
     <div class="page" aria-busy="true" aria-label="Loading">
@@ -673,12 +733,6 @@ let DEMO = new URLSearchParams(location.search).has('demo');
 let state = null;          // the last GET /api/state
 let search = '';
 const collapsed = new Set(); // "team\npath" of collapsed groups in the Skills tree
-const folded = new Set();    // teams whose groups are folded away in the sidebar
-try { JSON.parse(localStorage.getItem('aistack.folded') || '[]').forEach(name => folded.add(String(name))); } catch (_) { /* no storage: nothing is folded */ }
-function fold(name, on) {
-  if (on) folded.add(name); else folded.delete(name);
-  try { localStorage.setItem('aistack.folded', JSON.stringify([...folded])); } catch (_) { /* it lasts until the page is closed */ }
-}
 
 const $app = document.getElementById('app');
 const $main = document.getElementById('main');
@@ -723,6 +777,8 @@ const ICONS = {
   key: 'M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4',
   info: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 16v-4M12 8h.01',
   move: 'M5 12h14M12 5l7 7-7 7',
+  laptop: 'M4 5h16v10H4zM2 19h20',
+  monitor: 'M3 4h18v12H3zM8 20h8M12 16v4',
 };
 function icon(name, size = 16) {
   const NS = 'http://www.w3.org/2000/svg';
@@ -991,16 +1047,19 @@ function flatten(nodes, depth = 0, out = []) {
 
 function route() {
   let parts = [];
-  try { parts = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent); } catch (_) { /* malformed hash: My skills */ }
+  try { parts = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent); } catch (_) { /* malformed hash: the Library */ }
   const team = parts[0] === 't' && teamBy(parts[1]);
   const tab = Object.hasOwn(TAB_LABELS, parts[2]) && (parts[2] !== 'settings' || (team && team.kind !== 'SERVER')) ? parts[2] : 'skills';
   // A group the user cannot see is not in team.groups, so it opens the whole team like any unknown one.
   const path = parts.slice(3).join('/');
   const group = team && tab === 'skills' && team.groups.some(g => g.path === path) ? path : null;
   if (team) return { view: 'team', team, tab, group };
-  return { view: 'mine' };
+  const machine = parts[0] === 'f' && state.machines.find(m => m.id === parts[1]);
+  if (machine && agentsOf(machine).includes(parts[2])) return { view: 'folder', machine, agent: parts[2] };
+  return { view: 'library' };
 }
 const teamHash = (name, tab = 'skills', group) => `#/t/${enc(name)}/${tab}` + (group ? '/' + group.split('/').map(enc).join('/') : '');
+const folderHash = (m, agent) => `#/f/${enc(m.id)}/${agent}`;
 function go(hash) {
   if (location.hash === hash) render();
   else location.hash = hash;
@@ -1009,7 +1068,7 @@ function go(hash) {
 /* ================= render ================= */
 
 const TAB_LABELS = { skills: 'Skills', members: 'Members', groups: 'Groups', settings: 'Settings' };
-let sort = { key: 'name', dir: 1 }; // My skills table, sorted in the browser
+let sort = { key: 'name', dir: 1 }; // the Library table, sorted in the browser
 
 const td = (cls, ...kids) => el('div', { class: 'td' + (cls ? ' ' + cls : ''), role: 'cell' }, kids);
 const th = label => el('div', { class: 'th', role: 'columnheader' }, label);
@@ -1024,88 +1083,144 @@ function render() {
   const fk = active && active.dataset ? active.dataset.fk : null;
   const r = route();
   renderSidebar(r);
-  $main.replaceChildren(el('div', { class: 'page' }, r.view === 'team' ? teamView(r.team, r.tab, r.group) : mineView()));
-  document.title = (r.view === 'team' ? (r.group ? r.group + ' · ' : '') + r.team.name : 'My skills') + ' · AIStack';
+  $main.replaceChildren(el('div', { class: 'page' }, r.view === 'team' ? teamView(r.team, r.tab, r.group) : r.view === 'folder' ? folderView(r.machine, r.agent) : libraryView()));
+  document.title = (r.view === 'team' ? (r.group ? r.group + ' · ' : '') + r.team.name
+    : r.view === 'folder' ? `${AGENTS[r.agent].name} on ${r.machine.name}` : 'Library') + ' · AIStack';
   if (fk && !document.querySelector('dialog[open]')) { const t = byFk(fk); if (t) t.focus(); }
 }
 
 function renderSidebar(r) {
   const sep = () => el('li', { class: 'sep', 'aria-hidden': 'true' }, '/');
   const here = label => el('li', null, el('span', { class: 'crumb cur', 'aria-current': 'page' }, label));
+  const personalCrumb = () => el('li', null, el('a', { class: 'crumb', href: '#/library' }, 'Personal'));
   document.getElementById('crumbs').replaceChildren(el('ol', null,
-    el('li', null, el('a', { class: 'crumb home', href: '#/mine', 'aria-label': 'AIStack' }, logo(), el('span', { class: 'home-text' }, 'AIStack'))),
+    el('li', null, el('a', { class: 'crumb home', href: '#/library', 'aria-label': 'AIStack' }, logo(), el('span', { class: 'home-text' }, 'AIStack'))),
     sep(),
     r.view === 'team'
       ? [el('li', null, el('a', { class: 'crumb mono', href: teamHash(r.team.name), title: r.team.name }, r.team.name)), sep(),
          r.group ? [el('li', null, el('a', { class: 'crumb', href: teamHash(r.team.name) }, TAB_LABELS.skills)), sep(),
                     el('li', null, el('span', { class: 'crumb cur mono', 'aria-current': 'page', title: r.group }, r.group))]
                  : here(TAB_LABELS[r.tab])]
-      : here('My skills')));
+      : r.view === 'folder' ? [personalCrumb(), sep(), el('li', null, el('span', { class: 'crumb mono' }, r.machine.name)), sep(), here(AGENTS[r.agent].name)]
+      : [personalCrumb(), sep(), here('Library')]));
   document.getElementById('top-right').replaceChildren(
     ...(DEMO ? [el('span', { class: 'badge' }, el('span', { class: 'dot amber' }), 'Demo data')] : []));
 
   const link = (hash, current, ...kids) => el('a', { class: 'nav-item', href: hash, 'aria-current': current ? 'page' : null }, kids);
   const updates = state.skills.filter(s => s.source && s.source.update_available).length;
-  const noFold = () => el('span', { class: 'nav-fold none', 'aria-hidden': 'true' });
-  // One team: its name, a button that folds its groups away, and the groups, a step in per level.
-  const teamNav = t => {
-    const here = r.view === 'team' && r.team === t;
+  const personal = r.view !== 'team';
+
+  // The rail: you on top, then every team, like a server list. The letter is decoration; the name below it is the link's name.
+  document.getElementById('rail').replaceChildren(
+    el('a', { class: 'rail-item', href: '#/library', 'aria-current': personal ? 'page' : null },
+      el('span', { class: 'rail-btn', 'aria-hidden': 'true' }, state.user.username[0], updates ? el('span', { class: 'pip', title: plural(updates, 'update') + ' waiting' }) : null),
+      el('span', { class: 'rail-name' }, 'Personal'),
+      updates ? el('span', { class: 'sr-only' }, `, ${plural(updates, 'update')} waiting`) : null),
+    el('span', { class: 'rail-sep', 'aria-hidden': 'true' }),
+    // Your teams first; the server-wide team, which every account is in, last.
+    ...[...state.teams].sort((x, y) => (x.kind === 'SERVER') - (y.kind === 'SERVER')).map(t => el('a', { class: 'rail-item', href: teamHash(t.name),
+      title: t.kind === 'SERVER' ? 'Everyone on this server' : t.name, 'aria-current': r.view === 'team' && r.team === t ? 'page' : null },
+      el('span', { class: 'rail-btn', 'aria-hidden': 'true' }, t.kind === 'SERVER' ? icon('users', 18) : t.name[0]),
+      el('span', { class: 'rail-name' }, t.kind === 'SERVER' ? 'Everyone' : t.name))),
+    el('button', { type: 'button', class: 'rail-btn ghost', fk: 'add-team', title: 'Add a team', 'aria-label': 'Add a team', on: { click: addTeamDialog } }, icon('plus', 18)));
+
+  let list;
+  if (personal) {
+    list = [
+      el('div', { class: 'space-head' }, el('h2', null, 'Personal'), el('p', null, 'Only you see this')),
+      el('nav', { class: 'nav', 'aria-label': 'Main' },
+        link('#/library', r.view === 'library', icon('layers'), el('span', { class: 'label' }, 'Library'),
+          updates ? el('span', { class: 'count upd', title: plural(updates, 'update') + ' waiting' }, el('span', { class: 'dot blue' }), String(updates))
+            : el('span', { class: 'count' }, String(state.skills.length))),
+        el('div', { class: 'nav-heading' }, 'Computers',
+          btn(null, { class: 'btn ghost icon', fk: 'add-computer', title: 'Add a computer', 'aria-label': 'Add a computer', on: { click: addComputerDialog } }, 'plus')),
+        // One row per coding agent on each computer. Every computer has exactly one until ADR-0018.
+        targets().map(t => link(folderHash(t.m, t.agent), r.view === 'folder' && r.machine === t.m && r.agent === t.agent,
+          icon(t.m.os === 'MACOS' ? 'laptop' : 'monitor'),
+          el('span', { class: 'label mono' }, t.m.name),
+          el('span', { class: 'agent-tag', title: AGENTS[t.agent].name }, AGENTS[t.agent].glyph),
+          el('span', { class: 'count' }, String(placedOn(t).length))))),
+    ];
+  } else {
+    const t = r.team;
     const groups = flatten(groupTree(t)).filter(n => n.node.g);
-    const open = !folded.has(t.name) || (here && !!r.group); // the group being shown is never folded away
     const waiting = path => state.skills.some(s => s.source && s.source.update_available && s.source.team === t.name
       && s.source.group && (s.source.group === path || isUnder(s.source.group, path)));
-    return [
-      el('div', { class: 'nav-row' },
-        link(teamHash(t.name), here && !r.group,
-          t.kind === 'SERVER' ? icon('globe') : el('span', { class: 'avatar xs' }, t.name[0]),
-          el('span', { class: 'label mono' }, t.name),
-          el('span', { class: 'count' }, String(t.skills.length))),
-        groups.length ? el('button', {
-          type: 'button', class: 'nav-fold', fk: 'fold:' + t.name, 'aria-expanded': String(open), 'aria-label': `Groups of ${t.name}`,
-          on: { click: () => { fold(t.name, open); render(); } },
-        }, icon('chev', 12)) : noFold()),
-      open && groups.map(({ node, depth }) => {
-        const a = link(teamHash(t.name, 'skills', node.path), here && r.group === node.path,
-          icon(node.g.private ? 'lock' : 'folder', 14),
-          el('span', { class: 'label mono', title: node.path }, node.host ? node.path.slice(node.host.path.length + 1) : node.path),
-          node.g.private && el('span', { class: 'sr-only' }, '(private)'),
-          waiting(node.path) ? el('span', { class: 'count upd', title: 'An update is waiting' }, el('span', { class: 'dot blue' }), String(countSkills(node)))
-            : el('span', { class: 'count' }, String(countSkills(node))));
-        a.classList.add('sub');
-        a.style.setProperty('--d', Math.min(depth, 6));
-        return a;
-      }),
+    list = [
+      el('div', { class: 'space-head' }, el('h2', { class: 'mono' }, t.name),
+        el('p', null, plural(members(t).length, 'member'), ' · ', t.role === 'ADMIN' ? 'you are an admin' : 'member')),
+      el('nav', { class: 'nav', 'aria-label': 'Main' },
+        link(teamHash(t.name), r.tab === 'skills' && !r.group, icon('layers'), el('span', { class: 'label' }, 'All skills'), el('span', { class: 'count' }, String(t.skills.length))),
+        groups.length ? el('div', { class: 'nav-heading' }, 'Groups') : null,
+        groups.map(({ node, depth }) => {
+          const a = link(teamHash(t.name, 'skills', node.path), r.group === node.path,
+            icon(node.g.private ? 'lock' : 'folder', 14),
+            el('span', { class: 'label mono', title: node.path }, node.host ? node.path.slice(node.host.path.length + 1) : node.path),
+            node.g.private && el('span', { class: 'sr-only' }, '(private)'),
+            waiting(node.path) ? el('span', { class: 'count upd', title: 'An update is waiting' }, el('span', { class: 'dot blue' }), String(countSkills(node)))
+              : el('span', { class: 'count' }, String(countSkills(node))));
+          a.classList.add('sub');
+          a.style.setProperty('--d', Math.min(depth, 6));
+          return a;
+        }),
+        el('div', { class: 'nav-heading' }, 'Team'),
+        link(teamHash(t.name, 'members'), r.tab === 'members', icon('users'), el('span', { class: 'label' }, 'Members'), el('span', { class: 'count' }, String(members(t).length))),
+        t.kind !== 'SERVER' && link(teamHash(t.name, 'settings'), r.tab === 'settings', icon('key'), el('span', { class: 'label' }, 'Settings'))),
     ];
-  };
+  }
   $sidebar.replaceChildren(
     el('div', { class: 'side-brand' }, logo(), el('span', { class: 'grow' }, 'AIStack'),
       btn(null, { class: 'btn ghost icon', 'aria-label': 'Close navigation', on: { click: () => { setDrawer(false); $drawerBtn.focus(); } } }, 'x')),
-    el('nav', { class: 'nav', 'aria-label': 'Main' },
-      el('div', { class: 'nav-row' },
-        link('#/mine', r.view === 'mine', icon('layers'), el('span', { class: 'label' }, 'My skills'),
-          updates ? el('span', { class: 'count upd', title: plural(updates, 'update') + ' available' }, el('span', { class: 'dot blue' }), String(updates))
-            : el('span', { class: 'count' }, String(state.skills.length))),
-        noFold()),
-      el('div', { class: 'nav-heading', id: 'nav-teams' }, 'Teams'),
-      state.teams.map(teamNav),
-      el('div', { class: 'nav-actions' },
-        el('button', { type: 'button', class: 'nav-btn', fk: 'new-team', on: { click: newTeamDialog } }, icon('plus'), 'New team'),
-        el('button', { type: 'button', class: 'nav-btn', fk: 'join-team', on: { click: joinDialog } }, icon('key'), 'Join with code'))),
-    el('div', { class: 'sidebar-foot' },
-      el('span', { class: 'avatar round' }, state.user.username[0]),
-      el('span', { class: 'who', title: state.user.username }, state.user.username),
-      btn('Sign out', { class: 'btn ghost sm', fk: 'sign-out', on: { click: ev => signOut(ev.currentTarget) } }, 'logout')));
+    ...list);
+  document.getElementById('account').replaceChildren(
+    el('span', { class: 'avatar round', 'aria-hidden': 'true' }, state.user.username[0]),
+    el('span', { class: 'who', title: state.user.username }, el('b', null, state.user.username),
+      el('span', null, plural(state.machines.length, 'computer'))),
+    btn(null, { class: 'btn ghost icon', fk: 'sign-out', title: 'Sign out', 'aria-label': 'Sign out', on: { click: ev => signOut(ev.currentTarget) } }, 'logout'));
 }
 
-/* ---------- My skills ---------- */
+function addComputerDialog() {
+  const say = el('input', { class: 'input mono', type: 'text', value: 'add my Windows PC to aistack', spellcheck: false, 'aria-label': 'What to say' });
+  const copied = el('span', { class: 'help', role: 'status' });
+  const copy = btn('Copy', { on: { click: async () => {
+    try { await navigator.clipboard.writeText(say.value); }
+    catch (_) { say.select(); document.execCommand('copy'); }
+    copied.textContent = 'Copied. Paste it into your coding agent.';
+  } } }, 'copy');
+  openDialog({
+    title: 'Add a computer',
+    submitLabel: 'Done',
+    cancelLabel: null,
+    body: [
+      el('ol', { class: 'steps' },
+        el('li', null, 'On a computer that is already connected, say this to your coding agent. Name the new computer however you like.'),
+        el('li', null, 'It answers with one command. Run it on the new computer and restart the coding agent there.'),
+        el('li', null, 'Say ', el('code', null, SYNC), ' on the new computer. Then add skills to it here.')),
+      el('div', { class: 'field' }, el('div', { class: 'code-box' }, say, copy), copied),
+    ],
+  });
+}
+
+/* ---------- Library and computers ---------- */
+
+const AGENTS = {
+  claude: { name: 'Claude Code', glyph: 'CC', folder: '~/.claude/skills' },
+};
+// Every computer runs Claude Code, and a skill is placed on the computer, until the server knows about agents (ADR-0018).
+const agentsOf = () => ['claude'];
+const targets = () => state.machines.flatMap(m => agentsOf(m).map(agent => ({ m, agent })));
+const targetName = t => `${t.m.name} / ${AGENTS[t.agent].name}`;
+const isPlaced = (s, t) => s.machines.includes(t.m.id);
+const placedOn = t => state.skills.filter(s => isPlaced(s, t));
+const sameTarget = (a, b) => a.m === b.m && a.agent === b.agent;
+const place = (s, t, on) => api(`/api/skills/${enc(s.name)}/machines/${enc(t.m.id)}`, { enabled: on });
 
 const SORTS = {
   name: s => s.name,
-  source: s => (s.source ? teamLabel(s.source.team, s.source.group) : '￿'), // skills with no team sort last
-  pushed: s => s.updated_on || '',
+  source: s => (s.source ? teamLabel(s.source.team, s.source.group) : '￿'), // your own skills sort last
 };
 
-function mineView() {
+function libraryView() {
   const list = el('div');
   const sortTh = (key, label) => {
     const on = sort.key === key;
@@ -1113,12 +1228,12 @@ function mineView() {
       el('button', {
         type: 'button', class: 'th-sort', fk: 'sort:' + key, title: 'Sort by ' + label.toLowerCase(),
         on: { click: () => {
-          sort = { key, dir: on ? -sort.dir : key === 'pushed' ? -1 : 1 };
+          sort = { key, dir: on ? -sort.dir : 1 };
           fill();
           const b = byFk('sort:' + key);
           if (b) b.focus();
         } },
-      }, label, el('span', { class: 'arrow' + (on ? ' on' : '') + ((on ? sort.dir : key === 'pushed' ? -1 : 1) < 0 ? ' desc' : '') }, icon('up', 12))));
+      }, label, el('span', { class: 'arrow' + (on ? ' on' : '') + (on && sort.dir < 0 ? ' desc' : '') }, icon('up', 12))));
   };
   const fill = () => {
     const q = search.trim().toLowerCase();
@@ -1127,31 +1242,30 @@ function mineView() {
       .filter(s => !q || s.name.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q))
       .sort((a, b) => (get(a) < get(b) ? -1 : get(a) > get(b) ? 1 : 0) * sort.dir || a.name.localeCompare(b.name));
     if (!state.skills.length) {
-      list.replaceChildren(empty('layers', 'No skills here yet',
-        el('p', null, 'Skills appear here when your coding agent runs ', el('code', null, SYNC), ' on one of your computers. It reports the skills it finds there, and you can then switch them on for your other computers or share them with a team.'),
-        el('p', null, 'You can also add one from a team: open a team and choose "Add to my skills".')));
+      list.replaceChildren(empty('layers', 'Your library is empty',
+        el('p', null, 'Skills appear here when your coding agent runs ', el('code', null, SYNC), ' on one of your computers. It backs up the skills it finds there, and you can then add them to your other computers or share them with a team.'),
+        el('p', null, 'You can also take one from a team: open a team and choose "Add to library".')));
     } else if (!shown.length) {
-      list.replaceChildren(empty('search', 'No skill matches', el('p', null, `Nothing in My skills matches "${search.trim()}".`),
+      list.replaceChildren(empty('search', 'No skill matches', el('p', null, `Nothing in your library matches "${search.trim()}".`),
         btn('Clear search', { on: { click: () => { input.value = search = ''; fill(); input.focus(); } } })));
     } else {
       list.replaceChildren(
-        el('div', { class: 'tbl mine', role: 'table', 'aria-label': 'My skills' },
-          el('div', { class: 'tr th-row', role: 'row' },
-            sortTh('name', 'Skill'), sortTh('source', 'Source'), sortTh('pushed', 'Pushed by'), th('Computers'), thActions()),
-          shown.map(mySkillRow)),
+        el('div', { class: 'tbl library', role: 'table', 'aria-label': 'Library' },
+          el('div', { class: 'tr th-row', role: 'row' }, sortTh('name', 'Skill'), sortTh('source', 'Source'), th('In use on'), thActions()),
+          shown.map(libraryRow)),
         el('div', { class: 'tbl-foot' },
-          el('span', null, 'Changes reach a computer the next time your coding agent runs ', el('code', null, SYNC), ' on it.'),
+          el('span', null, 'A skill reaches a computer the next time your coding agent there runs ', el('code', null, SYNC), '.'),
           el('span', { class: 'count' }, shown.length === state.skills.length ? plural(shown.length, 'skill') : `${shown.length} of ${plural(state.skills.length, 'skill')}`)));
     }
   };
-  const input = el('input', { class: 'input', type: 'search', id: 'search', fk: 'search', placeholder: 'Search my skills', value: search, autocomplete: 'off',
+  const input = el('input', { class: 'input', type: 'search', id: 'search', fk: 'search', placeholder: 'Search your library', value: search, autocomplete: 'off',
     on: {
       input: () => { search = input.value; fill(); },
       keydown: ev => { if (ev.key === 'Escape' && input.value) { input.value = search = ''; fill(); } },
     } });
   fill();
 
-  const linked = state.skills.filter(s => s.source).length;
+  const unplaced = state.skills.filter(s => !s.machines.length);
   const updating = state.skills.filter(s => s.source && s.source.update_available);
   const stat = (k, v, s, mark) => el('div', { class: 'stat' },
     el('div', { class: 'k' }, k), el('div', { class: 'v' }, String(v), mark), el('div', { class: 's', title: s }, s));
@@ -1159,49 +1273,51 @@ function mineView() {
     el('div', { class: 'band' },
       el('div', { class: 'wrap page-head' },
         el('div', { class: 'titles' },
-          el('h1', null, 'My skills'),
-          el('p', { class: 'subtitle' }, 'Your private space. It mirrors what is on your computers.')),
-        el('div', { class: 'search' }, el('label', { class: 'sr-only', htmlFor: 'search' }, 'Search my skills'), icon('search'), input,
+          el('h1', null, 'Library'),
+          el('p', { class: 'subtitle' }, 'Every skill you keep. Add one to a coding agent on any of your computers.')),
+        el('div', { class: 'search' }, el('label', { class: 'sr-only', htmlFor: 'search' }, 'Search your library'), icon('search'), input,
           el('kbd', { 'aria-hidden': 'true', title: 'Press / to search' }, '/')))),
     el('div', { class: 'wrap body' },
       state.skills.length ? el('div', { class: 'stats' },
-        stat('Skills', state.skills.length, linked ? `${linked} from a team` : 'None from a team yet'),
-        stat('Computers', state.machines.length, state.machines.map(m => m.name).join(' · ') || `Run ${SYNC} to add one`),
+        stat('In your library', state.skills.length, plural(state.skills.filter(s => s.source).length, 'skill') + ' from a team'),
+        stat('Not on any computer', unplaced.length, unplaced.map(s => s.name).join(' · ') || 'Everything is in use'),
         stat('Updates', updating.length,
           updating.map(s => s.name).join(' · ') || 'Everything is current', updating.length ? el('span', { class: 'dot blue' }) : null)) : null,
       list),
   ];
 }
 
-function mySkillRow(s) {
+const sourceCell = src => td(src ? 'meta src' : 'meta',
+  src ? [el('a', { class: 't1 mono link', href: teamHash(src.team), title: 'Open ' + src.team }, src.team),
+         el('span', { class: 't2' + (src.group ? ' mono' : '') }, src.group || 'Team level')]
+    : el('span', { class: 't2' }, 'Your own'));
+
+function libraryRow(s) {
   const src = s.source;
-  const toggles = state.machines.length
-    ? state.machines.map(m => sw(s.machines.includes(m.id), el('span', { class: 'mono' }, m.name), {
-        fk: `ms:${s.name}:${m.id}`,
-        label: `${s.name} on ${m.name}`,
-        onToggle: (b, next) => run(b, async () => {
-          await api(`/api/skills/${enc(s.name)}/machines/${enc(m.id)}`, { enabled: next });
-          return `${s.name} switched ${next ? 'on' : 'off'} for ${m.name}. Applies on ${m.name} at its next sync.`;
-        }),
-      }))
-    : el('span', { class: 't2' }, 'No computers yet');
+  const placed = targets().filter(t => isPlaced(s, t));
   const update = src && src.update_available;
   return el('div', { class: 'tr', role: 'row' },
     td('c-main',
       el('span', { class: 'name' }, s.name),
       s.description && el('span', { class: 't2' }, s.description)),
-    td('meta src',
-      src ? [el('a', { class: 't1 mono link', href: teamHash(src.team), title: 'Open ' + src.team }, src.team),
-             el('span', { class: 't2' + (src.group ? ' mono' : '') }, src.group || 'Team level')]
-        : [el('span', { class: 't2', 'aria-hidden': 'true' }, '—'), el('span', { class: 'sr-only' }, 'Not from a team')]),
-    td('meta nowrap',
-      el('span', { class: 't1 rev' }, s.pushed_by,
-        el('span', { class: 'mono', title: `Revision ${s.revision}, ${plural(s.files, 'file')}` }, 'r' + s.revision), update && el('span', { class: 'dot blue' })),
-      el('span', { class: 't2' }, when(s.updated_on))),
-    td('grow', el('div', { class: 'machines', role: 'group', 'aria-label': 'Computers for ' + s.name }, toggles)),
-    td('row end acts',
-      btn('Share…', { class: 'btn collapse', fk: 'share:' + s.name, title: 'Share with a team', on: { click: () => shareDialog(s) } }, 'share'),
-      btn(null, { class: 'btn ghost icon push', fk: 'rm:' + s.name, 'aria-label': `Remove ${s.name} from My skills`, title: 'Remove', on: { click: () => removeMineDialog(s) } }, 'trash')),
+    sourceCell(src),
+    td('row wide', placed.length
+      ? el('div', { class: 'placed' }, placed.map(t => el('span', { class: 'place-chip' },
+          el('a', { href: folderHash(t.m, t.agent) }, targetName(t)),
+          el('button', {
+            type: 'button', fk: `unplace:${s.name}:${t.m.id}`, title: 'Remove from ' + targetName(t), 'aria-label': `Remove ${s.name} from ${targetName(t)}`,
+            on: { click: ev => run(ev.currentTarget, async () => {
+              await place(s, t, false);
+              return `${s.name} leaves ${targetName(t)} at its next sync. It stays in your library.`;
+            }) },
+          }, icon('x', 12)))))
+      : el('span', { class: 'not-placed' }, 'Only in your library')),
+    td('row end',
+      btn('Add to…', { class: 'btn sm', fk: 'addto:' + s.name, on: { click: () => addToDialog(s) } }),
+      menu(`More actions for ${s.name}`, 'lm:' + s.name, [
+        { label: 'Share with a team…', icon: 'share', run: () => shareDialog(s) },
+        { label: 'Remove from library', icon: 'trash', danger: true, run: () => removeMineDialog(s) },
+      ])),
     update && td('update-cell',
       el('div', { class: 'update' },
         el('span', { class: 'dot blue' }),
@@ -1211,12 +1327,114 @@ function mySkillRow(s) {
         btn('Take update', { class: 'btn primary sm', fk: 'take:' + s.name, on: { click: ev => takeSkill(ev.currentTarget, src.team, s.name, true) } }, 'up'))));
 }
 
+// Placements change one call at a time; each is recorded as it lands, so a failure part way keeps what went before.
+async function placeAll(pairs) {
+  for (const [s, t, on] of pairs) await place(s, t, on);
+}
+
+function addToDialog(s) {
+  const boxes = targets().map(t => ({ t, box: el('input', { type: 'checkbox', checked: isPlaced(s, t) }) }));
+  openDialog({
+    title: `Add ${s.name} to…`,
+    submitLabel: 'Save',
+    body: el('fieldset', { class: 'picker' }, el('legend', null, 'Coding agents'),
+      state.machines.map(m => el('div', { class: 'target-group' },
+        el('div', { class: 'head', 'aria-hidden': 'true' }, icon(m.os === 'MACOS' ? 'laptop' : 'monitor', 14), el('span', { class: 'mono' }, m.name)),
+        boxes.filter(b => b.t.m === m).map(b => el('label', { class: 'picker-opt' }, b.box,
+          el('span', null, el('span', { class: 'sr-only' }, m.name + ' / '), AGENTS[b.t.agent].name),
+          el('span', { class: 't2 mono', style: 'margin-left:auto', 'aria-hidden': 'true' }, AGENTS[b.t.agent].folder)))))),
+    onSubmit: async () => {
+      const changed = boxes.filter(b => b.box.checked !== isPlaced(s, b.t));
+      await placeAll(changed.map(b => [s, b.t, b.box.checked]));
+      return changed.length ? `Saved. Each computer picks up the change at its next ${SYNC}.` : null;
+    },
+  });
+}
+
+function folderView(m, agent) {
+  const t = { m, agent };
+  const here = placedOn(t);
+  const where = `${AGENTS[agent].name} on ${m.name}`;
+  const others = targets().filter(x => !sameTarget(x, t));
+  return [
+    el('div', { class: 'band' }, el('div', { class: 'wrap page-head' },
+      el('div', { class: 'team-head', style: 'flex:1;min-width:260px' },
+        el('span', { class: 'avatar lg', style: 'font:600 16px var(--mono)', 'aria-hidden': 'true' }, AGENTS[agent].glyph),
+        el('div', { class: 'titles' },
+          el('h1', null, AGENTS[agent].name, el('span', { class: 'muted', style: 'font-weight:400' }, ' on '), el('span', { class: 'mono' }, m.name)),
+          el('div', { class: 'folder-path' }, el('code', null, AGENTS[agent].folder)))),
+      el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
+        others.length ? btn('Copy from…', { fk: 'copy-from', on: { click: () => copyFromDialog(t, others) } }, 'copy') : null,
+        btn('Add skills', { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(t) } }, 'plus')))),
+    el('div', { class: 'wrap body' },
+      here.length ? el('div', { class: 'tbl folder', role: 'table', 'aria-label': 'Skills in ' + where },
+        el('div', { class: 'tr th-row', role: 'row' }, th('Skill'), th('Source'), th('Revision'), thActions()),
+        here.map(s => el('div', { class: 'tr', role: 'row' },
+          td('c-main', el('span', { class: 'name' }, s.name), s.description && el('span', { class: 't2' }, s.description)),
+          sourceCell(s.source),
+          td('meta nowrap', el('span', { class: 't1 mono', title: `Revision ${s.revision}, ${plural(s.files, 'file')}` }, 'r' + s.revision)),
+          td('row end', btn('Remove', {
+            class: 'btn ghost sm', fk: `fr:${s.name}`, 'aria-label': `Remove ${s.name} from ${where}`,
+            on: { click: ev => run(ev.currentTarget, async () => {
+              await place(s, t, false);
+              return `${s.name} leaves ${where} at its next sync. It stays in your library.`;
+            }) },
+          }, 'x')))))
+        : empty('layers', `Nothing in ${where} yet`, el('p', null, 'Add skills from your library, or copy what another computer has.'),
+            btn('Add skills', { on: { click: () => addSkillsDialog(t) } }, 'plus')),
+      el('div', { class: 'tbl-foot' }, el('span', null, 'Removing a skill here keeps it in your library and on your other computers. ',
+        'The folder is asked about at the next ', el('code', null, SYNC), ', never deleted unasked.'))),
+  ];
+}
+
+function addSkillsDialog(t) {
+  const where = `${AGENTS[t.agent].name} on ${t.m.name}`;
+  const rows = state.skills.filter(s => !isPlaced(s, t)).map(s => ({ s, box: el('input', { type: 'checkbox' }) }));
+  const labels = rows.map(r => el('label', { class: 'picker-opt' }, r.box, el('span', { class: 'mono' }, r.s.name),
+    el('span', { class: 't2', style: 'margin-left:auto' }, r.s.machines.length ? 'in use elsewhere' : 'only in your library')));
+  const filter = el('input', { class: 'input', type: 'search', placeholder: 'Search your library', 'aria-label': 'Search your library',
+    on: { input: () => rows.forEach((r, i) => { labels[i].hidden = !r.s.name.includes(filter.value.trim().toLowerCase()); }) } });
+  openDialog({
+    title: 'Add to ' + where,
+    submitLabel: 'Add',
+    body: rows.length ? [filter, el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, 'Skills'), el('div', { class: 'picker-list' }, labels))]
+      : [el('p', null, 'Everything in your library is here already.')],
+    onSubmit: async () => {
+      const picked = rows.filter(r => r.box.checked);
+      await placeAll(picked.map(r => [r.s, t, true]));
+      return picked.length ? `Added ${plural(picked.length, 'skill')} to ${where}. They arrive at its next ${SYNC}.` : null;
+    },
+  });
+}
+
+function copyFromDialog(t, others) {
+  const where = `${AGENTS[t.agent].name} on ${t.m.name}`;
+  const name = 'copy-from';
+  openDialog({
+    title: 'Copy skills to ' + where,
+    submitLabel: 'Copy',
+    body: [
+      el('p', null, 'Adds every skill the other one has and this one does not. Nothing is removed here.'),
+      el('fieldset', { class: 'picker' }, el('legend', null, 'Copy from'), el('div', { class: 'picker-list' },
+        others.map((o, i) => el('label', { class: 'picker-opt' }, el('input', { type: 'radio', name, value: String(i), checked: i === 0 }),
+          el('span', { class: 'mono' }, targetName(o)), el('span', { class: 't2', style: 'margin-left:auto' }, plural(placedOn(o).length, 'skill')))))),
+    ],
+    onSubmit: async () => {
+      const from = others[Number(document.querySelector(`input[name="${name}"]:checked`).value)];
+      const missing = placedOn(from).filter(s => !isPlaced(s, t));
+      await placeAll(missing.map(s => [s, t, true]));
+      return missing.length ? `Added ${plural(missing.length, 'skill')} from ${targetName(from)}. They arrive at the next ${SYNC} on ${t.m.name}.`
+        : `Nothing to copy: ${where} already has every skill ${targetName(from)} has.`;
+    },
+  });
+}
+
 function takeSkill(control, team, name, isUpdate) {
   return run(control, async () => {
     await api(`/api/teams/${enc(team)}/take`, { name });
     return isUpdate
       ? `Took the update to ${name}. Applies on each computer at its next sync.`
-      : `Added ${name} to My skills. It reaches each computer at its next sync.`;
+      : `Added ${name} to your library. Add it to a computer to use it there.`;
   });
 }
 
@@ -1250,7 +1468,7 @@ function shareDialog(s) {
     title: `Share ${s.name}`,
     submitLabel: 'Share',
     body: [
-      el('p', null, 'The team gets its own copy of this skill. Everyone who can see it there sees that you pushed it. Your copy in My skills stays yours.'),
+      el('p', null, 'The team gets its own copy of this skill. Everyone who can see it there sees that you pushed it. Your copy in your library stays yours.'),
       field('Team', select),
       holder,
     ],
@@ -1269,16 +1487,16 @@ function shareDialog(s) {
 function removeMineDialog(s) {
   const names = state.machines.map(m => m.name).join(', ');
   confirmDialog({
-    title: `Remove ${s.name} from My skills?`,
+    title: `Remove ${s.name} from your library?`,
     submitLabel: 'Remove',
     lines: [
-      'It is removed from My skills on all your computers.',
+      'It is removed from your library and from all your computers.',
       `Each computer${names ? ` (${names})` : ''} will be asked at its next sync whether to delete the skill's folder.`,
       s.source && `The copy in ${teamLabel(s.source.team, s.source.group)} is not affected.`,
     ],
     onSubmit: async () => {
       await api(`/api/skills/${enc(s.name)}/remove`, {});
-      return `Removed ${s.name} from My skills. Each computer asks about its folder at its next sync.`;
+      return `Removed ${s.name} from your library. Each computer asks about its folder at its next sync.`;
     },
   });
 }
@@ -1381,8 +1599,8 @@ function skillsTab(team, admin, group) {
   }
   if (!team.skills.length && !roots.length) {
     return empty('layers', 'No skills in this team yet',
-      el('p', null, 'Share one of your skills to get it started: open My skills and choose "Share…". The team gets its own copy.'),
-      btn('Open My skills', { on: { click: () => go('#/mine') } }));
+      el('p', null, 'Share one of your skills to get it started: open your library and choose "Share with a team…". The team gets its own copy.'),
+      btn('Open your library', { on: { click: () => go('#/library') } }));
   }
   const top = team.skills.filter(s => !s.group);
   const topKey = team.name + '\n'; // no group path is empty, so this cannot collide with one
@@ -1415,13 +1633,13 @@ function groupRows(team, node, admin, depth, out) {
 
 function teamSkillRow(team, s, admin, depth) {
   const mine = state.skills.find(x => x.name === s.name);
-  const update = s.in_my_skills && mine && mine.source && mine.source.team === team.name && mine.source.update_available;
+  const update = s.in_library && mine && mine.source && mine.source.team === team.name && mine.source.update_available;
   const fk = `ts:${team.name}:${s.name}`;
   const action = update
     ? btn('Take update', { class: 'btn primary', fk, title: `r${mine.source.revision} → r${mine.source.latest_revision}`, on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name, true) } }, 'up')
-    : s.in_my_skills
-      ? el('span', { class: 'in-mine' }, icon('check', 14), 'In my skills')
-      : btn('Add to my skills', { fk, on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name, false) } }, 'plus');
+    : s.in_library
+      ? el('span', { class: 'in-mine' }, icon('check', 14), 'In your library')
+      : btn('Add to library', { fk, on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name, false) } }, 'plus');
   return el('div', { class: 'tr', role: 'row', style: `--d:${depth}` },
     td('c-main',
       el('div', { class: 'name-line' },
@@ -1460,7 +1678,7 @@ function removeTeamSkillDialog(team, s) {
     submitLabel: 'Remove from team',
     lines: [
       'The team no longer has this skill, and nobody is offered it or its updates from here.',
-      'People who already added it to My skills keep their copy.',
+      'People who already added it to their library keep their copy.',
     ],
     onSubmit: async () => {
       await api(`/api/teams/${enc(team.name)}/skills/${enc(s.name)}/remove`, {});
@@ -1522,7 +1740,7 @@ function membersTab(team, admin) {
               on: { click: () => confirmDialog({
                 title: `Remove ${m.username} from ${team.name}?`,
                 submitLabel: 'Remove member',
-                lines: [`${m.username} stops seeing this team's skills and groups.`, 'Skills they already added to My skills stay theirs.'],
+                lines: [`${m.username} stops seeing this team's skills and groups.`, 'Skills they already added to their library stay theirs.'],
                 onSubmit: async () => {
                   await api(`/api/teams/${enc(team.name)}/members/${enc(m.username)}/remove`, {});
                   return `Removed ${m.username} from ${team.name}.`;
@@ -1670,15 +1888,15 @@ function settingsTab(team, admin) {
         },
       }) } }, 'key')),
     card(' danger', 'Leave team',
-      'You stop seeing this team\'s skills and groups. Skills you added to My skills stay yours.',
+      'You stop seeing this team\'s skills and groups. Skills you added to your library stay yours.',
       'To come back you need an invite code.',
       btn('Leave team', { class: 'btn danger', fk: 'leave', on: { click: () => confirmDialog({
         title: `Leave ${team.name}?`,
         submitLabel: 'Leave team',
-        lines: ['You stop seeing this team\'s skills and groups, and are no longer offered its updates.', 'Skills you added to My skills stay yours. To come back you need an invite code.'],
+        lines: ['You stop seeing this team\'s skills and groups, and are no longer offered its updates.', 'Skills you added to your library stay yours. To come back you need an invite code.'],
         onSubmit: async () => {
           await api(`/api/teams/${enc(team.name)}/leave`, {});
-          return () => { toast(`You left ${team.name}.`); go('#/mine'); };
+          return () => { toast(`You left ${team.name}.`); go('#/library'); };
         },
       }) } }, 'logout'))), about);
 }
@@ -1705,6 +1923,21 @@ function inviteCodeDialog(team, code) {
 }
 
 /* ---------- team create / join / sign out ---------- */
+
+function addTeamDialog() {
+  const choice = (value, title, help, checked) => el('label', { class: 'picker-opt choice' },
+    el('input', { type: 'radio', name: 'add-team', value, checked }),
+    el('span', null, el('strong', null, title), el('small', null, help)));
+  const list = el('div', { class: 'picker-list' },
+    choice('create', 'Create a team', 'You become its admin and invite people with a code.', true),
+    choice('join', 'Join with an invite code', 'An admin of the team gives you one.', false));
+  openDialog({
+    title: 'Add a team',
+    submitLabel: 'Continue',
+    body: el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, 'Add a team'), list),
+    onSubmit: async () => (list.querySelector('input:checked').value === 'create' ? newTeamDialog : joinDialog),
+  });
+}
 
 function newTeamDialog() {
   const name = el('input', { class: 'input', type: 'text', autocomplete: 'off', spellcheck: false, maxLength: 64, placeholder: 'backend' });
@@ -1808,40 +2041,44 @@ const DB = (() => {
     machines: [{ id: MAC, name: 'macbook', os: 'MACOS' }, { id: DESK, name: 'desktop', os: 'LINUX' }],
     skills: [
       { name: 'code-review', description: 'Reviews a diff against team standards and flags risky changes.', revision: 2, pushed_by: 'maria', updated_on: ago(30), files: 4, machines: [MAC],
-        source: { team: 'acme', group: 'backend', revision: 2, latest_revision: 3, latest_pushed_by: 'maria', update_available: true } },
+        source: { team: 'aistack', group: 'developers', revision: 2, latest_revision: 3, latest_pushed_by: 'maria', update_available: true } },
       { name: 'commit-messages', description: 'Writes commit messages in the house style: imperative subject, why before what.', revision: 2, pushed_by: 'dimitris', updated_on: ago(96), files: 1, machines: [MAC, DESK],
-        source: { team: 'acme', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'dimitris', update_available: false } },
+        source: { team: 'aistack', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'dimitris', update_available: false } },
       { name: 'pr-description', description: 'Drafts a pull request description from the branch diff and linked issue.', revision: 1, pushed_by: 'eve', updated_on: ago(200), files: 2, machines: [MAC, DESK],
         source: { team: 'everyone', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'eve', update_available: false } },
       { name: 'sqlalchemy-migrations', description: 'Plans and writes Alembic migrations that run identically on SQLite and Postgres.', revision: 4, pushed_by: 'maria', updated_on: ago(52), files: 6, machines: [DESK],
-        source: { team: 'acme', group: 'backend/aistack', revision: 4, latest_revision: 4, latest_pushed_by: 'maria', update_available: false } },
+        source: { team: 'aistack', group: 'developers/backend', revision: 4, latest_revision: 4, latest_pushed_by: 'maria', update_available: false } },
       { name: 'wizard', description: 'Generates an interactive bash wizard for steps only a human can perform.', revision: 1, pushed_by: 'dimitris', updated_on: ago(5), files: 3, machines: [MAC], source: null },
+      { name: 'meeting-notes', description: 'Turns a rough transcript into decisions and actions.', revision: 1, pushed_by: 'dimitris', updated_on: ago(300), files: 1, machines: [], source: null },
+      { name: 'release-notes', description: 'Builds release notes from merged pull requests since the last tag.', revision: 1, pushed_by: 'dimitris', updated_on: ago(300), files: 2, machines: [],
+        source: { team: 'aistack', group: null, revision: 1, latest_revision: 1, latest_pushed_by: 'dimitris', update_available: false } },
     ],
     teams: [
       { name: 'everyone', kind: 'SERVER', role: 'MEMBER', sees_all_groups: false,
         members: [person('dimitris', 'MEMBER', []), person('maria', 'ADMIN', []), person('eve', 'MEMBER', [])],
         groups: [],
         skills: [
-          { name: 'pr-description', description: 'Drafts a pull request description from the branch diff and linked issue.', group: null, revision: 2, pushed_by: 'eve', updated_on: ago(200), in_my_skills: true },
-          { name: 'onboarding', description: 'Walks a new teammate through local setup, conventions and where things live.', group: null, revision: 1, pushed_by: 'maria', updated_on: ago(400), in_my_skills: false },
-          { name: 'incident-notes', description: 'Turns a chat log into a blameless incident summary with a timeline.', group: null, revision: 3, pushed_by: 'eve', updated_on: ago(70), in_my_skills: false },
+          { name: 'pr-description', description: 'Drafts a pull request description from the branch diff and linked issue.', group: null, revision: 2, pushed_by: 'eve', updated_on: ago(200), in_library: true },
+          { name: 'onboarding', description: 'Walks a new teammate through local setup, conventions and where things live.', group: null, revision: 1, pushed_by: 'maria', updated_on: ago(400), in_library: false },
+          { name: 'incident-notes', description: 'Turns a chat log into a blameless incident summary with a timeline.', group: null, revision: 3, pushed_by: 'eve', updated_on: ago(70), in_library: false },
         ] },
-      { name: 'acme', kind: 'SHARED', role: 'ADMIN', sees_all_groups: false,
-        members: [person('dimitris', 'ADMIN', ['backend', 'backend/aistack']), person('maria', 'MEMBER', ['backend', 'backend/aistack']), person('eve', 'MEMBER', ['security'])],
+      { name: 'aistack', kind: 'SHARED', role: 'ADMIN', sees_all_groups: false,
+        members: [person('dimitris', 'ADMIN', ['developers', 'developers/backend']), person('maria', 'MEMBER', ['developers', 'developers/backend']), person('eve', 'MEMBER', ['security'])],
         groups: [
-          { path: 'backend', private: false, member: true, subscribed: true },
-          { path: 'backend/aistack', private: true, member: true, subscribed: true },
+          { path: 'developers', private: false, member: true, subscribed: true },
+          { path: 'developers/backend', private: false, member: true, subscribed: true },
+          { path: 'developers/frontend', private: false, member: false, subscribed: true },
           { path: 'security', private: true, member: false, subscribed: true },
         ],
         skills: [
-          { name: 'commit-messages', description: 'Writes commit messages in the house style: imperative subject, why before what.', group: null, revision: 2, pushed_by: 'dimitris', updated_on: ago(96), in_my_skills: true },
-          { name: 'release-notes', description: 'Builds release notes from merged pull requests since the last tag.', group: null, revision: 1, pushed_by: 'dimitris', updated_on: ago(300), in_my_skills: false },
-          { name: 'code-review', description: 'Reviews a diff against team standards and flags risky changes.', group: 'backend', revision: 3, pushed_by: 'maria', updated_on: ago(3), in_my_skills: true },
-          { name: 'api-design', description: 'Checks a new endpoint against the API guidelines before it ships.', group: 'backend', revision: 5, pushed_by: 'eve', updated_on: ago(120), in_my_skills: false },
-          { name: 'sqlalchemy-migrations', description: 'Plans and writes Alembic migrations that run identically on SQLite and Postgres.', group: 'backend/aistack', revision: 4, pushed_by: 'maria', updated_on: ago(52), in_my_skills: true },
-          { name: 'mcp-tool-authoring', description: 'Scaffolds a thin MCP tool with its service function and rejection tests.', group: 'backend/aistack', revision: 2, pushed_by: 'dimitris', updated_on: ago(26), in_my_skills: false },
-          { name: 'threat-model', description: 'Walks a design through trust boundaries and lists what an attacker controls.', group: 'security', revision: 1, pushed_by: 'eve', updated_on: ago(240), in_my_skills: false },
-          { name: 'dependency-audit', description: 'Audits new dependencies for licence, maintenance and known advisories.', group: 'security', revision: 3, pushed_by: 'eve', updated_on: ago(18), in_my_skills: false },
+          { name: 'commit-messages', description: 'Writes commit messages in the house style: imperative subject, why before what.', group: null, revision: 2, pushed_by: 'dimitris', updated_on: ago(96), in_library: true },
+          { name: 'release-notes', description: 'Builds release notes from merged pull requests since the last tag.', group: null, revision: 1, pushed_by: 'dimitris', updated_on: ago(300), in_library: false },
+          { name: 'code-review', description: 'Reviews a diff against team standards and flags risky changes.', group: 'developers', revision: 3, pushed_by: 'maria', updated_on: ago(3), in_library: true },
+          { name: 'api-design', description: 'Checks a new endpoint against the API guidelines before it ships.', group: 'developers', revision: 5, pushed_by: 'eve', updated_on: ago(120), in_library: false },
+          { name: 'sqlalchemy-migrations', description: 'Plans and writes Alembic migrations that run identically on SQLite and Postgres.', group: 'developers/backend', revision: 4, pushed_by: 'maria', updated_on: ago(52), in_library: true },
+          { name: 'mcp-tool-authoring', description: 'Scaffolds a thin MCP tool with its service function and rejection tests.', group: 'developers/backend', revision: 2, pushed_by: 'dimitris', updated_on: ago(26), in_library: false },
+          { name: 'threat-model', description: 'Walks a design through trust boundaries and lists what an attacker controls.', group: 'security', revision: 1, pushed_by: 'eve', updated_on: ago(240), in_library: false },
+          { name: 'dependency-audit', description: 'Audits new dependencies for licence, maintenance and known advisories.', group: 'security', revision: 3, pushed_by: 'eve', updated_on: ago(18), in_library: false },
         ] },
     ],
   };
@@ -1851,7 +2088,7 @@ function fail(message) { throw new Error(message); }
 const dNow = () => new Date().toISOString();
 const dMe = () => DB.user.username;
 const dTeam = name => DB.teams.find(t => t.name === name) || fail(`There is no team called ${name}.`);
-const dMine = name => DB.skills.find(s => s.name === name) || fail(`${name} is not in My skills.`);
+const dMine = name => DB.skills.find(s => s.name === name) || fail(`${name} is not in your library.`);
 const dTeamSkill = (t, name) => t.skills.find(s => s.name === name) || fail(`${t.name} has no skill called ${name}.`);
 const dMember = (t, username) => t.members.find(m => m.username === username) || fail(`${username} is not in ${t.name}.`);
 const dGroup = (t, path) => t.groups.find(g => g.path === path) || fail(`${t.name} has no group ${path}.`);
@@ -1872,7 +2109,7 @@ const DEMO_ROUTES = [
       return { team: t.name, group, revision: had.revision, created: false, unchanged: true, previous_pushed_by: had.pushed_by, possibly_unrelated: false };
     }
     const revision = had ? had.revision + 1 : 1, previous = had ? had.pushed_by : null;
-    const copy = { name, description: s.description, group, revision, pushed_by: dMe(), updated_on: dNow(), in_my_skills: true };
+    const copy = { name, description: s.description, group, revision, pushed_by: dMe(), updated_on: dNow(), in_library: true };
     if (had) Object.assign(had, copy); else t.skills.push(copy);
     s.source = { team: t.name, group, revision, latest_revision: revision, latest_pushed_by: dMe(), update_available: false };
     return { team: t.name, group, revision, created: !had, unchanged: false, previous_pushed_by: previous, possibly_unrelated: !!had && !fromHere };
@@ -1880,7 +2117,7 @@ const DEMO_ROUTES = [
   [/^\/api\/skills\/([^/]+)\/remove$/, (b, name) => {
     dMine(name);
     DB.skills = DB.skills.filter(s => s.name !== name);
-    DB.teams.forEach(t => t.skills.forEach(s => { if (s.name === name) s.in_my_skills = false; }));
+    DB.teams.forEach(t => t.skills.forEach(s => { if (s.name === name) s.in_library = false; }));
   }],
   [/^\/api\/teams$/, b => {
     if (!NAME_RE.test(b.name)) fail(`"${b.name}" is not a valid team name. ${NAME_RULE}`);
@@ -1893,7 +2130,7 @@ const DEMO_ROUTES = [
     DB.teams.push({ name: 'design', kind: 'SHARED', role: 'MEMBER', sees_all_groups: false,
       members: [{ username: 'eve', role: 'ADMIN', sees_all_groups: false, groups: ['tokens'] }, { username: dMe(), role: 'MEMBER', sees_all_groups: false, groups: [] }],
       groups: [{ path: 'tokens', private: false, member: false, subscribed: true }],
-      skills: [{ name: 'design-tokens', description: 'Keeps colours, spacing and type in sync with the token file.', group: 'tokens', revision: 2, pushed_by: 'eve', updated_on: dNow(), in_my_skills: false }] });
+      skills: [{ name: 'design-tokens', description: 'Keeps colours, spacing and type in sync with the token file.', group: 'tokens', revision: 2, pushed_by: 'eve', updated_on: dNow(), in_library: false }] });
     return { team: 'design' };
   }],
   [/^\/api\/teams\/([^/]+)\/leave$/, (b, team) => {
@@ -1912,9 +2149,9 @@ const DEMO_ROUTES = [
     const source = { team: t.name, group: ts.group, revision: ts.revision, latest_revision: ts.revision, latest_pushed_by: ts.pushed_by, update_available: false };
     const mine = DB.skills.find(s => s.name === b.name);
     if (mine) Object.assign(mine, { description: ts.description, revision: mine.revision + 1, pushed_by: ts.pushed_by, updated_on: dNow(), source });
-    else DB.skills.push({ name: ts.name, description: ts.description, revision: 1, pushed_by: ts.pushed_by, updated_on: dNow(), files: 3, machines: DB.machines.map(m => m.id), source });
+    else DB.skills.push({ name: ts.name, description: ts.description, revision: 1, pushed_by: ts.pushed_by, updated_on: dNow(), files: 3, machines: [], source });
     DB.skills.sort((a, c) => a.name.localeCompare(c.name));
-    ts.in_my_skills = true;
+    ts.in_library = true;
   }],
   [/^\/api\/teams\/([^/]+)\/members\/([^/]+)$/, (b, team, username) => {
     const t = dTeam(team); dAdmin(t);

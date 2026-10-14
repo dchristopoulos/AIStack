@@ -5,7 +5,7 @@ description: Sync this machine's skills with the user's own skills on AIStack. U
 
 # Sync AIStack
 
-Bring this machine's skills in line with "My skills", the user's private space on the AIStack server. It mirrors their computers and is the only place this machine installs from. Sync when work starts, the way you would `git pull`.
+Bring this machine's skills in line with the Library, the user's private space on the AIStack server. It mirrors their computers and is the only place this machine installs from. Sync when work starts, the way you would `git pull`.
 
 ## 1. List what is on disk
 
@@ -49,7 +49,7 @@ Work through the fields in this order.
 
 1. **`sync_skill_url`**: usually `null`. When it is a URL, this file is missing or differs from the server's. Download it without asking, then carry on: `curl -sS -o ~/.claude/skills/sync-aistack/SKILL.md "<sync_skill_url>"`. It is AIStack's own file, so nothing of the user's is lost.
 2. **`install`** and **`update`**: call `get_skill` with each entry's `name` and follow its install steps. Do not ask first. This machine already chose these skills, and the local copy is missing or is an unmodified older revision, so nothing can be lost.
-3. **`backup`**: names of skills on disk that are not yet in My skills. For each, call `push_skill` with the name and follow its upload steps. Do not ask first. My skills is private, so a backup shares nothing with anyone. (An older server called this field `orphans` and asked before pushing; that rule is retired.)
+3. **`backup`**: names of skills on disk that are not yet in the Library. For each, call `push_skill` with the name and follow its upload steps. Do not ask first. The Library is private, so a backup shares nothing with anyone. (An older server called this field `orphans` and asked before pushing; that rule is retired.)
 4. **`ask`**: sync found something it will not decide for the user. Put each entry to them as described under "Asking" and act only on their answer.
 5. **`team_updates`**: a team holds a newer revision of a skill the user took from it or shared with it. Each is an offer, described under "Team updates". Ask every time, including for an offer the user declined on an earlier sync.
 
@@ -64,12 +64,12 @@ Each `ask` entry names the skill, what the server holds for this machine (`desir
 | `desired` | meaning |
 |---|---|
 | `enabled` | this machine manages the skill |
-| `disabled` | the user removed it from this machine, or from My skills, and the folder is still on disk |
-| `undecided` | it is in My skills and on disk, but this machine never chose it |
+| `disabled` | the user removed it from this machine, or from the Library, and the folder is still on disk |
+| `undecided` | it is in the Library and on disk, but this machine never chose it |
 
 | `local` | meaning |
 |---|---|
-| `current` | identical to the latest revision in My skills |
+| `current` | identical to the latest revision in the Library |
 | `stale` | identical to an older revision (`local_revision`); nothing was edited |
 | `unknown` | matches no revision: the user edited it, or it is a different skill with the same name |
 
@@ -79,7 +79,7 @@ Offer exactly the `options` listed, no others. Each `choice` maps to something y
 |---|---|
 | `enable` | `get_skill`, then install. This machine manages the skill from now on |
 | `restore` | `get_skill`, then install. The skill was already managed here; this puts the stored copy back over the local edits |
-| `push` | `push_skill`, then upload the local folder. It becomes the newest revision in My skills |
+| `push` | `push_skill`, then upload the local folder. It becomes the newest revision in the Library |
 | `remove` | delete the local folder. The server already records that this machine should not have it |
 | `skip` | nothing. Sync asks again next time |
 
@@ -90,7 +90,7 @@ Each option carries two flags. State them whenever they are true:
 
 Word the question from the facts. For `undecided` + `current`: "wizard is already on this machine and matches your copy on AIStack. Want AIStack to keep it updated here from now on?" For `enabled` + `unknown`: "You've edited wizard locally. Restore the stored version (your edits will be lost), back up your version as a new revision, or leave it for now?"
 
-`latest_revision` and `pushed_by` describe the newest revision in My skills. Mention them when the user is choosing between their local copy and the stored one. A `push` adds a revision on top; older revisions stay in the history, and no teammate sees any of it until the user shares the skill.
+`latest_revision` and `pushed_by` describe the newest revision in the Library. Mention them when the user is choosing between their local copy and the stored one. A `push` adds a revision on top; older revisions stay in the history, and no teammate sees any of it until the user shares the skill.
 
 When several skills need the same kind of answer, ask about them together and accept one answer for the group.
 
@@ -98,7 +98,7 @@ When several skills need the same kind of answer, ask about them together and ac
 
 Each `team_updates` entry has `name`, `team`, `from_revision`, `to_revision`, and `pushed_by`. Tell the user which team changed the skill, between which revisions, and who pushed the new one. Then ask whether they want it.
 
-- **Yes**: call `get_skill` with `name` and `team`, then install. This copies the team's latest revision into My skills and replaces the local folder.
+- **Yes**: call `get_skill` with `name` and `team`, then install. This copies the team's latest revision into the Library and replaces the local folder.
 - **No**: do nothing. The offer comes back on the next sync.
 
 If the same skill is also in `ask` with `local` `unknown`, settle that entry first: accepting the team's version replaces the local folder, edits included.

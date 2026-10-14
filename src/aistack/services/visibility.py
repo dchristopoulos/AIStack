@@ -1,6 +1,6 @@
 """Who may see which skill (ADR-0015).
 
-Two kinds of place hold skills. A user's personal team is "My skills": private, the only
+Two kinds of place hold skills. A user's personal team is the Library: private, the only
 place their machines install from. Every other team holds what its members shared, and a
 member sees a team skill when it sits at team level or in a group they may see; `group_access`
 has that rule.
@@ -152,7 +152,7 @@ def membership(session: Session, user_id: uuid.UUID, team: str) -> tuple[Team, T
     """The named team and the caller's place in it.
 
     A team the caller is not in is answered like one that does not exist. A personal team is
-    nobody's to name: it is reached as "my skills", never as a team.
+    nobody's to name: it is reached as the Library, never as a team.
     """
     found = session.execute(
         select(Team, TeamMember)

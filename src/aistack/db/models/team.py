@@ -23,7 +23,7 @@ class TeamKind(StrEnum):
 
     # The one team every account on the server joins. It is what "the vault" was before teams.
     SERVER = "SERVER"
-    # One per user, created at join: "My skills". Mirrors what is on their computers, and is
+    # One per user, created at join: the Library. Mirrors what is on their computers, and is
     # the only team a machine ever installs from.
     PERSONAL = "PERSONAL"
     # Created by a user, joined with the team's own invite code.

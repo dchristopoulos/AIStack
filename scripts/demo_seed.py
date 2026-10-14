@@ -25,7 +25,7 @@ SKILLS = {
                                                  "they mean\n- no secrets in the diff\n"}),
     "release-notes": ("Drafts release notes from merged pull requests. Use when cutting a "
                       "release.", {"template.md": "## Added\n\n## Changed\n\n## Fixed\n"}),
-    "sql-style": ("Formats SQL the way the backend group agreed. Use when writing or "
+    "sql-style": ("Formats SQL the way the developers agreed. Use when writing or "
                   "reviewing a query.", {"examples/select.sql": "SELECT id\nFROM skill\n"
                                                                 "WHERE archived = FALSE;\n"}),
     "aistack-api-notes": ("How AIStack's own routes and tools are laid out. Use when changing "
@@ -101,30 +101,30 @@ async def seed(base_url: str, invite_code: str) -> dict[str, str]:
     for person in (dimitris, maria, alex):
         await person.sign_in()
 
-    # A company team, with a group per discipline and a project inside one of them.
-    await dimitris.page("/teams", name="acme")
-    code = (await dimitris.page("/teams/acme/invite"))["code"]
+    # A company team, with a group per discipline and a narrower one inside it.
+    await dimitris.page("/teams", name="aistack")
+    code = (await dimitris.page("/teams/aistack/invite"))["code"]
     for person in (maria, alex):
         await person.page("/teams/join", code=code)
-    await dimitris.page("/teams/acme/groups", name="backend")
-    await dimitris.page("/teams/acme/groups", name="aistack", parent="backend")
-    await dimitris.page("/teams/acme/groups", name="security", private=True)
-    await dimitris.page("/teams/acme/group/members", path="backend", username="maria",
+    await dimitris.page("/teams/aistack/groups", name="developers")
+    await dimitris.page("/teams/aistack/groups", name="backend", parent="developers")
+    await dimitris.page("/teams/aistack/groups", name="security", private=True)
+    await dimitris.page("/teams/aistack/group/members", path="developers", username="maria",
                         member=True)
 
     for name, group in (("code-review", None), ("release-notes", None),
-                        ("sql-style", "backend"), ("aistack-api-notes", "backend/aistack"),
+                        ("sql-style", "developers"), ("aistack-api-notes", "developers/backend"),
                         ("pentest-checklist", "security")):
-        await dimitris.page(f"/skills/{name}/share", team="acme", group=group)
+        await dimitris.page(f"/skills/{name}/share", team="aistack", group=group)
     await dimitris.page("/skills/commit-messages/share", team="everyone")
 
     # Maria takes two skills and switches them on; then one of them changes under her.
     maria_laptop = (await maria.browser.get("/api/state")).json()["machines"][0]["id"]
     for name in ("code-review", "sql-style"):
-        await maria.page("/teams/acme/take", name=name)
+        await maria.page("/teams/aistack/take", name=name)
         await maria.page(f"/skills/{name}/machines/{maria_laptop}", enabled=True)
     await dimitris.push("code-review", extra="Also check that migrations are reviewed.\n")
-    await dimitris.page("/skills/code-review/share", team="acme")
+    await dimitris.page("/skills/code-review/share", team="aistack")
 
     # A friends team that has nothing to do with the company.
     await maria.push("meeting-notes")
@@ -138,9 +138,9 @@ async def seed(base_url: str, invite_code: str) -> dict[str, str]:
 
 def main() -> None:
     links = asyncio.run(seed(sys.argv[1].rstrip("/"), sys.argv[2]))
-    print("Seeded: 3 people, 4 computers, teams 'acme' and 'friends', 3 groups (one nested, "
+    print("Seeded: 3 people, 4 computers, teams 'aistack' and 'friends', 3 groups (one nested, "
           "one private).")
-    print("Maria has an update to 'code-review' waiting. Alex is in 'acme' and in no group, "
+    print("Maria has an update to 'code-review' waiting. Alex is in 'aistack' and in no group, "
           "so the private 'security' group is hidden from him.\n")
     print("Dashboard links, each good for five minutes:")
     for username, link in links.items():

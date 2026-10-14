@@ -21,7 +21,7 @@ A full local copy of a canonical skill, materialized into a harness's skill dire
 _Avoid_: Clone, stub, proxy
 
 **Sync**:
-Reconciling a machine's actual local state (what's on disk) with its desired state on the server (which of its user's own skills are enabled for that machine). Installs the missing, updates the stale, backs up what My skills does not have yet, offers team updates, and asks the user about everything else. Never deletes local files, never flips enabled silently, never applies a teammate's change, and is not discovery (that's `list_skills`). See ADR-0004, ADR-0006, ADR-0015.
+Reconciling a machine's actual local state (what's on disk) with its desired state on the server (which of its user's own skills are enabled for that machine). Installs the missing, updates the stale, backs up what the Library does not have yet, offers team updates, and asks the user about everything else. Never deletes local files, never flips enabled silently, never applies a teammate's change, and is not discovery (that's `list_skills`). See ADR-0004, ADR-0006, ADR-0015.
 _Avoid_: Pull, update-all
 
 **Name**:
@@ -33,12 +33,12 @@ The server-side integer that orders a skill's versions. Distinct from the author
 _Avoid_: Version number (ambiguous)
 
 **Vault**:
-The canonical skills one place holds: a user's My skills, or a team. A skill name is unique within a vault. Only My skills is installed from; a team's vault is shared into and taken from. Before ADR-0015 a server was a single vault everyone installed from, and that vault is now the team `everyone`.
-_Avoid_: Registry, library, marketplace, "the vault" for the whole server
+The canonical skills one place holds: a user's Library, or a team. A skill name is unique within a vault. Only the Library is installed from; a team's vault is shared into and taken from. Before ADR-0015 a server was a single vault everyone installed from, and that vault is now the team `everyone`.
+_Avoid_: Registry, marketplace, "the vault" for the whole server
 
-**My skills**:
-A user's personal team: private, a mirror of what is on their computers, and the only place their machines install from. On the wire it is a skill whose `team` is null.
-_Avoid_: Personal vault, private team, workspace, home
+**Library**:
+A user's personal team: private, a mirror of what is on their computers, and the only place their machines install from. On the wire it is a skill whose `team` is null; in code it keeps its older name, as in `visibility.my_skills`.
+_Avoid_: My skills (its name until #62), personal vault, private team, workspace, home
 
 **Team**:
 A set of people who share skills (ADR-0015). A member shares into it and takes from it; nothing installs from it directly. Every user is in the server's team, `everyone`; the rest are created by a user and joined with an invite code.
@@ -53,7 +53,7 @@ A member who manages a team's invite code, members, groups, and where its skills
 _Avoid_: Owner, moderator
 
 **Back up**:
-Putting a local skill into My skills (`push_skill`). Sync lists what needs it and the agent does it without asking, because nothing is shared.
+Putting a local skill into the Library (`push_skill`). Sync lists what needs it and the agent does it without asking, because nothing is shared.
 _Avoid_: Import, upload (as a term of art), publish
 
 **Share**:
@@ -61,7 +61,7 @@ Copying the latest revision of one of your own skills into a team or one of its 
 _Avoid_: Publish, push to a team, release
 
 **Take**:
-Copying a team skill's latest revision into My skills, which is how it is installed and how an offered update is accepted. The copy stays yours if you leave the team.
+Copying a team skill's latest revision into the Library, which is how it is installed and how an offered update is accepted. The copy stays yours if you leave the team.
 _Avoid_: Subscribe, follow, fork, pull
 
 **Team update**:
@@ -105,11 +105,11 @@ The signed payload inside a transfer URL: purpose, machine, user, skill, expiry,
 _Avoid_: Token (that means a machine token), session, nonce
 
 **Orphan** _(retired by ADR-0015)_:
-Was: a skill on disk that the shared vault did not know, reported and never pushed unasked. Now such a skill is backed up to My skills, which is private. See **Back up**.
+Was: a skill on disk that the shared vault did not know, reported and never pushed unasked. Now such a skill is backed up to the Library, which is private. See **Back up**.
 _Avoid_: Using the word for anything current
 
 **Adopt**:
-Enabling a skill on this machine that already exists both on disk and in My skills (pushed from another of the user's machines, say), so future revisions flow to it. Always a question, never silent — adoption means later revisions overwrite that folder.
+Enabling a skill on this machine that already exists both on disk and in the Library (pushed from another of the user's machines, say), so future revisions flow to it. Always a question, never silent — adoption means later revisions overwrite that folder.
 _Avoid_: Auto-enable, link
 
 **Admin**:

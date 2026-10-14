@@ -192,7 +192,7 @@ async def test_a_team_from_creation_to_an_update_taken_entirely_on_the_dashboard
         await _post(dimitris, "/teams/acme/group/members", path="backend/aistack",
                     username="maria", member=True)
         acme = next(team for team in (await _state(maria))["teams"] if team["name"] == "acme")
-        assert [(skill["name"], skill["group"], skill["pushed_by"], skill["in_my_skills"])
+        assert [(skill["name"], skill["group"], skill["pushed_by"], skill["in_library"])
                 for skill in acme["skills"]] == [
             ("code-review", "backend/aistack", "dimitris", False)]
 

@@ -4,7 +4,7 @@ Scope, architecture, and schema for the MVP, settled 2026-08-21, revised 2026-08
 
 ## 1. What AIStack is
 
-A self-hosted, open-source control plane for AI development configuration. A team, or a solo developer with several machines, runs one AIStack server. It holds the canonical copies of their skills, and later their rules, agents, hooks, and MCP server definitions. Each person has a private space, My skills, that mirrors their machines and is the only place those machines install from. They share skills with teams, and with groups inside a team, and take what others shared. The web dashboard is where they see and manage all of it; MCP connects their coding agent to their account, so the everyday actions are also a sentence in chat.
+A self-hosted, open-source control plane for AI development configuration. A team, or a solo developer with several machines, runs one AIStack server. It holds the canonical copies of their skills, and later their rules, agents, hooks, and MCP server definitions. Each person has a private space, the Library, that mirrors their machines and is the only place those machines install from. They share skills with teams, and with groups inside a team, and take what others shared. The web dashboard is where they see and manage all of it; MCP connects their coding agent to their account, so the everyday actions are also a sentence in chat.
 
 Core promise:
 
@@ -117,7 +117,7 @@ disable_skill(name)           → enabled = false for this machine; the agent th
                                 deletes the local folder
 ```
 
-There is no `delete_skill` tool. Removal is a dashboard action, in two forms. Removing a skill from My skills keeps its row as a marker (`archived`) and disables it on every machine, so each machine's next sync asks whether to delete the folder and does not back it up again. A team admin removing a skill from a team deletes the team's copy and its history; copies members already took are theirs and are untouched. Deleting a single revision is not offered: a fresh install after deleting the latest would silently receive an older one, and a safe version needs preview-confirm plus tombstones.
+There is no `delete_skill` tool. Removal is a dashboard action, in two forms. Removing a skill from the Library keeps its row as a marker (`archived`) and disables it on every machine, so each machine's next sync asks whether to delete the folder and does not back it up again. A team admin removing a skill from a team deletes the team's copy and its history; copies members already took are theirs and are untouched. Deleting a single revision is not offered: a fresh install after deleting the latest would silently receive an older one, and a safe version needs preview-confirm plus tombstones.
 
 ### Flows
 
@@ -161,16 +161,16 @@ Not enabled for this machine, but present on disk:
 | explicitly disabled here (`enabled = false` row) | matches latest | report: re-enable (no rewrite) or remove |
 | explicitly disabled here | matches an older revision | report: re-enable **and update** (states that files will be replaced) or remove |
 | explicitly disabled here | matches no revision | report: push / re-enable-and-replace (**states this discards local edits**) / remove / skip |
-| in My skills, no decision here (no row) | matches latest | report: adopt (no rewrite) |
-| in My skills, no decision here | matches an older revision | report: adopt **and update** (states that files will be replaced) |
-| in My skills, no decision here | matches no revision | report: push / adopt-and-replace (**states this discards local edits**) / skip |
-| not among the user's own skills | any | list under `backup`; the agent backs it up to My skills **without asking**. That space is private, so nothing is shared and nobody else sees the user as the pusher of something they only downloaded (this replaces "never auto-push", which guarded a vault everyone shared) |
+| in the Library, no decision here (no row) | matches latest | report: adopt (no rewrite) |
+| in the Library, no decision here | matches an older revision | report: adopt **and update** (states that files will be replaced) |
+| in the Library, no decision here | matches no revision | report: push / adopt-and-replace (**states this discards local edits**) / skip |
+| not among the user's own skills | any | list under `backup`; the agent backs it up to the Library **without asking**. That space is private, so nothing is shared and nobody else sees the user as the pusher of something they only downloaded (this replaces "never auto-push", which guarded a vault everyone shared) |
 
 A prompt that leads to overwriting local content must say so. "Adopt?" on its own is not informed consent when the local copy matches no revision.
 
 **Hash precedence** (identical content can legitimately be pushed as two revisions, so a hash can match both): if the local hash equals the latest revision's, the copy is current. Otherwise, if it equals any revision's, it is stale. Otherwise it is unknown.
 
-**No-op states**, stated so the contract covers the full product rather than relying on inference: absent + disabled, absent + no row, and absent + not in My skills all mean nothing to do and are never reported.
+**No-op states**, stated so the contract covers the full product rather than relying on inference: absent + disabled, absent + no row, and absent + not in the Library all mean nothing to do and are never reported.
 
 Every answer maps to an existing tool: restore / re-enable / adopt → `get_skill` (on the wire, `restore` for a skill already enabled here and `enable` for the other two); push → `push_skill`; remove → the flag is already false, the agent just deletes the folder; skip → nothing. No hidden verbs.
 
@@ -239,11 +239,11 @@ Three places hold skills, and they nest in that order of privacy.
 
 | Place | Who sees it | How a skill gets there | What installs from it |
 |---|---|---|---|
-| **My skills** (a personal team per user) | Only that user | Backed up from their computers by sync, without asking | Their machines, and nothing else |
-| **A team** (`everyone`, or one a user created) | Its members | A member shares one of their own skills | Nothing directly: a member takes a copy into My skills |
+| **Library** (a personal team per user) | Only that user | Backed up from their computers by sync, without asking | Their machines, and nothing else |
+| **A team** (`everyone`, or one a user created) | Its members | A member shares one of their own skills | Nothing directly: a member takes a copy into the Library |
 | **A group** in a team (`backend`, `backend/aistack`) | Open: whoever sees the group above. Private: the people added to it | A member of it, or of a group above it, shares into it | As a team |
 
-**The four verbs.** *Back up* (`push_skill`): a local skill goes into My skills. *Share* (`share_skill`, or a tick on the dashboard): the team gets a copy of the latest revision. *Take* (`get_skill` with a team): the team's latest revision is copied into My skills and installed. *Remove*: from one computer (`disable_skill`), from My skills on every computer (dashboard), or from a team (its admin).
+**The four verbs.** *Back up* (`push_skill`): a local skill goes into the Library. *Share* (`share_skill`, or a tick on the dashboard): the team gets a copy of the latest revision. *Take* (`get_skill` with a team): the team's latest revision is copied into the Library and installed. *Remove*: from one computer (`disable_skill`), from the Library on every computer (dashboard), or from a team (its admin).
 
 **Updates from a team are offers.** A personal skill remembers its team source and that source's revision. When the team's copy is newer, sync lists it under `team_updates` and the user answers each time; yes is *take*. A user who unsubscribes from a group is not offered its updates.
 
@@ -259,12 +259,15 @@ The web application is the product; MCP connects an agent to the account. The da
 
 | View | What a user does there |
 |---|---|
-| My skills | See every skill and which of their computers has it; turn it on or off per computer; share it with a team or group; take an offered update; remove it |
+| Library | See every skill and which of their computers has it; add it to a computer or take it off one; share it with a team or group; take an offered update; remove it |
+| A computer | See what its coding agent has; add skills from the Library; copy what another computer has; take one off |
 | A team | Browse its skills by group, with who pushed each; take one; unsubscribe from a group |
 | Team admin | Invite code; members, roles, and sight of every group; create groups and nest them; make one private; add people; move or remove a skill |
 | Teams | Create a team; join one with a code; leave one |
 
-**The sidebar is the map.** It lists My skills, then each team with its groups nested under it, a step in for each level, the way a chat application lists channels. A private group has a lock, every group shows how many skills are in it and below it, and a blue dot marks one with an update waiting for a skill the user took. Choosing a group opens the team's skills narrowed to that group and the groups under it, at `#/t/<team>/skills/<group path>`, an address that can be reloaded or sent to a teammate. A team's groups fold away with the button beside its name, and the browser remembers which teams are folded. The tree is built from the groups `/api/state` sends, so a private group the user is not in is absent from it, and its address opens the whole team exactly as an unknown one does.
+**Two columns are the map.** A rail on the left holds the user's spaces, the way a chat application lists servers: *Personal* on top, then each team, the server-wide one last, then one *+* that creates a team or joins one with a code. The column beside it lists what is in the chosen space, and the account bar with sign-out runs under both at the bottom. For Personal that is the Library, with a blue dot and a count when updates are waiting, and then each computer as one row per coding agent on it, opening that agent's page at `#/f/<machine id>/<agent>`. The *+* beside the Computers heading says what to ask an already connected agent to add another computer. Every computer has exactly one agent, Claude Code, until ADR-0018 gives the server more; the page treats a skill placed on a computer as placed in its agent. For a team it is All skills, the team's groups nested a step in per level, then Members and Settings. A private group has a lock, every group shows how many skills are in it and below it, and a blue dot marks one with an update waiting for a skill the user took. Choosing a group opens the team's skills narrowed to that group and the groups under it, at `#/t/<team>/skills/<group path>`, an address that can be reloaded or sent to a teammate. The tree is built from the groups `/api/state` sends, so a private group the user is not in is absent from it, and its address opens the whole team exactly as an unknown one does.
+
+**Placing a skill is three gestures over one route.** A tag per computer on a Library row, with a cross to take it off; Add to… on the row, a box per computer; and on a computer's page, Add skills and Copy from…, which adds what another computer has and removes nothing. Each is a series of `POST /api/skills/{name}/machines/{machine_id}` calls, one per change, and the page reloads its state once they are done.
 
 ### The dashboard's routes
 
@@ -287,12 +290,12 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/logout` | `{}` | Clears the cookie |
 | `POST /api/skills/{name}/machines/{machine_id}` | `enabled` (true or false) | Switches one of the user's own skills on or off for one of their computers. The files move at that computer's next sync |
 | `POST /api/skills/{name}/share` | `team`, `group` (a path, or null for team level) | `team`, `group`, `revision`, `created`, `unchanged`, `previous_pushed_by`, `possibly_unrelated`: what `share_skill` returns |
-| `POST /api/skills/{name}/remove` | `{}` | Removes the skill from My skills on every computer |
+| `POST /api/skills/{name}/remove` | `{}` | Removes the skill from the Library on every computer |
 | `POST /api/teams` | `name` | `name`. The caller is the new team's admin |
 | `POST /api/teams/join` | `code` (a team's invite code) | `team` |
 | `POST /api/teams/{team}/leave` | `{}` | |
 | `POST /api/teams/{team}/invite` | `{}` | `code`, shown this once. The previous code stops working. Admin only |
-| `POST /api/teams/{team}/take` | `name` | Copies the team's latest revision of that skill into My skills |
+| `POST /api/teams/{team}/take` | `name` | Copies the team's latest revision of that skill into the Library |
 | `POST /api/teams/{team}/members/{username}` | `role` (`ADMIN` or `MEMBER`) and/or `sees_all_groups` (true or false) | Admin only |
 | `POST /api/teams/{team}/members/{username}/remove` | `{}` | Admin only |
 | `POST /api/teams/{team}/groups` | `name`, optional `parent` (a path), optional `private` | `path`. Admin only |
@@ -341,7 +344,7 @@ A group's path contains slashes, so it always travels in the body and never in t
           "name": "code-review", "description": "…", "team": "acme", "group": null,
           "revision": 3, "pushed_by": "maria",
           "updated_on": "2026-10-14T00:43:56.161865+00:00",
-          "in_my_skills": true
+          "in_library": true
         }
       ]
     }
@@ -352,16 +355,16 @@ A group's path contains slashes, so it always travels in the body and never in t
 | Field | Meaning |
 |---|---|
 | `machines` | The user's computers, oldest first. `os` is `MACOS`, `WINDOWS`, or `LINUX` |
-| `skills` | My skills, by name, without the ones removed from it |
+| `skills` | The Library, by name, without the ones removed from it |
 | `skills[].revision`, `pushed_by`, `updated_on`, `files` | The latest revision of the user's own copy: its number, who pushed it, when (UTC), and how many files it has |
 | `skills[].machines` | The ids of the computers the skill is switched on for. On is a decision the server holds, not proof the files are there yet |
 | `skills[].source` | The team skill this copy was taken from or shared to, or null. Null also when the user can no longer see that skill: the copy is then simply theirs |
 | `source.revision` | The team's revision this copy came from. `latest_revision` and `latest_pushed_by` describe the team's newest, and `update_available` is true when it is newer |
-| `teams` | The teams the user is in, by name. My skills is not among them. `kind` is `SERVER` for `everyone` and `SHARED` for a team somebody created |
+| `teams` | The teams the user is in, by name. The Library is not among them. `kind` is `SERVER` for `everyone` and `SHARED` for a team somebody created |
 | `teams[].role`, `sees_all_groups` | The user's own role in that team, `ADMIN` or `MEMBER`, and whether they were given sight of every group |
 | `teams[].members` | Everyone in the team. A member's private groups are listed only for an admin and for people in those groups |
 | `teams[].groups` | The groups the user may see, by path; an admin sees all of them. `member` is whether the user is in it, `subscribed` whether they are offered its updates |
-| `teams[].skills` | The team's skills the user may see, each with its latest revision. `group` is a path, or null at team level. `in_my_skills` is true when one of the user's own skills was taken from it or shared to it |
+| `teams[].skills` | The team's skills the user may see, each with its latest revision. `group` is a path, or null at team level. `in_library` is true when one of the user's own skills was taken from it or shared to it |
 
 ### Schema
 
@@ -437,7 +440,7 @@ SKILL
   source_skill_id UUID FK → SKILL ON DELETE SET NULL NULL      -- personal skills only: the
   source_revision INTEGER    NULL              -- team skill taken from or shared to, and its
                                                -- revision then. Newer there = an update on offer
-  archived      BOOLEAN      NOT NULL          -- removed from My skills; kept so sync does
+  archived      BOOLEAN      NOT NULL          -- removed from the Library; kept so sync does
                                                -- not back the folder up again
   name          VARCHAR(64)  NOT NULL          -- ^[a-z0-9]+(-[a-z0-9]+)*$; UNIQUE (team_id, name)
   description   VARCHAR(1024) NOT NULL         -- denormalized from latest revision on push;

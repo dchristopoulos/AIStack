@@ -39,7 +39,7 @@ class PushSkillResult(TypedDict):
 @mcp.tool(
     description="""Back up a local skill to the user's own skills. Returns a URL to upload to.
 
-    "My skills" is private: it mirrors what is on the user's computers, and nobody else sees
+    The Library is private: it mirrors what is on the user's computers, and nobody else sees
     it. Use this for a skill sync listed under backup, and after the user edits one of their
     skills. To put a skill in front of other people, call share_skill afterwards. Pushing a
     name they already have adds a revision; nothing is overwritten. The files are never

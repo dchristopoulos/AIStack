@@ -39,7 +39,7 @@ class Skill(Base):
     source_skill_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("skill.skill_id", ondelete="SET NULL"), nullable=True)
     source_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Removed from "My skills" by its user. The row stays so that sync does not mistake the
+    # Removed from the Library by its user. The row stays so that sync does not mistake the
     # folder still on a computer for a new skill and back it up again.
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 

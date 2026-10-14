@@ -22,14 +22,19 @@ async def main() -> None:
     links = await demo_seed.seed(base_url, invite_code)
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch()
-        shots = [("dimitris", "light", "#/mine", "my-skills"), ("dimitris", "light", "#/t/acme/skills", "team"),
-                 ("dimitris", "light", "#/t/acme/groups", "groups"), ("maria", "dark", "#/mine", "update-dark")]
+        # A computer's page is addressed by its id, so it is opened from the sidebar instead.
+        shots = [("dimitris", "light", "#/library", "library"), ("dimitris", "light", "macbook", "computer"),
+                 ("dimitris", "light", "#/t/aistack/skills", "team"),
+                 ("dimitris", "light", "#/t/aistack/groups", "groups"), ("maria", "dark", "#/library", "update-dark")]
         for username, scheme, route, name in shots:
             context = await browser.new_context(viewport=WIDE, device_scale_factor=2, color_scheme=scheme)
             page = await context.new_page()
             await page.goto(links[username])
-            await page.get_by_role("heading", name="My skills", level=1).wait_for()
-            await page.goto(f"{base_url}/app{route}")
+            await page.get_by_role("heading", name="Library", level=1).wait_for()
+            if route.startswith("#"):
+                await page.goto(f"{base_url}/app{route}")
+            else:
+                await page.get_by_role("navigation", name="Main").get_by_role("link", name=route).click()
             await page.wait_for_timeout(400)
             await page.screenshot(path=str(IMAGES / f"dashboard-{name}.png"))
             await context.close()

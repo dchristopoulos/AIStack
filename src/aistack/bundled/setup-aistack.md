@@ -71,7 +71,7 @@ Tell the user:
 
 - This computer is connected to AIStack as `<username>` / `<computer name>`.
 - **Restart Claude Code once.** It reads its server list at startup, so the new connection appears after a restart. This is the only restart: skills installed from now on load without one.
-- After restarting, say **"sync aistack"**. It backs up the skills on this computer to "My skills", a private space only they see, and installs whatever their other computers already put there. Syncing at the start of a work session, like `git pull`, keeps everything current.
+- After restarting, say **"sync aistack"**. It backs up the skills on this computer to the Library, a private space only they see, and installs whatever their other computers already put there. Syncing at the start of a work session, like `git pull`, keeps everything current.
 - **"open my aistack dashboard"** gives a link to the web dashboard, where they see every skill and which computer has it, and manage teams, groups, and members.
 - To work with other people: **"what skills do my teams have?"** to browse, **"install <skill> from <team>"** to take one, **"share <skill> with <team>"** to give a team a copy of theirs, **"create a team called <name>"** to start one, and **"join a team with this code"** when someone sends them a team invite code. Everyone on this server is already in the team `everyone`.
 - A teammate's change to a shared skill never reaches this computer by itself. Sync reports it as an offer, and they decide each time.

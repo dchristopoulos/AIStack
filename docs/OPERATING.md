@@ -262,7 +262,7 @@ If an upgrade fails, the server does not start and the log says which step faile
 Before it, a server was one vault everybody shared and installed from. The upgrade moves the data so that nothing anyone could see disappears and no computer loses a skill:
 
 - Every existing skill moves into the server's team, `everyone`, and every user is a member. The server's admin is that team's admin.
-- Every user gets a private space of their own, My skills.
+- Every user gets a private space of their own, the Library.
 - Every skill that one of a user's machines had enabled or disabled is copied, with its whole history, into that user's own space, and the machine follows the copy. Each copy remembers the `everyone` skill it came from.
 
 The database grows by those copies. Skills are small text files, so this is rarely worth planning for, but it is why the upgrade takes longer than a later one will.

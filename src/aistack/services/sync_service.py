@@ -83,7 +83,7 @@ class SyncReport:
     update: tuple[Update, ...]
     ask: tuple[Question, ...]
     # On disk and not yet in the user's own skills. The agent backs each one up without
-    # asking: "My skills" is private and mirrors the computer, so nothing is shared and
+    # asking: the Library is private and mirrors the computer, so nothing is shared and
     # nobody else sees the user as the pusher of something they only downloaded. Sharing is
     # a separate, deliberate step.
     backup: tuple[str, ...]

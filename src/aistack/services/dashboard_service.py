@@ -53,7 +53,7 @@ def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
             ],
             "skills": [
                 {key: value for key, value in skill.items() if key != "id"}
-                | {"in_my_skills": skill["id"] in taken}
+                | {"in_library": skill["id"] in taken}
                 for skill in team_skills.get(team.name, [])
             ],
         })
