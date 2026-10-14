@@ -1,5 +1,6 @@
 from aistack.db.models.base import Base
 from aistack.db.models.harness import Harness
+from aistack.db.models.invite import Invite
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
 from aistack.db.models.machine_skill import MachineSkill
@@ -26,6 +27,7 @@ __all__ = [
     "GroupMember",
     "GroupUnsubscribed",
     "Harness",
+    "Invite",
     "Machine",
     "MachineHarness",
     "MachineSkill",

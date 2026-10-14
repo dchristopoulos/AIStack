@@ -336,7 +336,7 @@ async def test_no_link_session_or_invite_code_reaches_a_log_line(server_url, cap
     logged = "\n".join(
         record.getMessage() for record in caplog.records
         if record.name.startswith(("aistack", "fastmcp", "mcp.server", "uvicorn.error")))
-    assert "Dashboard session started" in logged and "Team invite code replaced" in logged
+    assert "Dashboard session started" in logged and "Team invite made" in logged
     # A JWT's signature is its last part: the part that makes it a credential.
     for secret in (link.rsplit(".", 1)[1], session.rsplit(".", 1)[1], code,
                    "aistinv_wrong-code"):

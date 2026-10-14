@@ -8,8 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from aistack.db.models.machine import Machine
-from aistack.db.models.team import Team
 from aistack.mcp.auth.scopes import BOOTSTRAP_SCOPE, MACHINE_SCOPE
+from aistack.services import team_service
 from aistack.services.token_service import TEAM_INVITE_PREFIX, hash_token, matches_invite_code
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class AIStackTokenVerifier(TokenVerifier):
             # A team's invite code reaches `join` and nothing else (ADR-0019). The claim says
             # only which kind of invite this is: `join` resolves the team again in its own
             # transaction, so no team or user identity rides on a bearer that is shared.
-            invited = await asyncio.to_thread(self._is_team_invite, hash_token(token))
+            invited = await asyncio.to_thread(self._is_team_invite, token)
             if invited:
                 logger.debug(
                     "Bearer authenticated. Principal: 'bootstrap'. Invite: 'team'. "
@@ -78,11 +78,10 @@ class AIStackTokenVerifier(TokenVerifier):
             claims={"machine_id": str(machine.machine_id), "user_id": str(machine.user_id)},
         )
 
-    def _is_team_invite(self, invite_hash: str) -> bool:
-        """Look up a team invite's hash through its unique index, like a machine token."""
+    def _is_team_invite(self, code: str) -> bool:
+        """An open invite, looked up through its hash's unique index like a machine token."""
         with self._session_factory() as session:
-            return session.scalar(select(Team.team_id).where(Team.invite_hash == invite_hash)
-                                  ) is not None
+            return team_service.is_open_invite(session, code)
 
     def _find_machine(self, token_hash: str) -> Machine | None:
         """Look up the token hash through its unique index.

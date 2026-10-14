@@ -183,6 +183,11 @@ def new_invite_code(session, user_id, path, body):
     return {"code": team_service.new_invite_code(session, user_id, path["team"])}
 
 
+@_action("/teams/{team}/invites/{invite_id}/cancel")
+def cancel_invite(session, user_id, path, body):
+    team_service.cancel_invite(session, user_id, path["team"], path["invite_id"])
+
+
 @_action("/teams/{team}/take")
 def take_from_team(session, user_id, path, body):
     skill_service.take_from_team(session, user_id, _text(body, "name"), path["team"])

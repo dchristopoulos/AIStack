@@ -267,11 +267,12 @@ def test_a_team_invite_code_creates_one_user_one_machine_and_one_membership(sess
     assert "acme" in _memberships(session_factory, joined.user.user_id)
 
 
-def test_a_replaced_team_invite_code_admits_nobody(session_factory):
+def test_a_used_team_invite_code_admits_nobody_else(session_factory):
     admin = _join(session_factory, username="dimitris")
     old = _team_code(session_factory, admin.user.user_id)
+    eve = _join(session_factory, username="eve", machine_name="phone")
     with session_factory.begin() as session:
-        team_service.new_invite_code(session, admin.user.user_id, "acme")
+        team_service.join_team(session, eve.user.user_id, old)
 
     with pytest.raises(NotFound) as rejection:
         with session_factory.begin() as session:
@@ -279,8 +280,8 @@ def test_a_replaced_team_invite_code_admits_nobody(session_factory):
 
     assert old not in str(rejection.value)
     with session_factory() as session:
-        assert session.scalars(select(User.username)).all() == ["dimitris"]
-        assert len(session.scalars(select(Machine)).all()) == 1
+        assert session.scalars(select(User.username).order_by(User.username)).all() == [
+            "dimitris", "eve"]
 
 
 def test_the_server_invite_code_joins_no_shared_team(session_factory):

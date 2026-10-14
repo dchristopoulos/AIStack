@@ -19,7 +19,7 @@ from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.skill_version import SkillVersion
-from aistack.db.models.team import Team, TeamMember
+from aistack.db.models.team import Team, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
 from aistack.services import skill_service, team_service, visibility
@@ -61,6 +61,14 @@ def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
                 | {"in_library": skill["id"] in taken}
                 for skill in team_skills.get(team.name, [])
             ],
+            # Every invite to an admin, their own to an inviter, none to anyone else.
+            "invites": [
+                {"id": invite.invite_id, "created_by": invite.created_by,
+                 "created_on": invite.created_on.isoformat(),
+                 "expires_on": invite.expires_on.isoformat(), "status": invite.status,
+                 "used_by": invite.used_by}
+                for invite in team_service.invites(session, user_id, team.name)
+            ] if team.role is TeamRole.ADMIN or me.can_invite else [],
         })
 
     return {

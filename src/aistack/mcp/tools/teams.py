@@ -100,9 +100,9 @@ class InviteResult(TypedDict):
     this code". Anyone holding the link can join, so it goes to the people meant to have it
     and nowhere public.
 
-    Each call replaces the previous code, which stops working. That is also how to cancel a
-    code that reached the wrong person. The code is shown here and never again: the server
-    keeps only a hash of it.
+    Each call makes a new invite and cancels nothing: one link lets in one person, and lasts
+    seven days. A link that reached the wrong person is cancelled in the dashboard. The code
+    is shown here and never again: the server keeps only a hash of it.
 
     Args:
         team: A team the user is an admin of.

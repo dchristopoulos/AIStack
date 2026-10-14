@@ -46,7 +46,7 @@ def join(session: Session, username: str, machine_name: str, os: str,
     operating_system = _validated_operating_system(os)
     # Resolved in this transaction, before anything is written: a code replaced since the
     # bearer was verified admits nobody.
-    invited_to = None if team_invite is None else team_service.invited_to(session, team_invite)
+    invite = None if team_invite is None else team_service.invited_to(session, team_invite)
 
     user = User(username=username)
     session.add(user)
@@ -77,10 +77,8 @@ def join(session: Session, username: str, machine_name: str, os: str,
     _claim_admin(session, user)
     session.add(TeamMember(team_id=personal_team.team_id, user_id=user.user_id,
                            role=TeamRole.ADMIN))
-    if invited_to is not None:
-        session.add(TeamMember(team_id=invited_to.team_id, user_id=user.user_id,
-                               role=TeamRole.MEMBER))
     session.flush()
+    team = None if invite is None else team_service.admit(session, invite, user.user_id)
 
     logger.debug(
         f"Join persisted. Username: '{loggable(username)}'. "
@@ -88,7 +86,7 @@ def join(session: Session, username: str, machine_name: str, os: str,
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return JoinedMachine(user=user, machine=machine, token=token,
-                         team=None if invited_to is None else invited_to.name)
+                         team=team)
 
 
 @dataclass(frozen=True)
