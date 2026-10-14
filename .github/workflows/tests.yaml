@@ -186,7 +186,7 @@ jobs:
           "$RUNNER_TEMP/wheel/bin/pip" install --quiet dist/*.whl
           AISTACK_INVITE_CODE="$INVITE_CODE" AISTACK_PORT=8002 \
             DATABASE_URL="sqlite:///$RUNNER_TEMP/wheel.db" \
-            "$RUNNER_TEMP/wheel/bin/aistack-mcp" > wheel.log 2>&1 &
+            "$RUNNER_TEMP/wheel/bin/aistack-mcp" serve > wheel.log 2>&1 &
           for _ in $(seq 1 60); do curl -sf http://127.0.0.1:8002/health && break; sleep 1; done
           poetry run python scripts/container_smoke.py fresh http://127.0.0.1:8002 "$INVITE_CODE" state-wheel.json
 

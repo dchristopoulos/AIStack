@@ -1,9 +1,14 @@
+import argparse
 import asyncio
 import logging
 import sys
 
-from aistack.bootstrap.configuration.settings.settings_config import Settings
-from aistack.bootstrap.context.application_context import build_application_context
+from aistack.bootstrap.configuration.settings.settings_config import LocalSettings, Settings
+from aistack.bootstrap.context.application_context import (
+    build_application_context,
+    build_local_context,
+)
+from aistack.commons.exceptions import AIStackError
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +41,41 @@ async def main() -> None:
                                  path=settings.mcp_path, log_level=settings.log_level)
 
 
+def serve_local() -> None:
+    """Local mode (ADR-0020): one person's Library, served over stdio to the agent that
+    started this process. stdout is the protocol, so logging goes to stderr only."""
+    settings = LocalSettings()
+    configure_logging(settings.log_level)
+    build_local_context(settings)
+
+    from aistack.mcp.local import local_mcp
+
+    local_mcp.run(transport="stdio", show_banner=False)
+
+
 def run() -> None:
-    """The `aistack` command, and `python -m aistack.bootstrap` in the container."""
+    """The `aistack` command: `aistack` is local mode, `aistack serve` the server."""
+    parser = argparse.ArgumentParser(
+        prog="aistack",
+        description="With no command, serve your own Library to the coding agent that started "
+                    "this over stdio. 'serve' runs the AIStack server.")
+    parser.add_argument("command", nargs="?", choices=["serve"])
+    command = parser.parse_args().command
+
     try:
-        asyncio.run(main())
+        asyncio.run(main()) if command == "serve" else serve_local()
     except ValueError as error:
         # Configuration is wrong, not the code. A traceback would bury the one line that says
         # which variable to set, so this exits loudly and readably instead. ValueError covers
         # both a field pydantic rejected and the invite-code check that deliberately is not one.
         logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
         logger.error(f"AIStack cannot start: its configuration is invalid.\n{error}")
+        sys.exit(1)
+    except AIStackError as error:
+        # Local mode's start asks the database who this is, and the answer can be a refusal
+        # that names what to change, such as a database that is a server's.
+        logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
+        logger.error(f"AIStack cannot start. {error}")
         sys.exit(1)
     except KeyboardInterrupt:
         logger.info("Received interrupt signal, shutting down...")

@@ -21,6 +21,8 @@ class HarnessEntry:
     # Spelled the way a shell on that system reads it, because the agent pastes it into one.
     folders: dict[OperatingSystem, str]
     read_by: tuple[str, ...]
+    # The same folder under the home directory, for local mode, which opens it itself.
+    home_relative: tuple[str, ...]
 
 
 HARNESSES: dict[Harness, HarnessEntry] = {
@@ -30,6 +32,7 @@ HARNESSES: dict[Harness, HarnessEntry] = {
                  OperatingSystem.LINUX: "~/.claude/skills",
                  OperatingSystem.WINDOWS: "$HOME\\.claude\\skills"},
         read_by=("Claude Code",),
+        home_relative=(".claude", "skills"),
     ),
     Harness.AGENTS: HarnessEntry(
         display_name="Agents folder",
@@ -38,6 +41,7 @@ HARNESSES: dict[Harness, HarnessEntry] = {
                  OperatingSystem.WINDOWS: "$HOME\\.agents\\skills"},
         read_by=("Codex", "Gemini CLI", "Kimi Code", "opencode", "Cursor",
                  "GitHub Copilot CLI", "Amp"),
+        home_relative=(".agents", "skills"),
     ),
 }
 

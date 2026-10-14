@@ -18,7 +18,7 @@ The image is published by CI from every commit on `main` that passed the tests, 
 Without Docker, the same server runs from PyPI with [uv](https://docs.astral.sh/uv/), which fetches Python 3.13 if it needs to. The database is a SQLite file in the current folder unless `DATABASE_URL` says otherwise:
 
 ```bash
-AISTACK_INVITE_CODE="$(openssl rand -base64 24)" uvx aistack-mcp
+AISTACK_INVITE_CODE="$(openssl rand -base64 24)" uvx aistack-mcp serve
 ```
 
 Or with Compose, which reads `AISTACK_INVITE_CODE` from the environment or a `.env` file:

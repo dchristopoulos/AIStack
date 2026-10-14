@@ -1,0 +1,223 @@
+"""Local mode's tools: the same services as the server's, with the disk work done here.
+
+Each call is one transaction, as on the server, and the disk is touched only outside it:
+reading a skill before the transaction opens, writing one after it commits. A SQLite
+transaction holds the write lock from its first statement, so file I/O inside it would make
+every other session on this computer wait.
+"""
+
+import logging
+from pathlib import Path
+from typing import TypedDict
+
+from aistack.bootstrap.context.application_context import (
+    get_local_principal,
+    get_session_factory,
+)
+from aistack.mcp.local import local_mcp
+from aistack.mcp.mcp_error_handler import handle_mcp_errors
+from aistack.mcp.tools.skills import ListSkillsResult, SkillListing
+from aistack.mcp.tools.sync import SyncResult, sync_result
+from aistack.services import local_skills, skill_service, sync_service
+from aistack.services.harnesses import HarnessKey, validated_harness
+from aistack.services.skill_validation import validated_origin, validated_skill_name
+
+logger = logging.getLogger(__name__)
+
+
+def _folder(harness: HarnessKey) -> Path:
+    return local_skills.skills_folder(validated_harness(harness), Path.home())
+
+
+@local_mcp.tool(
+    description="""Compare one skills folder on this computer with the user's Library.
+
+    Use when the user says "sync aistack" or starts work. It reads the folder itself and
+    changes nothing. Then, per field, passing the same harness to each tool:
+      - install and update: call get_skill for each, without asking. Then say what
+        updated, between which revisions.
+      - backup: skills on this computer not yet in the Library. push_skill each, without
+        asking: the Library is private and mirrors this computer.
+      - ask: put each to the user and act only on their answer. desired: enabled,
+        disabled, or undecided here; local: current, stale, or unknown (edited). Offer
+        exactly the listed options. overwrites_local: say local files will be replaced;
+        loses_local_edits: say their edits will be lost. enable, restore = get_skill;
+        push = push_skill; remove = disable_skill; skip = nothing.
+      - up_to_date: how many enabled skills match.
+    team_updates is always empty and sync_skill_url always null here.
+
+    Args:
+        harness: claude_code (~/.claude/skills) or agents (~/.agents/skills, read by Codex,
+                 Gemini CLI, Cursor and others). Omit for claude_code.
+    """)
+@handle_mcp_errors
+def sync(harness: HarnessKey = "claude_code") -> SyncResult:
+    caller = get_local_principal()
+    local = local_skills.observed(_folder(harness))
+
+    with get_session_factory().begin() as session:
+        report = sync_service.sync(session, caller.machine_id, caller.user_id, local, harness)
+
+    logger.info(f"Sync reported. Local skills: '{len(local)}'.")
+    return sync_result(report, sync_skill_url=None)
+
+
+@local_mcp.tool(
+    description="""List the skills in the user's Library.
+
+    Use when the user asks what they have, or is looking for a skill to do something: this
+    listing is the search. To put one on this computer, call get_skill.
+
+    Returns:
+        ListSkillsResult containing:
+            - skills: by name, each with its description, latest revision, and who pushed it
+    """)
+@handle_mcp_errors
+def list_skills() -> ListSkillsResult:
+    with get_session_factory().begin() as session:
+        skills = skill_service.list_skills(session, get_local_principal().user_id)
+
+    return ListSkillsResult(skills=[
+        SkillListing(name=skill.name, team=skill.team, group=skill.group,
+                     description=skill.description, revision=skill.revision,
+                     pushed_by=skill.pushed_by)
+        for skill in skills
+    ])
+
+
+class LocalGetSkillResult(TypedDict):
+    name: str
+    description: str
+    revision: int
+    version: str | None
+    pushed_by: str
+    folder: str
+
+
+@local_mcp.tool(
+    description="""Install the latest revision of a skill from the Library into a skills
+    folder on this computer.
+
+    Use to install a skill, update it, restore an edited copy, or re-enable a disabled one.
+    It replaces the local folder, so if sync reported local edits, the user must have agreed
+    to lose them. The files are checked against the hash they were pushed with before any is
+    written, and the folder is swapped in whole, so a failure leaves the old copy in place.
+    It is usable without a restart; if it is not found at once, try again.
+
+    Args:
+        name: The skill's name, as list_skills or sync reported it.
+        harness: The skills folder, as given to sync. Omit for claude_code.
+
+    Returns:
+        LocalGetSkillResult containing:
+            - name, description: the skill
+            - revision: the revision now installed
+            - version: the author's version string, or null
+            - pushed_by: who uploaded this revision, not necessarily its author
+            - folder: where it was installed
+    """)
+@handle_mcp_errors
+def get_skill(name: str, harness: HarnessKey = "claude_code") -> LocalGetSkillResult:
+    caller = get_local_principal()
+    folder = _folder(harness)
+
+    with get_session_factory().begin() as session:
+        skill = skill_service.get_skill(session, caller.machine_id, caller.user_id, name,
+                                        harness=harness)
+        _, packed = skill_service.archive_of(session, caller.machine_id, skill.skill_version_id)
+
+    local_skills.install(folder, skill.name, packed, skill.content_hash)
+
+    logger.info(f"Skill installed. Skill: '{skill.name}'. Revision: '{skill.revision}'.")
+    return LocalGetSkillResult(
+        name=skill.name,
+        description=skill.description,
+        revision=skill.revision,
+        version=skill.version,
+        pushed_by=skill.pushed_by,
+        folder=str(folder / skill.name),
+    )
+
+
+class LocalPushSkillResult(TypedDict):
+    name: str
+    revision: int
+    created: bool
+    unchanged: bool
+
+
+@local_mcp.tool(
+    description="""Back up a skill folder on this computer to the user's Library.
+
+    Use for a skill sync listed under backup, and after the user edits one of their skills.
+    The Library is private. Pushing a name it already has adds a revision; nothing is
+    overwritten. The skill is then enabled in this folder on this computer, so sync keeps it
+    current.
+
+    Args:
+        name: The skill's folder name, the same as the 'name' in its SKILL.md frontmatter.
+        origin: The http(s) URL the skill came from, when you know it. Omit it for a skill
+               the user wrote themselves.
+        harness: The skills folder it is in, as given to sync. Omit for claude_code.
+
+    Returns:
+        LocalPushSkillResult containing:
+            - name, revision: the skill and its revision in the Library now
+            - created: true when it was new to the Library
+            - unchanged: true when these exact files were already stored, so no revision
+              was added. Only content counts: a chmod alone is not a change.
+    """)
+@handle_mcp_errors
+def push_skill(name: str, origin: str | None = None,
+               harness: HarnessKey = "claude_code") -> LocalPushSkillResult:
+    caller = get_local_principal()
+    # Validated before it is joined to a path, so a name cannot leave the skills folder.
+    name = validated_skill_name(name)
+    origin = validated_origin(origin)
+    packed = local_skills.archive(_folder(harness), name)
+
+    with get_session_factory().begin() as session:
+        pushed = skill_service.push(session, caller.machine_id, caller.user_id, name, origin,
+                                    packed, harness)
+
+    logger.info(f"Skill pushed. Skill: '{pushed.name}'. Revision: '{pushed.revision}'.")
+    return LocalPushSkillResult(name=pushed.name, revision=pushed.revision,
+                                created=pushed.created, unchanged=pushed.unchanged)
+
+
+class LocalDisableSkillResult(TypedDict):
+    name: str
+    enabled: bool
+    removed: bool
+
+
+@local_mcp.tool(
+    description="""Remove a skill from one skills folder on this computer, and stop sync
+    installing it there.
+
+    Use when the user wants a skill off this computer ("remove wizard"). Its folder is
+    deleted; a folder that is a link loses only the link. The skill stays in the Library,
+    in the other folder, and on the user's other computers. To bring it back, call get_skill.
+
+    Args:
+        name: The skill's name.
+        harness: The folder to remove it from, as given to sync. Omit for claude_code.
+
+    Returns:
+        LocalDisableSkillResult containing:
+            - name: the skill
+            - enabled: always false
+            - removed: whether a folder was there to delete
+    """)
+@handle_mcp_errors
+def disable_skill(name: str, harness: HarnessKey = "claude_code") -> LocalDisableSkillResult:
+    caller = get_local_principal()
+
+    with get_session_factory().begin() as session:
+        disabled = skill_service.disable_skill(session, caller.machine_id, caller.user_id,
+                                               name, harness)
+
+    # The service returned the stored name, which passed validation when it was pushed.
+    removed = local_skills.remove(_folder(harness), disabled)
+    logger.info(f"Skill disabled. Skill: '{disabled}'. Removed: '{removed}'.")
+    return LocalDisableSkillResult(name=disabled, enabled=False, removed=removed)
