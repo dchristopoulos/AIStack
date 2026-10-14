@@ -63,6 +63,7 @@ No FastAPI and no frontend framework: the dashboard is one HTML file with its ow
 - **ADR-0021 — One connected agent syncs every skills folder on its computer.** The server tracks folders, not callers. The `sync-aistack` skill finds the folders the computer's agents read and syncs each, so Codex on a computer where Claude Code is connected needs no connection of its own. A folder's first sync is reported, and the agent asks once whether both folders should hold the same skills. Setup runs from Claude Code or Codex.
 - **ADR-0022 — An invite is a record.** Each invite is its own row: one use, pending until accepted, seven days, and cancellable by its maker or an admin. Making another cancels nothing.
 - **ADR-0023 — In local mode every computer keeps the database's own address.** No per-computer logins and no pairing: each computer's MCP configuration holds the provider's connection string, any computer migrates, and a lost laptop means resetting the database password and pasting the new one on the others. Teams stay on server mode with revocable machine tokens.
+- **ADR-0024 — Older releases keep working through additive upgrades.** Each migration says whether releases before it still work. The database records the oldest schema that can use it, so an older computer keeps running on a schema that only grew, and is refused with one clear sentence (in local mode, through its agent) after a breaking change.
 
 ## 4. What is built
 
@@ -604,7 +605,7 @@ src/aistack/
   db/
     engine + session setup; schema.py applies the migrations (ADR-0016)
     migrations/versions/   # numbered Alembic migrations, shipped in the package
-    models/                # SQLAlchemy models for the twelve tables
+    models/                # SQLAlchemy models for the thirteen tables
   mcp/                     # FastMCP server + auth
     local.py               # local mode's stdio server, with no auth (ADR-0020)
     tools/                 # the thirteen MCP tools (onboarding, skills, sync, teams),

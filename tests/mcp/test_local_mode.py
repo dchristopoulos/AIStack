@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings
 from aistack.bundled import local_sync_skill_document
@@ -325,3 +325,24 @@ async def test_export_writes_the_library_as_skill_folders(computer, tmp_path, li
     again = subprocess.run([sys.executable, "-m", "aistack.bootstrap", "export",
                             str(destination)], env=environment, capture_output=True, text=True)
     assert again.returncode == 1 and "already has files" in again.stderr
+
+
+async def test_a_breaking_upgrade_elsewhere_is_explained_through_the_agent(computer, library_url):
+    """ADR-0024: the process still starts, so the agent can tell its user what to do."""
+    async with computer("laptop"):
+        pass
+    from aistack.db.engine import build_engine
+
+    engine = build_engine(library_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE alembic_version SET version_num = '9999'"))
+            connection.execute(text("UPDATE schema_compatibility SET "
+                                    "oldest_compatible_revision = '9999', "
+                                    "written_by_release = '9.9.0'"))
+    finally:
+        engine.dispose()
+
+    async with computer("laptop") as (laptop, _):
+        with pytest.raises(ToolError, match="updated by AIStack 9.9.0 on another computer"):
+            await _call(laptop, "sync")

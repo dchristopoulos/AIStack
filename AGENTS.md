@@ -36,6 +36,7 @@ Layered layout under `src/aistack/` (see `docs/DESIGN.md` §8): MCP tool handler
 ### Migrations
 
 - A schema change is a new numbered file in `src/aistack/db/migrations/versions/` plus the model change, in the same commit (ADR-0016). `migrate_schema` is the only thing that creates or alters a table, tests included, and a test fails when models and migrations disagree. Never edit a migration that has shipped, the baseline above all. No downgrades.
+- Every migration sets `older_releases_compatible` (ADR-0024). `True` only when a release that knows the schema before it still works after it: a new table, a nullable or defaulted column, an index. Anything that removes, renames, or reshapes is `False`, and is split expand-then-contract across releases, so the release that adds the new shape stays compatible and a later one removes the old. Computers on one shared database update at different times.
 - A migration never imports a model. The model describes the newest schema and the migration runs against an older one, so it declares the columns it touches with `sa.table`.
 - Every pending migration runs in one transaction opened by `migrate_schema`, so a migration never commits, and a failure stops the server with the database as it was.
 - Read a generated migration before keeping it. Autogenerate renders an index predicate as text in whichever dialect produced it, so `is_admin IS 1` reaches PostgreSQL as a syntax error; write predicates as expressions. Run the suite against PostgreSQL before committing a migration, because SQLite alone will not show this.

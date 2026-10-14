@@ -17,6 +17,7 @@ from aistack.bootstrap.context.application_context import (
 )
 from aistack.bundled import local_setup_instructions, local_sync_skill_document
 from aistack.commons.exceptions import AIStackError
+from aistack.db.schema import NewerSchema
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,10 @@ def run() -> None:
         # both a field pydantic rejected and the invite-code check that deliberately is not one.
         logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
         logger.error(f"AIStack cannot start: its configuration is invalid.\n{error}")
+        sys.exit(1)
+    except NewerSchema as error:
+        logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
+        logger.error(f"AIStack cannot start. {error}")
         sys.exit(1)
     except OperationalError as error:
         # The usual first-run mistake in local mode: an address that is wrong or a password
