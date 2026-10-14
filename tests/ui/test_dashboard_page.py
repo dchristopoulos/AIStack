@@ -15,9 +15,10 @@ def _skill(state: dict, name: str) -> dict:
 
 
 def _on(state: dict, name: str) -> list[str]:
-    """The computers a skill in the user's library is placed on, by name."""
+    """The computers a skill in the user's library is placed on in Claude Code, by name."""
     names = {machine["id"]: machine["name"] for machine in state["machines"]}
-    return sorted(names[placement["machine"]] for placement in _skill(state, name)["placements"])
+    return sorted(names[placement["machine"]] for placement in _skill(state, name)["placements"]
+                  if placement["harness"] == "claude_code")
 
 
 def _team(state: dict, name: str) -> dict:
@@ -29,9 +30,10 @@ async def _open_team(opened, name: str) -> None:
         "link", name=name, exact=True).click()
 
 
-async def _open_computer(opened, name: str) -> None:
-    await opened.page.get_by_role("navigation", name="Main").get_by_role("link", name=name).click()
-    await expect(opened.page.get_by_role("heading", name=f"Claude Code on {name}", level=1)
+async def _open_computer(opened, name: str, agent: str = "Claude Code") -> None:
+    await opened.page.get_by_role("navigation", name="Main").get_by_role(
+        "link", name=f"{name} / {agent}").click()
+    await expect(opened.page.get_by_role("heading", name=f"{agent} on {name}", level=1)
                  ).to_be_visible()
 
 
@@ -139,6 +141,48 @@ async def test_a_computer_copies_what_another_one_has(sign_in):
     state = await dimitris.state()
     assert [name for name in on_macbook if _on(state, name) != ["desktop", "macbook"]] == []
     assert len(on_macbook) == 7
+
+
+async def test_the_agents_folder_has_its_own_page_and_says_who_reads_it(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    await _open_computer(dimitris, "macbook", "Agents folder")
+    await expect(page.get_by_text("Read by Codex", exact=False)).to_be_visible()
+    table = page.get_by_role("table", name="Skills in Agents folder on macbook")
+    await expect(table.get_by_text("meeting-notes", exact=True)).to_be_visible()
+
+    await page.get_by_role("button", name="Copy from…").click()
+    dialog = page.get_by_role("dialog")
+    await expect(dialog.get_by_role("radio", name="macbook / Claude Code")).to_be_checked()
+    await dialog.get_by_role("button", name="Copy").click()
+
+    await expect(dialog).to_have_count(0)
+    await expect(table.get_by_text("sql-style", exact=True)).to_be_visible()
+    state = await dimitris.state()
+    macbook = state["machines"][0]["id"]
+    in_agents = sorted(skill["name"] for skill in state["skills"]
+                       if {"machine": macbook, "harness": "agents"} in skill["placements"])
+    in_claude = sorted(skill["name"] for skill in state["skills"]
+                       if {"machine": macbook, "harness": "claude_code"} in skill["placements"])
+    assert in_agents == in_claude
+    assert dimitris.console_errors == []
+
+
+async def test_a_skill_is_added_to_the_agents_folder_from_the_library(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    row = page.get_by_role("row").filter(has_text="sql-style")
+
+    await row.get_by_role("button", name="Add to…").click()
+    dialog = page.get_by_role("dialog")
+    await expect(dialog.get_by_role("checkbox", name="macbook / Agents folder")).not_to_be_checked()
+    await dialog.get_by_role("checkbox", name="macbook / Agents folder").check()
+    await dialog.get_by_role("button", name="Save").click()
+
+    await expect(row.get_by_role("link", name="macbook / Agents folder")).to_be_visible()
+    macbook = (await dimitris.state())["machines"][0]["id"]
+    assert {"machine": macbook, "harness": "agents"} in _skill(await dimitris.state(),
+                                                                "sql-style")["placements"]
 
 
 async def test_adding_a_computer_says_what_to_ask_the_agent(sign_in):

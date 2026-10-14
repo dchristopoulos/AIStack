@@ -101,6 +101,12 @@ async def seed(base_url: str, invite_code: str) -> dict[str, str]:
     for person in (dimitris, maria, alex):
         await person.sign_in()
 
+    # The macbook's shared agents folder, which Codex reads, has synced once and holds two skills.
+    macbook = (await dimitris.browser.get("/api/state")).json()["machines"][0]["id"]
+    await dimitris.tool("sync", local={}, harness="agents")
+    for name in ("commit-messages", "meeting-notes"):
+        await dimitris.page(f"/skills/{name}/machines/{macbook}", enabled=True, harness="agents")
+
     # A company team, with a group per discipline and a narrower one inside it.
     await dimitris.page("/teams", name="aistack")
     code = (await dimitris.page("/teams/aistack/invite"))["code"]
