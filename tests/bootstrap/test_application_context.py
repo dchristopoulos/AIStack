@@ -1,4 +1,5 @@
 import logging
+import re
 
 import pytest
 from pydantic import SecretStr
@@ -22,7 +23,13 @@ def test_startup_confirms_an_invite_code_without_revealing_anything_about_it(sql
     assert "Invite code: 'configured'." in caplog.text
     assert INVITE_CODE not in caplog.text
     # Not even its length: that is the one hint that narrows a brute force.
-    assert str(len(INVITE_CODE)) not in caplog.text
+    # Only lines about the code are searched, and only for the length as a
+    # whole number: unrelated startup lines carry timings and ports.
+    about_the_code = [
+        record.getMessage() for record in caplog.records
+        if re.search(r"invite|length|characters", record.getMessage(), re.IGNORECASE)]
+    length = re.compile(rf"\b{len(INVITE_CODE)}\b")
+    assert not any(length.search(message) for message in about_the_code)
 
 
 def test_a_placeholder_invite_code_stops_assembly_before_a_database_is_touched(sqlite_url):
