@@ -40,7 +40,7 @@ How to work through it:
 - [x] 10. Taking a team skill never silently replaces an unrelated skill of yours (#150)
 - [x] 11. Throttle failed credentials and keep caller text out of the log (#142)
 - [ ] 12. Backups that restore, and a snapshot before every upgrade
-- [ ] 13. Scope the 'latest revision' queries and batch the dashboard's team queries
+- [x] 13. Scope the 'latest revision' queries and batch the dashboard's team queries (#151)
 - [x] 14. Reads that change nothing stop taking SQLite's write lock (#143)
 - [ ] 15. Answer every conflict and limit with a sentence
 - [x] 16. Fix the layouts that break at tablet width and with long names (#139)

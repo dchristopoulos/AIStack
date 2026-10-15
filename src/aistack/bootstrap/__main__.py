@@ -227,10 +227,10 @@ def export_library(destination: Path) -> None:
 
     caller = get_local_principal()
     with get_session_factory().begin() as session:
-        skills = skill_service.export_library(session, caller.machine_id, caller.user_id)
-    # Written after the transaction, through the same checks an install makes.
+        skills = skill_service.export_library(session, caller.user_id)
+    # Packed and written after the transaction, through the same checks an install makes.
     for skill in skills:
-        local_skills.install(destination, skill.name, skill.archive, skill.content_hash)
+        local_skills.install(destination, skill.name, skill.archive(), skill.content_hash)
     shutil.rmtree(destination / local_skills.STAGING_FOLDER, ignore_errors=True)
     print(f"Exported {len(skills)} skills to {destination}.")
 

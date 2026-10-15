@@ -9,7 +9,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from aistack.commons.exceptions import SignedOut
@@ -18,62 +18,60 @@ from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill import Skill
-from aistack.db.models.skill_file import SkillFile
-from aistack.db.models.skill_version import SkillVersion
-from aistack.db.models.team import Team, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
 from aistack.db.models.value_set import known
 from aistack.db.ordering import bytewise
-from aistack.services import onboarding_service, skill_service, team_service, visibility
+from aistack.services import onboarding_service, revisions, skill_service, team_service, visibility
 from aistack.services.harnesses import DEFAULT_HARNESS, validated_harness
 from aistack.services.transfer_ticket import DashboardHolder, token_prefix
 
 
 def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
-    """The user, their computers, their own skills, and each of their teams."""
-    team_skills = _team_skills(session, user_id)
+    """The user, their computers, their own skills, and each of their teams.
+
+    Read in the same few statements however many skills, teams and members there are: the
+    page asks on every load, and on SQLite this holds the write lock while it reads.
+    """
+    access = visibility.group_access(session, user_id)
+    team_skills = _team_skills(session, user_id, access)
     by_id = {skill["id"]: skill for skills in team_skills.values() for skill in skills}
     mine = _my_skills(session, user_id, by_id)
     taken = {skill["source_id"] for skill in mine if skill["source_id"] is not None}
 
     teams = []
-    for team in team_service.list_teams(session, user_id):
-        me = session.scalar(
-            select(TeamMember)
-            .join(Team, Team.team_id == TeamMember.team_id)
-            .where(Team.name == team.name, TeamMember.user_id == user_id))
+    for team in team_service.overview(session, user_id, access):
         teams.append({
-            "name": team.name,
-            "kind": team.kind.value,
-            "role": team.role.value,
-            "sees_all_groups": me.sees_all_groups,
-            "can_invite": me.can_invite,
+            "name": team.summary.name,
+            "kind": team.summary.kind.value,
+            "role": team.summary.role.value,
+            "sees_all_groups": team.sees_all_groups,
+            "can_invite": team.can_invite,
             "members": [
                 {"username": member.username, "full_name": member.full_name,
                  "role": member.role.value,
                  "sees_all_groups": member.sees_all_groups, "can_invite": member.can_invite,
                  "groups": list(member.groups)}
-                for member in team_service.members(session, user_id, team.name)
+                for member in team.members
             ],
             "groups": [
                 {"path": group.path, "private": group.private, "member": group.member,
                  "subscribed": group.subscribed}
-                for group in team_service.groups(session, user_id, team.name)
+                for group in team.groups
             ],
             "skills": [
                 {key: value for key, value in skill.items() if key != "id"}
                 | {"in_library": skill["id"] in taken}
-                for skill in team_skills.get(team.name, [])
+                for skill in team_skills.get(team.summary.name, [])
             ],
-            # Every invite to an admin, their own to an inviter, none to anyone else.
+            # Every recent invite to an admin, their own to an inviter, none to anyone else.
             "invites": [
                 {"id": invite.invite_id, "created_by": invite.created_by,
                  "created_on": invite.created_on.isoformat(),
                  "expires_on": invite.expires_on.isoformat(), "status": invite.status,
                  "used_by": invite.used_by}
-                for invite in team_service.invites(session, user_id, team.name)
-            ] if team.role is TeamRole.ADMIN or me.can_invite else [],
+                for invite in team.invites
+            ],
         })
 
     return {
@@ -176,31 +174,23 @@ def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
     return shown
 
 
-def _newest() -> Any:
-    """Each skill's latest revision, with who pushed it and when."""
-    latest = (
-        select(SkillVersion.skill_id, func.max(SkillVersion.revision).label("revision"))
-        .group_by(SkillVersion.skill_id).subquery()
-    )
-    files = (
-        select(SkillFile.skill_version_id, func.count().label("files"))
-        .group_by(SkillFile.skill_version_id).subquery()
-    )
+def _newest(skill_ids: Any) -> Any:
+    """The latest revision of each chosen skill, with who pushed it, when, and its files."""
+    latest = revisions.latest(skill_ids)
     return (
-        select(SkillVersion.skill_id, SkillVersion.revision, User.username.label("pushed_by"),
-               SkillVersion.created_on, files.c.files)
-        .join(latest, (latest.c.skill_id == SkillVersion.skill_id)
-              & (latest.c.revision == SkillVersion.revision))
-        .join(User, User.user_id == SkillVersion.pushed_by)
-        .join(files, files.c.skill_version_id == SkillVersion.skill_version_id)
+        select(latest.c.skill_id, latest.c.revision, User.username.label("pushed_by"),
+               latest.c.created_on,
+               revisions.file_count(latest.c.skill_version_id).label("files"))
+        .join(User, User.user_id == latest.c.pushed_by)
         .subquery()
     )
 
 
-def _team_skills(session: Session, user_id: uuid.UUID) -> dict[str, list[dict[str, Any]]]:
+def _team_skills(session: Session, user_id: uuid.UUID,
+                 access: visibility.GroupAccess) -> dict[str, list[dict[str, Any]]]:
     """Every team skill the user may see, by team, each with its latest revision."""
-    visible = visibility.team_skills(session, user_id).subquery()
-    newest = _newest()
+    visible = visibility.team_skills(session, user_id, access).subquery()
+    newest = _newest(select(visible.c.skill_id))
     rows = session.execute(
         select(visible.c.skill_id, visible.c.name, visible.c.description, visible.c.team,
                visible.c.group, newest.c.revision, newest.c.pushed_by, newest.c.created_on)
@@ -220,7 +210,7 @@ def _team_skills(session: Session, user_id: uuid.UUID) -> dict[str, list[dict[st
 def _my_skills(session: Session, user_id: uuid.UUID,
                team_skills: dict[uuid.UUID, dict[str, Any]]) -> list[dict[str, Any]]:
     mine = visibility.my_skills(user_id).where(Skill.archived.is_(False)).subquery()
-    newest = _newest()
+    newest = _newest(select(mine.c.skill_id))
     rows = session.execute(
         select(mine.c.skill_id, mine.c.name, mine.c.description, mine.c.source_skill_id,
                mine.c.source_revision, newest.c.revision, newest.c.pushed_by,
