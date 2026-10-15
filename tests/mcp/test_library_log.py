@@ -88,10 +88,10 @@ def _snapshot(session) -> dict:
                 select(SkillVersion.skill_id, SkillVersion.revision,
                        SkillVersion.content_hash)).all()),
         "placements": sorted(
-            (machine_id, harness.value, skill_names[skill_id], enabled)
-            for machine_id, harness, skill_id, enabled in session.execute(
+            (machine_id, harness.value, skill_names[skill_id], enabled, revision or 0)
+            for machine_id, harness, skill_id, enabled, revision in session.execute(
                 select(MachineSkill.machine_id, MachineSkill.harness, MachineSkill.skill_id,
-                       MachineSkill.enabled)).all()),
+                       MachineSkill.enabled, MachineSkill.revision)).all()),
         "folders": sorted((machine_id, harness.value) for machine_id, harness in session.execute(
             select(MachineHarness.machine_id, MachineHarness.harness)).all()),
     }
@@ -124,7 +124,8 @@ async def _random_changes(client, home, seed: int, steps: int = 25) -> None:
                 await _call(client, "push_skill", name=name,
                             harness=chance.choice(["claude_code", "agents"]))
             elif action == "get":
-                await _call(client, "get_skill", name=name)
+                await _call(client, "get_skill", name=name,
+                            harness=chance.choice(["claude_code", "agents"]))
             elif action == "disable":
                 await _call(client, "disable_skill", name=name)
             elif action == "sync":

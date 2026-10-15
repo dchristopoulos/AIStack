@@ -123,8 +123,13 @@ def apply(session: Session, event: Event) -> Any:
                                              removed_too=True)
         if data["enabled"]:
             skill.archived = False
+        revision = data.get("revision")
+        if revision is not None and type(revision) is not int:
+            raise ValidationError("A change in the Library's log names a revision that is not "
+                                  "a number. Remove what was added to the repository by hand.")
         return skill_service.set_enabled(session, target, validated_harness(data["harness"]),
-                                         skill.skill_id, enabled=bool(data["enabled"]))
+                                         skill.skill_id, enabled=bool(data["enabled"]),
+                                         revision=revision)
     if event.kind == SKILL_REMOVED:
         return skill_service.remove_from_my_skills(session, machine.user_id, data["name"])
     if event.kind == FOLDER_SYNCED:

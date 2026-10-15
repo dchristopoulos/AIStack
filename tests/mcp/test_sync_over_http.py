@@ -102,6 +102,8 @@ async def test_every_answer_to_a_question_is_an_existing_tool(server_url, sessio
         "desired": "enabled",
         "local": "unknown",
         "local_revision": None,
+        # Pushed from here, then edited: an edit of the latest, so a push buries nothing.
+        "edited_from": 1,
         "latest_revision": 1,
         "pushed_by": "dimitris",
         "options": [

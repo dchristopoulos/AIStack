@@ -117,6 +117,8 @@ Each option carries two flags. State them whenever they are true:
 
 Word the question from the facts. For `undecided` + `current`: "wizard is already on this machine and matches your copy on AIStack. Want AIStack to keep it updated here from now on?" For `enabled` + `unknown`: "You've edited wizard locally. Restore the stored version (your edits will be lost), back up your version as a new revision, or leave it for now?"
 
+When `edited_from` is lower than `latest_revision`, the local copy is an edit of an older revision, and another computer pushed since: "You edited wizard here from revision 1, and revision 2 was pushed from another computer since. Backing up yours makes it the latest in place of revision 2's changes, and your other computers then take yours." Say that before they choose `push`, and offer to leave it (`skip`) while they compare the two.
+
 `latest_revision` and `pushed_by` describe the newest revision in the Library. Mention them when the user is choosing between their local copy and the stored one. A `push` adds a revision on top; older revisions stay in the history, and no teammate sees any of it until the user shares the skill.
 
 When several skills need the same kind of answer, ask about them together and accept one answer for the group.

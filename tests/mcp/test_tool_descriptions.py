@@ -1,5 +1,6 @@
 import pytest
 
+from aistack.mcp.local import local_mcp
 from aistack.mcp.mcp import mcp
 
 pytestmark = pytest.mark.anyio
@@ -10,8 +11,9 @@ pytestmark = pytest.mark.anyio
 DESCRIPTION_LIMIT = 2048
 
 
-async def test_every_tool_description_fits_what_the_client_keeps():
-    tools = await mcp._list_tools()
+@pytest.mark.parametrize("server", [mcp, local_mcp], ids=["server", "local"])
+async def test_every_tool_description_fits_what_the_client_keeps(server):
+    tools = await server._list_tools()
     assert tools
 
     for tool in tools:

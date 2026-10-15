@@ -53,7 +53,8 @@ class LocalSyncResult(SyncResult):
       - ask: put each to the user and act only on their answer. desired: enabled,
         disabled, or undecided here; local: current, stale, or unknown (edited). Offer
         exactly the listed options. overwrites_local: say local files will be replaced;
-        loses_local_edits: say their edits will be lost. enable, restore = get_skill;
+        loses_local_edits: say their edits will be lost. edited_from < latest_revision:
+        say push replaces another computer's newer edit. enable, restore = get_skill;
         push = push_skill; remove = disable_skill; skip = nothing.
       - up_to_date: how many enabled skills match.
       - folders: every skills folder this computer has an agent for, and harness the one
@@ -162,7 +163,7 @@ def get_skill(name: str, harness: HarnessKey = "claude_code") -> LocalGetSkillRe
                                         harness=harness)
         library_log.record(session, library_log.new_event(
             caller.machine_id, library_log.SKILL_PLACED, name=skill.name, harness=harness,
-            enabled=True))
+            enabled=True, revision=skill.revision))
         _, packed = skill_service.archive_of(session, caller.machine_id, skill.skill_version_id)
 
     local_skills.install(folder, skill.name, packed, skill.content_hash)

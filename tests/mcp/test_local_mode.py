@@ -444,3 +444,26 @@ async def test_a_sync_without_a_folder_starts_with_one_this_computer_has(compute
         (home / ".codex").mkdir()
         report = await _call(laptop, "sync")
         assert (report["harness"], report["folders"]) == ("agents", ["agents"])
+
+
+async def test_an_edit_of_an_older_revision_says_another_computer_pushed_since(computer):
+    """Two computers edit one skill: the second learns its push would replace the first's."""
+    async with computer("laptop") as (laptop, laptop_home):
+        _write_skill(laptop_home)
+        await _call(laptop, "push_skill", name="wizard")
+    async with computer("desktop") as (desktop, desktop_home):
+        await _call(desktop, "get_skill", name="wizard")
+    async with computer("laptop") as (laptop, _):
+        (laptop_home / ".claude/skills/wizard/SKILL.md").write_bytes(SKILL_MD + b"Laptop.\n")
+        assert (await _call(laptop, "push_skill", name="wizard"))["revision"] == 2
+        (laptop_home / ".claude/skills/wizard/SKILL.md").write_bytes(SKILL_MD + b"Again.\n")
+        (on_laptop,) = (await _call(laptop, "sync"))["ask"]
+
+    async with computer("desktop") as (desktop, _):
+        (desktop_home / ".claude/skills/wizard/SKILL.md").write_bytes(SKILL_MD + b"Desktop.\n")
+        (on_desktop,) = (await _call(desktop, "sync"))["ask"]
+
+    assert (on_desktop["edited_from"], on_desktop["latest_revision"]) == (1, 2)
+    # The laptop edited what it pushed itself: nothing newer would be replaced.
+    assert (on_laptop["edited_from"], on_laptop["latest_revision"]) == (2, 2)
+
