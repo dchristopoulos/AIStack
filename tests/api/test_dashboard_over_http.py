@@ -79,7 +79,7 @@ async def test_a_link_from_chat_signs_the_browser_in_and_leaves_the_address_bar(
     assert signed_in.status_code == 303 and signed_in.headers["location"] == "/app"
     assert "httponly" in cookie and "samesite=lax" in cookie
     assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
-    assert state["user"] == {"username": "dimitris"}
+    assert state["user"] == {"username": "dimitris", "full_name": None}
     assert [machine["name"] for machine in state["machines"]] == ["laptop"]
 
 

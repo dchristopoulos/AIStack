@@ -684,6 +684,7 @@ dialog.dlg.sheet[open] { animation: slide .2s var(--ease); }
 .choice-card h3 svg { color: var(--muted); }
 .choice-card .card-foot { justify-content: flex-end; padding: 10px 16px; }
 .card-body.stack { display: flex; flex-direction: column; gap: 20px; }
+.name-field { margin-top: 16px; max-width: 520px; }
 .seg-choice, .swatches { display: flex; flex-wrap: wrap; gap: 12px; }
 .seg-choice legend, .swatches legend { width: 100%; margin-bottom: 10px; padding: 0; font-size: 13px; font-weight: 500; color: var(--muted); }
 .theme-opt { position: relative; display: flex; flex-direction: column; gap: 8px; width: 156px; padding: 8px; border: 1px solid var(--border-strong); border-radius: var(--r); cursor: pointer; }
@@ -1369,8 +1370,8 @@ function renderSidebar(r) {
     ...list);
   document.getElementById('account').replaceChildren(
     el('span', { class: 'avatar round', 'aria-hidden': 'true' }, state.user.username[0]),
-    el('span', { class: 'who', title: state.user.username }, el('b', null, state.user.username),
-      el('span', null, plural(state.machines.length, 'computer'))),
+    el('span', { class: 'who', title: state.user.username }, el('b', null, state.user.full_name || state.user.username),
+      el('span', null, state.user.full_name ? state.user.username : plural(state.machines.length, 'computer'))),
     btn(null, { class: 'btn ghost icon', fk: 'sign-out', title: 'Sign out', 'aria-label': 'Sign out', on: { click: ev => signOut(ev.currentTarget) } }, 'logout'));
 }
 
@@ -2054,7 +2055,8 @@ function membersTab(team, admin) {
           el('div', { class: 'name-line' },
             el('span', { class: 'avatar round' }, m.username[0]),
             el('span', { class: 'name' }, m.username),
-            me && el('span', { class: 'badge' }, 'You'))),
+            me && el('span', { class: 'badge' }, 'You')),
+          m.full_name && el('span', { class: 't2' }, m.full_name)),
         td('wide',
           el('div', { class: 'chips', 'aria-label': `Groups of ${m.username}` },
             groups.length ? groups.map(g => el('span', { class: 'badge mono' }, g)) : el('span', { class: 't2' }, 'In no groups'))),
@@ -2257,7 +2259,23 @@ function storageView() {
   ];
 }
 
-/* ---------- settings: choices kept in this browser ---------- */
+/* ---------- settings: choices kept in this browser, and your name on the server ---------- */
+
+// The name teammates read beside your username. Usernames stay unique; two people may share a name.
+function fullNameForm() {
+  const input = el('input', { class: 'input', type: 'text', id: 'full-name', name: 'full-name', autocomplete: 'name', maxLength: 100,
+    value: state.user.full_name || '', placeholder: 'Maria Papadopoulou' });
+  const save = btn('Save name', { class: 'btn', fk: 'save-name', on: { click: ev => run(ev.currentTarget, async () => {
+    const res = await api('/api/account', { full_name: input.value });
+    return res.full_name ? `Your teammates now see ${res.full_name}.` : 'Your teammates now see only your username.';
+  }) } });
+  return el('div', { class: 'field name-field' },
+    el('label', { htmlFor: 'full-name' }, 'Full name'),
+    el('div', { class: 'code-box' }, input, save),
+    el('span', { class: 'help' }, 'Shown to your teammates beside your username, ', state.user.username, '. Leave it empty to show only the username.'));
+}
+
+/* ---------- settings: appearance ---------- */
 
 const THEME_CHOICES = { system: ['Match the system', 'auto'], light: ['Light', 'sun'], dark: ['Dark', 'moon'] };
 const ACCENT_NAMES = { blue: 'Blue', teal: 'Teal', green: 'Green', amber: 'Amber', rose: 'Rose', graphite: 'Graphite' };
@@ -2290,8 +2308,9 @@ function settingsView() {
       el('section', { class: 'card', 'aria-label': 'Account' },
         el('div', { class: 'card-body' },
           el('h2', null, 'Account'),
+          state.server !== false && fullNameForm(),
           el('dl', { class: 'facts' },
-            fact('Signed in as', el('strong', null, state.user.username)),
+            fact('Username', el('strong', null, state.user.username)),
             fact('Computers', String(state.machines.length)),
             fact('Library', el('a', { class: 'link', href: '#/storage' }, STORAGE[library().kind].title)),
             state.server !== false && fact('Teams', String(state.teams.length)))))),
@@ -2518,7 +2537,7 @@ const DB = (() => {
   const person = (username, role, groups) => ({ username, role, sees_all_groups: false, can_invite: false, groups });
   const P = machine => ({ machine, harness: 'claude_code' });
   return {
-    user: { username: 'dimitris' },
+    user: { username: 'dimitris', full_name: 'Dimitris Christopoulos' },
     machines: [{ id: MAC, name: 'macbook', os: 'MACOS', harnesses: ['claude_code', 'agents'] }, { id: DESK, name: 'desktop', os: 'LINUX', harnesses: ['claude_code'] }],
     skills: [
       { name: 'code-review', description: 'Reviews a diff against team standards and flags risky changes.', revision: 2, pushed_by: 'maria', updated_on: ago(30), files: 4, placements: [P(MAC)],

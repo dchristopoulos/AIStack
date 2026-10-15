@@ -65,6 +65,7 @@ class MemberSummary:
     sees_all_groups: bool
     can_invite: bool
     groups: tuple[str, ...]
+    full_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -264,19 +265,19 @@ def members(session: Session, user_id: uuid.UUID, team: str) -> list[MemberSumma
     found, me = visibility.membership(session, user_id, team)
     rows = session.execute(
         select(User.user_id, User.username, TeamMember.role, TeamMember.sees_all_groups,
-               TeamMember.can_invite)
+               TeamMember.can_invite, User.full_name)
         .join(TeamMember, TeamMember.user_id == User.user_id)
         .where(TeamMember.team_id == found.team_id)
         .order_by(User.username)
     ).all()
     mine = _groups_of(session, found.team_id, user_id)
     result = []
-    for member_id, username, role, sees_all, can_invite in rows:
+    for member_id, username, role, sees_all, can_invite, full_name in rows:
         theirs = _groups_of(session, found.team_id, member_id)
         shown = tuple(sorted(
             name for name, private in theirs.items()
             if not private or me.role is TeamRole.ADMIN or name in mine))
-        result.append(MemberSummary(username, role, sees_all, can_invite, shown))
+        result.append(MemberSummary(username, role, sees_all, can_invite, shown, full_name))
     return result
 
 

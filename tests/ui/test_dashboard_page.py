@@ -248,6 +248,23 @@ async def test_appearance_is_chosen_in_settings_and_kept_in_this_browser(sign_in
     assert dimitris.console_errors == []
 
 
+async def test_a_full_name_set_in_settings_is_what_teammates_read(sign_in):
+    alex = await sign_in("alex")
+    await alex.page.get_by_role("navigation", name="Main").get_by_role("link", name="Settings").click()
+
+    await alex.page.get_by_label("Full name").fill("Alex Georgiou")
+    await alex.page.get_by_role("button", name="Save name").click()
+
+    await expect(alex.page.get_by_text("Your teammates now see Alex Georgiou.")).to_be_visible()
+    assert (await alex.state())["user"] == {"username": "alex", "full_name": "Alex Georgiou"}
+    dimitris = await sign_in("dimitris")
+    await _open_team(dimitris, "aistack")
+    await dimitris.page.get_by_role("tab", name="Members").click()
+    row = dimitris.page.get_by_role("row").filter(has_text="Alex Georgiou")
+    await expect(row.get_by_text("alex", exact=True)).to_be_visible()
+    assert alex.console_errors == []
+
+
 async def test_a_skill_is_shared_into_a_nested_group_from_a_dialog(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page

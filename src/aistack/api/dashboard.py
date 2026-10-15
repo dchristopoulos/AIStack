@@ -34,7 +34,13 @@ from aistack.commons.exceptions import InvalidTicket, SignedOut, ValidationError
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.route_error_handler import handle_route_errors
 from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH, server_base_url
-from aistack.services import dashboard_service, library_log, skill_service, team_service
+from aistack.services import (
+    dashboard_service,
+    library_log,
+    onboarding_service,
+    skill_service,
+    team_service,
+)
 from aistack.services.transfer_ticket import DASHBOARD_SESSION_LIFETIME_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -203,6 +209,13 @@ def remove_my_skill(session, user_id, path, body):
     if is_local_mode():
         library_log.record(session, library_log.new_event(
             get_local_principal().machine_id, library_log.SKILL_REMOVED, name=removed))
+
+
+# A name for teammates to read; local mode has no teammates.
+@_action("/account", local=False)
+def change_account(session, user_id, path, body):
+    return {"full_name": onboarding_service.set_full_name(session, user_id,
+                                                          _text(body, "full_name"))}
 
 
 @_action("/teams", local=False)

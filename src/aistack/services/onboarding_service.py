@@ -13,7 +13,7 @@ from aistack.commons.text import loggable
 from aistack.db.models.machine import MACHINE_NAME_MAX_LENGTH, Machine
 from aistack.db.models.operating_system import OperatingSystem
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
-from aistack.db.models.user import USERNAME_MAX_LENGTH, User
+from aistack.db.models.user import FULL_NAME_MAX_LENGTH, USERNAME_MAX_LENGTH, User
 from aistack.services import team_service
 from aistack.services.token_service import generate_machine_token, hash_token
 
@@ -134,6 +134,16 @@ def add_machine(session: Session, user_id: uuid.UUID, machine_name: str, os: str
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return AddedMachine(machine=machine, token=token)
+
+
+def set_full_name(session: Session, user_id: uuid.UUID, full_name: str) -> str | None:
+    """Set or, with blank text, clear the name teammates read beside the caller's username."""
+    if isinstance(full_name, str) and not full_name.strip():
+        cleaned = None
+    else:
+        cleaned = _validated_name(full_name, "Full name", FULL_NAME_MAX_LENGTH)
+    session.execute(update(User).where(User.user_id == user_id).values(full_name=cleaned))
+    return cleaned
 
 
 def _claim_admin(session: Session, user: User) -> None:

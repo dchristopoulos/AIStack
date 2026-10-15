@@ -20,6 +20,11 @@ async def test_the_local_dashboard_shows_the_library_and_nothing_a_team_needs(br
         await expect(page.get_by_role("row").filter(has_text="wizard")).to_be_visible()
         await expect(page.get_by_role("button", name="Add a team")).to_have_count(0)
         await expect(page.get_by_role("navigation", name="Spaces")).to_be_hidden()
+        # A full name is for teammates, and local mode has none.
+        await page.goto(f"{link.split('/app/')[0]}/app#/settings")
+        await expect(page.get_by_role("heading", name="Settings", level=1)).to_be_visible()
+        await expect(page.get_by_label("Full name")).to_have_count(0)
+        await page.goto(f"{link.split('/app/')[0]}/app#/library")
 
         await page.get_by_role("button", name="Details of wizard").click()
         details = page.get_by_role("dialog", name="wizard")
