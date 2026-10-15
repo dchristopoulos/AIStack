@@ -276,6 +276,20 @@ def remove_my_skill(session, user_id, path, body):
             session, get_local_principal().machine_id, library_log.SKILL_REMOVED, name=removed))
 
 
+# Server only for now: in local mode a removal or a rename is a change to the Library's log,
+# which every computer must be able to replay before any records one (ADR-0024, ADR-0025).
+@_action("/machines/{machine_id}/remove", local=False)
+def remove_machine(session, user_id, path, body):
+    return {"removed": onboarding_service.remove_machine(session, user_id,
+                                                         path["machine_id"])}
+
+
+@_action("/machines/{machine_id}/rename", local=False)
+def rename_machine(session, user_id, path, body):
+    return {"name": onboarding_service.rename_machine(session, user_id, path["machine_id"],
+                                                      _text(body, "name"))}
+
+
 # A name for teammates to read; local mode has no teammates.
 @_action("/account", local=False)
 def change_account(session, user_id, path, body):

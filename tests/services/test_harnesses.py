@@ -246,7 +246,7 @@ def test_a_computer_shows_the_harnesses_that_synced_or_hold_a_decision(session_f
 
     assert state["machines"][0]["harnesses"] == [CLAUDE_CODE, AGENTS]
     assert state["skills"][0]["placements"] == [
-        {"machine": str(dimitris.machine.machine_id), "harness": CLAUDE_CODE}]
+        {"machine": str(dimitris.machine.machine_id), "harness": CLAUDE_CODE, "revision": 1}]
 
 
 def test_the_dashboard_places_a_skill_in_one_harness(session_factory, dimitris):
@@ -260,4 +260,4 @@ def test_the_dashboard_places_a_skill_in_one_harness(session_factory, dimitris):
                                          False)
 
     assert _state(session_factory, dimitris)["skills"][0]["placements"] == [
-        {"machine": machine, "harness": AGENTS}]
+        {"machine": machine, "harness": AGENTS, "revision": None}]
