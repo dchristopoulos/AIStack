@@ -30,7 +30,7 @@ How to work through it:
 - [ ] 1. Claim and publish `aistack-mcp`, and make every install sentence resolve
 - [ ] 2. Bump PyJWT and pin the build
 - [ ] 3. Make local setup's agent commands work and stop printing secrets
-- [ ] 4. An invite dies with its maker's right to invite
+- [x] 4. An invite dies with its maker's right to invite (#126)
 - [ ] 5. Lock the team while its admins and members change
 - [ ] 6. A team can always be managed: delete a team, let a lone admin leave, repair an orphaned one
 - [ ] 7. Sharing over a group's skill takes being able to share into that group

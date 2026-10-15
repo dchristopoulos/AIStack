@@ -10,7 +10,7 @@ import re
 import secrets
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, aliased
 from aistack.commons.exceptions import Conflict, NotFound, ValidationError
 from aistack.commons.text import loggable
 from aistack.db.models.invite import INVITE_LIFETIME, Invite
+from aistack.db.models.machine import Machine
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.skill_version import SkillVersion
@@ -44,6 +45,9 @@ logger = logging.getLogger(__name__)
 
 # The username rule. A personal team carries its user's name, so the two share a namespace.
 _NAME = re.compile(r"[a-z0-9]+([._-][a-z0-9]+)*")
+
+# How long a used invite still stands as a bearer, for the requests that follow its `join`.
+_BEARER_AFTER_USE = timedelta(minutes=5)
 
 _NOT_AN_INVITE = ("That is not a team invite code that works. An invite admits one person and "
                   "lasts seven days; ask someone in the team for a new one.")
@@ -143,7 +147,7 @@ def invited_to(session: Session, code: str) -> Invite:
         code = code.strip().rstrip("/").rsplit("/", 1)[-1]
     if isinstance(code, str) and code.startswith(TEAM_INVITE_PREFIX):
         invite = session.scalar(select(Invite).where(Invite.code_hash == hash_token(code)))
-    if invite is None or _status(invite) != "PENDING":
+    if invite is None or not _usable(session, invite):
         # Used, cancelled, expired and unknown read alike, and the code is never repeated: a
         # near-miss of a real one is still a secret.
         raise NotFound(_NOT_AN_INVITE)
@@ -151,15 +155,38 @@ def invited_to(session: Session, code: str) -> Invite:
 
 
 def is_open_invite(session: Session, code: str) -> bool:
-    """Whether a code may stand as a bearer: an invite not cancelled and not expired.
+    """Whether a code may stand as a bearer: an invite `invited_to` would still accept.
 
-    A used one still may, though it reaches only `join`, which refuses it: the client that
-    used it sends one more request on the same connection after `join` returns.
+    A code used moments ago still may, though it reaches only `join`, which refuses it: the
+    client that used it sends more requests on the same connection after `join` returns, and
+    a 401 there reads to the agent as a failed join. After that, a used code answers the same
+    401 as a cancelled, expired or unknown one.
     """
     if not (isinstance(code, str) and code.startswith(TEAM_INVITE_PREFIX)):
         return False
     invite = session.scalar(select(Invite).where(Invite.code_hash == hash_token(code)))
-    return invite is not None and _status(invite) in ("PENDING", "ACCEPTED")
+    if invite is None:
+        return False
+    if invite.used_on is not None:
+        return utc_now() - as_utc(invite.used_on) < _BEARER_AFTER_USE
+    return _usable(session, invite)
+
+
+def _usable(session: Session, invite: Invite) -> bool:
+    """Pending, and its maker may still invite into its team and is still on the server.
+
+    Losing the right to invite cancels a person's invites as it happens. This covers the
+    operator's way of taking someone off the server, which deletes their machines and
+    leaves their teams alone.
+    """
+    if _status(invite) != "PENDING":
+        return False
+    maker = session.scalar(select(TeamMember).where(TeamMember.team_id == invite.team_id,
+                                                    TeamMember.user_id == invite.created_by))
+    if maker is None or (maker.role is not TeamRole.ADMIN and not maker.can_invite):
+        return False
+    return session.scalar(select(Machine.machine_id).where(
+        Machine.user_id == invite.created_by).limit(1)) is not None
 
 
 def invited_team(session: Session, code: str) -> str:
@@ -223,11 +250,20 @@ def cancel_invite(session: Session, user_id: uuid.UUID, team: str, invite_id: st
             or (me.role is not TeamRole.ADMIN and invite.created_by != user_id)):
         raise NotFound(f"Team '{found.name}' has no invite '{loggable(str(invite_id))}' of "
                        "yours to cancel.")
+    if invite.used_on is None and invite.cancelled_on is None:
+        # Conditional, as `admit` is: a join that commits after the read above wins, and the
+        # cancel then reports the truth instead of a success that kept nobody out.
+        cancelled = session.execute(
+            update(Invite)
+            .where(Invite.invite_id == invite.invite_id, Invite.used_on.is_(None),
+                   Invite.cancelled_on.is_(None))
+            .values(cancelled_on=utc_now())
+            .execution_options(synchronize_session=False))
+        if cancelled.rowcount != 1:
+            session.refresh(invite)
     if invite.used_on is not None:
         raise ValidationError("That invite was already used, so there is nothing to cancel. "
                               "Remove the member instead if they should not be in the team.")
-    if invite.cancelled_on is None:
-        invite.cancelled_on = utc_now()
     logger.info(f"Team invite cancelled. Team: '{found.team_id}'. User: '{user_id}'.")
 
 
@@ -354,6 +390,9 @@ def set_member(session: Session, user_id: uuid.UUID, team: str, username: str,
         their.sees_all_groups = bool(sees_all_groups)
     if can_invite is not None:
         their.can_invite = bool(can_invite)
+    if their.role is not TeamRole.ADMIN and not their.can_invite:
+        # Invites die with the right to make them.
+        _cancel_invites_by(session, found.team_id, their.user_id)
     logger.info(f"Team member changed. Team: '{found.team_id}'. Member: '{their.user_id}'. "
                 f"By: '{user_id}'.")
 
@@ -497,11 +536,22 @@ def _keep_an_admin(session: Session, team: Team, member: TeamMember, leaving: bo
 
 
 def _drop_member(session: Session, team_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    _cancel_invites_by(session, team_id, user_id)
     in_team = select(TeamGroup.group_id).where(TeamGroup.team_id == team_id)
     session.execute(delete(GroupMember).where(GroupMember.user_id == user_id,
                                               GroupMember.group_id.in_(in_team)))
     session.execute(delete(TeamMember).where(TeamMember.team_id == team_id,
                                              TeamMember.user_id == user_id))
+
+
+def _cancel_invites_by(session: Session, team_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """Cancel the pending invites a person made into a team. Admins then see them Cancelled."""
+    session.execute(
+        update(Invite)
+        .where(Invite.team_id == team_id, Invite.created_by == user_id,
+               Invite.used_on.is_(None), Invite.cancelled_on.is_(None))
+        .values(cancelled_on=utc_now())
+        .execution_options(synchronize_session=False))
 
 
 def _validated(name: str, field: str, max_length: int) -> str:

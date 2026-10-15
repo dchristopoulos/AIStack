@@ -200,9 +200,9 @@ print(f"Registered '{MACHINE}' for {USERNAME}. Token: {added.token}")
 
 ### Someone left: take them off the server
 
-Delete each of their machines with the script above. With no machine they have no token, so they can reach neither the MCP endpoint nor the dashboard, and a dashboard session they still hold ends within eight hours, or at once if you restart. Their account, the skills they shared, and the `pushed_by` on each revision stay. Then rotate the server's invite code, below.
+Delete each of their machines with the script above. With no machine they have no token, so they can reach neither the MCP endpoint nor the dashboard, and a dashboard session they still hold ends within eight hours, or at once if you restart. Their account, the skills they shared, and the `pushed_by` on each revision stay. Team invites they made stop working too: an invite works only while its maker is on the server and may still invite into its team. Then rotate the server's invite code, below.
 
-A team's admin removes a person from that team in the dashboard. Leaving the server altogether is this operation.
+A team's admin removes a person from that team in the dashboard. That cancels the invites the person made into the team, as leaving it does, and as losing the right to invite does. Leaving the server altogether is this operation.
 
 ### List teams and who is in them
 
