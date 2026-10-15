@@ -88,14 +88,16 @@ class AddMachineResult(TypedDict):
     machine_name: str
     os: str
     command: str
+    codex_config: str
 
 
 @mcp.tool(
     description="""Register another computer for the user who is already connected.
 
     Call this from a machine that has joined, when the user wants AIStack on a second computer
-    ("add my Windows PC"). It returns one command for them to paste into a terminal on that
-    other computer. There is nothing to redeem and the invite code is not involved.
+    ("add my Windows PC"). It returns what connects that other computer's coding agent:
+    a command for Claude Code and a config block for Codex. There is nothing to redeem and
+    the invite code is not involved.
 
     Args:
         name: What the new computer is called, up to 64 characters, unique among this user's
@@ -108,10 +110,13 @@ class AddMachineResult(TypedDict):
             - machine_name: the registered machine name
             - os: its operating system
             - command: a complete `claude mcp add` command carrying the new machine's
-                      permanent token. Show it to the user exactly as returned, in a code
-                      block, and tell them to run it on the other computer and then start
-                      Claude Code there. It is shown exactly here and never again — the
-                      server stores only a hash of the token.
+                      permanent token, to run in a terminal there for Claude Code.
+            - codex_config: the same connection for Codex, to add to ~/.codex/config.toml
+                           there, keeping what the file already holds.
+            Show the one for the agent they use on that computer, or both if you do not
+            know, exactly as returned in a code block, and tell them to start that agent
+            there and say "sync aistack". The token is shown here and never again: the
+            server stores only a hash of it.
     """)
 @handle_mcp_errors
 def add_machine(name: str, os: Literal["MACOS", "WINDOWS", "LINUX"]) -> AddMachineResult:
@@ -132,6 +137,7 @@ def add_machine(name: str, os: Literal["MACOS", "WINDOWS", "LINUX"]) -> AddMachi
             machine_name=added.machine.name,
             os=added.machine.os.value,
             command=_connect_command(endpoint, added.token),
+            codex_config=_codex_config(endpoint, added.token),
         )
 
     # Log identities explicitly; result contains the plaintext token.
@@ -152,3 +158,15 @@ def _connect_command(endpoint: str, token: str) -> str:
     """
     return (f"claude mcp add --transport http --scope user aistack {endpoint} "
             f'--header "Authorization: Bearer {token}"')
+
+
+def _codex_config(endpoint: str, token: str) -> str:
+    """Setup's Codex block: `codex mcp add` cannot set a header, so it is pasted by hand.
+
+    The three approvals are the ones setup writes, so sync runs without a prompt there too.
+    """
+    return (f'[mcp_servers.aistack]\nurl = "{endpoint}"\n'
+            f'http_headers = {{ "Authorization" = "Bearer {token}" }}\n'
+            'tools.sync.approval_mode = "approve"\n'
+            'tools.get_skill.approval_mode = "approve"\n'
+            'tools.push_skill.approval_mode = "approve"\n')

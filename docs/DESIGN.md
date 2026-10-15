@@ -97,7 +97,8 @@ join(username, machine_name, os) → creates user + first machine; returns the m
                                 `os` is required — MACHINE.os is NOT NULL and MCP cannot
                                 reveal the client's platform)
 add_machine(name, os)         → registers another machine for this user; returns a
-                                paste-ready MCP command with that machine's token
+                                paste-ready Claude Code command and Codex config
+                                block, each with that machine's token
 list_skills                   → the caller's own skills, then every team skill they may
                                 see (this is also the search — and the only discovery
                                 mechanism, sync is not)
@@ -138,7 +139,7 @@ There is no `delete_skill` tool. Removal is a dashboard action, in two forms. Re
 
 **Onboarding (user)**: paste one sentence into Claude Code — "Set up AIStack: fetch `<server>/setup` and follow it. Invite code: …". The server serves those instructions itself, with its own address filled in, because they cannot come from the vault they set up. The agent creates the skills directory if missing, fetches the `sync-aistack` skill from the server, calls `join` with one HTTP request carrying the invite code as its bearer (ADR-0013), writes the returned machine token into the MCP config at user scope, and tells the user to restart Claude Code once. After that restart, installed skills load live, mid-session, no further restarts (Claude Code watches the skills directory — verified against its docs; the one exception is a directory created after session start, which this flow handles by creating it first).
 
-**Adding a machine**: on an already-registered machine — "add my Windows PC". `add_machine` returns the full MCP-config command with the new machine's token; the user pastes it on the other computer. No redeem step; the invite code is only for new users.
+**Adding a machine**: on an already-registered machine — "add my Windows PC". `add_machine` returns the full Claude Code command and the Codex `config.toml` block, each with the new machine's token; the user pastes the one for their agent on the other computer. No redeem step; the invite code is only for new users.
 
 **Back up** (push): "push my wizard skill to aistack", or a name sync listed under `backup` — the agent calls `push_skill` with the skill's name and gets back a signed upload URL, then sends a gzipped tar of the skill directory to it with `tar` and `curl`, as the tool's description spells out. The server validates the archive, stores the revision in the caller's own skills, and answers the upload with the result the agent reports; a rejection comes back as the same kind of sentence a tool error would carry. Uploading content identical to the latest revision creates nothing and says so, so repeating "push all my skills" does not mint a revision per skill per run. Pushing a name the user already has adds a revision. Push records an optional `origin` URL (GitHub repo, marketplace page) the first time, when the agent knows it. Push enables the skill for the calling machine and shares nothing.
 

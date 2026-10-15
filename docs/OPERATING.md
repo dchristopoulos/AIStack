@@ -49,7 +49,7 @@ All of it is environment variables.
 
 ### Why `AISTACK_PUBLIC_URL` matters
 
-The server hands out URLs: the `claude mcp add` command from `add_machine`, the upload and download links that move skill files, and the link that signs a browser in to the dashboard. It builds them from its own address. Reached directly, it reads that address from the request. Behind a proxy that terminates TLS or rewrites the host, the request says `http://aistack:8000` and every URL it hands out is one nobody outside can open. Set the variable to the address people actually type. When it starts with `https://`, the dashboard's session cookie is marked `Secure`.
+The server hands out URLs: the connection `add_machine` returns for another computer, the upload and download links that move skill files, and the link that signs a browser in to the dashboard. It builds them from its own address. Reached directly, it reads that address from the request. Behind a proxy that terminates TLS or rewrites the host, the request says `http://aistack:8000` and every URL it hands out is one nobody outside can open. Set the variable to the address people actually type. When it starts with `https://`, the dashboard's session cookie is marked `Secure`.
 
 ## Reaching it from other machines
 
