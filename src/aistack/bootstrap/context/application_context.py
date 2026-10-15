@@ -20,7 +20,7 @@ from aistack.bootstrap.configuration.settings.settings_config import (
 )
 from aistack.commons.exceptions import AIStackError, Conflict
 from aistack.db.engine import build_engine, build_session_factory
-from aistack.db.schema import NewerSchema, migrate_schema
+from aistack.db.schema import NewerSchema, guard_schema, migrate_schema
 from aistack.db.models.machine import Machine
 from aistack.mcp.auth.principal import MachinePrincipal
 from aistack.services.library_repo import LibraryRepo, validate_repository
@@ -66,6 +66,7 @@ def build_application_context(settings: Settings) -> None:
     _engine = build_engine(settings.database_url)
     migrate_schema(_engine)
     _session_factory = build_session_factory(_engine)
+    guard_schema(_session_factory, _server_refusal)
     # A fresh key per process (ADR-0010): a restart invalidates every outstanding transfer
     # URL, and there is no key to store, leak, or rotate.
     _ticket_signer = TicketSigner(secrets.token_bytes(SIGNING_KEY_BYTES))
@@ -104,13 +105,11 @@ def build_local_context(settings: LocalSettings) -> None:
         migrate_schema(_engine)
     except NewerSchema as error:
         # Still serve, so the agent can say why in chat: its user never sees this log.
-        _local_refusal = (
-            f"The Library was updated by {error.upgraded_by} on another computer, and "
-            "this computer runs an older AIStack that cannot use it. Run `uv tool upgrade "
-            "aistack-mcp` in a terminal, then restart your coding agent. Nothing was changed.")
+        _local_refusal = _local_upgrade_sentence(error)
         logger.error(str(error))
         return
     _session_factory = build_session_factory(_engine)
+    guard_schema(_session_factory, _refuse_locally)
     # Signs `aistack dashboard`'s sign-in link and session, fresh per process as on a server.
     _ticket_signer = TicketSigner(secrets.token_bytes(SIGNING_KEY_BYTES))
 
@@ -169,6 +168,26 @@ def build_local_context(settings: LocalSettings) -> None:
         # A new computer is announced at once, so the check setup runs proves it can push.
         _sharing.publish()
     logger.info(f"Local mode context built. Machine: '{principal.machine_id}'.")
+
+
+def _local_upgrade_sentence(error: NewerSchema) -> str:
+    return (f"The Library was updated by {error.upgraded_by} on another computer, and this "
+            "computer runs an older AIStack that cannot use it. Run `uv tool upgrade "
+            "aistack-mcp` in a terminal, then restart your coding agent. Nothing was changed.")
+
+
+def _refuse_locally(error: NewerSchema) -> AIStackError:
+    """A newer release migrated the Library while this process ran: refuse from now on."""
+    global _local_refusal
+    _local_refusal = _local_upgrade_sentence(error)
+    return AIStackError(_local_refusal)
+
+
+def _server_refusal(error: NewerSchema) -> AIStackError:
+    return AIStackError(
+        f"This server's database was upgraded by {error.upgraded_by}, and this server process "
+        "runs an older release that cannot use it. Ask whoever runs the server to restart "
+        "it on the new release. Nothing was changed.")
 
 
 def library_before_read(force: bool = False) -> None:

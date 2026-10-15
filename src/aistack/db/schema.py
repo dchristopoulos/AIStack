@@ -1,6 +1,7 @@
 """Bring a database to the schema this release expects (ADR-0016, ADR-0024)."""
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from importlib import metadata, resources
 from time import perf_counter
@@ -16,11 +17,13 @@ from sqlalchemy import (
     String,
     column,
     delete,
+    event,
     insert,
     inspect,
     table,
     text,
 )
+from sqlalchemy.orm import Session, SessionTransaction, sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,15 @@ class NewerSchema(Exception):
 _MIGRATION_LOCK_KEY = 0x41495354
 
 
+def _scripts(script_location: str | None = None) -> tuple[Config, ScriptDirectory]:
+    config = Config()
+    config.set_main_option(
+        "script_location",
+        script_location or str(resources.files("aistack.db").joinpath("migrations")),
+    )
+    return config, ScriptDirectory.from_config(config)
+
+
 def migrate_schema(engine: Engine, script_location: str | None = None) -> None:
     """Apply every pending migration in one transaction, or none of them.
 
@@ -57,13 +69,7 @@ def migrate_schema(engine: Engine, script_location: str | None = None) -> None:
     it is marked as being at the baseline and upgraded from there.
     """
     started_at = perf_counter()
-    config = Config()
-    config.set_main_option(
-        "script_location",
-        script_location or str(resources.files("aistack.db").joinpath("migrations")),
-    )
-
-    scripts = ScriptDirectory.from_config(config)
+    config, scripts = _scripts(script_location)
 
     with engine.connect() as connection:
         # A batch migration rebuilds a table by dropping the old one. With foreign keys on,
@@ -92,6 +98,37 @@ def migrate_schema(engine: Engine, script_location: str | None = None) -> None:
     head = scripts.get_current_head()
     logger.info(f"Database schema migrated. Revision: '{head}'. "
                 f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
+
+
+def guard_schema(session_factory: sessionmaker[Session],
+                 refused: Callable[[NewerSchema], Exception]) -> None:
+    """Check, as each transaction begins, that the schema is still one this release runs on.
+
+    `migrate_schema` checks once, at start. Another process on the same database (a second
+    agent on a newer release, a replica already upgraded) can migrate it later, so every
+    transaction first reads the version row, which costs one primary-key read. A schema
+    this release may still run on is accepted once and remembered. One it may not makes the
+    transaction raise `refused(error)` before its first statement, so nothing is written
+    (ADR-0031).
+    """
+    _, scripts = _scripts()
+    known = {script.revision for script in scripts.walk_revisions()}
+    accepted = {scripts.get_current_head()}
+
+    def check(_session: Session, transaction: SessionTransaction, connection: Connection):
+        if transaction.nested:
+            return
+        current = connection.execute(text(f"SELECT version_num FROM {_VERSION_TABLE}")).scalar()
+        if current in accepted:
+            return
+        try:
+            if _runs_on_a_newer_schema(connection, scripts) or current in known:
+                accepted.add(current)
+        except NewerSchema as error:
+            logger.error(str(error))
+            raise refused(error) from None
+
+    event.listen(session_factory, "after_begin", check)
 
 
 def _hold_migration_lock(connection: Connection) -> None:

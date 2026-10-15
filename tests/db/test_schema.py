@@ -417,3 +417,31 @@ def test_two_processes_starting_at_once_migrate_the_database_once(empty_engine, 
 
     assert failures == []
     assert _revision(empty_engine) == _head()
+
+
+def test_a_process_already_running_refuses_a_breaking_upgrade_made_since(empty_engine):
+    """ADR-0031: the check at start is not the only one; each transaction makes it."""
+    migrate_schema(empty_engine)
+    factory = build_session_factory(empty_engine)
+    aistack.db.schema.guard_schema(factory, lambda error: RuntimeError(error.upgraded_by))
+    with factory.begin() as session:
+        session.execute(select(User.username)).all()
+
+    with empty_engine.begin() as connection:
+        connection.execute(text("UPDATE alembic_version SET version_num = '9998'"))
+    # Only added: this release still runs on it.
+    with factory.begin() as session:
+        session.execute(select(User.username)).all()
+
+    with empty_engine.begin() as connection:
+        connection.execute(text("UPDATE alembic_version SET version_num = '9999'"))
+        connection.execute(text("UPDATE schema_compatibility SET "
+                                "oldest_compatible_revision = '9999', "
+                                "written_by_release = '9.9.0'"))
+    with pytest.raises(RuntimeError, match="AIStack 9.9.0"):
+        with factory.begin() as session:
+            session.add(User(username="eve"))
+            session.flush()
+
+    with empty_engine.connect() as connection:
+        assert connection.scalars(select(User.username)).all() == []
