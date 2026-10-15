@@ -469,7 +469,7 @@ Second pass (kept): Re-ran add_machine and confirmed the bearer is in both outpu
 
 ## Raised and dropped on the second pass
 
-Kept here so a later session does not chase them again.
+Kept here so nobody chases them again.
 
 - **UX-16** Jargon a newcomer meets before it is explained: 'Global', 'Agents folder', 'Team level', 'r1 → r2', 'Library: Server', 'harness'. Naming nitpicks, which the brief says to skip:
 - 'Team level' is DESIGN.md's own term (DESIGN.md:310, 'null for team level').

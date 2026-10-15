@@ -16,11 +16,9 @@ One step of an issue is one branch and one pull request (`docs/agents/issue-trac
 
 ## 2. Commit
 
-The history reads as the owner's own engineering work.
-
 - Subject: imperative, in product terms, under ~70 characters ("Let a team's invite code create the account").
 - Body: why first, then what changed, wrapped at 72. Last line names the issue: `Step N of #X.`, `Part of #X.`, or `Closes #X.`
-- The body describes the change and nothing else: no co-author trailer, no "Generated with" line, no mention of chats, reviews, or who asked.
+- The body describes the change and nothing else.
 - One meaningful change per commit. A fix-up to an unmerged branch is folded into the commit it belongs to.
 
 ## 3. Open the PR
@@ -31,7 +29,7 @@ The history reads as the owner's own engineering work.
 
 ## 4. Gate
 
-The owner's standing rule: work that was decided and planned, and passes, merges without asking him. Arm auto-merge with the rebase method on every PR. `main` requires `pytest`, `browsers (firefox)`, `browsers (webkit)` and `container`, and GitHub refuses auto-merge on a branch with no required checks.
+Work that was decided and planned, and passes, merges without waiting for a manual review. Arm auto-merge with the rebase method on every PR. `main` requires `pytest`, `browsers (firefox)`, `browsers (webkit)` and `container`, and GitHub refuses auto-merge on a branch with no required checks.
 
 A **trust-boundary** change (auth, sync, push validation and hashing, migrations or migration tooling, anything that deletes, any route that answers without a session) earns its merge with more evidence instead of a wait. Before arming it:
 
@@ -54,5 +52,4 @@ Done when every PR in the stack shows merged or closed with that note, and `git 
 
 ## Events while waiting
 
-- A Copilot review summary that says it hit its quota is noise: nothing to fix.
 - A CI failure: reproduce locally, fix on the branch, push.

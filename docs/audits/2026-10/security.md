@@ -684,6 +684,6 @@ Related: [STD-17](industry-standards.md#std-17-images-are-unsigned-and-carry-no-
 
 ## Raised and dropped on the second pass
 
-Kept here so a later session does not chase them again.
+Kept here so nobody chases them again.
 
 - **AUTHZ-06** Any member can claim a username nobody has taken yet by creating a team with that name; the newcomer's error then says they may already be registered. The behaviour reproduces, but it is a deliberate design decision. DESIGN.md:250 says 'usernames and team names share one namespace', team_service.py:45 says the same, test_teams.py:101 pins it, and OUTSIDER_VIEW labels create_team 'taken'. The refusal already says 'Pick a different one' first, and the add_machine clause is conditional ('if this is you'). Nothing dead-ends: the newcomer picks another name. What remains is a wording nitpick.
