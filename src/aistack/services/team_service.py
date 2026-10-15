@@ -3,6 +3,11 @@
 Every function takes the caller's `user_id` from the verified bearer or session, and starts
 by establishing the caller's place in the team through `visibility.membership`. A team the
 caller is not in is answered like one that does not exist.
+
+Every change to a team starts with `lock`: it locks the team's row for the rest of the
+transaction and reads the caller's place again. Two changes to one team then run one after
+the other on PostgreSQL, as every transaction already does on SQLite (ADR-0014), so a check
+such as "the team keeps an admin" reads what the change before it committed.
 """
 
 import logging
@@ -201,7 +206,7 @@ def admit(session: Session, invite: Invite, user_id: uuid.UUID) -> str:
 
     Someone already in the team leaves the invite for whoever it was meant for.
     """
-    team = session.get(Team, invite.team_id)
+    team = _lock_team(session, invite.team_id)
     if session.scalar(select(TeamMember.team_member_id).where(
             TeamMember.team_id == team.team_id, TeamMember.user_id == user_id)) is not None:
         return team.name
@@ -224,7 +229,7 @@ def admit(session: Session, invite: Invite, user_id: uuid.UUID) -> str:
 
 def invites(session: Session, user_id: uuid.UUID, team: str) -> list[InviteSummary]:
     """The team's invites, newest first: every one to an admin, their own to an inviter."""
-    found, me = _as_inviter(session, user_id, team)
+    found, me = _as_inviter(session, user_id, team, locked=False)
     creator, user = aliased(User), aliased(User)
     query = (select(Invite, creator.username, user.username)
              .join(creator, creator.user_id == Invite.created_by)
@@ -241,8 +246,11 @@ def invites(session: Session, user_id: uuid.UUID, team: str) -> list[InviteSumma
 
 
 def cancel_invite(session: Session, user_id: uuid.UUID, team: str, invite_id: str) -> None:
-    """Cancel a pending invite: one's own, or any of the team's for an admin."""
-    found, me = _as_inviter(session, user_id, team)
+    """Cancel a pending invite: one's own, or any of the team's for an admin.
+
+    It takes no team lock: the conditional update below is what decides a race with a join.
+    """
+    found, me = _as_inviter(session, user_id, team, locked=False)
     try:
         invite = session.get(Invite, uuid.UUID(invite_id))
     except (ValueError, TypeError, AttributeError):
@@ -350,12 +358,16 @@ def set_subscribed(session: Session, user_id: uuid.UUID, team: str, group: str,
     session.execute(delete(GroupUnsubscribed).where(GroupUnsubscribed.group_id == target.group_id,
                                                     GroupUnsubscribed.user_id == user_id))
     if not subscribed:
-        session.add(GroupUnsubscribed(group_id=target.group_id, user_id=user_id))
+        try:
+            with session.begin_nested():
+                session.add(GroupUnsubscribed(group_id=target.group_id, user_id=user_id))
+        except IntegrityError:
+            pass  # The same choice, made at the same moment from somewhere else.
 
 
 def leave_team(session: Session, user_id: uuid.UUID, team: str) -> str:
     """Leave a team. The skills already taken from it stay in the caller's own skills."""
-    found, me = visibility.membership(session, user_id, team)
+    found, me = lock(session, user_id, team)
     _keep_an_admin(session, found, me, leaving=True)
     _drop_member(session, found.team_id, user_id)
     return found.name
@@ -475,8 +487,28 @@ def remove_skill(session: Session, user_id: uuid.UUID, team: str, name: str) -> 
                 f"By: '{user_id}'.")
 
 
-def _as_inviter(session: Session, user_id: uuid.UUID, team: str) -> tuple[Team, TeamMember]:
-    found, me = visibility.membership(session, user_id, team)
+def lock(session: Session, user_id: uuid.UUID, team: str,
+         shared: bool = False) -> tuple[Team, TeamMember]:
+    """The named team and the caller's place in it, read again once the team is locked.
+
+    `shared` lets other readers that lock it through: taking a team's skill changes nothing
+    in the team, but must not interleave with a change to it.
+    """
+    found, _ = visibility.membership(session, user_id, team)
+    _lock_team(session, found.team_id, shared=shared)
+    return visibility.membership(session, user_id, team)
+
+
+def _lock_team(session: Session, team_id: uuid.UUID, shared: bool = False) -> Team:
+    # SQLite renders no FOR UPDATE: its BEGIN IMMEDIATE already holds the one write lock.
+    return session.scalar(select(Team).where(Team.team_id == team_id)
+                          .with_for_update(read=shared)
+                          .execution_options(populate_existing=True))
+
+
+def _as_inviter(session: Session, user_id: uuid.UUID, team: str,
+                locked: bool = True) -> tuple[Team, TeamMember]:
+    found, me = (lock if locked else visibility.membership)(session, user_id, team)
     if me.role is not TeamRole.ADMIN and not me.can_invite:
         raise ValidationError(f"Only an admin of team '{found.name}', or a member an admin "
                               "lets invite, can do that. Ask one of its admins.")
@@ -484,7 +516,7 @@ def _as_inviter(session: Session, user_id: uuid.UUID, team: str) -> tuple[Team, 
 
 
 def _as_admin(session: Session, user_id: uuid.UUID, team: str) -> tuple[Team, TeamMember]:
-    found, me = visibility.membership(session, user_id, team)
+    found, me = lock(session, user_id, team)
     if me.role is not TeamRole.ADMIN:
         raise ValidationError(f"Only an admin of team '{found.name}' can do that. Ask one "
                               "of its admins.")
@@ -496,6 +528,7 @@ def _member(session: Session, team: Team, username: str) -> TeamMember:
         select(TeamMember)
         .join(User, User.user_id == TeamMember.user_id)
         .where(TeamMember.team_id == team.team_id, User.username == username)
+        .execution_options(populate_existing=True)
     )
     if found is None:
         raise NotFound(f"Team '{team.name}' has no member named '{loggable(username)}'.")
@@ -540,11 +573,13 @@ def _keep_an_admin(session: Session, team: Team, member: TeamMember, leaving: bo
 
 def _drop_member(session: Session, team_id: uuid.UUID, user_id: uuid.UUID) -> None:
     _cancel_invites_by(session, team_id, user_id)
+    # The membership first: a group can only be given to a member, so once this row is gone
+    # nothing can add the person to one of the team's groups again.
+    session.execute(delete(TeamMember).where(TeamMember.team_id == team_id,
+                                             TeamMember.user_id == user_id))
     in_team = select(TeamGroup.group_id).where(TeamGroup.team_id == team_id)
     session.execute(delete(GroupMember).where(GroupMember.user_id == user_id,
                                               GroupMember.group_id.in_(in_team)))
-    session.execute(delete(TeamMember).where(TeamMember.team_id == team_id,
-                                             TeamMember.user_id == user_id))
 
 
 def _cancel_invites_by(session: Session, team_id: uuid.UUID, user_id: uuid.UUID) -> None:
