@@ -9,6 +9,7 @@ lock per clone keeps two agent sessions on one computer from running git at once
 import contextlib
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -39,6 +40,12 @@ class LibraryRepo:
     def __init__(self, folder: Path, repository: str):
         self.folder = folder
         self.remote = remote_url(repository)
+        # For GitHub, the person's gh login and nothing else: a helper configured on the
+        # system first (macOS's keychain, set by Homebrew's git) could answer with a stale
+        # password, or wait on a prompt nobody sees. The empty value clears the list.
+        self._credentials = (
+            ["-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential"]
+            if self.remote.startswith("https://github.com/") else [])
 
     def events(self) -> list[Event]:
         """Every event in the clone, as the last pull left it."""
@@ -74,6 +81,8 @@ class LibraryRepo:
                 self._git("commit", "--quiet", "--no-verify", "-m",
                           f"AIStack: {len(events)} change{'s' if len(events) != 1 else ''}")
             if not self._ahead():
+                if events and not self._has_commits():
+                    raise RepoUnavailable("The clone has no commit to push.")
                 return
             for attempt in range(_PUSH_ATTEMPTS):
                 try:
@@ -86,11 +95,16 @@ class LibraryRepo:
                     # its commits under ours cannot conflict.
                     self._fetch_and_rebase()
 
-    def _ahead(self) -> bool:
-        """True when this clone holds commits the repository does not."""
+    def _has_commits(self) -> bool:
         try:
             self._git("rev-parse", "--verify", "--quiet", "HEAD")
+            return True
         except RepoUnavailable:
+            return False
+
+    def _ahead(self) -> bool:
+        """True when this clone holds commits the repository does not."""
+        if not self._has_commits():
             return False
         try:
             return int(self._git("rev-list", "--count", f"origin/{BRANCH}..HEAD")) > 0
@@ -99,20 +113,24 @@ class LibraryRepo:
             return True
 
     def _clone(self) -> None:
+        """Clone beside the clone's place and move it there whole, so a clone that fails
+        halfway never looks like one that worked."""
         self.folder.parent.mkdir(parents=True, exist_ok=True)
-        self._git("clone", "--quiet", self.remote, str(self.folder), cwd=self.folder.parent)
+        partial = self.folder.with_name(f"{self.folder.name}.cloning")
+        shutil.rmtree(partial, ignore_errors=True)
+        self._git("clone", "--quiet", self.remote, str(partial), cwd=self.folder.parent)
         # A new repository has no branch yet; every computer writes to the same one.
-        self._git("checkout", "--quiet", "-B", BRANCH)
-        self._git("config", "user.name", "AIStack")
-        self._git("config", "user.email", "aistack@localhost")
+        self._git("checkout", "--quiet", "-B", BRANCH, cwd=partial)
+        self._git("config", "user.name", "AIStack", cwd=partial)
+        self._git("config", "user.email", "aistack@localhost", cwd=partial)
+        shutil.rmtree(self.folder, ignore_errors=True)
+        partial.rename(self.folder)
 
     def _fetch_and_rebase(self) -> None:
         self._git("fetch", "--quiet", "origin")
         if not self._git("ls-remote", "--heads", "origin", BRANCH).strip():
             return
-        try:
-            self._git("rev-parse", "--verify", "--quiet", "HEAD")
-        except RepoUnavailable:
+        if not self._has_commits():
             # Nothing committed here yet: start from the repository's history.
             self._git("checkout", "--quiet", "-B", BRANCH, f"origin/{BRANCH}")
             return
@@ -121,7 +139,8 @@ class LibraryRepo:
     def _git(self, *arguments: str, cwd: Path | None = None) -> str:
         try:
             done = subprocess.run(
-                ["git", "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", *arguments],
+                ["git", "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false",
+                 *self._credentials, *arguments],
                 cwd=cwd or self.folder, capture_output=True, text=True,
                 timeout=_GIT_TIMEOUT_SECONDS,
                 # Never wait on a password prompt nobody can see.
