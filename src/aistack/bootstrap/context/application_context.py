@@ -22,7 +22,8 @@ from aistack.bootstrap.configuration.settings.settings_config import (
     resolved_invite_code,
 )
 from aistack.bootstrap.hardware import hardware_id
-from aistack.commons.exceptions import AIStackError, Conflict
+from aistack.commons.exceptions import AIStackError, Conflict, NeedsNewerRelease
+from aistack.commons.release import UPDATE_AND_RESTART
 from aistack.db.engine import build_engine, build_read_session_factory, build_session_factory
 from aistack.db.schema import NewerSchema, guard_schema, migrate_schema
 from aistack.db.models.machine import Machine
@@ -60,6 +61,9 @@ _sharing: LibrarySharing | None = None
 _local_refusal: str | None = None
 # Local mode's AISTACK_HOME, where this computer's id lives.
 _local_home: Path | None = None
+# The refusal is one a newer release fixes, so local mode updates itself at once.
+_needs_newer_release = False
+_local_settings: LocalSettings | None = None
 
 _MACHINE_ID_FILE = "machine-id"
 # Beside the id: a hash of it with the hardware's, and the id a restored home folder came with.
@@ -110,8 +114,9 @@ def build_local_context(settings: LocalSettings) -> None:
     is whoever could start this process (ADR-0020).
     """
     global _engine, _session_factory, _read_session_factory, _ticket_signer, _local_principal
-    global _local_refusal, _library, _sharing, _local_home
+    global _local_refusal, _library, _sharing, _local_home, _needs_newer_release, _local_settings
 
+    _local_settings = settings
     settings.home.mkdir(parents=True, exist_ok=True)
     _local_home = settings.home
     if settings.library_repo:
@@ -129,6 +134,7 @@ def build_local_context(settings: LocalSettings) -> None:
     except NewerSchema as error:
         # Still serve, so the agent can say why in chat: its user never sees this log.
         _local_refusal = _local_upgrade_sentence(error)
+        _needs_newer_release = True
         logger.error(str(error))
         return
     _session_factory = build_session_factory(_engine)
@@ -155,6 +161,7 @@ def build_local_context(settings: LocalSettings) -> None:
             # A log this release cannot replay, such as a change of a kind a newer release
             # made: still serve, so the agent tells its user what to do.
             _local_refusal = error.message
+            _needs_newer_release = isinstance(error, NeedsNewerRelease)
             logger.error(error.message)
             return
         if first_start and not (repo.folder / ".git").is_dir():
@@ -199,14 +206,15 @@ def build_local_context(settings: LocalSettings) -> None:
 
 def _local_upgrade_sentence(error: NewerSchema) -> str:
     return (f"The Library was updated by {error.upgraded_by} on another computer, and this "
-            "computer runs an older AIStack that cannot use it. Run `uv tool upgrade "
-            "aistack-mcp` in a terminal, then restart your coding agent. Nothing was changed.")
+            f"computer runs an older AIStack that cannot use it. {UPDATE_AND_RESTART} "
+            "Nothing was changed.")
 
 
 def _refuse_locally(error: NewerSchema) -> AIStackError:
     """A newer release migrated the Library while this process ran: refuse from now on."""
     global _local_refusal
     _local_refusal = _local_upgrade_sentence(error)
+    _update_for_the_library()
     return AIStackError(_local_refusal)
 
 
@@ -222,7 +230,11 @@ def library_before_read(force: bool = False) -> None:
     global _local_principal
     if _sharing is None or _local_principal is None:
         return
-    _sharing.catch_up(force)
+    try:
+        _sharing.catch_up(force)
+    except NeedsNewerRelease:
+        _update_for_the_library()
+        raise
     # A rebuild can fold this computer under the person's first user (library_log), and
     # gives its row a new token, which the dashboard's links are bound to.
     with _session_factory.begin() as session:
@@ -238,6 +250,23 @@ def library_after_write() -> bool:
     """For a GitHub Library: push what this computer recorded. False when it could not, and
     the change reaches the other computers only with a later push."""
     return _sharing is None or _sharing.publish()
+
+
+def needs_newer_release() -> bool:
+    return _needs_newer_release
+
+
+def _update_for_the_library() -> None:
+    """Another computer moved the Library to a newer release while this one ran: install it
+    now rather than after the daily wait, once, unless the person turned updates off."""
+    global _needs_newer_release
+    if _needs_newer_release:
+        return
+    _needs_newer_release = True
+    if _local_settings is not None and _local_settings.auto_update:
+        from aistack.bootstrap import self_update
+
+        self_update.start_in_background(_local_settings.home, force=True)
 
 
 def is_local_mode() -> bool:
@@ -461,7 +490,7 @@ def dispose_application_context() -> None:
     """Drop the engine and its pool. Used by tests between temporary databases."""
     global _settings, _engine, _session_factory, _read_session_factory, _ticket_signer
     global _local_principal, _local_refusal, _library, _sharing, _local_home
-    global _failure_limiter, _join_limiter
+    global _failure_limiter, _join_limiter, _needs_newer_release, _local_settings
 
     if _engine is not None:
         _engine.dispose()
@@ -474,6 +503,8 @@ def dispose_application_context() -> None:
     _join_limiter = None
     _local_principal = None
     _local_refusal = None
+    _needs_newer_release = False
+    _local_settings = None
     _library = {"kind": "server"}
     _sharing = None
     _local_home = None

@@ -16,7 +16,8 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from aistack.commons.exceptions import AIStackError, ValidationError
+from aistack.commons.exceptions import AIStackError, NeedsNewerRelease, ValidationError
+from aistack.commons.release import UPDATE_AND_RESTART
 from aistack.db.models import Base
 from aistack.db.models.library_event import LibraryEvent
 from aistack.db.models.machine import MACHINE_NAME_MAX_LENGTH, Machine
@@ -137,9 +138,8 @@ def apply(session: Session, event: Event,
     `uploaded` is a push's archive as `prepared` validated it."""
     # Asked first: a newer release's change may also name a computer this one cannot place.
     if event.kind not in _KINDS:
-        raise ValidationError(f"The Library's log has a change of a kind this release does "
-                              f"not know, '{event.kind}'. Update AIStack on this computer: run "
-                              "`uv tool upgrade aistack-mcp`, then restart your coding agent.")
+        raise NeedsNewerRelease(f"The Library's log has a change of a kind this release does "
+                                f"not know, '{event.kind}'. {UPDATE_AND_RESTART}")
     if event.kind == MACHINE_ADDED:
         return _add_machine(session, event)
     machine = session.get(Machine, event.machine_id)
@@ -189,8 +189,10 @@ def _replay(session: Session, event: Event,
     except Exception as error:
         reason = (error.message if isinstance(error, AIStackError)
                   else "It is not a change AIStack makes; remove it from the repository.")
-        raise ValidationError(f"The change in log/{event.path} of the Library's repository "
-                              f"cannot be applied. {reason}") from error
+        # Still a NeedsNewerRelease when it was one, so local mode can update itself.
+        refusal = NeedsNewerRelease if isinstance(error, NeedsNewerRelease) else ValidationError
+        raise refusal(f"The change in log/{event.path} of the Library's repository cannot be "
+                      f"applied. {reason}") from error
 
 
 def applied_through(session: Session) -> str | None:

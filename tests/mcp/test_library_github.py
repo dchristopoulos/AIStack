@@ -260,8 +260,10 @@ async def test_a_log_from_a_newer_release_is_explained_through_the_agent(compute
         uuid.UUID(int=2), _soon(), uuid.UUID(int=1), "skill_renamed", {}))
 
     async with computer("desktop") as (desktop, _):
-        with pytest.raises(ToolError, match="Update AIStack on this computer: run `uv tool upgrade aistack-mcp`"):
+        with pytest.raises(ToolError, match="AIStack updates itself to read it: restart your "
+                                            "coding agent in a minute"):
             await _call(desktop, "list_skills")
+        assert application_context.needs_newer_release()
 
 
 def _soon() -> str:

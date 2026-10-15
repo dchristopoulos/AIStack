@@ -44,6 +44,11 @@ ENV PATH="/app/.venv/bin:$PATH" \
     AISTACK_HOST="0.0.0.0" \
     AISTACK_PORT="8000"
 
+# The commit an image from main was built from, so it names itself apart from the release
+# before it (`0.1.0+g1a2b3c4`, aistack.commons.release). Empty in a release's image.
+ARG AISTACK_BUILD_COMMIT=""
+ENV AISTACK_BUILD_COMMIT=$AISTACK_BUILD_COMMIT
+
 USER aistack
 VOLUME /data
 EXPOSE 8000

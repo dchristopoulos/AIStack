@@ -103,12 +103,12 @@ It prints a one-time sign-in link for each of three demo users.
 openssl rand -base64 24 > invite-code.txt && chmod 600 invite-code.txt
 docker run -d --name aistack -p 8000:8000 \
   -e AISTACK_INVITE_CODE="$(cat invite-code.txt)" \
-  -v aistack-data:/data ghcr.io/dchristopoulos/aistack:latest
+  -v aistack-data:/data ghcr.io/dchristopoulos/aistack:0.1
 ```
 
 `invite-code.txt` is the server's invite code, which you join with first; keep it.
 
-One container, one volume, one port, with SQLite inside. Set `DATABASE_URL` to use PostgreSQL instead ([ADR-0002](docs/adr/0002-sqlite-default-postgres-optional.md)). The image is built for amd64 and arm64 and published only from commits on `main` that passed CI. Upgrading is starting the new image: the server migrates its database at startup in a single transaction ([ADR-0016](docs/adr/0016-alembic-migrations-in-one-transaction.md)).
+One container, one volume, one port, with SQLite inside. Set `DATABASE_URL` to use PostgreSQL instead ([ADR-0002](docs/adr/0002-sqlite-default-postgres-optional.md)). The image is built for amd64 and arm64 and published only from commits that passed CI; `0.1` follows the releases of 0.1, and `edge` follows `main`. Upgrading is starting the new image: the server migrates its database at startup in a single transaction ([ADR-0016](docs/adr/0016-alembic-migrations-in-one-transaction.md)).
 
 [Operating AIStack](docs/OPERATING.md) covers configuration, TLS, backups, upgrades, and administrative tasks such as revoking a machine or rotating the invite code.
 
@@ -223,7 +223,7 @@ Current limits: a skill is text files only (at most 100 files, 256 KiB each, 1 M
 
 ## Privacy
 
-AIStack collects nothing and has no hosted service. A server makes no outbound connections, and the dashboard loads nothing from other sites. In local mode AIStack contacts only PyPI (a daily update check), your own GitHub repository, or your own database.
+AIStack collects nothing and has no hosted service. A server makes no outbound connections, and the dashboard loads nothing from other sites. In local mode AIStack contacts only PyPI (a daily update check, which installs a newer release of the same minor version; `AISTACK_AUTO_UPDATE=off` in the agent's settings for AIStack turns it off), your own GitHub repository, or your own database.
 
 A server stores each user's username and optional full name; their computers, by name and operating system, with a hash of each machine token; the skills they back up and share, with every revision and who pushed it; which skill is enabled in which folder of which computer; and teams, groups, memberships, and invites (as hashes of their codes). Logs record names and ids, never IP addresses, tokens, invite codes, or links. Whoever runs a server is responsible for its users' data, and can remove a user as described in [docs/OPERATING.md](docs/OPERATING.md).
 

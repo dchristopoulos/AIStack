@@ -19,7 +19,7 @@ Put these four choices to the user, each with its line. Recommend the second whe
 
 ## 3. Install AIStack
 
-AIStack is installed once with uv, so your agent starts it directly: it starts at once, works offline, and updates itself in the background once a day. If `uv --version` fails, ask the user before installing uv, then follow https://docs.astral.sh/uv/getting-started/installation/ (on macOS and Linux, `curl -LsSf https://astral.sh/uv/install.sh | sh`). Then:
+AIStack is installed once with uv, so your agent starts it directly: it starts at once, works offline, and updates itself in the background once a day, to newer releases of the same minor version (`AISTACK_AUTO_UPDATE=off` in its environment turns that off). If `uv --version` fails, ask the user before installing uv, then follow https://docs.astral.sh/uv/getting-started/installation/ (on macOS and Linux, `curl -LsSf https://astral.sh/uv/install.sh | sh`). Then:
 
 ```bash
 uv tool install aistack-mcp

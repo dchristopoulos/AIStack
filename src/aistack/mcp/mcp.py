@@ -8,6 +8,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastmcp.server.middleware import AuthMiddleware
 
 from aistack.bootstrap.context.application_context import get_failure_limiter
+from aistack.commons.release import release
 from aistack.mcp.argument_errors import ArgumentErrors
 from aistack.mcp.auth.failure_limiter import CredentialGuard
 from aistack.mcp.auth.policy import authorize
@@ -85,7 +86,7 @@ async def run_http_stream_server(host: str, port: int, path: str, log_level: str
     config = http_server_config(path, log_level, host=host, port=port)
 
     logger.info(
-        f"Starting MCP server over streamable HTTP. Host: '{host}'. Port: '{port}'. "
+        f"Starting AIStack {release()} over streamable HTTP. Host: '{host}'. Port: '{port}'. "
         f"Path: '{path}'."
     )
     await uvicorn.Server(config).serve()

@@ -13,10 +13,16 @@ docker run -d --name aistack \
   -e AISTACK_INVITE_CODE="$(cat invite-code.txt)" \
   -v aistack-data:/data \
   --restart unless-stopped \
-  ghcr.io/dchristopoulos/aistack:latest
+  ghcr.io/dchristopoulos/aistack:0.1
 ```
 
-The image is published by CI from every commit on `main` that passed the tests, for `linux/amd64` and `linux/arm64`. `latest` follows `main`; each commit is also tagged `sha-<commit>`, and version tags such as `0.1.0` arrive with releases. To build it yourself instead, `docker build -t aistack .` in a checkout and run `aistack` in place of the published name.
+The image is published by CI, for `linux/amd64` and `linux/arm64`, only from commits that passed the tests. Its tags:
+
+- `0.1` is the newest release of 0.1. Stay on it: every release it moves to works with the database the one before it left. A release that older ones cannot run beside starts a new minor, `0.2`, with upgrade notes in [CHANGELOG.md](../CHANGELOG.md), and you move to it by changing the tag.
+- `0.1.0`, `0.1.1` and so on are one release each, and `latest` is the newest release of any version.
+- `edge` is the newest commit on `main`, and `sha-<commit>` each such commit. They are for trying what is coming, not for a server a team relies on: a commit can change the database in a way no release has yet.
+
+The startup log names what is running: `Starting AIStack 0.1.0 ...` for a release, `0.1.0+g1a2b3c4` for the `main` commit tagged `sha-1a2b3c4`. To build it yourself instead, `docker build -t aistack .` in a checkout and run `aistack` in place of the published name.
 
 Without Docker, the same server runs from PyPI with [uv](https://docs.astral.sh/uv/), which fetches Python 3.13 if it needs to. The database is a SQLite file in the current folder unless `DATABASE_URL` says otherwise:
 
@@ -310,7 +316,7 @@ The same image runs against PostgreSQL. Nothing else changes:
 docker run -d --name aistack -p 8000:8000 \
   -e AISTACK_INVITE_CODE="..." \
   -e DATABASE_URL="postgresql+psycopg://aistack:password@db.internal:5432/aistack" \
-  ghcr.io/dchristopoulos/aistack:latest
+  ghcr.io/dchristopoulos/aistack:0.1
 ```
 
 It is the one image either way: there is no separate PostgreSQL build, and the volume is simply unused.
@@ -321,7 +327,7 @@ SQLite is the default because one container is easier to run than two, and the w
 
 ## Upgrading
 
-Back up, then pull the new image (`docker pull ghcr.io/dchristopoulos/aistack:latest`, or rebuild a checkout) and recreate the container. At startup the server brings the database to the schema its release expects, before it accepts a request. Every pending change is applied in one transaction: either all of it lands or the database is exactly as it was.
+Back up, then pull the new image (`docker pull ghcr.io/dchristopoulos/aistack:0.1`, or rebuild a checkout) and recreate the container. At startup the server brings the database to the schema its release expects, before it accepts a request. Every pending change is applied in one transaction: either all of it lands or the database is exactly as it was.
 
 A server still on an older release keeps working after another process upgraded the database, as long as every change since only added something; after a change that removed or reshaped something, it refuses to start and says which release to run (ADR-0024). A server that was already running when another process made such a change refuses each call from then on with the same sentence, and changes nothing, until it is restarted on the new release (ADR-0031). With several replicas, upgrade them all.
 
