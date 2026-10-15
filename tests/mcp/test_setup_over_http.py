@@ -76,6 +76,17 @@ async def test_the_setup_page_gets_the_details_that_are_easy_to_get_wrong(server
     assert "Restart Claude Code once" in text
 
 
+async def test_setup_checks_both_agents_before_registering_this_computer(server_url):
+    """AUTO-11: run from the second agent, a check of only its own let it register the same
+    computer twice, and the two then undid each other's removals."""
+    text = (await _get(f"{_base(server_url)}/setup")).text
+    step_one = text[text.index("## 1."):text.index("## 2.")]
+
+    assert "claude mcp get aistack\ncodex mcp get aistack" in step_one
+    assert "If either shows a server, stop." in step_one
+    assert "Never register this computer a second time" in step_one
+
+
 async def test_the_setup_page_connects_codex_with_one_block_of_valid_toml(server_url):
     """Codex cannot set a header from its CLI, so the agent writes this block (ADR-0021)."""
     text = (await _get(f"{_base(server_url)}/setup")).text
