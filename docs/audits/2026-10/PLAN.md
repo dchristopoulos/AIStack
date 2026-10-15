@@ -31,7 +31,7 @@ How to work through it:
 - [x] 2. Bump PyJWT and pin the build (#133)
 - [ ] 3. Make local setup's agent commands work and stop printing secrets
 - [x] 4. An invite dies with its maker's right to invite (#126)
-- [ ] 5. Lock the team while its admins and members change
+- [x] 5. Lock the team while its admins and members change (#132)
 - [ ] 6. A team can always be managed: delete a team, let a lone admin leave, repair an orphaned one
 - [ ] 7. Sharing over a group's skill takes being able to share into that group
 - [x] 8. A session belongs to the computer that opened it; signing out ends it (#127)

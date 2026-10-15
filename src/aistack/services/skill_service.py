@@ -20,7 +20,7 @@ from aistack.db.models.team import Team, TeamGroup
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
 from aistack.db.ordering import bytewise
-from aistack.services import transfer_ticket, visibility
+from aistack.services import team_service, transfer_ticket, visibility
 from aistack.services.harnesses import folder, validated_harness
 from aistack.services.skill_archive import build_archive, read_archive
 from aistack.services.skill_validation import ValidatedFile, ValidatedSkill, validated_skill
@@ -90,7 +90,7 @@ def store(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
         skill.description = uploaded.description
     # Pushing a skill the user had removed brings it back.
     restored = skill.archived
-    skill.archived = False
+    _bring_back(session, skill)
 
     placed = set_enabled(session, machine_id, harness, skill.skill_id, enabled=True,
                          revision=version.revision)
@@ -198,7 +198,7 @@ def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name:
     skill = (visibility.required_my_skill(session, user_id, name, removed_too=True)
              if team is None else take_from_team(session, user_id, name, team))
     restored = skill.archived
-    skill.archived = False
+    _bring_back(session, skill)
     version = _latest_version(session, skill.skill_id)
     placed = set_enabled(session, machine_id, harness, skill.skill_id, enabled=True,
                          revision=version.revision)
@@ -230,6 +230,11 @@ def take_from_team(session: Session, user_id: uuid.UUID, name: str, team: str) -
     whoever pushed it to the team. The user asked for it, so a different version they had is
     superseded, not lost: it stays in their history.
     """
+    # One the caller cannot reach is refused before anything is locked.
+    visibility.team_skill(session, user_id, name, team)
+    # A team admin may be removing or moving it at the same moment: read it again once the
+    # team is locked.
+    team_service.lock(session, user_id, team, shared=True)
     source = visibility.team_skill(session, user_id, name, team)
     latest = _latest_version(session, source.skill_id)
     copied = _stored_as_uploaded(session, source, latest)
@@ -240,7 +245,7 @@ def take_from_team(session: Session, user_id: uuid.UUID, name: str, team: str) -
     _store_revision(session, mine, copied, _latest_version(session, mine.skill_id),
                     latest.pushed_by)
     mine.description = source.description
-    mine.archived = False
+    _bring_back(session, mine)
     mine.source_skill_id = source.skill_id
     mine.source_revision = latest.revision
     return mine
@@ -273,7 +278,7 @@ def share(session: Session, user_id: uuid.UUID, name: str, team: str,
     skill; every revision says who did.
     """
     mine = visibility.required_my_skill(session, user_id, name)
-    destination, _ = visibility.membership(session, user_id, team)
+    destination, _ = team_service.lock(session, user_id, team)
     target_group = None if group is None else _group_to_share_into(session, user_id,
                                                                     destination, group)
     copied = _stored_as_uploaded(session, mine, _latest_version(session, mine.skill_id))
@@ -437,6 +442,16 @@ def set_enabled(session: Session, machine_id: uuid.UUID, harness: Harness,
     if revision is not None:
         decision.revision = revision
     return changed
+
+
+def _bring_back(session: Session, skill: Skill) -> None:
+    """Un-remove a skill of the user's own, even if a remove committed since it was read.
+
+    An UPDATE, not an attribute: the ORM writes nothing when the value it loaded is already
+    False, so a remove from the dashboard that lands meanwhile would win and leave the skill
+    hidden from the Library while enabled on this machine.
+    """
+    session.execute(update(Skill).where(Skill.skill_id == skill.skill_id).values(archived=False))
 
 
 def _require_registered_machine(session: Session, machine_id: uuid.UUID,
