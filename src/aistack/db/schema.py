@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
-from importlib import metadata, resources
+from importlib import resources
 from time import perf_counter
 
 from alembic import command
@@ -25,6 +25,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session, SessionTransaction, sessionmaker
 
+from aistack.commons.release import release
+
 logger = logging.getLogger(__name__)
 
 # The schema of every database created before migrations existed.
@@ -38,8 +40,14 @@ class NewerSchema(Exception):
     """A newer release upgraded the database in a way this release cannot run on (ADR-0024)."""
 
     def __init__(self, current: str, oldest: str, written_by: str | None, head: str):
-        # "AIStack 0.2.0", or a plain description when the release did not record itself.
-        self.upgraded_by = f"AIStack {written_by}" if written_by else "a newer AIStack"
+        # "AIStack 0.2.0", or a plain description when the release did not record itself. A
+        # build of the same version is a later commit: its image is tagged by that commit.
+        if not written_by:
+            self.upgraded_by = "a newer AIStack"
+        elif written_by == release():
+            self.upgraded_by = f"a newer build of AIStack {written_by}"
+        else:
+            self.upgraded_by = f"AIStack {written_by}"
         super().__init__(
             f"This database was upgraded by {self.upgraded_by} (schema '{current}'). This "
             f"release knows schemas up to '{head}', and the database now needs at least "
@@ -193,15 +201,8 @@ def _record_compatibility(connection: Connection, scripts: ScriptDirectory) -> N
     )
     connection.execute(delete(compatibility))
     connection.execute(insert(compatibility).values(
-        row_id=1, oldest_compatible_revision=oldest, written_by_release=_release(),
+        row_id=1, oldest_compatible_revision=oldest, written_by_release=release(),
         updated_on=datetime.now(UTC)))
-
-
-def _release() -> str:
-    try:
-        return metadata.version("aistack-mcp")
-    except metadata.PackageNotFoundError:
-        return "from a source checkout"
 
 
 def _predates_migrations(connection: Connection) -> bool:

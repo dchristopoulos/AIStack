@@ -23,6 +23,7 @@ from aistack.bootstrap.configuration.settings.settings_config import (
 from aistack.bootstrap.context.application_context import (
     build_application_context,
     build_local_context,
+    needs_newer_release,
 )
 from aistack.bundled import (
     SYNC_SKILL_NAME,
@@ -30,6 +31,7 @@ from aistack.bundled import (
     local_sync_skill_document,
 )
 from aistack.commons.exceptions import AIStackError
+from aistack.commons.release import release
 from aistack.commons.text import loggable
 from aistack.db.engine import build_engine
 from aistack.mcp.argument_errors import argument_problems
@@ -123,7 +125,10 @@ def serve_local() -> None:
     # its bare name from the current folder first: a project's git.exe or uv.exe would run.
     # Nothing here reads a path relative to the project.
     os.chdir(settings.home)
-    self_update.start_in_background(settings.home)
+    logger.info(f"AIStack {release()} is serving the Library over stdio.")
+    if settings.auto_update:
+        # At once, not after the daily wait, when the Library needs a newer release (ADR-0024).
+        self_update.start_in_background(settings.home, force=needs_newer_release())
 
     from aistack.mcp.local import local_mcp
 
@@ -176,6 +181,11 @@ def check_local() -> None:
     try:
         get_local_principal()
     except AIStackError as refusal:
+        if needs_newer_release() and settings.auto_update:
+            installed = self_update.check_and_upgrade(settings.home, force=True)
+            if installed:
+                sys.exit(f"AIStack {installed} is installed: the Library needed a newer "
+                         "release. Run this again, and restart your coding agent.")
         sys.exit(f"AIStack is not ready. {refusal}")
     library = library_description()
     if library["kind"] == "github":
