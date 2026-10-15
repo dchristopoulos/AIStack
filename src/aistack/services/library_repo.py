@@ -44,7 +44,7 @@ class LibraryRepo:
         # system first (macOS's keychain, set by Homebrew's git) could answer with a stale
         # password, or wait on a prompt nobody sees. The empty value clears the list.
         self._credentials = (
-            ["-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential"]
+            ["-c", "credential.helper=", "-c", f"credential.helper=!{_gh()} auth git-credential"]
             if self.remote.startswith("https://github.com/") else [])
 
     def events(self) -> list[Event]:
@@ -166,6 +166,20 @@ class LibraryRepo:
                 yield
             finally:
                 _unlock(lock)
+
+
+def _gh() -> str:
+    """The gh command, found where installers put it when an agent started from a desktop
+    app runs this process without those folders on its path."""
+    found = shutil.which("gh")
+    if found:
+        return f'"{found}"' if " " in found else found
+    for folder in ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin",
+                   str(Path.home() / ".local" / "bin")):
+        candidate = Path(folder) / "gh"
+        if candidate.is_file():
+            return str(candidate)
+    return "gh"
 
 
 def _file_name(event: Event) -> str:

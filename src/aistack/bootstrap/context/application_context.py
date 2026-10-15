@@ -111,7 +111,14 @@ def build_local_context(settings: LocalSettings) -> None:
         repo = LibraryRepo(settings.home / _LIBRARY_CLONE, settings.library_repo)
         _sharing = LibrarySharing(repo, _session_factory)
         first_start = not (repo.folder / ".git").is_dir()
-        _sharing.catch_up(force=True)
+        try:
+            _sharing.catch_up(force=True)
+        except AIStackError as error:
+            # A log this release cannot replay, such as a change of a kind a newer release
+            # made: still serve, so the agent tells its user what to do.
+            _local_refusal = error.message
+            logger.error(error.message)
+            return
         if first_start and not (repo.folder / ".git").is_dir():
             # Without the log, this computer would start a second Library of its own.
             _local_refusal = (

@@ -102,7 +102,8 @@ jobs:
 
   # Local mode runs on the person's own computer, and people use Windows. The server runs in
   # a Linux container, so only what runs on their computer is tested here: local mode, the
-  # localhost dashboard's routes, and the services underneath, on SQLite.
+  # localhost dashboard's routes, a Library shared through git, and the services underneath,
+  # on SQLite.
   windows:
     runs-on: windows-latest
     timeout-minutes: 20
@@ -118,7 +119,7 @@ jobs:
 
       - run: poetry install
 
-      - run: poetry run pytest tests/mcp/test_local_mode.py tests/api/test_local_dashboard.py tests/services tests/bootstrap tests/db -q -p no:cacheprovider --no-header -rs
+      - run: poetry run pytest tests/mcp/test_local_mode.py tests/mcp/test_library_log.py tests/mcp/test_library_github.py tests/api/test_local_dashboard.py tests/services tests/bootstrap tests/db -q -p no:cacheprovider --no-header -rs
 
   container:
     runs-on: ubuntu-latest

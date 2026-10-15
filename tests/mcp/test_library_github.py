@@ -189,8 +189,10 @@ def test_github_is_reached_through_the_gh_login_alone():
 
     github = LibraryRepo(pathlib.Path("clone"), "maria/aistack-library")
     assert github.remote == "https://github.com/maria/aistack-library.git"
-    assert github._credentials == ["-c", "credential.helper=",
-                                   "-c", "credential.helper=!gh auth git-credential"]
+    assert github._credentials[:2] == ["-c", "credential.helper="]
+    assert github._credentials[2:3] == ["-c"]
+    assert github._credentials[3].startswith("credential.helper=!")
+    assert github._credentials[3].endswith("gh auth git-credential")
     assert LibraryRepo(pathlib.Path("clone"), "/srv/library.git")._credentials == []
 
 
@@ -232,3 +234,27 @@ async def test_a_github_library_exports_and_moves_by_copy_and_sync(computer, rep
                 ["wizard"]
     finally:
         application_context.dispose_application_context()
+
+
+async def test_a_log_from_a_newer_release_is_explained_through_the_agent(computer, repository,
+                                                                         tmp_path):
+    async with computer("laptop") as (laptop, home):
+        _write(home, "wizard", "Cast.")
+        await _call(laptop, "push_skill", name="wizard")
+
+    # A newer release on another computer logged a change of a kind this one does not know.
+    clone = tmp_path / "newer"
+    subprocess.run(["git", "clone", "--quiet", str(repository), str(clone)], check=True)
+    folder = clone / "log" / "00000000-0000-0000-0000-000000000001"
+    folder.mkdir(parents=True)
+    (folder / "29991231T000000.000000Z-00000000-0000-0000-0000-000000000002.json").write_text(
+        '{"at":"2999-12-31T00:00:00.000000Z","data":{},"event_id":'
+        '"00000000-0000-0000-0000-000000000002","kind":"skill_renamed",'
+        '"machine_id":"00000000-0000-0000-0000-000000000001"}')
+    for command in (["add", "log"], ["-c", "user.name=t", "-c", "user.email=t@t",
+                                     "commit", "--quiet", "-m", "newer"], ["push", "--quiet"]):
+        subprocess.run(["git", "-C", str(clone), *command], check=True)
+
+    async with computer("desktop") as (desktop, _):
+        with pytest.raises(ToolError, match="Update AIStack on this computer"):
+            await _call(desktop, "list_skills")
