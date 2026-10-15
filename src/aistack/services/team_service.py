@@ -38,6 +38,7 @@ from aistack.db.models.team import (
 )
 from aistack.db.models.timestamps import as_utc, utc_now
 from aistack.db.models.user import User
+from aistack.db.ordering import bytewise
 from aistack.services import visibility
 from aistack.services.token_service import TEAM_INVITE_PREFIX, hash_token
 
@@ -288,7 +289,7 @@ def list_teams(session: Session, user_id: uuid.UUID) -> list[TeamSummary]:
         .join(TeamMember, TeamMember.team_id == Team.team_id)
         .join(sizes, sizes.c.team_id == Team.team_id)
         .where(TeamMember.user_id == user_id, Team.kind != TeamKind.PERSONAL)
-        .order_by(Team.name)
+        .order_by(bytewise(Team.name))
     ).all()
     return [TeamSummary(*row) for row in rows]
 
@@ -304,7 +305,7 @@ def members(session: Session, user_id: uuid.UUID, team: str) -> list[MemberSumma
                TeamMember.can_invite, User.full_name)
         .join(TeamMember, TeamMember.user_id == User.user_id)
         .where(TeamMember.team_id == found.team_id)
-        .order_by(User.username)
+        .order_by(bytewise(User.username))
     ).all()
     mine = _groups_of(session, found.team_id, user_id)
     result = []
@@ -326,7 +327,7 @@ def groups(session: Session, user_id: uuid.UUID, team: str) -> list[GroupSummary
     access = visibility.group_access(session, user_id)
     rows = session.execute(
         select(TeamGroup.group_id, TeamGroup.path, TeamGroup.private)
-        .where(TeamGroup.team_id == found.team_id).order_by(TeamGroup.path)).all()
+        .where(TeamGroup.team_id == found.team_id).order_by(bytewise(TeamGroup.path))).all()
     return [GroupSummary(path, private, group_id in access.member,
                          group_id not in access.unsubscribed)
             for group_id, path, private in rows

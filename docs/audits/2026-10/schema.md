@@ -236,6 +236,8 @@ Related: [IMP-02](improvements.md#imp-02-unsubscribing-from-a-group-stops-syncs-
 
 **Done when.** A portable test (portable_engine fixture) creates groups 'a-b', 'a.b', 'a_b' and 'ab' and asserts the same order from team_service.groups on SQLite and on an en_US/ICU PostgreSQL database.
 
+**Resolution (step 18b).** `db/ordering.py`'s `bytewise()` orders by bytes on both databases (`COLLATE "C"` on PostgreSQL, SQLite's own BINARY), and the listed `order_by` calls use it, file paths included. `library_event.sort_key` is left as it is: it is fixed-width lowercase hex, digits and punctuation in the same places, which every collation orders as its bytes, and a collated ORDER BY would stop PostgreSQL using its unique index for the newest event.
+
 ### DB-15: as_utc returns a non-UTC time on PostgreSQL when the database's TimeZone is not UTC
 
 **Confirmed.** Severity **Info**, effort **S**. Hurts: Operators of a managed PostgreSQL whose default time zone is local: dashboard JSON carries '+03:00' times on PostgreSQL and '+00:00' on SQLite.

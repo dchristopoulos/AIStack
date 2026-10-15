@@ -45,7 +45,7 @@ How to work through it:
 - [ ] 16. Fix the layouts that break at tablet width and with long names
 - [ ] 17. Versions, a changelog, and a channel to stay on
 - [x] 18a. The schema test sees every constraint, and constraints have one name (#125)
-- [ ] 18b. Index what the services look up by; order and times alike on both databases
+- [x] 18b. Index what the services look up by; order and times alike on both databases (#131)
 - [ ] 18c. Write down what 'compatible' means and enforce it
 - [ ] 19. Order the local log so a fast clock cannot win, and rebuild without holding the lock
 - [ ] 20. Every command finds the same Library, and moving it is one step that keeps history

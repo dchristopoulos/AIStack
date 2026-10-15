@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import DateTime, ForeignKey, String, Uuid
+from sqlalchemy import DateTime, ForeignKey, Index, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aistack.db.models.base import Base
@@ -33,3 +33,8 @@ class Invite(Base):
     used_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancelled_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
                                                           nullable=True)
+
+    __table_args__ = (
+        # A team's invites, newest first.
+        Index("ix_invite_team_id_created_on", "team_id", "created_on"),
+    )

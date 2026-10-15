@@ -2,7 +2,17 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, UniqueConstraint, Uuid, false
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+    Uuid,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aistack.db.models.base import Base
@@ -52,6 +62,14 @@ class Team(Base):
     created_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                  default=utc_now)
 
+    __table_args__ = (
+        # One Library per user, which `visibility.personal_team` relies on, and its lookup.
+        # The predicate is spelled per dialect, as ix_user_single_admin's is.
+        Index("ux_team_personal_owner", "created_by", unique=True,
+              sqlite_where=(kind == TeamKind.PERSONAL),
+              postgresql_where=(kind == TeamKind.PERSONAL)),
+    )
+
 
 class TeamMember(Base):
     __tablename__ = "team_member"
@@ -77,6 +95,8 @@ class TeamMember(Base):
 
     __table_args__ = (
         UniqueConstraint("team_id", "user_id", name="uq_team_member_team_user"),
+        # The unique constraint leads with team_id, so it cannot find a user's teams.
+        Index("ix_team_member_user_id", "user_id"),
     )
 
 
@@ -118,6 +138,7 @@ class GroupMember(Base):
 
     __table_args__ = (
         UniqueConstraint("group_id", "user_id", name="uq_group_member_group_user"),
+        Index("ix_group_member_user_id", "user_id"),
     )
 
 
@@ -138,4 +159,5 @@ class GroupUnsubscribed(Base):
 
     __table_args__ = (
         UniqueConstraint("group_id", "user_id", name="uq_group_unsubscribed_group_user"),
+        Index("ix_group_unsubscribed_user_id", "user_id"),
     )

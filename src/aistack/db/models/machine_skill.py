@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, UniqueConstraint, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aistack.db.models.base import Base
@@ -42,4 +42,6 @@ class MachineSkill(Base):
     __table_args__ = (
         UniqueConstraint("machine_id", "harness", "skill_id",
                          name="uq_machine_skill_machine_harness_skill"),
+        # Removing a skill from the Library updates its placements on every computer.
+        Index("ix_machine_skill_skill_id", "skill_id"),
     )
