@@ -44,7 +44,9 @@ How to work through it:
 - [ ] 15. Answer every conflict and limit with a sentence
 - [ ] 16. Fix the layouts that break at tablet width and with long names
 - [ ] 17. Versions, a changelog, and a channel to stay on
-- [ ] 18. Write down what 'compatible' means and enforce it
+- [x] 18a. The schema test sees every constraint, and constraints have one name (#125)
+- [ ] 18b. Index what the services look up by; order and times alike on both databases
+- [ ] 18c. Write down what 'compatible' means and enforce it
 - [ ] 19. Order the local log so a fast clock cannot win, and rebuild without holding the lock
 - [ ] 20. Every command finds the same Library, and moving it is one step that keeps history
 - [ ] 21. A restored home folder is a new computer
@@ -278,14 +280,40 @@ Tests: The refusal sentence names a version that exists on PyPI; `self_update` h
 
 ### 18. Write down what 'compatible' means and enforce it
 
-Closes: [DB-04](schema.md#db-04-widening-a-stored-enum-a-new-harness-os-or-role-breaks-older-releases-that-adr-0024-lets-keep-running), [DB-09](schema.md#db-09-0008-and-0009-are-additive-but-not-compatible-an-older-writer-silently-breaks-invariants-the-newer-release-depends-on), [DB-08](schema.md#db-08-compatibility-is-checked-only-when-a-process-starts-a-process-already-running-when-another-upgrades-the-database-is-never-told), [DB-03](schema.md#db-03-the-models-and-migrations-agree-test-cannot-see-check-constraints-server-defaults-or-partial-index-predicates), [DB-12](schema.md#db-12-no-naming-convention-on-basemetadata-constraint-names-differ-by-dialect-and-by-migration), [DB-10](schema.md#db-10-missing-indexes-on-the-columns-the-services-look-up-by-and-no-constraint-for-one-library-per-user), [DB-14](schema.md#db-14-text-order-by-differs-between-sqlite-and-postgresql-depending-on-the-database-collation), [DB-15](schema.md#db-15-as_utc-returns-a-non-utc-time-on-postgresql-when-the-databases-timezone-is-not-utc).
-Largest effort among them: M. **Trust boundary.**
+Three PRs, because the eight findings are three separate changes: the test that guards the schema, one compatible migration, and the rule with the code that follows it. Each part is a **trust boundary** change (migrations and migration tooling).
 
-Files: AGENTS.md (Migrations); tests/db/test_schema.py (CHECKs, defaults and index predicates compared); src/aistack/db/models/base.py (naming convention); a migration adding indexes (compatible); src/aistack/db/models/timestamps.py; services that read stored enums tolerantly.
+#### 18a. The schema test sees every constraint, and constraints have one name
+
+Closes: [DB-03](schema.md#db-03-the-models-and-migrations-agree-test-cannot-see-check-constraints-server-defaults-or-partial-index-predicates), [DB-12](schema.md#db-12-no-naming-convention-on-basemetadata-constraint-names-differ-by-dialect-and-by-migration).
+Largest effort among them: S.
+
+Files: tests/db/test_schema.py (CHECKs, server defaults, index predicates and constraint names compared against `create_all` on the same dialect); src/aistack/db/models/base.py (a naming convention that matches PostgreSQL's own names); src/aistack/db/models/team.py (`can_invite`'s shipped default); a migration renaming the three foreign keys 0002 named differently (compatible).
+
+ADR: none needed.
+
+Tests: Each of the four alterations DB-03 lists (one harness CHECK widened, `ck_team_kind` dropped, a server default added, the single-admin index without its WHERE) fails the schema test; constraint names of a migrated PostgreSQL database equal those `create_all` gives.
+
+#### 18b. Index what the services look up by; order and times alike on both databases
+
+Closes: [DB-10](schema.md#db-10-missing-indexes-on-the-columns-the-services-look-up-by-and-no-constraint-for-one-library-per-user), [DB-14](schema.md#db-14-text-order-by-differs-between-sqlite-and-postgresql-depending-on-the-database-collation), [DB-15](schema.md#db-15-as_utc-returns-a-non-utc-time-on-postgresql-when-the-databases-timezone-is-not-utc).
+Largest effort among them: S.
+
+Files: a migration adding indexes and a partial unique index for one personal team per user (compatible); the models' `Index` entries; src/aistack/db/engine.py (a portable binary collation, PostgreSQL's TimeZone set to UTC); the services' text `order_by`; src/aistack/db/models/timestamps.py.
+
+ADR: none needed.
+
+Tests: A second personal team for one user is refused; EXPLAIN shows index scans for the lookups DB-10 lists; groups `a-b`, `a.b`, `a_b`, `ab` come back in the same order on both databases; `as_utc` returns UTC on a PostgreSQL database whose time zone is not.
+
+#### 18c. Write down what 'compatible' means and enforce it
+
+Closes: [DB-04](schema.md#db-04-widening-a-stored-enum-a-new-harness-os-or-role-breaks-older-releases-that-adr-0024-lets-keep-running), [DB-09](schema.md#db-09-0008-and-0009-are-additive-but-not-compatible-an-older-writer-silently-breaks-invariants-the-newer-release-depends-on), [DB-08](schema.md#db-08-compatibility-is-checked-only-when-a-process-starts-a-process-already-running-when-another-upgrades-the-database-is-never-told).
+Largest effort among them: M.
+
+Files: AGENTS.md (Migrations); src/aistack/db/migrations/script.py.mako (the three questions above `older_releases_compatible`); src/aistack/db/models/harness.py and the other stored value sets (unknown values read as skipped, not as errors); src/aistack/services/sync_service.py (a revision this machine pushed is not another computer's change); src/aistack/db/schema.py and the context assembly (a running process checks the schema before it writes).
 
 ADR: [ADR-0031 (draft)](../../adr/0031-compatible-means-older-data-stays-meaningful.md): A compatible migration also keeps older releases' data meaningful.
 
-Tests: The schema test fails on a CHECK or a partial-index predicate that differs between models and migrations; an older release reading a row with an unknown harness value skips it instead of failing; a running process notices a newer schema before its next write.
+Tests: An older release reading a row with an unknown harness value skips it instead of failing; a running process notices a newer schema before its next write; sync after an older release's push from the same machine does not report another computer's change.
 
 ### 19. Order the local log so a fast clock cannot win, and rebuild without holding the lock
 

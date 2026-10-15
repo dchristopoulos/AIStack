@@ -128,9 +128,67 @@ def test_a_fresh_database_gets_exactly_the_schema_the_models_describe(empty_engi
     migrate_schema(empty_engine)
 
     with empty_engine.connect() as connection:
-        differences = compare_metadata(MigrationContext.configure(connection), Base.metadata)
+        differences = compare_metadata(
+            MigrationContext.configure(connection, opts={"compare_server_default": True}),
+            Base.metadata)
     assert differences == []
     assert _revision(empty_engine) is not None
+
+
+def _what_compare_metadata_leaves_out(engine) -> dict:
+    """Per table: CHECKs, index predicates, server defaults, and constraint names.
+
+    Alembic's comparison does not look at any of them. A name SQLite never stored (the
+    baseline left most constraints unnamed there) is left out, and only a stored one must agree.
+    """
+    inspector = inspect(engine)
+    facts = {}
+    for table in sorted(set(inspector.get_table_names()) - {"alembic_version"}):
+        named = {"pk": inspector.get_pk_constraint(table)["name"]}
+        for foreign_key in inspector.get_foreign_keys(table):
+            named[("fk", *foreign_key["constrained_columns"])] = foreign_key["name"]
+        for unique in inspector.get_unique_constraints(table):
+            named[("uq", *unique["column_names"])] = unique["name"]
+        facts[table] = {
+            "checks": sorted((check["name"], " ".join(check["sqltext"].split()))
+                             for check in inspector.get_check_constraints(table)),
+            "indexes": sorted(
+                (index["name"], tuple(index["column_names"]), bool(index["unique"]),
+                 {option: " ".join(str(value).split())
+                  for option, value in index.get("dialect_options", {}).items()})
+                for index in inspector.get_indexes(table)),
+            "defaults": {column["name"]: column["default"]
+                         for column in inspector.get_columns(table)},
+            "foreign_keys": sorted(
+                (tuple(foreign_key["constrained_columns"]), foreign_key["referred_table"],
+                 tuple(foreign_key["referred_columns"]), foreign_key["options"])
+                for foreign_key in inspector.get_foreign_keys(table)),
+            "names": named,
+        }
+    return facts
+
+
+def _without_names_left_unstored(migrated: dict, described: dict) -> dict:
+    for table, facts in migrated.items():
+        unstored = {key for key, name in facts["names"].items() if name is None}
+        described.get(table, {}).get("names", {}).update(dict.fromkeys(unstored))
+    return described
+
+
+def test_a_fresh_database_has_the_constraints_the_models_describe(empty_engine, tmp_path):
+    """What alembic's comparison cannot see, compared with a database made from the models."""
+    migrate_schema(empty_engine)
+    migrated = _what_compare_metadata_leaves_out(empty_engine)
+    if empty_engine.dialect.name == "sqlite":
+        described_engine = build_engine(f"sqlite:///{tmp_path / 'described.db'}")
+    else:
+        _drop_everything(empty_engine)
+        described_engine = empty_engine
+    Base.metadata.create_all(described_engine)
+
+    described = _what_compare_metadata_leaves_out(described_engine)
+
+    assert migrated == _without_names_left_unstored(migrated, described)
 
 
 def test_migrating_twice_changes_nothing(empty_engine, tmp_path):
