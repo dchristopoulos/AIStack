@@ -119,8 +119,15 @@ fetch one, and embedding one costs ~100 KB for no gain in a tool.
   it lives and Settings at the foot.
 - **Top bar**: the logo (home), the path, and a pill saying where the Library lives, which
   opens that page.
-- Under 820px the rail and sidebar become a drawer behind the menu button, tables become
-  stacked cards, and the path keeps only its last two parts. Nothing scrolls sideways.
+- Under 820px the rail and sidebar become a drawer behind the menu button, and the path keeps
+  only its last two parts, the last of which never gives way.
+- Tables become stacked cards when the content area beside the sidebar is under 760px, a
+  container query on `.wrap.body` and not a viewport width: a tablet in portrait keeps the
+  sidebar and has less room than a phone in landscape.
+- Nothing scrolls sideways, at any width and with any name. Text a person chose (a computer,
+  a username, a team, a group path) wraps in tables, cards and badges, and is never `nowrap`
+  there. Only a one-line place (the path, a computer in the sidebar, the account bar) may cut
+  it with an ellipsis, with the full text in its title.
 
 ## Components
 

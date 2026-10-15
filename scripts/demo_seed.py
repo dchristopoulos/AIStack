@@ -19,6 +19,17 @@ from aistack.services.skill_archive import build_archive
 
 REQUEST_HEADER = {"X-AIStack-Request": "1"}
 
+# The longest names the server accepts, for checking that the page still fits around them.
+LONG_USERNAME = "maximilian-alexandros-papadopoulos-konstantinidis-from-thessalia"
+LONG_FULL_NAME = ("Maximilian Alexandros Konstantinos Papadopoulos-Konstantinidis of "
+                  "Thessaloniki and the Saronic Isles")
+LONG_MACHINE = "build-runner-in-the-basement-rack-number-seventeen-of-twenty-two"
+LONG_TEAM = "platform-engineering-and-developer-experience-guild-of-the-north"
+DEEP_GROUP = ("engineering/platform-infrastructure-and-reliability/linux-distributions-and-kernels/"
+              "kernel-drivers-and-firmware/storage-and-filesystems/"
+              "continuous-integration-pipelines/release-candidates-and-backports/"
+              "nightly-builds-for-every-architecture")
+
 SKILLS = {
     "code-review": ("Reviews a diff against the team's standards. Use before opening a pull "
                     "request.", {"checklist.md": "- tests cover the change\n- names say what "
@@ -87,8 +98,11 @@ class Person:
         return response.json()
 
 
-async def seed(base_url: str, invite_code: str) -> dict[str, str]:
-    """Fill the server and return a dashboard link per person, each good for five minutes."""
+async def seed(base_url: str, invite_code: str, long_names: bool = False) -> dict[str, str]:
+    """Fill the server and return a dashboard link per person, each good for five minutes.
+
+    With `long_names`, a fourth person adds every name at its longest: see `seed_long_names`.
+    """
     dimitris, maria, alex = (Person(base_url, name) for name in ("dimitris", "maria", "alex"))
     await dimitris.join(invite_code, "macbook", "MACOS")
     await dimitris.tool("add_machine", name="desktop", os="LINUX")
@@ -140,9 +154,42 @@ async def seed(base_url: str, invite_code: str) -> dict[str, str]:
     await maria.page("/teams", name="friends")
     await maria.page("/skills/meeting-notes/share", team="friends")
 
-    for person in (dimitris, maria, alex):
+    people = [dimitris, maria, alex]
+    if long_names:
+        people.append(await seed_long_names(base_url, invite_code, dimitris))
+    for person in people:
         await person.browser.aclose()
-    return {person.username: await person.dashboard_link() for person in (dimitris, maria, alex)}
+    return {person.username: await person.dashboard_link() for person in people}
+
+
+async def seed_long_names(base_url: str, invite_code: str, dimitris: Person) -> Person:
+    """Add a person, a computer, a team and a group path, each named at the server's limit.
+
+    Dimitris administers the team and nests the groups eight deep. The new person is in the
+    deepest group, shares a skill into it, and takes one of Dimitris's from it.
+    """
+    person = Person(base_url, LONG_USERNAME)
+    await person.join(invite_code, LONG_MACHINE, "LINUX")
+    await person.push("meeting-notes")
+    await person.sign_in()
+    await person.page("/account", full_name=LONG_FULL_NAME)
+
+    await dimitris.page("/teams", name=LONG_TEAM)
+    code = (await dimitris.page(f"/teams/{LONG_TEAM}/invite"))["code"]
+    await person.page("/teams/join", code=code)
+    parent = None
+    for name in DEEP_GROUP.split("/"):
+        await dimitris.page(f"/teams/{LONG_TEAM}/groups", name=name, parent=parent)
+        parent = f"{parent}/{name}" if parent else name
+    await dimitris.page(f"/teams/{LONG_TEAM}/group/members", path=DEEP_GROUP,
+                        username=LONG_USERNAME, member=True)
+
+    await person.page("/skills/meeting-notes/share", team=LONG_TEAM, group=DEEP_GROUP)
+    await dimitris.page("/skills/code-review/share", team=LONG_TEAM, group=DEEP_GROUP)
+    machine = (await person.browser.get("/api/state")).json()["machines"][0]["id"]
+    await person.page(f"/teams/{LONG_TEAM}/take", name="code-review")
+    await person.page(f"/skills/code-review/machines/{machine}", enabled=True)
+    return person
 
 
 def main() -> None:

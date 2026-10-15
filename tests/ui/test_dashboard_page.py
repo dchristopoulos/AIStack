@@ -7,6 +7,7 @@ tests state what the page must let someone do and stay true when its look change
 import pytest
 from playwright.async_api import expect
 
+from scripts.demo_seed import DEEP_GROUP, LONG_FULL_NAME, LONG_TEAM, LONG_USERNAME
 from tests.mcp.conftest import call, join
 
 pytestmark = pytest.mark.anyio
@@ -478,6 +479,124 @@ async def test_nothing_scrolls_sideways_on_a_phone(sign_in, route):
         "document.documentElement.scrollWidth - window.innerWidth")
     assert overflow <= 0
     assert dimitris.console_errors == []
+
+
+# Every row of every table on the page: each box inside a cell stays inside that cell, and no
+# box of one cell lies over a box of another. Rows and cells are found by their roles.
+_LAYOUT_PROBLEMS = """() => {
+  const problems = [];
+  const boxes = cell => [cell, ...cell.querySelectorAll('*')]
+    .map(node => ({ node, rect: node.getBoundingClientRect() }))
+    .filter(box => box.rect.width > 0 && box.rect.height > 0);
+  const label = node => (node.innerText || node.getAttribute('aria-label') || node.tagName)
+    .trim().slice(0, 40);
+  const overlap = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1
+    && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+  for (const row of document.querySelectorAll('[role=row]')) {
+    const cells = [...row.querySelectorAll(':scope > [role=cell], :scope > [role=columnheader]')]
+      .map(cell => ({ cell, rect: cell.getBoundingClientRect(), inside: boxes(cell) }));
+    for (const { cell, rect, inside } of cells) {
+      for (const box of inside) {
+        if (box.rect.left < rect.left - 1 || box.rect.right > rect.right + 1) {
+          problems.push(`'${label(box.node)}' sticks out of its cell in '${label(row)}'`);
+        }
+      }
+    }
+    for (let i = 0; i < cells.length; i++) {
+      for (let j = i + 1; j < cells.length; j++) {
+        for (const a of cells[i].inside) {
+          const hit = cells[j].inside.find(b => overlap(a.rect, b.rect));
+          if (hit) {
+            problems.push(`'${label(a.node)}' lies over '${label(hit.node)}' in '${label(row)}'`);
+            break;
+          }
+        }
+      }
+    }
+  }
+  const sideways = document.documentElement.scrollWidth - window.innerWidth;
+  if (sideways > 0) problems.push(`the page scrolls ${sideways}px sideways`);
+  return [...new Set(problems)];
+}"""
+
+
+async def _layout_problems(opened, route: str) -> list[str]:
+    await opened.page.goto(f"{opened.base_url}/app{route}")
+    await opened.page.get_by_role("heading", level=1).first.wait_for()
+    await opened.page.wait_for_timeout(300)
+    return [f"{route}: {problem}" for problem in await opened.page.evaluate(_LAYOUT_PROBLEMS)]
+
+
+# Layout does not depend on the database, so these run on SQLite only, and each walks its
+# widths in one browser tab rather than seeding a server per width.
+_SQLITE_ONLY = pytest.mark.parametrize("portable_engine", ["sqlite"], indirect=True)
+
+
+@_SQLITE_ONLY
+async def test_tables_keep_their_columns_apart_at_tablet_width(sign_in):
+    dimitris = await sign_in("dimitris")
+    macbook = (await dimitris.state())["machines"][0]["id"]
+
+    problems = []
+    for width, height in ((834, 1194), (900, 900)):
+        await dimitris.page.set_viewport_size({"width": width, "height": height})
+        for route in ("#/library", f"#/f/{macbook}/claude_code", "#/t/aistack/skills",
+                      "#/t/aistack/groups", "#/t/aistack/members"):
+            problems += [f"{width}px {problem}"
+                         for problem in await _layout_problems(dimitris, route)]
+
+    assert problems == []
+    assert dimitris.console_errors == []
+
+
+@_SQLITE_ONLY
+@pytest.mark.long_names
+async def test_the_longest_names_fit_without_scrolling_sideways(sign_in):
+    team = f"#/t/{LONG_TEAM}"
+    dimitris = await sign_in("dimitris")
+    someone = await sign_in(LONG_USERNAME)
+
+    problems = []
+    for width, height in ((1440, 900), (1024, 768), (834, 1194), (390, 844)):
+        for opened in (dimitris, someone):
+            await opened.page.set_viewport_size({"width": width, "height": height})
+        found = []
+        for route in (f"{team}/skills", f"{team}/skills/{DEEP_GROUP}", f"{team}/groups",
+                      f"{team}/members"):
+            found += await _layout_problems(dimitris, route)
+        for route in (f"{team}/skills", "#/library"):
+            found += await _layout_problems(someone, route)
+        await someone.page.get_by_role("button", name="Details of code-review").click()
+        details = someone.page.get_by_role("dialog", name="code-review")
+        await expect(details).to_be_visible()
+        if await details.evaluate("dialog => dialog.scrollWidth > dialog.clientWidth"):
+            found.append("the details of code-review scroll sideways")
+        await someone.page.keyboard.press("Escape")
+        problems += [f"{width}px {problem}" for problem in found]
+
+    assert problems == []
+    assert dimitris.console_errors == someone.console_errors == []
+
+    # On a phone, the place you are in the path and who you are are read in full.
+    page = someone.page
+    await page.goto(f"{someone.base_url}/app#/t/{LONG_TEAM}/members")
+    here = page.get_by_role("navigation", name="You are here").get_by_text("Members")
+    await expect(here).to_be_visible()
+    assert await here.evaluate("node => node.scrollWidth <= node.clientWidth")
+    await page.get_by_role("button", name="Open navigation").click()
+    await expect(page.get_by_title(f"{LONG_FULL_NAME} ({LONG_USERNAME})")).to_be_visible()
+
+
+@_SQLITE_ONLY
+async def test_the_library_figures_are_read_in_full_on_a_phone(sign_in):
+    dimitris = await sign_in("dimitris", viewport=(390, 844))
+
+    for label in ("In your library", "Not on any computer", "Updates"):
+        figure = dimitris.page.get_by_text(label, exact=True).locator("..")
+        await expect(figure).to_be_visible()
+        cut = await figure.evaluate(
+            "tile => [...tile.children].some(line => line.scrollWidth > line.clientWidth)")
+        assert not cut, label
 
 
 async def test_the_phone_menu_opens_and_closes_with_a_control_you_can_see(sign_in):
