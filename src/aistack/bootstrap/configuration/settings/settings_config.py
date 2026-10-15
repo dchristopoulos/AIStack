@@ -186,8 +186,8 @@ class LocalSettings(BaseSettings):
         if place is not None:
             if recorded is not None and recorded != place:
                 raise ValueError(
-                    f"Your coding agent's Library lives {_described(recorded)}, and this "
-                    f"command was given {_described(place)}. Run it without "
+                    f"Your coding agent's Library lives {described(recorded)}, and this "
+                    f"command was given {described(place)}. Run it without "
                     "AISTACK_LIBRARY_REPO and AISTACK_DATABASE_URL to use the agent's Library.")
             return self
         if recorded is None or recorded["kind"] == "this_computer":
@@ -200,7 +200,7 @@ class LocalSettings(BaseSettings):
             return self.model_copy(update={"database_url": f"sqlite:///{recorded['path']}"})
         # A database address holds a password, which is never written here.
         raise ValueError(
-            f"Your Library lives {_described(recorded)}. Set AISTACK_DATABASE_URL to the "
+            f"Your Library lives {described(recorded)}. Set AISTACK_DATABASE_URL to the "
             "address your coding agent's settings hold, then run this again.")
 
     def library_url(self) -> str:
@@ -247,6 +247,11 @@ def _read_place(file: Path) -> dict[str, str] | None:
     return place
 
 
+def record_place(home: Path, place: dict[str, str]) -> None:
+    """Write down where the Library lives now, as a move does."""
+    _write_place(home / LIBRARY_FILE, place)
+
+
 def _write_place(file: Path, place: dict[str, str]) -> None:
     try:
         if _read_place(file) == place:
@@ -263,7 +268,8 @@ def _write_place(file: Path, place: dict[str, str]) -> None:
     temporary.replace(file)
 
 
-def _described(place: dict[str, str]) -> str:
+def described(place: dict[str, str]) -> str:
+    """Where `place` is, as a sentence ends: "in the GitHub repository maria/skills"."""
     kind = place["kind"]
     if kind == "github":
         return f"in the GitHub repository {place['repository']}"
