@@ -2,7 +2,7 @@
 
 Everything else that would make the product clearly better, ranked by value for effort: test gaps, code health, performance, documentation drift, and features that are cheap now.
 
-How far this was checked: each finding below was reproduced or traced line by line by the auditor who raised it, and **Confirmed** means exactly that. The independent second pass that tries to refute each finding ran only for the authorization and UX findings: the account's weekly limit stopped the rest. Where the main session re-checked a finding itself, its entry says so. Treat **Suspected** findings, and anything marked High or Critical without a second pass, as needing a reproduction before the fix lands; the reproduction is described in each.
+How far this was checked: each finding below was reproduced or traced line by line by whoever raised it, and **Confirmed** means exactly that. The independent second pass that tries to refute each finding was done only for the authorization and UX findings; there was no time for the rest. Where a finding was re-checked separately, its entry says so. Treat **Suspected** findings, and anything marked High or Critical without a second pass, as needing a reproduction before the fix lands; the reproduction is described in each.
 
 | Id | Finding | Severity | Status | Effort |
 |---|---|---|---|---|
