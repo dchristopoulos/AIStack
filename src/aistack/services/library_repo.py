@@ -9,9 +9,11 @@ lock per clone keeps two agent sessions on one computer from running git at once
 import contextlib
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
+import urllib.parse
 from pathlib import Path
 
 from aistack.commons.exceptions import ValidationError
@@ -36,24 +38,58 @@ def remote_url(repository: str) -> str:
     return repository
 
 
+def validate_repository(repository: str) -> None:
+    """Refuse a repository git would misread, or one that carries a credential. The value is
+    shown in the dashboard and in `aistack check`, so the refusal never repeats it."""
+    if repository.startswith("-"):
+        # git would read it as an option, such as --upload-pack, which runs a command.
+        raise ValidationError("AISTACK_LIBRARY_REPO must be a repository, as owner/name, and "
+                              "cannot start with '-'.")
+    address = urllib.parse.urlsplit(repository)
+    if address.password or (address.scheme in ("http", "https") and address.username):
+        raise ValidationError("AISTACK_LIBRARY_REPO holds a username or token. Set it to "
+                              "owner/name alone: AIStack reaches GitHub through your gh login.")
+
+
 class LibraryRepo:
     def __init__(self, folder: Path, repository: str):
+        validate_repository(repository)
         self.folder = folder
         self.remote = remote_url(repository)
         # For GitHub, the person's gh login and nothing else: a helper configured on the
         # system first (macOS's keychain, set by Homebrew's git) could answer with a stale
         # password, or wait on a prompt nobody sees. The empty value clears the list.
         self._credentials = (
-            ["-c", "credential.helper=", "-c", f"credential.helper=!{_gh()} auth git-credential"]
+            ["-c", "credential.helper=", "-c", f"credential.helper=!{shlex.quote(_gh())} auth git-credential"]
             if self.remote.startswith("https://github.com/") else [])
 
     def events(self) -> list[Event]:
-        """Every event in the clone, as the last pull left it."""
+        """Every event in the clone, as the last pull left it.
+
+        Anyone who can write to the repository can add a file, so an event must sit where its
+        own computer would have written it: a file under another computer's folder cannot
+        speak for that computer. Links are skipped; git checks them out as plain files
+        anyway (`core.symlinks=false`), but a clone made by hand may hold one.
+        """
         log = self.folder / LOG_FOLDER
-        if not log.is_dir():
+        if not log.is_dir() or log.is_symlink():
             return []
-        return [Event.from_json(path.read_text(encoding="utf-8"))
-                for path in sorted(log.glob("*/*.json"))]
+        events = []
+        for path in sorted(log.glob("*/*.json")):
+            if path.is_symlink() or path.parent.is_symlink() or not path.is_file():
+                continue
+            relative = path.relative_to(log).as_posix()
+            try:
+                event = Event.from_json(path.read_bytes())
+            except ValidationError as error:
+                raise ValidationError(f"log/{relative} in the Library's repository: "
+                                      f"{error.message}") from None
+            if event.path != relative:
+                raise ValidationError(f"log/{relative} in the Library's repository is not "
+                                      f"where its computer writes. Remove it from the "
+                                      f"repository.")
+            events.append(event)
+        return events
 
     def pull(self) -> None:
         """Bring the clone up to date with the repository, cloning it the first time."""
@@ -71,9 +107,14 @@ class LibraryRepo:
         with self._locked():
             if not (self.folder / ".git").is_dir():
                 self._clone()
+            log = (self.folder / LOG_FOLDER).resolve()
             for event in events:
-                path = self.folder / LOG_FOLDER / str(event.machine_id) / _file_name(event)
+                path = self.folder / LOG_FOLDER / event.path
                 path.parent.mkdir(parents=True, exist_ok=True)
+                # A link in the clone would take the file elsewhere: written, marked published,
+                # and never pushed. Unpublished, it goes out once the clone is fixed.
+                if path.parent.resolve() != log / str(event.machine_id):
+                    raise RepoUnavailable(f"{path.parent} leads outside the clone; remove it.")
                 path.write_text(event.to_json(), encoding="utf-8")
             self._git("add", LOG_FOLDER)
             # Nothing to commit means another session on this computer published them first.
@@ -116,14 +157,21 @@ class LibraryRepo:
         """Clone beside the clone's place and move it there whole, so a clone that fails
         halfway never looks like one that worked."""
         self.folder.parent.mkdir(parents=True, exist_ok=True)
+        if self.folder.exists() and any(self.folder.iterdir()):
+            # Not a clone, and not ours: AISTACK_HOME may be a folder people keep things in,
+            # and on a disk that ignores case `library` is macOS's `~/Library`.
+            raise ValidationError(f"{self.folder} already holds files that are not the "
+                                  f"Library's clone. Move them, or set AISTACK_HOME to "
+                                  f"another folder, then start again.")
         partial = self.folder.with_name(f"{self.folder.name}.cloning")
         shutil.rmtree(partial, ignore_errors=True)
-        self._git("clone", "--quiet", self.remote, str(partial), cwd=self.folder.parent)
+        self._git("clone", "--quiet", "--", self.remote, str(partial), cwd=self.folder.parent)
         # A new repository has no branch yet; every computer writes to the same one.
         self._git("checkout", "--quiet", "-B", BRANCH, cwd=partial)
         self._git("config", "user.name", "AIStack", cwd=partial)
         self._git("config", "user.email", "aistack@localhost", cwd=partial)
-        shutil.rmtree(self.folder, ignore_errors=True)
+        if self.folder.exists():
+            self.folder.rmdir()
         partial.rename(self.folder)
 
     def _fetch_and_rebase(self) -> None:
@@ -140,11 +188,10 @@ class LibraryRepo:
         try:
             done = subprocess.run(
                 ["git", "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false",
-                 *self._credentials, *arguments],
+                 "-c", "core.symlinks=false", *self._credentials, *arguments],
                 cwd=cwd or self.folder, capture_output=True, text=True,
                 timeout=_GIT_TIMEOUT_SECONDS,
-                # Never wait on a password prompt nobody can see.
-                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+                env=_git_environment(),
             )
         except FileNotFoundError:
             raise ValidationError("A Library on GitHub needs git, and git is not installed on "
@@ -173,7 +220,7 @@ def _gh() -> str:
     app runs this process without those folders on its path."""
     found = shutil.which("gh")
     if found:
-        return f'"{found}"' if " " in found else found
+        return found
     for folder in ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin",
                    str(Path.home() / ".local" / "bin")):
         candidate = Path(folder) / "gh"
@@ -182,10 +229,13 @@ def _gh() -> str:
     return "gh"
 
 
-def _file_name(event: Event) -> str:
-    # No ':' in the name, which Windows refuses; the order is still the time's.
-    compact = event.at.replace("-", "").replace(":", "")
-    return f"{compact}-{event.event_id}.json"
+def _git_environment() -> dict[str, str]:
+    """This process's environment without git's own variables. A git hook that starts an
+    agent passes GIT_DIR down, and git would then commit and push in that project instead."""
+    environment = {name: value for name, value in os.environ.items()
+                   if not name.upper().startswith("GIT_")}
+    # Never wait on a password prompt nobody can see.
+    return environment | {"GIT_TERMINAL_PROMPT": "0"}
 
 
 if sys.platform == "win32":

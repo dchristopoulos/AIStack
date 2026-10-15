@@ -22,7 +22,7 @@ from aistack.db.engine import build_engine, build_session_factory
 from aistack.db.schema import NewerSchema, migrate_schema
 from aistack.db.models.machine import Machine
 from aistack.mcp.auth.principal import MachinePrincipal
-from aistack.services.library_repo import LibraryRepo
+from aistack.services.library_repo import LibraryRepo, validate_repository
 from aistack.services.library_sharing import LibrarySharing
 from aistack.services.local_identity import local_machine
 from aistack.services.transfer_ticket import SIGNING_KEY_BYTES, TicketSigner
@@ -89,6 +89,13 @@ def build_local_context(settings: LocalSettings) -> None:
     global _library, _sharing
 
     settings.home.mkdir(parents=True, exist_ok=True)
+    if settings.library_repo:
+        try:
+            validate_repository(settings.library_repo)
+        except AIStackError as error:
+            _local_refusal = error.message
+            logger.error(error.message)
+            return
     _library = ({"kind": "github", "repository": settings.library_repo}
                 if settings.library_repo else _described(settings.library_url()))
     _engine = build_engine(settings.library_url())

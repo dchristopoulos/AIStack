@@ -19,7 +19,7 @@ Run `gh auth status` first: it tells you whether the GitHub CLI is installed and
 
 ## 3. Prepare the place they chose
 
-**Choice 2, GitHub.** If `gh` is missing, ask before installing it (https://cli.github.com); if it is not signed in, ask the user to run `gh auth login` and finish it in their browser. AIStack reaches the repository through that login and keeps no password of its own. On their first computer, create the repository, private: `gh repo create aistack-library --private`. On a later computer, it already exists: `gh repo view <owner>/aistack-library` finds it. The Library's place is then `<owner>/aistack-library`, with their GitHub username as the owner.
+**Choice 2, GitHub.** If `gh` is missing, ask before installing it (https://cli.github.com); if it is not signed in, ask the user to run `gh auth login` and finish it in their browser. AIStack reaches the repository through that login and keeps no password of its own. On their first computer, create the repository, private: `gh repo create aistack-library --private`. Tell them to keep it to themselves: anyone who can write to it can put instructions on every one of their computers, so no collaborators, deploy keys, or workflows that write to it. On a later computer, it already exists: `gh repo view <owner>/aistack-library` finds it. The Library's place is then `<owner>/aistack-library`, with their GitHub username as the owner.
 
 **Choice 3, PostgreSQL.** Walk the user through it; they create the account themselves.
 
