@@ -76,7 +76,7 @@ def serve_local() -> None:
 async def serve_dashboard() -> None:
     """`aistack dashboard`: the same page as a server's, for this computer's Library, on
     127.0.0.1, opened in the browser with a sign-in link that works once, for five minutes."""
-    settings = LocalSettings()
+    settings = LocalSettings().resolved(record=False)
     configure_logging(settings.log_level)
     build_local_context(settings)
 
@@ -103,8 +103,9 @@ async def serve_dashboard() -> None:
 
 def check_local() -> None:
     """`aistack check`: set up this computer's side of the Library once, and say whether it
-    works. Setup runs it before connecting an agent, which would hide a failure."""
-    settings = LocalSettings()
+    works. Setup runs it before connecting an agent, which would hide a failure. Setup runs
+    it with the place the agent gets, so it records that place for the other commands."""
+    settings = LocalSettings().resolved(record=True)
     configure_logging(settings.log_level)
     build_local_context(settings)
 
@@ -152,7 +153,12 @@ def export_library(destination: Path) -> None:
     if destination.exists() and any(destination.iterdir()):
         sys.exit(f"{destination} already has files in it. Export into a new or empty folder, "
                  "so nothing there is replaced.")
-    settings = LocalSettings()
+    settings = LocalSettings().resolved(record=False)
+    if settings.place() is None and not (settings.home / "aistack.db").exists():
+        # Opening it would make an empty Library here and export nothing from it.
+        sys.exit("There is no Library on this computer to export. If your coding agent's "
+                 "Library lives on GitHub or in a database, start the agent once, or set "
+                 "AISTACK_LIBRARY_REPO or AISTACK_DATABASE_URL as its settings do.")
     configure_logging(settings.log_level)
     build_local_context(settings)
 

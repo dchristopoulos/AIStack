@@ -1,8 +1,12 @@
+import json
+import os
+import tomllib
 from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import make_url
 
 from aistack.commons.urls import is_plain_http_url
 
@@ -10,6 +14,10 @@ from aistack.commons.urls import is_plain_http_url
 PLACEHOLDER_INVITE_CODE = "change-me"
 
 MINIMUM_INVITE_CODE_LENGTH = 16
+
+# Where this computer's Library lives, in AISTACK_HOME: what the agent's settings say, for the
+# commands a person runs in a terminal without them.
+LIBRARY_FILE = "library.toml"
 
 
 class Settings(BaseSettings):
@@ -149,6 +157,52 @@ class LocalSettings(BaseSettings):
     def normalize_log_level(cls, value: str) -> str:
         return value.upper() if isinstance(value, str) else value
 
+    def place(self) -> dict[str, str] | None:
+        """Where the environment says the Library lives, with no password; None when it
+        says nothing."""
+        if self.library_repo:
+            return {"kind": "github", "repository": self.library_repo}
+        if self.database_url:
+            url = make_url(self.database_url)
+            if url.get_backend_name() == "sqlite":
+                return {"kind": "sqlite", "path": url.database or ""}
+            return {"kind": "postgresql", "host": url.host or "", "database": url.database or ""}
+        return None
+
+    def resolved(self, record: bool) -> "LocalSettings":
+        """These settings, with the place from AISTACK_HOME's library file when the
+        environment names none.
+
+        `record` is for what the agent's settings start, the server and `check`: their place
+        is the Library's, and is written down for the rest. Any other command refuses a place
+        that disagrees with it, instead of opening a second Library.
+        """
+        file = self.home / LIBRARY_FILE
+        place = self.place()
+        if place is not None and record:
+            _write_place(file, place)
+            return self
+        recorded = _read_place(file)
+        if place is not None:
+            if recorded is not None and recorded != place:
+                raise ValueError(
+                    f"Your coding agent's Library lives {_described(recorded)}, and this "
+                    f"command was given {_described(place)}. Run it without "
+                    "AISTACK_LIBRARY_REPO and AISTACK_DATABASE_URL to use the agent's Library.")
+            return self
+        if recorded is None or recorded["kind"] == "this_computer":
+            if record and recorded is None:
+                _write_place(file, {"kind": "this_computer"})
+            return self
+        if recorded["kind"] == "github":
+            return self.model_copy(update={"library_repo": recorded["repository"]})
+        if recorded["kind"] == "sqlite":
+            return self.model_copy(update={"database_url": f"sqlite:///{recorded['path']}"})
+        # A database address holds a password, which is never written here.
+        raise ValueError(
+            f"Your Library lives {_described(recorded)}. Set AISTACK_DATABASE_URL to the "
+            "address your coding agent's settings hold, then run this again.")
+
     def library_url(self) -> str:
         if self.library_repo and self.database_url:
             raise ValueError("Set AISTACK_LIBRARY_REPO or AISTACK_DATABASE_URL, not both: the "
@@ -176,3 +230,45 @@ def validate_invite_code(invite_code: SecretStr) -> None:
         raise ValueError(f"AISTACK_INVITE_CODE is shorter than {MINIMUM_INVITE_CODE_LENGTH} "
                          f"characters. It is a long-lived shared secret on a reachable server, "
                          f"so make it unguessable.")
+
+
+def _read_place(file: Path) -> dict[str, str] | None:
+    try:
+        place = tomllib.loads(file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        raise ValueError(f"{file} cannot be read. Delete it, then start your coding agent "
+                         "again to write it anew.") from error
+    if place.get("kind") not in ("this_computer", "github", "postgresql", "sqlite") or not all(
+            isinstance(value, str) for value in place.values()):
+        raise ValueError(f"{file} does not say where a Library lives. Delete it, then start "
+                         "your coding agent again to write it anew.")
+    return place
+
+
+def _write_place(file: Path, place: dict[str, str]) -> None:
+    try:
+        if _read_place(file) == place:
+            return
+    except ValueError:
+        pass  # Garbled: the agent's settings say where the Library is, so it is rewritten.
+    file.parent.mkdir(parents=True, exist_ok=True)
+    # JSON string escapes are valid TOML basic strings.
+    lines = [f"{key} = {json.dumps(value)}" for key, value in place.items()]
+    # Its own name, so two agents starting at once never write into one file.
+    temporary = file.with_name(f"{file.name}.{os.getpid()}.tmp")
+    temporary.write_text("# Where this computer's AIStack Library lives, as its coding agent "
+                         "last started it.\n" + "\n".join(lines) + "\n", encoding="utf-8")
+    temporary.replace(file)
+
+
+def _described(place: dict[str, str]) -> str:
+    kind = place["kind"]
+    if kind == "github":
+        return f"in the GitHub repository {place['repository']}"
+    if kind == "postgresql":
+        return f"in the PostgreSQL database {place['database']} at {place['host']}"
+    if kind == "sqlite":
+        return f"in the SQLite file {place['path']}"
+    return "on this computer only"
