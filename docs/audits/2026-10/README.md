@@ -1,6 +1,6 @@
 # AIStack audit, October 2026
 
-An audit of `main` at `ac40dcb` from every angle the owner asked for: plot holes, security, the schema, industry practice, automation, UX, the UI, concurrency, and anything else worth doing. It ends in [PLAN.md](PLAN.md), the work as 43 pull-request-sized steps in order, and a design for the next feature, skill folders inside projects ([ADR-0026, proposed](../../adr/0026-skills-folders-inside-projects.md)).
+An audit of `main` at `ac40dcb` from every angle: plot holes, security, the schema, industry practice, automation, UX, the UI, concurrency, and anything else worth doing. It ends in [PLAN.md](PLAN.md), the work as 43 pull-request-sized steps in order, and a design for the next feature, skill folders inside projects ([ADR-0026, proposed](../../adr/0026-skills-folders-inside-projects.md)).
 
 ## In short
 
@@ -71,8 +71,8 @@ It sits in the middle of the plan (phase 6). It needs releases that computers ac
 ## How the audit was done, and its limits
 
 - **Ran the product as a newcomer.** The server came from source, filled with `scripts/demo_seed.py`. Local mode ran with `aistack check`, `aistack dashboard` and its MCP tools over stdio, in a scratch `HOME` and `AISTACK_HOME`. The dashboard was driven with Playwright in Chromium at 1440 and 390 px, in light and dark, with axe-core on every screen. All data is demo data; one screenshot showed a throwaway server's invite code and has it blacked out.
-- **Read the documents and the code.** AGENTS.md, CONTEXT.md, README.md, DESIGN.md, the design system and every ADR first, then the code. Auditors worked one area each. Every race was driven to its exact window with a `threading.Barrier` on SQLite and PostgreSQL 16, and query costs were measured on databases seeded up to about a gigabyte. The probe scripts and tests are described in each finding and were not committed.
-- **Second pass.** Each area was meant to get an independent pass that tries to refute every finding. That pass ran only for authorization and UX, which is where the dropped and corrected findings come from. The account's weekly limit stopped the rest. The main session re-checked several High findings itself (each says so), corrected one (STD-01), and covered two areas whose auditors never started:
+- **Read the documents and the code.** AGENTS.md, CONTEXT.md, README.md, DESIGN.md, the design system and every ADR first, then the code. Each area was audited on its own. Every race was driven to its exact window with a `threading.Barrier` on SQLite and PostgreSQL 16, and query costs were measured on databases seeded up to about a gigabyte. The probe scripts and tests are described in each finding and were not committed.
+- **Second pass.** Each area was meant to get an independent pass that tries to refute every finding. That pass ran only for authorization and UX, which is where the dropped and corrected findings come from. There was no time for the rest. Several High findings were re-checked separately (each says so), one was corrected (STD-01), and two areas got only a lighter pass:
   - the push and dependency pass (the dependency scan, CI and container basics);
   - local mode (installation, and a computer restored from a backup).
 

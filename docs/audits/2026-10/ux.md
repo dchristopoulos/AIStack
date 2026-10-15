@@ -166,7 +166,7 @@ Related: [AUTHZ-05](security.md#authz-05-the-only-member-of-a-team-can-never-lea
 
 **How it was confirmed.** Read dashboard.html:2216-2259. The server branch is the else of `elsewhere.length` (a server's Library has no 'elsewhere'), so every server user sees line 2258. The finder's storage-desktop-light.png shows that text next to the 'Only you see this' sidebar.
 
-Seen by the main session on a fresh demo server (screenshot below).
+Seen on a fresh demo server (screenshot below).
 
 Second pass (corrected): Kept the main claim and its severity: a privacy statement that contradicts the sidebar and what sync does. Removed the sub-claim about 'The operator of this server backs it up': docs/OPERATING.md:232 (Backups) makes that the operator's documented job, so it is not a false promise. The fix no longer changes that line.
 
@@ -248,7 +248,7 @@ Related: [AUTO-19](automation.md#auto-19-every-way-to-set-up-another-computer-in
 
 **Where.** Local dashboard, Library and Where it lives (screenshots); src/aistack/bundled/dashboard.html `libraryView`, `storageView`, `ADD_COMPUTER`
 
-**What is wrong.** The only place the page says a Library on this computer cannot leave it is the Add a computer dialog, which a one-computer person never opens. The Library page is the same whether its skills live on one disk or in a private repository. The owner asked whether to hide the Library until storage is set up. That would make things worse: there is no 'not set up' state (setup asks before the dashboard can open, and 'only this computer' is a deliberate choice), the Library is the screen where the first sync's backups show and the product makes sense, and moving later is not yet cheap (AUTO-06), so pressing people into a choice early only helps once moving is one step.
+**What is wrong.** The only place the page says a Library on this computer cannot leave it is the Add a computer dialog, which a one-computer person never opens. The Library page is the same whether its skills live on one disk or in a private repository. One option is to hide the Library until storage is set up. That would make things worse: there is no 'not set up' state (setup asks before the dashboard can open, and 'only this computer' is a deliberate choice), the Library is the screen where the first sync's backups show and the product makes sense, and moving later is not yet cheap (AUTO-06), so pressing people into a choice early only helps once moving is one step.
 
 **How it was confirmed.** Opened the local dashboard with a Library on this computer, empty and with skills: no notice on the Library or the computer pages; the Where it lives page offers 'Move here…' with no reason given. The Add a computer dialog is the only text that says another computer cannot reach it.
 
