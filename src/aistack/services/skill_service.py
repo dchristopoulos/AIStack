@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 from time import perf_counter
 
-from sqlalchemy import func, null, select, update
+from sqlalchemy import and_, func, null, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -181,7 +181,8 @@ def list_skills(session: Session, user_id: uuid.UUID) -> list[SkillSummary]:
 
 
 def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
-              team: str | None = None, harness: str | None = None) -> InstallableSkill:
+              team: str | None = None, harness: str | None = None,
+              replace: bool = False) -> InstallableSkill:
     """Enable the user's own skill `name` in one harness of this machine and describe its
     latest revision.
 
@@ -196,7 +197,7 @@ def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name:
     # Sync offers "enable" for a skill the user removed whose folder is still on disk.
     # Saying yes brings it back.
     skill = (visibility.required_my_skill(session, user_id, name, removed_too=True)
-             if team is None else take_from_team(session, user_id, name, team))
+             if team is None else take_from_team(session, user_id, name, team, replace))
     restored = skill.archived
     _bring_back(session, skill)
     version = _latest_version(session, skill.skill_id)
@@ -223,12 +224,15 @@ def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name:
     )
 
 
-def take_from_team(session: Session, user_id: uuid.UUID, name: str, team: str) -> Skill:
+def take_from_team(session: Session, user_id: uuid.UUID, name: str, team: str,
+                   replace: bool = False) -> Skill:
     """Copy a team skill's latest revision into the user's own skills, and link the two.
 
     The copy becomes the newest revision of their own skill of that name, keeping the name of
-    whoever pushed it to the team. The user asked for it, so a different version they had is
-    superseded, not lost: it stays in their history.
+    whoever pushed it to the team. A different version they had is superseded, not lost: it
+    stays in their history. A skill of their own that was never taken from this one is
+    refused unless `replace` says the user agreed: it may be a different skill that only
+    shares the name, and taking replaces it on every computer that has it.
     """
     # One the caller cannot reach is refused before anything is locked.
     visibility.team_skill(session, user_id, name, team)
@@ -237,6 +241,8 @@ def take_from_team(session: Session, user_id: uuid.UUID, name: str, team: str) -
     team_service.lock(session, user_id, team, shared=True)
     source = visibility.team_skill(session, user_id, name, team)
     latest = _latest_version(session, source.skill_id)
+    if not replace:
+        _refuse_replacing_an_unrelated_skill(session, user_id, source, latest, team)
     copied = _stored_as_uploaded(session, source, latest)
 
     mine, _ = _find_or_create_skill(
@@ -249,6 +255,57 @@ def take_from_team(session: Session, user_id: uuid.UUID, name: str, team: str) -
     mine.source_skill_id = source.skill_id
     mine.source_revision = latest.revision
     return mine
+
+
+def _refuse_replacing_an_unrelated_skill(session: Session, user_id: uuid.UUID, source: Skill,
+                                        latest: SkillVersion, team: str) -> None:
+    mine = visibility.my_skill(session, user_id, source.name)
+    if mine is None or mine.archived or mine.source_skill_id == source.skill_id:
+        return
+    own = _latest_version(session, mine.skill_id)
+    if own is None or own.content_hash == latest.content_hash:
+        return
+    computers = session.scalars(
+        select(Machine.name)
+        .join(MachineSkill, MachineSkill.machine_id == Machine.machine_id)
+        .where(MachineSkill.skill_id == mine.skill_id, MachineSkill.enabled.is_(True))
+        .group_by(Machine.name).order_by(bytewise(Machine.name))).all()
+    where = (f" on {', '.join(computers)} at their next sync" if computers
+             else " in your Library")
+    raise Conflict(
+        f"You already have your own '{source.name}' (revision {own.revision}, last pushed by "
+        f"{_username(session, own.pushed_by)}) that was not taken from team '{team}'. Taking "
+        f"the team's replaces yours{where}; yours stays in your history. Ask the user, and "
+        "take it with replace if they agree."
+    )
+
+
+def changed_since_taken(session: Session,
+                        copies: list[tuple[uuid.UUID, uuid.UUID, int]]) -> set[uuid.UUID]:
+    """Which of the user's own skills differ from the team revision they were last taken at.
+
+    Each copy is (own skill, the team skill it follows, that skill's revision then). A copy
+    that differs holds the user's own edits, which taking the team's newer revision replaces.
+    """
+    if not copies:
+        return set()
+    own_latest = (select(SkillVersion.skill_id, func.max(SkillVersion.revision).label("revision"))
+                  .where(SkillVersion.skill_id.in_([own for own, _, _ in copies]))
+                  .group_by(SkillVersion.skill_id).subquery())
+    own_hash = dict(session.execute(
+        select(SkillVersion.skill_id, SkillVersion.content_hash)
+        .join(own_latest, (own_latest.c.skill_id == SkillVersion.skill_id)
+              & (own_latest.c.revision == SkillVersion.revision))).all())
+    taken_hash = {(skill_id, revision): content_hash
+                  for skill_id, revision, content_hash in session.execute(
+                      select(SkillVersion.skill_id, SkillVersion.revision,
+                             SkillVersion.content_hash)
+                      .where(or_(*(and_(SkillVersion.skill_id == source,
+                                        SkillVersion.revision == revision)
+                                   for _, source, revision in copies)))).all()}
+    return {own for own, source, revision in copies
+            if (source, revision) in taken_hash
+            and own_hash.get(own) != taken_hash[(source, revision)]}
 
 
 @dataclass(frozen=True)
@@ -267,6 +324,12 @@ class SharedSkill:
     # True when the team already had a skill of this name that the user's copy was never
     # taken from: it may be someone else's unrelated skill, now with this on top.
     possibly_unrelated: bool
+    # The team's revision this share went on top of, when the user's copy was taken from an
+    # older one: whatever changed in between is no longer in the team's latest.
+    overwrote_revision: int | None = None
+    # The team the user's copy still follows for updates, when it is not this one: a copy
+    # follows one team, and sharing it somewhere else does not change which.
+    updates_from: str | None = None
 
 
 def share(session: Session, user_id: uuid.UUID, name: str, team: str,
@@ -316,9 +379,19 @@ def share(session: Session, user_id: uuid.UUID, name: str, team: str,
     if not unchanged:
         target.description = mine.description
 
-    related = created or mine.source_skill_id == target.skill_id
-    mine.source_skill_id = target.skill_id
-    mine.source_revision = version.revision
+    follows = _team_it_follows(session, mine, target)
+    linked = mine.source_skill_id == target.skill_id
+    # A copy that follows another team is related to this one when this one's latest came
+    # from it: an earlier share of the same copy.
+    related = created or linked or (follows is not None and previous is not None
+                                    and _ever_held(session, mine, previous.content_hash))
+    # Shared from an older team revision than the latest: the newer one's changes are gone.
+    overwrote = (previous.revision if linked and not unchanged and previous is not None
+                 and mine.source_revision is not None
+                 and mine.source_revision < previous.revision else None)
+    if follows is None:
+        mine.source_skill_id = target.skill_id
+        mine.source_revision = version.revision
     return SharedSkill(
         name=target.name,
         team=destination.name,
@@ -329,7 +402,25 @@ def share(session: Session, user_id: uuid.UUID, name: str, team: str,
         previous_pushed_by=(None if previous is None
                             else _username(session, previous.pushed_by)),
         possibly_unrelated=not unchanged and not related,
+        overwrote_revision=overwrote,
+        updates_from=follows,
     )
+
+
+def _ever_held(session: Session, skill: Skill, content_hash: str) -> bool:
+    return session.scalar(select(SkillVersion.skill_version_id).where(
+        SkillVersion.skill_id == skill.skill_id,
+        SkillVersion.content_hash == content_hash).limit(1)) is not None
+
+
+def _team_it_follows(session: Session, mine: Skill, target: Skill) -> str | None:
+    """The other team a copy follows for updates, if it follows one it can still see."""
+    if mine.source_skill_id is None or mine.source_skill_id == target.skill_id:
+        return None
+    source = session.get(Skill, mine.source_skill_id)
+    if source is None or source.team_id == target.team_id:
+        return None
+    return session.scalar(select(Team.name).where(Team.team_id == source.team_id))
 
 
 def remove_from_my_skills(session: Session, user_id: uuid.UUID, name: str) -> str:

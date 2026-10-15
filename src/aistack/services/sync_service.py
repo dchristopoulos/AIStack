@@ -19,7 +19,7 @@ from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.timestamps import utc_now
 from aistack.db.models.user import User
 from aistack.db.ordering import bytewise
-from aistack.services import visibility
+from aistack.services import skill_service, visibility
 from aistack.services.content_hash import canonical_content_hash, normalized_path
 from aistack.services.harnesses import validated_harness
 from aistack.services.reconciliation import Desired, Observed, Option, Step, reconcile
@@ -85,6 +85,9 @@ class TeamUpdate:
     from_revision: int
     to_revision: int
     pushed_by: str
+    # The user changed their copy since taking from_revision: taking replaces their edits
+    # on every computer that has it.
+    own_changes: bool
 
 
 @dataclass(frozen=True)
@@ -319,7 +322,7 @@ def _team_updates(session: Session, user_id: uuid.UUID,
         Skill.group_id.is_(None) | Skill.group_id.not_in(quiet)).subquery()
     rows = session.execute(
         select(mine.c.name, visible.c.team, mine.c.source_revision, newest.c.revision,
-               User.username)
+               User.username, mine.c.skill_id, mine.c.source_skill_id)
         .join(visible, visible.c.skill_id == mine.c.source_skill_id)
         .join(newest, newest.c.skill_id == mine.c.source_skill_id)
         .join(SkillVersion, (SkillVersion.skill_id == newest.c.skill_id)
@@ -328,7 +331,10 @@ def _team_updates(session: Session, user_id: uuid.UUID,
         .where(newest.c.revision > mine.c.source_revision)
         .order_by(bytewise(mine.c.name))
     ).all()
-    return tuple(TeamUpdate(*row) for row in rows)
+    changed = skill_service.changed_since_taken(
+        session, [(own, source, taken) for _, _, taken, _, _, own, source in rows])
+    return tuple(TeamUpdate(name, team, taken, latest, pushed_by, own in changed)
+                 for name, team, taken, latest, pushed_by, own, source in rows)
 
 
 def _desired(enabled: bool | None) -> Desired:
