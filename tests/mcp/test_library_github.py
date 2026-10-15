@@ -454,3 +454,52 @@ async def test_a_computer_whose_clock_runs_ahead_does_not_win_over_a_newer_edit(
         assert _latest() == newest
         report = await _call(desktop, "sync")
         assert (report["update"], report["ask"]) == ([], [])
+
+
+def test_terminal_commands_find_the_library_the_agent_was_set_up_with(tmp_path, repository):
+    """AUTO-03: without the agent's settings, check and export used to open a new, empty
+    Library on this computer and report success."""
+    import os
+    import sys
+
+    home = tmp_path / "laptop"
+    assert _check(home, {"AISTACK_LIBRARY_REPO": str(repository)}).returncode == 0
+
+    alone = _check(home, {"AISTACK_LIBRARY_REPO": ""})
+    assert alone.returncode == 0, alone.stderr
+    assert f"in the GitHub repository {repository}" in alone.stdout
+    environment = {**os.environ, "HOME": str(home), "USERPROFILE": str(home),
+                   "AISTACK_HOME": str(home / ".aistack")}
+    for variable in ("AISTACK_DATABASE_URL", "AISTACK_LIBRARY_REPO"):
+        environment.pop(variable, None)
+    exported = subprocess.run([sys.executable, "-m", "aistack.bootstrap", "export",
+                               str(tmp_path / "exported")], env=environment,
+                              capture_output=True, text=True)
+    assert exported.returncode == 0, exported.stderr
+    assert not (home / ".aistack" / "aistack.db").exists()
+
+    other = subprocess.run([sys.executable, "-m", "aistack.bootstrap", "export",
+                            str(tmp_path / "other")],
+                           env={**environment, "AISTACK_LIBRARY_REPO": "maria/other"},
+                           capture_output=True, text=True)
+    assert other.returncode == 1
+    assert str(repository) in other.stderr and "maria/other" in other.stderr
+
+
+def test_export_with_no_library_anywhere_creates_none(tmp_path):
+    """PH-14: it used to make an empty Library here and report 'Exported 0 skills'."""
+    import os
+    import sys
+
+    home = tmp_path / "fresh"
+    environment = {**os.environ, "HOME": str(home), "USERPROFILE": str(home),
+                   "AISTACK_HOME": str(home / ".aistack")}
+    for variable in ("AISTACK_DATABASE_URL", "AISTACK_LIBRARY_REPO"):
+        environment.pop(variable, None)
+    refused = subprocess.run([sys.executable, "-m", "aistack.bootstrap", "export",
+                              str(tmp_path / "exported")], env=environment,
+                             capture_output=True, text=True)
+
+    assert refused.returncode == 1
+    assert "There is no Library on this computer to export" in refused.stderr
+    assert not (home / ".aistack").exists() and not (tmp_path / "exported").exists()
