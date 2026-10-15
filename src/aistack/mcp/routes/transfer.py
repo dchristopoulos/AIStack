@@ -45,7 +45,10 @@ async def upload_skill(request: Request) -> Response:
         f"Files: '{pushed.file_count}'. Bytes: '{len(archive)}'. User: '{ticket.user_id}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
-    return JSONResponse(asdict(pushed))
+    # What the push did, as the agent reads it; placement_changed is for local mode's log.
+    result = asdict(pushed)
+    del result["placement_changed"]
+    return JSONResponse(result)
 
 
 def _store_upload(ticket: UploadTicket, archive: bytes) -> skill_service.PushedSkill:
