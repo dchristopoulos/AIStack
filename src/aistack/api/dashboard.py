@@ -230,9 +230,11 @@ def _action(path: str, local: bool = True) -> Callable[[Action], Action]:
             body = await _json_body(request)
             result = await asyncio.to_thread(_in_transaction, _as_user(function), holder,
                                              dict(request.path_params), body)
+            result = result or {"ok": True}
             if is_local_mode():
-                await asyncio.to_thread(library_after_write)
-            return _json(result or {"ok": True})
+                # False when a GitHub Library could not be reached: the change waits here.
+                result = result | {"shared": await asyncio.to_thread(library_after_write)}
+            return _json(result)
 
         _route(API_PATH + path, methods=["POST"], local=local)(handle_route_errors(route))
         return function

@@ -16,6 +16,7 @@ from aistack.bootstrap.context.application_context import (
     get_session_factory,
     library_after_write,
     library_before_read,
+    library_problem,
 )
 from aistack.bundled import SYNC_SKILL_NAME, local_sync_skill_document
 from aistack.mcp import local_dashboard
@@ -38,6 +39,13 @@ def _folder(harness: HarnessKey) -> Path:
 class LocalSyncResult(SyncResult):
     folders: list[str]
     harness: str
+    library_reachable: bool
+    library_problem: str | None
+
+
+class LocalListSkillsResult(ListSkillsResult):
+    library_reachable: bool
+    library_problem: str | None
 
 
 @local_mcp.tool(
@@ -62,6 +70,9 @@ class LocalSyncResult(SyncResult):
       - first_sync: true the first time this folder syncs here. Then call list_skills and
         ask once whether to install the user's own skills that are on no folder here: they
         come from their other computers. See the sync-aistack skill.
+      - library_reachable: false when the Library's GitHub repository could not be
+        reached, so this compared against this computer's copy. Tell the user
+        library_problem, as it is, before anything else.
     team_updates is always empty and sync_skill_url always null here.
 
     Args:
@@ -93,8 +104,10 @@ def sync(harness: HarnessKey | None = None) -> LocalSyncResult:
 
     library_after_write()
     logger.info(f"Sync reported. Local skills: '{len(local)}'.")
+    problem = library_problem()
     return LocalSyncResult(**sync_result(report, sync_skill_url=None), folders=folders,
-                           harness=harness)
+                           harness=harness, library_reachable=problem is None,
+                           library_problem=problem)
 
 
 @local_mcp.tool(
@@ -104,16 +117,20 @@ def sync(harness: HarnessKey | None = None) -> LocalSyncResult:
     listing is the search. To put one on this computer, call get_skill.
 
     Returns:
-        ListSkillsResult containing:
+        LocalListSkillsResult containing:
             - skills: by name, each with its description, latest revision, and who pushed it
+            - library_reachable: false when the Library's GitHub repository could not be
+              reached, so this is this computer's copy. Tell the user library_problem.
     """)
 @handle_mcp_errors
-def list_skills() -> ListSkillsResult:
+def list_skills() -> LocalListSkillsResult:
     library_before_read()
     with get_session_factory().begin() as session:
         skills = skill_service.list_skills(session, get_local_principal().user_id)
 
-    return ListSkillsResult(skills=[
+    problem = library_problem()
+    return LocalListSkillsResult(library_reachable=problem is None, library_problem=problem,
+                                 skills=[
         SkillListing(name=skill.name, team=skill.team, group=skill.group,
                      description=skill.description, revision=skill.revision,
                      pushed_by=skill.pushed_by)

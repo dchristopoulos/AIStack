@@ -8,6 +8,7 @@ import socket
 import subprocess
 import uuid
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import Engine, make_url
 from sqlalchemy.exc import IntegrityError
@@ -237,9 +238,18 @@ def _computer_name() -> str:
     return socket.gethostname().split(".")[0] or "computer"
 
 
-def library_description() -> dict[str, str]:
-    """Where the Library lives, for the dashboard: the kind, and a host but never a password."""
-    return _library
+def library_description() -> dict[str, Any]:
+    """Where the Library lives, for the dashboard: the kind, and a host but never a password.
+    For GitHub, also whether it was reached last time and how many changes wait here."""
+    if _sharing is None:
+        return _library
+    return _library | {"problem": _sharing.problem, "unpublished": _sharing.unpublished()}
+
+
+def library_problem() -> str | None:
+    """Why the Library's repository could not be reached the last time it was tried; None
+    for a Library that is not on GitHub, or one that answered."""
+    return None if _sharing is None else _sharing.problem
 
 
 def _described(database_url: str) -> dict[str, str]:

@@ -10,6 +10,7 @@ import sys
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
@@ -23,7 +24,7 @@ from aistack.db.models.machine import Machine
 from aistack.db.models.skill_version import SkillVersion
 from aistack.mcp import local_dashboard
 from aistack.mcp.local import local_mcp
-from aistack.services import library_log
+from aistack.services import library_log, library_sharing
 from aistack.services.library_repo import LibraryRepo, RepoUnavailable, validate_repository
 
 pytestmark = pytest.mark.anyio
@@ -642,3 +643,55 @@ async def test_moving_here_from_github_keeps_the_library(computer, tmp_path, rep
 
     again = _aistack(tmp_path / "laptop", "move", "here")
     assert again.returncode == 1 and "already lives on this computer only" in again.stderr
+
+
+async def test_the_agent_and_the_page_say_when_github_could_not_be_reached(computer,
+                                                                            repository):
+    """Step 20c: working from this computer's copy is said, not only logged."""
+    async with computer("laptop") as (laptop, home):
+        _write(home, "wizard", "Cast.")
+        await _call(laptop, "push_skill", name="wizard")
+        link = local_dashboard.dashboard_link()
+        base = link.split("/app/")[0]
+
+        with offline(repository):
+            report = await _call(laptop, "sync")
+            assert report["library_reachable"] is False
+            assert "could not be reached" in report["library_problem"]
+            listed = await _call(laptop, "list_skills")
+            assert listed["library_reachable"] is False
+
+            async with httpx.AsyncClient(base_url=base) as page:
+                assert (await page.get(link)).status_code == 303
+                removed = await page.post("/api/skills/wizard/remove", json={},
+                                          headers={"X-AIStack-Request": "1"})
+                assert removed.json()["shared"] is False
+                library = (await page.get("/api/state")).json()["library"]
+                assert "could not be reached" in library["problem"]
+                assert library["unpublished"] >= 1
+
+        report = await _call(laptop, "sync")
+        assert (report["library_reachable"], report["library_problem"]) == (True, None)
+        assert application_context.library_description()["unpublished"] == 0
+
+
+@pytest.mark.parametrize(("signed_in", "says"), [
+    (False, "Run `aistack-mcp github` to sign in again"),
+    (True, "could not be reached"),
+])
+def test_an_unreachable_github_repository_says_whether_to_sign_in(monkeypatch, signed_in,
+                                                                  says):
+    calls = []
+
+    def gh(arguments, **_):
+        calls.append(arguments[1:])
+        return subprocess.CompletedProcess(arguments, 0 if signed_in else 1)
+
+    monkeypatch.setattr(library_sharing.subprocess, "run", gh)
+    assert says in library_sharing.unreachable_reason("https://github.com/maria/library.git")
+    assert calls == [["auth", "status", "--hostname", "github.com"]]
+
+
+def test_a_repository_elsewhere_is_never_blamed_on_a_github_sign_in(monkeypatch):
+    monkeypatch.setattr(library_sharing.subprocess, "run", pytest.fail)
+    assert "could not be reached" in library_sharing.unreachable_reason("/srv/library.git")
