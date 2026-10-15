@@ -2,6 +2,7 @@
 standing in for GitHub."""
 
 import contextlib
+import pathlib
 import shutil
 import subprocess
 
@@ -126,9 +127,11 @@ async def test_a_new_computer_offline_explains_instead_of_starting_a_second_libr
         await _call(laptop, "push_skill", name="wizard")
 
     with offline(repository):
-        async with computer("desktop") as (desktop, _):
+        async with computer("desktop") as (desktop, home):
             with pytest.raises(ToolError, match="has not read your Library from GitHub yet"):
                 await _call(desktop, "list_skills")
+            # A clone that failed leaves nothing that could pass for one that worked.
+            assert not (home / ".aistack" / "library").exists()
 
 
 async def test_computers_that_edited_one_skill_offline_agree_once_back(computer, repository):
@@ -179,3 +182,13 @@ def test_check_says_where_the_library_lives_or_what_is_wrong(tmp_path, repositor
 
     alone = _check(tmp_path / "solo", {})
     assert alone.returncode == 0 and "on this computer only" in alone.stdout
+
+
+def test_github_is_reached_through_the_gh_login_alone():
+    from aistack.services.library_repo import LibraryRepo
+
+    github = LibraryRepo(pathlib.Path("clone"), "maria/aistack-library")
+    assert github.remote == "https://github.com/maria/aistack-library.git"
+    assert github._credentials == ["-c", "credential.helper=",
+                                   "-c", "credential.helper=!gh auth git-credential"]
+    assert LibraryRepo(pathlib.Path("clone"), "/srv/library.git")._credentials == []
