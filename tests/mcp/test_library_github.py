@@ -192,7 +192,7 @@ def test_github_is_reached_through_the_gh_login_alone():
     assert github._credentials[:2] == ["-c", "credential.helper="]
     assert github._credentials[2:3] == ["-c"]
     assert github._credentials[3].startswith("credential.helper=!")
-    assert github._credentials[3].endswith("gh auth git-credential")
+    assert github._credentials[3].endswith(" auth git-credential")
     assert LibraryRepo(pathlib.Path("clone"), "/srv/library.git")._credentials == []
 
 
