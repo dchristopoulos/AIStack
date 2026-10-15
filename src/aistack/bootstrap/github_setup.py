@@ -31,16 +31,24 @@ def connect(home: Path) -> int:
     """Sign in if needed, then find or create the repository. Prints what the agent needs and
     returns the exit status: 0 with the repository named, 2 while GitHub waits for the person
     to approve, 1 on anything to fix first."""
+    status, repository = repository_for(home)
+    if repository is not None:
+        print(f"AISTACK_LIBRARY_REPO={repository}")
+    return status
+
+
+def repository_for(home: Path) -> tuple[int, str | None]:
+    """`connect`'s work, with the repository returned instead of printed for setup."""
     gh = gh_command()
     if _run(gh, "--version") is None:
         print("The GitHub CLI is not installed. Install it (macOS: `brew install gh`; "
               "Windows: `winget install --id GitHub.cli`; others: https://cli.github.com), "
               "then run this again.")
-        return FAILED
+        return FAILED, None
     if not _signed_in(gh):
         waiting = _waiting_sign_in(gh, home)
         if waiting is not None:
-            return waiting
+            return waiting, None
     return _find_or_create(gh)
 
 
@@ -88,12 +96,12 @@ def _start_sign_in(gh: str, log: Path) -> str | None:
     return None
 
 
-def _find_or_create(gh: str) -> int:
+def _find_or_create(gh: str) -> tuple[int, str | None]:
     owner = _run(gh, "api", "user", "--jq", ".login")
     if not owner:
         print("GitHub did not answer who is signed in. Check the internet connection and "
               "`gh auth status`, then run this again.")
-        return FAILED
+        return FAILED, None
     repository = f"{owner.strip()}/{REPOSITORY_NAME}"
     private = _run(gh, "repo", "view", repository, "--json", "isPrivate", "--jq", ".isPrivate")
     if private is None:
@@ -102,16 +110,15 @@ def _find_or_create(gh: str) -> int:
         if created is None:
             print(f"Could not create the private repository {repository}. Check `gh auth "
                   f"status`, then run this again.")
-            return FAILED
+            return FAILED, None
     elif private.strip() != "true":
         # Somebody else's use of the name, or a repository made public: never put a Library
         # where anyone can read it.
         print(f"{repository} already exists and is public, so AIStack will not keep a Library "
               f"in it. Set AISTACK_LIBRARY_REPO to the name of a private repository instead.")
-        return FAILED
+        return FAILED, None
     print(f"Your Library's repository is {repository}, private.")
-    print(f"AISTACK_LIBRARY_REPO={repository}")
-    return SIGNED_IN
+    return SIGNED_IN, repository
 
 
 def _signed_in(gh: str) -> bool:

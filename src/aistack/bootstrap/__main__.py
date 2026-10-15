@@ -5,6 +5,7 @@ import os
 import shutil
 import socket
 import sys
+import time
 import webbrowser
 from pathlib import Path
 
@@ -12,7 +13,12 @@ import uvicorn
 from sqlalchemy.exc import OperationalError
 
 from aistack.bootstrap import github_setup, self_update
-from aistack.bootstrap.configuration.settings.settings_config import LocalSettings, Settings
+from aistack.bootstrap.configuration.settings.settings_config import (
+    LocalSettings,
+    Settings,
+    described,
+    record_place,
+)
 from aistack.bootstrap.context.application_context import (
     build_application_context,
     build_local_context,
@@ -23,6 +29,7 @@ from aistack.bundled import (
     local_sync_skill_document,
 )
 from aistack.commons.exceptions import AIStackError
+from aistack.db.engine import build_engine
 from aistack.db.schema import NewerSchema
 
 logger = logging.getLogger(__name__)
@@ -178,6 +185,87 @@ def export_library(destination: Path) -> None:
     print(f"Exported {len(skills)} skills to {destination}.")
 
 
+# Where `aistack move` can take a Library, by the word a person types.
+MOVE_DESTINATIONS = {"github": "github", "postgresql": "postgresql", "here": "this_computer"}
+# The new database's address, for `aistack move postgresql`. AISTACK_DATABASE_URL already
+# names the Library being moved when that one is a database.
+MOVE_TO_URL = "AISTACK_MOVE_TO_URL"
+
+
+def move_library(destination: str, repository: str | None) -> None:
+    """`aistack move github|postgresql|here`: the Library this computer's agent uses, with its
+    whole history, placements and removals, replayed into the new place (ADR-0025). The old
+    place is left as it was."""
+    from aistack.services import library_move
+    from aistack.services.library_repo import LibraryRepo, RepoUnavailable
+
+    kind = MOVE_DESTINATIONS[destination]
+    settings = LocalSettings().resolved(record=False)
+    source = settings.place() or {"kind": "this_computer"}
+    if source["kind"] == kind:
+        sys.exit(f"Your Library already lives {described(source)}.")
+    if source["kind"] == "this_computer" and not (settings.home / "aistack.db").exists():
+        sys.exit("There is no Library on this computer to move. Set AIStack up with "
+                 "`aistack setup`, choosing where the Library lives.")
+    target_url = os.environ.get(MOVE_TO_URL) if kind == "postgresql" else None
+    if kind == "postgresql" and not target_url:
+        sys.exit(f"Set {MOVE_TO_URL} to the new database's postgresql:// address, then run "
+                 "this again.")
+
+    configure_logging(settings.log_level)
+    build_local_context(settings)
+    from aistack.bootstrap.context import application_context
+
+    try:
+        application_context.get_local_principal()
+    except AIStackError as refusal:
+        sys.exit(f"The Library cannot be read, so nothing was moved. {refusal}")
+    # A GitHub Library is moved as the repository has it, not as this copy last saw it.
+    application_context.library_before_read(force=True)
+    with application_context.get_session_factory().begin() as session:
+        log = library_move.events(session)
+        contents = library_move.contents(session)
+    application_context.dispose_application_context()
+    library_move.check_replays(log, contents, settings.home)
+
+    if kind == "github":
+        if repository is None:
+            status, repository = github_setup.repository_for(settings.home)
+            if repository is None:
+                sys.exit(status)
+        # What a GitHub Library used before is kept, never replaced: renamed aside.
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        for name in ("library", "github-copy.db", "github-copy.db-wal", "github-copy.db-shm"):
+            old = settings.home / name
+            if old.exists():
+                old.rename(settings.home / f"{name}.before-move-{stamp}")
+        try:
+            added = library_move.into_repository(
+                LibraryRepo(settings.home / "library", repository), log)
+        except RepoUnavailable as error:
+            sys.exit(f"Could not publish the Library to {repository}, so it still lives "
+                     f"{described(source)}. {error} Run this again once it can be reached.")
+        place = {"kind": "github", "repository": repository}
+        variable = f"AISTACK_LIBRARY_REPO={repository}"
+        print(f"Published {added} changes to {repository}.")
+    else:
+        url = target_url or f"sqlite:///{(settings.home / 'aistack.db').as_posix()}"
+        engine = build_engine(url)
+        try:
+            library_move.into_database(engine, log)
+        finally:
+            engine.dispose()
+        place = (LocalSettings(aistack_home=settings.home, aistack_database_url=url).place()
+                 if target_url else {"kind": "this_computer"})
+        variable = (f"AISTACK_DATABASE_URL set to the address in {MOVE_TO_URL}"
+                    if target_url else "no AISTACK_ variable")
+        print(f"Copied {len(log)} changes into the new place.")
+    record_place(settings.home, place)
+    print(f"Your Library now lives {described(place)}, with its history. The old place is "
+          f"left as it was. Connect your coding agent to the new place, with {variable}, "
+          "and restart it once.")
+
+
 def run() -> None:
     """The `aistack` command: `aistack` is local mode, `aistack serve` the server."""
     parser = argparse.ArgumentParser(
@@ -187,15 +275,20 @@ def run() -> None:
                     "setup steps for a coding agent, 'sync-skill' the skill they install, and "
                     "'check' whether this computer reaches its Library; 'github' signs in to "
                     "GitHub and finds or creates the private repository a Library lives in; "
-                    "'export' writes every skill in the Library to a folder; 'serve' runs the "
-                    "AIStack server.")
+                    "'export' writes every skill in the Library to a folder; 'move github', "
+                    "'move postgresql' or 'move here' moves it with its history; 'serve' "
+                    "runs the AIStack server.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
                                                        "sync-skill", "check", "export",
-                                                       "github"])
-    parser.add_argument("folder", nargs="?", type=Path,
+                                                       "github", "move"])
+    parser.add_argument("folder", nargs="?",
                         help="Where 'export' writes the skills, ./aistack-library by default; "
                              "the skills folder 'sync-skill' writes its skill into, instead of "
-                             "printing it")
+                             "printing it; where 'move' takes the Library: github, postgresql "
+                             f"(the address in {MOVE_TO_URL}) or here")
+    parser.add_argument("repository", nargs="?",
+                        help="For 'move github': the private repository, as owner/name. "
+                             "Without it, your own aistack-library, made if needed")
     arguments = parser.parse_args()
     command = arguments.command
 
@@ -207,7 +300,7 @@ def run() -> None:
         if arguments.folder is None:
             print(local_sync_skill_document(), end="")
         else:
-            write_sync_skill(arguments.folder.expanduser())
+            write_sync_skill(Path(arguments.folder).expanduser())
         return
 
     if command == "github":
@@ -221,7 +314,14 @@ def run() -> None:
         elif command == "check":
             check_local()
         elif command == "export":
-            export_library((arguments.folder or Path("aistack-library")).expanduser())
+            export_library(Path(arguments.folder or "aistack-library").expanduser())
+        elif command == "move":
+            if arguments.folder not in MOVE_DESTINATIONS:
+                parser.error("move takes where to: github, postgresql or here")
+            try:
+                move_library(arguments.folder, arguments.repository)
+            except AIStackError as refusal:
+                sys.exit(refusal.message)
         else:
             serve_local()
     except ValueError as error:
