@@ -167,6 +167,9 @@ def membership(session: Session, user_id: uuid.UUID, team: str) -> tuple[Team, T
         .join(TeamMember, TeamMember.team_id == Team.team_id)
         .where(Team.name == team, Team.kind != TeamKind.PERSONAL,
                TeamMember.user_id == user_id)
+        # Read as committed, not as this session last saw it: `team_service.lock` reads it
+        # again after waiting for another change to the team.
+        .execution_options(populate_existing=True)
     ).first()
     if found is None:
         raise NotFound(f"You are not in a team named '{loggable(team)}'. Call list_teams to "
