@@ -1,7 +1,7 @@
 """The sync policy: what to do about one resource on one machine.
 
-A pure function over two facts — what the machine is supposed to have and what was found on
-it — returning what sync does. It knows nothing about skills, hashes, paths, or the database
+A pure function over two facts: what the machine is supposed to have and what was found on
+it, returning what sync does. It knows nothing about skills, hashes, paths, or the database
 (ADR-0007). Skill-specific code computes the two facts; a rule or hook adapter will compute
 them differently and reuse this table, because the table is where the data-loss decisions are.
 

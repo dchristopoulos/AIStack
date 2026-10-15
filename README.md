@@ -209,14 +209,14 @@ MCP carries what is worth saying in a sentence. Anything that would need many ty
 About 5,800 lines of Python and 6,900 of tests. A good order:
 
 1. [`docs/DESIGN.md`](docs/DESIGN.md) for the plan and [`CONTEXT.md`](CONTEXT.md) for the vocabulary the code uses.
-2. [`mcp/tools/`](src/aistack/mcp/tools/) — the thirteen tools. Each is thin: read the caller, open one transaction, call a service.
-3. [`mcp/auth/`](src/aistack/mcp/auth/) — two principals, one rule, enforced in one middleware so a new tool is covered by default.
-4. [`services/visibility.py`](src/aistack/services/visibility.py) — who may see what, in one module. Group access is plain code over two queries, and something you may not see answers exactly like something that does not exist.
+2. [`mcp/tools/`](src/aistack/mcp/tools/): the thirteen tools. Each is thin: read the caller, open one transaction, call a service.
+3. [`mcp/auth/`](src/aistack/mcp/auth/): two principals, one rule, enforced in one middleware so a new tool is covered by default.
+4. [`services/visibility.py`](src/aistack/services/visibility.py): who may see what, in one module. Group access is plain code over two queries, and something you may not see answers exactly like something that does not exist.
 5. [`services/skill_service.py`](src/aistack/services/skill_service.py) for push, share, and take, and [`services/team_service.py`](src/aistack/services/team_service.py) for team administration, where every function begins by establishing the caller's place in the team.
-6. [`services/reconciliation.py`](src/aistack/services/reconciliation.py) — the sync policy as a pure table, and [`services/sync_service.py`](src/aistack/services/sync_service.py), which computes its inputs and the team updates on offer.
+6. [`services/reconciliation.py`](src/aistack/services/reconciliation.py): the sync policy as a pure table, and [`services/sync_service.py`](src/aistack/services/sync_service.py), which computes its inputs and the team updates on offer.
 7. The push pipeline, which is the trust boundary: [`transfer_ticket.py`](src/aistack/services/transfer_ticket.py) → [`routes/transfer.py`](src/aistack/mcp/routes/transfer.py) → [`skill_archive.py`](src/aistack/services/skill_archive.py) → [`skill_validation.py`](src/aistack/services/skill_validation.py).
-8. [`db/schema.py`](src/aistack/db/schema.py) and [`db/migrations/versions/`](src/aistack/db/migrations/versions/) — the schema as migrations. `0002_teams.py` is the one that moved a shared vault into teams without hiding anything from anyone.
-9. [`api/dashboard.py`](src/aistack/api/dashboard.py) — the dashboard's sign-in and JSON routes, as thin as the tools, and [`services/dashboard_service.py`](src/aistack/services/dashboard_service.py), which assembles what one user may see.
+8. [`db/schema.py`](src/aistack/db/schema.py) and [`db/migrations/versions/`](src/aistack/db/migrations/versions/): the schema as migrations. `0002_teams.py` is the one that moved a shared vault into teams without hiding anything from anyone.
+9. [`api/dashboard.py`](src/aistack/api/dashboard.py): the dashboard's sign-in and JSON routes, as thin as the tools, and [`services/dashboard_service.py`](src/aistack/services/dashboard_service.py), which assembles what one user may see.
 
 Things in there that took some care:
 
@@ -349,14 +349,38 @@ Known limits today:
 
 [`docs/DESIGN.md`](docs/DESIGN.md) §4 lists everything left out and why.
 
+## Privacy
+
+AIStack collects nothing. There is no telemetry, no analytics, no account with us, and no hosted service: it runs on computers you choose, and what it stores stays there.
+
+**What it connects to.** A server makes no outbound connections. The dashboard loads nothing from any other site; its content security policy forbids it. In local mode, AIStack reaches only:
+
+- PyPI, once a day, to check for a newer release of itself;
+- your own GitHub repository, through your own `gh` sign-in, when your Library lives there;
+- your own database, when your Library lives in one.
+
+**What a server stores.**
+- **People:** each person's username and, if they give one, the full name their teammates read.
+- **Computers:** each person's computers, by name and operating system, with a hash of each computer's token, never the token.
+- **Skills:** the skills people back up and share, with every revision and who pushed it.
+- **Placements:** which skill is switched on in which folder of which computer, and when each folder last synced.
+- **Teams:** teams, groups and who is in them, and invites, kept as a hash of their code with who made and used them.
+
+The log records names and ids, and is built never to record an IP address, a token, an invite code, or a link. A local Library holds the same about one person. In a GitHub Library, its private repository holds it, including the skills' files.
+
+**Who is responsible.** Whoever runs a server holds its users' data. A team that runs one for its people decides what to tell them. An operator can take someone off a server ([docs/OPERATING.md](docs/OPERATING.md)), and that ends their access. Their username stays on the revisions they pushed, because a team needs to know whose instructions its agents run. Copies teammates took are theirs.
+
+Security reports go through [SECURITY.md](SECURITY.md).
+
 ## Documentation
 
 Decisions are written down before code, with the reasoning kept.
 
-- [Design document](docs/DESIGN.md) — scope, tool contracts, flows, the sync contract, push validation, teams and groups, the dashboard, schema, roadmap
-- [Operating AIStack](docs/OPERATING.md) — deployment, upgrades, and the operator's tasks
-- [Domain glossary](CONTEXT.md) — the vocabulary the code and docs share
-- [AGENTS.md](AGENTS.md) — the conventions a coding agent follows when working in this repository
+- [Design document](docs/DESIGN.md): scope, tool contracts, flows, the sync contract, push validation, teams and groups, the dashboard, schema, roadmap
+- [Operating AIStack](docs/OPERATING.md): deployment, upgrades, and the operator's tasks
+- [Domain glossary](CONTEXT.md): the vocabulary the code and docs share
+- [AGENTS.md](AGENTS.md): the conventions a coding agent follows when working in this repository
+- [Security policy](SECURITY.md): how to report a vulnerability, and what is in scope
 - Decision records:
   - [0001 Full local sync instead of runtime proxy skills](docs/adr/0001-full-sync-over-runtime-proxy.md)
   - [0002 SQLite by default, Postgres via DATABASE_URL](docs/adr/0002-sqlite-default-postgres-optional.md)

@@ -25,7 +25,7 @@ Reconciling a machine's actual local state (what's on disk) with its desired sta
 _Avoid_: Pull, update-all
 
 **Name**:
-The stable machine-friendly identifier of a canonical skill, taken from its frontmatter `name` (e.g. `unslop`). Used in tool calls and directory names; there is no separate slug or display-name field — pretty rendering is a UI concern.
+The stable machine-friendly identifier of a canonical skill, taken from its frontmatter `name` (e.g. `unslop`). Used in tool calls and directory names; there is no separate slug or display-name field: pretty rendering is a UI concern.
 _Avoid_: Slug, skill id, display name
 
 **Revision**:
@@ -93,11 +93,11 @@ A registered computer belonging to one user, authenticating with its own permane
 _Avoid_: Device, host
 
 **Enabled**:
-Desired state: this one of the user's own skills should exist in this harness on this machine. Set by install ("install X" = enable + materialize), by backing a skill up, or by a toggle on the dashboard; cleared by remove. Sync enforces it. A row with `enabled = false` means explicitly disabled; no row means no decision — the sync contract treats these differently.
+Desired state: this one of the user's own skills should exist in this harness on this machine. Set by install ("install X" = enable + materialize), by backing a skill up, or by a toggle on the dashboard; cleared by remove. Sync enforces it. A row with `enabled = false` means explicitly disabled; no row means no decision: the sync contract treats these differently.
 _Avoid_: Installed (that's actual state on disk), active
 
 **Pushed by**:
-The AIStack user who pushed a revision into their own skills or shared it with a team. A copy taken from a team keeps the name of whoever shared it there. Pure provenance — it never claims authorship, because people back up and share third-party skills.
+The AIStack user who pushed a revision into their own skills or shared it with a team. A copy taken from a team keeps the name of whoever shared it there. Pure provenance: it never claims authorship, because people back up and share third-party skills.
 _Avoid_: Author, created by, uploaded by
 
 **Origin**:
@@ -117,9 +117,9 @@ Was: a skill on disk that the shared vault did not know, reported and never push
 _Avoid_: Using the word for anything current
 
 **Adopt**:
-Enabling a skill on this machine that already exists both on disk and in the Library (pushed from another of the user's machines, say), so future revisions flow to it. Always a question, never silent — adoption means later revisions overwrite that folder.
+Enabling a skill on this machine that already exists both on disk and in the Library (pushed from another of the user's machines, say), so future revisions flow to it. Always a question, never silent, because adoption means later revisions overwrite that folder.
 _Avoid_: Auto-enable, link
 
 **Admin**:
-The server's operator role, distinct from a team admin: the first user to join (`is_admin`). The server can only observe join order, not who deployed it — in practice the operator joins first, alone, before sharing the invite code. Server-level powers are documented scripts in `docs/OPERATING.md` (revoke a machine, recover a locked-out user); the dashboard has no page for them.
+The server's operator role, distinct from a team admin: the first user to join (`is_admin`). The server can only observe join order, not who deployed it: in practice the operator joins first, alone, before sharing the invite code. Server-level powers are documented scripts in `docs/OPERATING.md` (revoke a machine, recover a locked-out user); the dashboard has no page for them.
 _Avoid_: Owner, superuser
