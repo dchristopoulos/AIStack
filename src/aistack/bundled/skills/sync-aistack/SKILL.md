@@ -132,7 +132,9 @@ If the same skill is also in `ask` with `local` `unknown`, settle that entry fir
 
 To share a change the other way, the user asks for it ("share wizard with backend"), which is `share_skill`. Sync never shares.
 
-## 5. Make the two folders match, once
+## 5. The first sync on this computer
+
+When any folder reported `first_sync`, offer the Library itself. Call `list_skills`: the user's own skills (those whose `team` is null) that are in neither folder on disk after this sync, and not under `ask`, come from their other computers. If there are any, ask once, naming them: "Your Library has <names> from your other computers. Install them here?" Yes: `get_skill` each into `claude_code` when this computer has Claude Code, otherwise into `agents`, and install it. No: nothing; they can say "install <name>" whenever they want one. Ask this before the question above, so a skill installed now is counted when the folders are compared.
 
 Only when you synced both folders and at least one reported `first_sync`. Take the skills from the Library in each folder: its skill folders on disk after this sync, less anything still under `ask`, less `sync-aistack`. If one folder has skills the other lacks, ask once, naming them: "Use the same skills in Claude Code and in Codex and the other agents? That adds <names> to Claude Code and <names> to the agents folder." Yes: `get_skill` each missing skill with the harness of the folder that lacks it, and install. No: nothing, and it is not asked again, because `first_sync` is true only once.
 
