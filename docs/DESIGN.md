@@ -611,7 +611,7 @@ src/aistack/
   db/
     engine + session setup; schema.py applies the migrations (ADR-0016)
     migrations/versions/   # numbered Alembic migrations, shipped in the package
-    models/                # SQLAlchemy models for the thirteen tables
+    models/                # SQLAlchemy models for the fourteen tables
   mcp/                     # FastMCP server + auth
     local.py               # local mode's stdio server, with no auth (ADR-0020)
     tools/                 # the thirteen MCP tools (onboarding, skills, sync, teams),
