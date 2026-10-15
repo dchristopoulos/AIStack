@@ -72,7 +72,7 @@ async def test_the_setup_page_gets_the_details_that_are_easy_to_get_wrong(server
     # Claude Code watches only a skills directory that existed when it started.
     assert text.index("mkdir -p ~/.claude/skills") < text.index("claude mcp add")
     # Already set up is checked before anything is created.
-    assert text.index("claude mcp get aistack") < text.index("mkdir -p")
+    assert text.index("claude mcp list") < text.index("mkdir -p")
     assert "Restart Claude Code once" in text
 
 
@@ -82,8 +82,8 @@ async def test_setup_checks_both_agents_before_registering_this_computer(server_
     text = (await _get(f"{_base(server_url)}/setup")).text
     step_one = text[text.index("## 1."):text.index("## 2.")]
 
-    assert "claude mcp get aistack\ncodex mcp get aistack" in step_one
-    assert "If either shows a server, stop." in step_one
+    assert "claude mcp list\ngrep -c '^\\[mcp_servers.aistack\\]'" in step_one
+    assert "If `aistack` is listed, or the count is 1, stop." in step_one
     assert "Never register this computer a second time" in step_one
 
 
@@ -102,7 +102,7 @@ async def test_the_setup_page_connects_codex_with_one_block_of_valid_toml(server
     assert approved <= {tool.name for tool in await mcp._list_tools()}
     # Codex reads skills from the shared folder, so that is where setup puts the sync skill.
     assert "mkdir -p ~/.agents/skills/sync-aistack" in text
-    assert text.index("codex mcp get aistack") < text.index("mkdir -p ~/.agents/skills")
+    assert text.index("grep -c '^\\[mcp_servers.aistack\\]'") < text.index("mkdir -p ~/.agents/skills")
 
 
 async def test_the_setup_page_offers_a_session_start_hook_that_only_prompts_a_sync(server_url):

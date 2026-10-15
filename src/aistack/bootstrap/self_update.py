@@ -49,7 +49,7 @@ def check_and_upgrade(home: Path, latest_release=None, run=subprocess.run,
     cannot read it until it updates too, so it updates at once, to whatever is newest.
     Returns the version it installed, or None."""
     uv = _uv()
-    if uv is None or not _installed_as_uv_tool():
+    if uv is None or not installed_as_uv_tool():
         return None
     stamp = home / _STAMP
     if (not force and stamp.exists()
@@ -82,7 +82,7 @@ def _latest_on_pypi() -> str:
         return json.load(response)["info"]["version"]
 
 
-def _installed_as_uv_tool() -> bool:
+def installed_as_uv_tool() -> bool:
     """Only a uv tool install is upgraded here: a checkout, pipx, or the container is not."""
     # uv leaves this receipt in every environment `uv tool install` makes.
     return (Path(sys.prefix) / "uv-receipt.toml").is_file()
