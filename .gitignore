@@ -12,14 +12,28 @@ build/
 .ruff_cache/
 .mypy_cache/
 .coverage
+.coverage.*
 htmlcov/
+# Playwright's traces and screenshots of a failed browser test.
+test-results/
+playwright-report/
 
 # Local state
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
 *.sqlite3
 .env
 .env.*
 !.env.example
+.envrc
+*.pem
+*.key
+# A Library's skills and local mode's own folder, if run from a checkout:
+# `aistack export` writes ./aistack-library, and AISTACK_HOME may point here.
+aistack-library/
+.aistack/
 
 # Agent tooling
 # Claude Code's local state, except the project skills it shares with .agents/skills.
