@@ -47,8 +47,11 @@ async def invite(request: Request) -> Response:
         logger.info("Invite page refused: not an invite code that works.")
         return _page("Invite not found", 404,
                      "<h1 style=\"font-size:1.25rem\">This invite link does not work</h1>"
-                     "<p>It may have been replaced by a newer one. Ask whoever sent it for a "
-                     "new link.</p>")
+                     "<p>An invite link lets one person in and lasts seven days. This one has "
+                     "been used, cancelled, or has run out.</p>"
+                     "<p>If you used it yourself, you are already in the team: ask your coding "
+                     "agent to <strong>open my aistack dashboard</strong>. Otherwise ask "
+                     "whoever sent it for a new link.</p>")
 
     server = server_base_url(request)
     sentence = (f"Set up AIStack: fetch {server}/setup and follow it.\n"

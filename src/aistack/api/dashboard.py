@@ -11,6 +11,7 @@ import logging
 import uuid
 from collections.abc import Callable
 from functools import wraps
+from html import escape
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -30,7 +31,7 @@ from aistack.bundled import dashboard_page
 from aistack.commons.exceptions import InvalidTicket, SignedOut, ValidationError
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.route_error_handler import handle_route_errors
-from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH
+from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH, server_base_url
 from aistack.services import dashboard_service, library_log, skill_service, team_service
 from aistack.services.transfer_ticket import DASHBOARD_SESSION_LIFETIME_SECONDS
 
@@ -87,7 +88,7 @@ async def sign_in(request: Request) -> Response:
         user_id = get_ticket_signer().verified_dashboard_link(request.path_params["ticket"])
     except InvalidTicket:
         logger.info("Dashboard sign-in refused: the link was not valid or had expired.")
-        return _signed_out_page()
+        return _signed_out_page(request)
 
     response = RedirectResponse(APP_PATH, status_code=303, headers=_PAGE_HEADERS)
     response.set_cookie(
@@ -106,13 +107,19 @@ async def sign_in(request: Request) -> Response:
     return response
 
 
+@_route("/", methods=["GET"])
+async def root(request: Request) -> Response:
+    """The server's own address is what a person opens first: it leads to the page."""
+    return RedirectResponse(APP_PATH, status_code=307)
+
+
 @_route(APP_PATH, methods=["GET"])
 async def app(request: Request) -> Response:
     """The page itself. It holds no data: everything it shows comes from `/api/state`."""
     try:
         _signed_in(request)
     except SignedOut:
-        return _signed_out_page()
+        return _signed_out_page(request)
     return HTMLResponse(dashboard_page(), headers=_PAGE_HEADERS)
 
 
@@ -335,16 +342,37 @@ def _json(payload: dict[str, Any]) -> JSONResponse:
     return JSONResponse(payload, headers=_API_HEADERS)
 
 
-def _signed_out_page() -> Response:
+def _signed_out_page(request: Request) -> Response:
     return HTMLResponse(
-        "<!doctype html><meta charset=utf-8><title>AIStack</title>"
-        "<body style=\"font:16px system-ui;margin:15vh auto;max-width:32rem;padding:0 1rem\">"
+        "<!doctype html><meta charset=utf-8>"
+        "<meta name=viewport content=\"width=device-width,initial-scale=1\"><title>AIStack</title>"
+        "<body style=\"font:16px/1.5 system-ui;margin:15vh auto;max-width:32rem;padding:0 1rem\">"
         "<h1 style=\"font-size:1.25rem\">You are not signed in</h1>"
         "<p>Ask your coding agent to <strong>open my aistack dashboard</strong>. It will "
-        "give you a link that signs you in.</p>",
+        "give you a link that signs you in. A link works for five minutes.</p>"
+        + _not_connected_yet(request),
         status_code=401,
         headers=_PAGE_HEADERS,
     )
+
+
+def _not_connected_yet(request: Request) -> str:
+    """For someone whose agent is not connected yet: the sentence that connects it.
+
+    Built from the server's own address only, so nothing secret is on a page anyone can open.
+    """
+    if is_local_mode():
+        return ""
+    try:
+        server = server_base_url(request)
+    except ValidationError:
+        return ""
+    sentence = (f"Set up AIStack: fetch {server}/setup and follow it.\n"
+                "Invite code: <the invite code>. Call me <your name>.")
+    return ("<p>Not connected yet? Paste this into Claude Code or Codex, with the invite code "
+            "you were given and the name you want to go by:</p>"
+            "<pre style=\"white-space:pre-wrap;padding:12px;border:1px solid #8884;"
+            f"border-radius:8px\">{escape(sentence)}</pre>")
 
 
 def _served_over_https(request: Request) -> bool:

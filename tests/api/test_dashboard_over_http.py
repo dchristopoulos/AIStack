@@ -104,6 +104,16 @@ async def test_nothing_is_served_without_a_session(server_url, path):
     assert "dimitris" not in response.text
 
 
+async def test_the_servers_address_leads_a_stranger_to_how_to_connect(server_url):
+    async with httpx.AsyncClient(base_url=_base(server_url), follow_redirects=True) as stranger:
+        response = await stranger.get("/")
+
+    assert response.url.path == "/app" and response.status_code == 401
+    # Someone whose agent is not connected yet gets the sentence that connects it.
+    assert f"fetch {_base(server_url)}/setup and follow it" in response.text
+    assert 'name=viewport' in response.text
+
+
 @pytest.mark.parametrize("ticket", ["nonsense", "a.b.c", ""])
 async def test_a_link_that_is_not_one_signs_nobody_in(server_url, ticket):
     async with httpx.AsyncClient(base_url=_base(server_url)) as stranger:

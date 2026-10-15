@@ -333,6 +333,13 @@ def test_a_member_using_an_invite_again_leaves_it_for_someone_else(session_facto
     assert _members_of(session_factory, "acme") == 3
 
 
+def test_the_invite_link_works_wherever_the_code_does(session_factory, dimitris, eve, acme):
+    code = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, acme)
+    link = f" https://aistack.example.com/invite/{code}/\n"
+
+    assert _do(session_factory, team_service.join_team, eve.user.user_id, link) == "acme"
+
+
 def test_a_cancelled_invite_admits_nobody(session_factory, dimitris, maria, eve, acme):
     _do(session_factory, team_service.set_member, dimitris.user.user_id, acme, "maria",
         can_invite=True)
