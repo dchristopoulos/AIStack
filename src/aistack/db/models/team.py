@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, UniqueConstraint, Uuid
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, UniqueConstraint, Uuid, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aistack.db.models.base import Base
@@ -70,7 +70,8 @@ class TeamMember(Base):
     # to each. Reading only: sharing into a group still takes membership of it.
     sees_all_groups: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # May make the team's invite link, and nothing else an admin can (ADR-0019).
-    can_invite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    can_invite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                             server_default=false())
     created_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                  default=utc_now)
 

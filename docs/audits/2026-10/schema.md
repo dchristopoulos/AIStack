@@ -204,6 +204,8 @@ Related: [ENT-03](concurrency-and-reliability.md#ent-03-local-mode-orders-the-li
 
 **Done when.** pg_dump -s of create_all and of migrate_schema show identical constraint names, and a test asserts inspector constraint names equal on SQLite and PostgreSQL.
 
+**Resolution (step 18a).** The convention spells out PostgreSQL's own names (`<table>_<column>_fkey`, `<table>_<column>_key`, `<table>_pkey`) rather than the `fk_`/`uq_` names proposed above, so on PostgreSQL only the three foreign keys 0002 named need renaming and nothing else moves. On SQLite, migration 0011 rebuilds `skill`, `user`, `machine`, `team` and `invite` with the names, and leaves the large tables (`skill_version`, `skill_file`, `machine_skill` and the rest) with the unnamed constraints the baseline gave them, because rebuilding them copies every file for a name SQLite never uses: it cannot alter a constraint in place, and a batch migration that drops one passes the convention (AGENTS.md, Migrations). So the test compares every name on PostgreSQL, and on SQLite every name the database stored.
+
 ### DB-13: Group unsubscriptions survive leaving a team, so a returning member silently misses updates
 
 **Confirmed.** Severity **Low**, effort **S**. Hurts: A member who leaves and later rejoins a team: sync never offers updates from groups they had muted before, without saying so.
