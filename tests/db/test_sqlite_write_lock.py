@@ -2,9 +2,11 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
 from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 
-from aistack.db.engine import build_session_factory
+from aistack.db.engine import build_read_session_factory, build_session_factory
 from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.user import User
 from aistack.services import onboarding_service, skill_service
@@ -116,3 +118,33 @@ def test_concurrent_joins_all_succeed_with_one_admin(engine):
     assert sum(result.user.is_admin for result in joined) == 1
     with session_factory() as session:
         assert len(session.scalars(select(User)).all()) == WRITER_COUNT
+
+
+def test_a_read_session_completes_while_a_writer_holds_the_lock(engine):
+    """ADR-0030: in WAL mode a deferred reader neither waits for the writer nor blocks it."""
+    with build_session_factory(engine).begin() as session:
+        onboarding_service.join(session, "dimitris", "laptop", "LINUX")
+    reader = build_read_session_factory(engine)
+
+    with engine.connect() as writer:
+        writer.execute(User.__table__.insert().values(username="writing"))
+        started = time.perf_counter()
+        with reader.begin() as session:
+            names = session.scalars(select(User.username)).all()
+
+    assert names == ["dimitris"]
+    assert time.perf_counter() - started < 1
+
+
+def test_a_read_session_refuses_to_write(portable_engine):
+    reader = build_read_session_factory(portable_engine)
+
+    with pytest.raises(DBAPIError):
+        with reader.begin() as session:
+            session.add(User(username="eve"))
+            session.flush()
+
+    with build_session_factory(portable_engine).begin() as session:
+        assert session.scalars(select(User.username)).all() == []
+        # The connection went back to the pool able to write again.
+        session.add(User(username="maria"))

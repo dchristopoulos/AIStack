@@ -39,3 +39,8 @@ class InvalidTicket(AIStackError):
 
 class SignedOut(AIStackError):
     """A dashboard request with no session, or one that has ended."""
+
+
+class Busy(AIStackError):
+    """The database could not grant a lock in time. Nothing was changed; the call can be
+    made again."""

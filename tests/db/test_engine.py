@@ -3,9 +3,10 @@ from time import perf_counter
 
 import pytest
 from sqlalchemy import Engine, select, text
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+from aistack.commons.exceptions import Busy
 from aistack.db.models.user import User
 from aistack.db.engine import build_engine
 
@@ -17,11 +18,11 @@ def test_sqlite_connections_get_wal_busy_timeout_and_foreign_keys(engine: Engine
         assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
 
 
-def test_sqlite_waits_for_a_busy_writer_before_failing(engine):
+def test_sqlite_waits_for_a_busy_writer_before_failing_with_a_sentence(engine):
     with engine.connect() as writer, engine.connect() as contender:
         writer.execute(User.__table__.insert().values(username="holding-lock"))
         started = perf_counter()
-        with pytest.raises(OperationalError, match="database is locked"):
+        with pytest.raises(Busy, match="Make the same call again in a few seconds"):
             contender.execute(User.__table__.insert().values(username="waiting"))
         assert perf_counter() - started >= 4.5
 
