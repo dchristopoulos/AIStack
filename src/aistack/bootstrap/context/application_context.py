@@ -196,7 +196,7 @@ def is_local_mode() -> bool:
 
 def _computer_name() -> str:
     """What a person calls this computer: "MacBook Pro M4 Pro", not the host name macOS makes
-    from their account ("Dimitriss-MacBook-Pro") or the one Windows makes up."""
+    from their account ("Marias-MacBook-Pro") or the one Windows makes up."""
     system = platform.system()
     if system == "Darwin":
         try:
