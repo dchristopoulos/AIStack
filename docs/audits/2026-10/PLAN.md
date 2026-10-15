@@ -44,7 +44,7 @@ How to work through it:
 - [x] 14. Reads that change nothing stop taking SQLite's write lock (#143)
 - [ ] 15. Answer every conflict and limit with a sentence
 - [x] 16. Fix the layouts that break at tablet width and with long names (#139)
-- [ ] 17. Versions, a changelog, and a channel to stay on
+- [x] 17. Versions, a changelog, and a channel to stay on (#145)
 - [x] 18a. The schema test sees every constraint, and constraints have one name (#125)
 - [x] 18b. Index what the services look up by; order and times alike on both databases (#131)
 - [x] 18c. Write down what 'compatible' means and enforce it (#135)
@@ -305,6 +305,8 @@ Files: CHANGELOG.md (new; the owner's release notes, one section per release, wr
 ADR: none needed.
 
 Tests: The refusal sentence names a version that exists on PyPI; `self_update` honours the opt-out; a computer told its Library was upgraded updates without waiting a day.
+
+Outcome: images from `main` are `edge` and `sha-<commit>` and name their commit (`0.1.0+g1a2b3c4`) in the startup line and in what the database records; `latest`, `X.Y.Z` and the `X.Y` channel come only from a version tag, and every command people copy runs `:0.1`, held by a test against the version. STD-08's check that a breaking migration comes with a new minor runs in the tag pipeline (`scripts/check_release.py`), not on pull requests, because a pull request never changes the version; it also refuses a release without its CHANGELOG.md section, which becomes the GitHub Release. Local mode updates itself only within its minor, `AISTACK_AUTO_UPDATE=off` turns it off, and a Library that needs a newer release starts the update at once, which ADR-0024 now says. The version on the dashboard's Settings page (STD-08) moves to step 37.
 
 ### 18. Write down what 'compatible' means and enforce it
 
@@ -717,7 +719,7 @@ Tests: axe finds no violation on the signed-out, invite and setup pages in both 
 Closes: [UI-23](ui.md#ui-23-explanations-sit-on-the-page-where-one-line-and-a-click-would-do-dialogs-footnotes-and-zero-value-tiles-clutter-the-screens-people-open-most), [UX-04](ux.md#ux-04-where-it-lives-on-a-server-says-everyone-on-this-server-shares-it-about-a-private-library-and-suggests-setting-aistack-up-again), [UX-05](ux.md#ux-05-skills-you-wrote-and-shared-show-in-your-library-as-coming-from-the-team-n-skills-from-a-team), [UX-09](ux.md#ux-09-tool-specific-error-sentences-reach-local-mode-and-the-dashboard-call-get_skill-with-its-team-the-server-holds-no-decision-a-python-function-name), [UX-13](ux.md#ux-13-pending-invites-made-close-together-cant-be-told-apart-and-the-invite-dialog-says-to-send-one-link-to-the-people), [UX-14](ux.md#ux-14-with-an-empty-library-add-skills-says-everything-in-your-library-is-here-already-and-still-offers-add), [UX-15](ux.md#ux-15-removal-confirmations-and-toasts-misstate-what-happens-and-leave-out-what-stays-and-what-is-irreversible), [UX-19](ux.md#ux-19-ticking-computers-in-the-skill-panel-and-then-clicking-share-with-a-team-or-remove-from-library-discards-the-ticks-without-a-word), [UI-18](ui.md#ui-18-type-rules-broken-rail-names-at-105px-avatars-at-11px-monospace-uppercase-letters-and-usernames-in-monospace), [UI-19](ui.md#ui-19-with-the-graphite-accent-the-current-sidebar-item-looks-the-same-as-a-hovered-one), [UI-20](ui.md#ui-20-add-an-agent-cannot-be-undone-a-picked-agent-stays-on-that-computer-in-this-browser-forever).
 Largest effort among them: M.
 
-Files: src/aistack/bundled/dashboard.html; docs/design-system.md (the one-line rule and word budget); services whose sentences name tools (UX-09).
+Files: src/aistack/bundled/dashboard.html; docs/design-system.md (the one-line rule and word budget); services whose sentences name tools (UX-09). Also the running release on the Settings page, moved here from step 17 (STD-08).
 
 ADR: none needed.
 

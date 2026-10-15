@@ -374,8 +374,10 @@ async def test_a_breaking_upgrade_elsewhere_is_explained_through_the_agent(compu
 
     async with computer("laptop") as (laptop, _):
         with pytest.raises(ToolError, match="updated by AIStack 9.9.0 on another computer.*"
-                                                "Run `uv tool upgrade aistack-mcp`"):
+                                                "AIStack updates itself.*"
+                                                "run `uv tool upgrade aistack-mcp`"):
             await _call(laptop, "sync")
+        assert application_context.needs_newer_release()
 
 
 async def test_a_breaking_upgrade_while_the_agent_runs_is_explained_at_its_next_call(
@@ -397,7 +399,7 @@ async def test_a_breaking_upgrade_while_the_agent_runs_is_explained_at_its_next_
 
         for _ in range(2):
             with pytest.raises(ToolError, match="updated by AIStack 9.9.0 on another computer"
-                                                ".*Run `uv tool upgrade aistack-mcp`"):
+                                                ".*run `uv tool upgrade aistack-mcp`"):
                 await _call(laptop, "sync")
 
 
