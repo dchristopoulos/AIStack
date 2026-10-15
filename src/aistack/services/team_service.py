@@ -366,10 +366,30 @@ def set_subscribed(session: Session, user_id: uuid.UUID, team: str, group: str,
 
 
 def leave_team(session: Session, user_id: uuid.UUID, team: str) -> str:
-    """Leave a team. The skills already taken from it stay in the caller's own skills."""
+    """Leave a team. The skills already taken from it stay in the caller's own skills.
+
+    The last member leaving deletes the team (ADR-0028): nobody is kept in one.
+    """
     found, me = lock(session, user_id, team)
+    if _members_besides(session, found, user_id) == 0:
+        _delete_team(session, found)
+        logger.info(f"Team deleted by its last member leaving. Team: '{found.team_id}'. "
+                    f"User: '{user_id}'.")
+        return found.name
     _keep_an_admin(session, found, me, leaving=True)
     _drop_member(session, found.team_id, user_id)
+    return found.name
+
+
+def delete_team(session: Session, user_id: uuid.UUID, team: str) -> str:
+    """Delete a team with its copies of its skills, its groups and its invites. Admins only.
+
+    Every copy a member took stays theirs, in their Library and on their computers, because
+    a machine installs only from the Library (ADR-0015, ADR-0028). The name is free again.
+    """
+    found, _ = _as_admin(session, user_id, team)
+    _delete_team(session, found)
+    logger.info(f"Team deleted. Team: '{found.team_id}'. By: '{user_id}'.")
     return found.name
 
 
@@ -467,7 +487,7 @@ def move_skill(session: Session, user_id: uuid.UUID, team: str, name: str,
     Nothing on any computer changes: where a skill sits decides who sees it in the team.
     """
     found, _ = _as_admin(session, user_id, team)
-    skill = _skill(session, found, name)
+    skill = _skill(session, found, name, user_id)
     skill.group_id = None if group is None else _group(session, found, group).group_id
 
 
@@ -477,12 +497,8 @@ def remove_skill(session: Session, user_id: uuid.UUID, team: str, name: str) -> 
     Copies people already took stay in their own skills: a machine never ran the team's copy.
     """
     found, _ = _as_admin(session, user_id, team)
-    skill = _skill(session, found, name)
-    versions = select(SkillVersion.skill_version_id).where(
-        SkillVersion.skill_id == skill.skill_id)
-    session.execute(delete(SkillFile).where(SkillFile.skill_version_id.in_(versions)))
-    session.execute(delete(SkillVersion).where(SkillVersion.skill_id == skill.skill_id))
-    session.delete(skill)
+    skill = _skill(session, found, name, user_id)
+    _delete_skills(session, select(Skill.skill_id).where(Skill.skill_id == skill.skill_id))
     logger.info(f"Team skill removed. Team: '{found.team_id}'. Skill: '{skill.name}'. "
                 f"By: '{user_id}'.")
 
@@ -543,10 +559,11 @@ def _group(session: Session, team: Team, name: str) -> TeamGroup:
     return found
 
 
-def _skill(session: Session, team: Team, name: str) -> Skill:
+def _skill(session: Session, team: Team, name: str, user_id: uuid.UUID) -> Skill:
+    """A team skill the caller may see. An admin outside a private group may not either."""
     found = session.scalar(select(Skill).where(Skill.team_id == team.team_id,
                                                Skill.name == name))
-    if found is None:
+    if found is None or not visibility.can_see_team_skill(session, user_id, found.skill_id):
         raise NotFound(f"Team '{team.name}' has no skill named '{loggable(name)}'.")
     return found
 
@@ -566,9 +583,35 @@ def _keep_an_admin(session: Session, team: Team, member: TeamMember, leaving: bo
     admins = session.scalar(
         select(func.count()).select_from(TeamMember)
         .where(TeamMember.team_id == team.team_id, TeamMember.role == TeamRole.ADMIN))
-    if admins <= 1:
-        raise Conflict(f"That would leave team '{team.name}' with no admin. Make someone "
-                       "else an admin first.")
+    if admins > 1:
+        return
+    if _members_besides(session, team, member.user_id) == 0:
+        raise Conflict(f"You are the only member of team '{team.name}'. Leave it or delete "
+                       "it instead; either removes the team.")
+    raise Conflict(f"That would leave team '{team.name}' with no admin. Make someone "
+                   "else an admin first.")
+
+
+def _members_besides(session: Session, team: Team, user_id: uuid.UUID) -> int:
+    return session.scalar(select(func.count()).select_from(TeamMember).where(
+        TeamMember.team_id == team.team_id, TeamMember.user_id != user_id))
+
+
+def _delete_team(session: Session, team: Team) -> None:
+    """The team's skills, then the team; its members, groups and invites go with it.
+
+    A member's own copy of a team skill points at it with ON DELETE SET NULL, so it stays.
+    """
+    _delete_skills(session, select(Skill.skill_id).where(Skill.team_id == team.team_id))
+    session.execute(delete(Team).where(Team.team_id == team.team_id))
+    session.expunge(team)
+
+
+def _delete_skills(session: Session, skill_ids) -> None:
+    versions = select(SkillVersion.skill_version_id).where(SkillVersion.skill_id.in_(skill_ids))
+    session.execute(delete(SkillFile).where(SkillFile.skill_version_id.in_(versions)))
+    session.execute(delete(SkillVersion).where(SkillVersion.skill_id.in_(skill_ids)))
+    session.execute(delete(Skill).where(Skill.skill_id.in_(skill_ids)))
 
 
 def _drop_member(session: Session, team_id: uuid.UUID, user_id: uuid.UUID) -> None:
