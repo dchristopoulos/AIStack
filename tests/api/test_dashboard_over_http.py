@@ -138,6 +138,19 @@ async def test_a_link_is_not_a_session_and_a_session_is_not_a_link(server_url):
     assert session_as_link.status_code == 401 and "set-cookie" not in session_as_link.headers
 
 
+async def test_a_link_signs_a_browser_in_once(server_url):
+    """A link copied afterwards, from a chat log or a browser's history, signs nobody in."""
+    token = await _join(server_url, "dimitris")
+    link = httpx.URL((await _call(server_url, token, "open_dashboard"))["url"]).path
+    async with httpx.AsyncClient(base_url=_base(server_url)) as first:
+        used = await first.get(link)
+    async with httpx.AsyncClient(base_url=_base(server_url)) as second:
+        again = await second.get(link)
+
+    assert used.status_code == 303 and "set-cookie" in used.headers
+    assert again.status_code == 401 and "set-cookie" not in again.headers
+
+
 async def test_a_transfer_url_is_not_a_way_in(server_url):
     token = await _join(server_url, "dimitris")
     upload_ticket = (await _call(server_url, token, "push_skill", name="wizard"))[

@@ -5,6 +5,7 @@ signature in constant time and enforces the expiry, and this module only decides
 ticket says and turns a failed check into a sentence the agent can act on.
 """
 
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -56,6 +57,8 @@ class TicketSigner:
     def __init__(self, key: bytes, lifetime_seconds: int = TICKET_LIFETIME_SECONDS):
         self._key = key
         self._lifetime_seconds = lifetime_seconds
+        self._used_links: dict[str, float] = {}
+        self._used_links_lock = threading.Lock()
 
     def sign_upload(self, ticket: UploadTicket) -> str:
         return self._signed(_UPLOAD_AUDIENCE, ticket.machine_id, {
@@ -94,12 +97,27 @@ class TicketSigner:
             raise _not_valid("get_skill") from error
 
     def sign_dashboard_link(self, user_id: uuid.UUID) -> str:
-        """A link that signs a browser in as `user_id`, for a few minutes (ADR-0017)."""
-        return self._signed(_DASHBOARD_LINK_AUDIENCE, user_id, {},
+        """A link that signs a browser in as `user_id`, once, within a few minutes
+        (ADR-0017)."""
+        return self._signed(_DASHBOARD_LINK_AUDIENCE, user_id, {"jti": str(uuid.uuid4())},
                             DASHBOARD_LINK_LIFETIME_SECONDS)
 
     def verified_dashboard_link(self, token: str) -> uuid.UUID:
-        return self._verified_user(token, _DASHBOARD_LINK_AUDIENCE)
+        """The link's user, the first time it is used. A link copied from a chat log or a
+        browser's history afterwards signs nobody in."""
+        user_id = self._verified_user(token, _DASHBOARD_LINK_AUDIENCE)
+        link_id = jwt.decode(token, options={"verify_signature": False}).get("jti")
+        if not isinstance(link_id, str):
+            raise _invalid_dashboard_link()
+        now = time.time()
+        with self._used_links_lock:
+            # Forgotten once expired, when the signature check refuses them anyway.
+            self._used_links = {used: expires for used, expires in self._used_links.items()
+                                if expires > now}
+            if link_id in self._used_links:
+                raise _invalid_dashboard_link()
+            self._used_links[link_id] = now + DASHBOARD_LINK_LIFETIME_SECONDS
+        return user_id
 
     def sign_dashboard_session(self, user_id: uuid.UUID) -> str:
         """The cookie a signed-in browser presents. A server restart signs everyone out."""
@@ -115,10 +133,7 @@ class TicketSigner:
                                 options={"require": ["exp", "aud", "sub"]})
             return uuid.UUID(claims["sub"])
         except (jwt.InvalidTokenError, KeyError, ValueError, TypeError) as error:
-            raise InvalidTicket(
-                "This dashboard link is not valid or has expired. Ask your agent to \"open "
-                "my aistack dashboard\" for a new one."
-            ) from error
+            raise _invalid_dashboard_link() from error
 
     def _signed(self, audience: str, subject: uuid.UUID, claims: dict,
                 lifetime_seconds: int | None = None) -> str:
@@ -163,3 +178,8 @@ def _not_valid(retry_with: str) -> InvalidTicket:
         "This transfer URL is not valid. Use the URL exactly as the tool returned it, or "
         f"call {retry_with} again for a fresh one."
     )
+
+
+def _invalid_dashboard_link() -> InvalidTicket:
+    return InvalidTicket("This dashboard link is not valid, has been used, or has expired. "
+                         "Ask your agent to \"open my aistack dashboard\" for a new one.")

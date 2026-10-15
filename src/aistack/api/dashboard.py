@@ -94,7 +94,7 @@ async def sign_in(request: Request) -> Response:
 
     response = RedirectResponse(APP_PATH, status_code=303, headers=_PAGE_HEADERS)
     response.set_cookie(
-        SESSION_COOKIE,
+        _session_cookie(request),
         get_ticket_signer().sign_dashboard_session(user_id),
         max_age=DASHBOARD_SESSION_LIFETIME_SECONDS,
         httponly=True,
@@ -141,7 +141,7 @@ async def state(request: Request) -> Response:
 async def sign_out(request: Request) -> Response:
     _require_request_header(request)
     response = _json({"ok": True})
-    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(_session_cookie(request), path="/")
     return response
 
 
@@ -289,9 +289,15 @@ def remove_team_skill(session, user_id, path, body):
     team_service.remove_skill(session, user_id, path["team"], path["name"])
 
 
+def _session_cookie(request: Request) -> str:
+    """A browser keeps one set of cookies for 127.0.0.1 across every port, so a localhost
+    dashboard names its cookie by its port and two dashboards do not sign each other out."""
+    return f"{SESSION_COOKIE}_{request.url.port}" if is_local_mode() else SESSION_COOKIE
+
+
 def _signed_in(request: Request) -> uuid.UUID:
     """The user this browser is signed in as, from the session cookie and nothing else."""
-    cookie = request.cookies.get(SESSION_COOKIE)
+    cookie = request.cookies.get(_session_cookie(request))
     if cookie is None:
         raise SignedOut(_SIGNED_OUT)
     try:
