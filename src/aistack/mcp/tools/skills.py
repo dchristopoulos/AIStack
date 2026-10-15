@@ -85,6 +85,7 @@ def push_skill(name: str, origin: str | None = None,
     ticket = get_ticket_signer().sign_upload(UploadTicket(
         machine_id=caller.machine_id,
         user_id=caller.user_id,
+        token_prefix=caller.token_prefix,
         skill_name=name,
         origin=origin,
         harness=harness,
@@ -284,6 +285,7 @@ def get_skill(name: str, team: str | None = None,
 
     ticket = get_ticket_signer().sign_download(DownloadTicket(
         machine_id=caller.machine_id,
+        token_prefix=caller.token_prefix,
         skill_version_id=skill.skill_version_id,
     ))
 

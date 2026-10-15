@@ -41,7 +41,7 @@ from aistack.services import (
     skill_service,
     team_service,
 )
-from aistack.services.transfer_ticket import DASHBOARD_SESSION_LIFETIME_SECONDS
+from aistack.services.transfer_ticket import DASHBOARD_SESSION_LIFETIME_SECONDS, DashboardHolder
 
 logger = logging.getLogger(__name__)
 
@@ -89,19 +89,44 @@ def _route(path: str, methods: list[str], local: bool = True):
 async def sign_in(request: Request) -> Response:
     """Turn a link from `open_dashboard` into a session, then leave the link behind.
 
-    The redirect takes the ticket out of the address bar. A link that is wrong or has expired
-    gets the same page as no session at all.
+    The redirect takes the ticket out of the address bar. A link that is wrong, has expired,
+    or comes from a computer no longer connected gets the same page as no session at all. A
+    browser already signed in as someone else is asked first: a link anyone sends could
+    otherwise sign it in to their account (ADR-0027).
     """
     try:
-        user_id = get_ticket_signer().verified_dashboard_link(request.path_params["ticket"])
-    except InvalidTicket:
+        holder = get_ticket_signer().verified_dashboard_link(request.path_params["ticket"])
+        joining = await asyncio.to_thread(_in_transaction, _username, holder)
+    except (InvalidTicket, SignedOut):
         logger.info("Dashboard sign-in refused: the link was not valid or had expired.")
         return _signed_out_page(request)
 
-    response = RedirectResponse(APP_PATH, status_code=303, headers=_PAGE_HEADERS)
+    current = await _current_user(request)
+    if current is not None and current.user_id != holder.user_id:
+        current_name = await asyncio.to_thread(_in_transaction, _username, current)
+        return _switch_page(holder, joining, current_name)
+    return _start_session(request, holder)
+
+
+@_route(DASHBOARD_LOGIN_PATH + "/{ticket}", methods=["POST"])
+@handle_route_errors
+async def switch_account(request: Request) -> Response:
+    """The button on the page `sign_in` asks with: sign this browser in as the link's user."""
+    _require_request_header(request)
+    try:
+        holder = get_ticket_signer().verified_dashboard_link(request.path_params["ticket"])
+    except InvalidTicket as error:
+        raise SignedOut(_SIGNED_OUT) from error
+    await asyncio.to_thread(_in_transaction, _username, holder)
+    return _start_session(request, holder, _json({"ok": True}))
+
+
+def _start_session(request: Request, holder: DashboardHolder,
+                   response: Response | None = None) -> Response:
+    response = response or RedirectResponse(APP_PATH, status_code=303, headers=_PAGE_HEADERS)
     response.set_cookie(
         _session_cookie(request),
-        get_ticket_signer().sign_dashboard_session(user_id),
+        get_ticket_signer().sign_dashboard_session(holder),
         max_age=DASHBOARD_SESSION_LIFETIME_SECONDS,
         httponly=True,
         # Lax, not Strict: the link is usually opened from a chat window on another site, and
@@ -111,8 +136,40 @@ async def sign_in(request: Request) -> Response:
         secure=_served_over_https(request),
         path="/",
     )
-    logger.info(f"Dashboard session started. User: '{user_id}'.")
+    logger.info(f"Dashboard session started. User: '{holder.user_id}'. "
+                f"Machine: '{holder.machine_id}'.")
     return response
+
+
+async def _current_user(request: Request) -> DashboardHolder | None:
+    """Who this browser is signed in as now, if anyone, with a computer still connected."""
+    try:
+        holder = _signed_in(request)
+        await asyncio.to_thread(_in_transaction, _username, holder)
+        return holder
+    except SignedOut:
+        return None
+
+
+def _switch_page(holder: DashboardHolder, joining: str, current: str) -> Response:
+    """Ask before replacing a session. The link was spent on the way here, so the button
+    carries a fresh one, good for the same few minutes and only once."""
+    switch = f"{DASHBOARD_LOGIN_PATH}/{get_ticket_signer().sign_dashboard_link(holder)}"
+    return HTMLResponse(
+        "<!doctype html><meta charset=utf-8>"
+        "<meta name=viewport content=\"width=device-width,initial-scale=1\"><title>AIStack</title>"
+        "<body style=\"font:16px/1.5 system-ui;margin:15vh auto;max-width:32rem;padding:0 1rem\">"
+        "<h1 style=\"font-size:1.25rem\">Switch account?</h1>"
+        f"<p>This browser is signed in as <strong>{escape(current)}</strong>. The link you "
+        f"opened signs it in as <strong>{escape(joining)}</strong>.</p>"
+        "<p>If someone else sent you this link, stay with your own account.</p>"
+        f"<p><button id=switch>Sign in as {escape(joining)}</button> "
+        f"<a href=\"{APP_PATH}\">Stay signed in as {escape(current)}</a></p>"
+        "<script>document.getElementById('switch').onclick=async()=>{"
+        f"await fetch({json.dumps(switch)},{{method:'POST',headers:{{'{REQUEST_HEADER}':'1'}}}});"
+        f"location.href={json.dumps(APP_PATH)}}}</script>",
+        headers=_PAGE_HEADERS,
+    )
 
 
 @_route("/", methods=["GET"])
@@ -134,10 +191,10 @@ async def app(request: Request) -> Response:
 @_route(API_PATH + "/state", methods=["GET"])
 @handle_route_errors
 async def state(request: Request) -> Response:
-    user_id = _signed_in(request)
+    holder = _signed_in(request)
     if is_local_mode():
         await asyncio.to_thread(library_before_read)
-    shown = await asyncio.to_thread(_in_transaction, dashboard_service.state, user_id)
+    shown = await asyncio.to_thread(_in_transaction, _as_user(dashboard_service.state), holder)
     # The page hides what only a server can do, such as creating a team, when this is false.
     return _json(shown | {"server": not is_local_mode(), "library": library_description()})
 
@@ -146,6 +203,10 @@ async def state(request: Request) -> Response:
 @handle_route_errors
 async def sign_out(request: Request) -> Response:
     _require_request_header(request)
+    cookie = request.cookies.get(_session_cookie(request))
+    if cookie is not None:
+        # Ended on the server too, so a copy of the cookie stops working with it.
+        get_ticket_signer().end_dashboard_session(cookie)
     response = _json({"ok": True})
     response.delete_cookie(_session_cookie(request), path="/")
     return response
@@ -164,10 +225,10 @@ def _action(path: str, local: bool = True) -> Callable[[Action], Action]:
     def register(function: Action) -> Action:
         @wraps(function)
         async def route(request: Request) -> Response:
-            user_id = _signed_in(request)
+            holder = _signed_in(request)
             _require_request_header(request)
             body = await _json_body(request)
-            result = await asyncio.to_thread(_in_transaction, function, user_id,
+            result = await asyncio.to_thread(_in_transaction, _as_user(function), holder,
                                              dict(request.path_params), body)
             if is_local_mode():
                 await asyncio.to_thread(library_after_write)
@@ -304,12 +365,19 @@ def remove_team_skill(session, user_id, path, body):
 
 def _session_cookie(request: Request) -> str:
     """A browser keeps one set of cookies for 127.0.0.1 across every port, so a localhost
-    dashboard names its cookie by its port and two dashboards do not sign each other out."""
-    return f"{SESSION_COOKIE}_{request.url.port}" if is_local_mode() else SESSION_COOKIE
+    dashboard names its cookie by its port and two dashboards do not sign each other out.
+
+    Over https the name takes the `__Host-` prefix, which a browser accepts only from this
+    exact host, so a sibling subdomain cannot plant a session of its own.
+    """
+    if is_local_mode():
+        return f"{SESSION_COOKIE}_{request.url.port}"
+    return f"__Host-{SESSION_COOKIE}" if _served_over_https(request) else SESSION_COOKIE
 
 
-def _signed_in(request: Request) -> uuid.UUID:
-    """The user this browser is signed in as, from the session cookie and nothing else."""
+def _signed_in(request: Request) -> DashboardHolder:
+    """Who this browser is signed in as, from the session cookie and nothing else. Whether
+    the computer behind it is still connected is checked in each request's transaction."""
     cookie = request.cookies.get(_session_cookie(request))
     if cookie is None:
         raise SignedOut(_SIGNED_OUT)
@@ -356,11 +424,22 @@ def _flag(body: dict[str, Any], key: str, required: bool = True) -> bool | None:
     return value
 
 
-def _in_transaction(function: Callable[..., Any], user_id: uuid.UUID, *arguments: Any) -> Any:
-    """One request, one transaction, exactly as a tool call."""
+def _in_transaction(function: Callable[..., Any], holder: DashboardHolder,
+                    *arguments: Any) -> Any:
+    """One request, one transaction, exactly as a tool call, for a session whose computer is
+    still connected."""
     with get_session_factory().begin() as session:
-        dashboard_service.require_a_machine(session, user_id)
-        return function(session, user_id, *arguments)
+        dashboard_service.require_its_machine(session, holder)
+        return function(session, holder, *arguments)
+
+
+def _as_user(function: Callable[..., Any]) -> Callable[..., Any]:
+    """A service call that takes the caller's user id, as `state` and every action do."""
+    return lambda session, holder, *arguments: function(session, holder.user_id, *arguments)
+
+
+def _username(session: Session, holder: DashboardHolder) -> str:
+    return dashboard_service.username(session, holder.user_id)
 
 
 def _json(payload: dict[str, Any]) -> JSONResponse:

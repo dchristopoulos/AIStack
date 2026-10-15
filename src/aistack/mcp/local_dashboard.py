@@ -39,7 +39,7 @@ def dashboard_link() -> str:
                     raise RuntimeError("The dashboard did not start within five seconds.")
                 time.sleep(0.01)
             _server, _port = server, listener.getsockname()[1]
-    ticket = get_ticket_signer().sign_dashboard_link(principal.user_id)
+    ticket = get_ticket_signer().sign_dashboard_link(principal.dashboard_holder())
     return f"http://127.0.0.1:{_port}{DASHBOARD_LOGIN_PATH}/{ticket}"
 
 
