@@ -258,3 +258,19 @@ async def test_a_log_from_a_newer_release_is_explained_through_the_agent(compute
     async with computer("desktop") as (desktop, _):
         with pytest.raises(ToolError, match="Update AIStack on this computer"):
             await _call(desktop, "list_skills")
+
+
+async def test_a_computer_starts_offline_and_rebuilds_a_lost_copy_from_its_clone(computer,
+                                                                                 repository):
+    """A normal start needs no network, and the copy can be deleted at any time (ADR-0025)."""
+    async with computer("laptop") as (laptop, home):
+        _write(home, "wizard", "Cast.")
+        await _call(laptop, "push_skill", name="wizard")
+        first = application_context.get_local_principal()
+
+    (home / ".aistack" / "github-copy.db").unlink()
+    with offline(repository):
+        async with computer("laptop") as (laptop, _):
+            listed = await _call(laptop, "list_skills")
+            assert [skill["name"] for skill in listed["skills"]] == ["wizard"]
+            assert application_context.get_local_principal() == first
