@@ -12,7 +12,7 @@ Bring this computer's skills in line with the Library, the user's private store 
 The `sync` tool and the others below come from the `aistack` MCP server. If they are not available in this session, stop: do not try to do their work another way. Tell the user AIStack is not connected in this session, and what to do:
 
 - If setup has just finished, restart Claude Code, or Codex if that is the agent you are, once. It reads its server list at startup.
-- Otherwise run `"$(uv tool dir --bin)/aistack-mcp" check` in a terminal (on Windows, `& "$(uv tool dir --bin)\aistack-mcp.exe" check`). It finds the Library this computer's agent uses by itself, and says what is wrong: a database or repository it cannot reach, or a GitHub login that is missing. For a Library in a database it asks for the address in `AISTACK_DATABASE_URL`; let the user set that in their own terminal, since it holds the password. If the command itself is not found, AIStack is not installed: `uv tool install aistack-mcp`.
+- Otherwise run `"$(uv tool dir --bin)/aistack-mcp" check` in a terminal (on Windows, `& "$(uv tool dir --bin)\aistack-mcp.exe" check`). It finds the Library this computer's agent uses by itself, and says what is wrong: a database or repository it cannot reach, or a GitHub login that is missing. For a Library in a database it asks for the address in `AISTACK_DATABASE_URL`; let the user set that in their own terminal, since it holds the password. If the command itself is not found, AIStack is not installed: `uv tool install aistack-mcp`, then `<that path> connect claude-code` (or `codex`). Never run `claude mcp get aistack` or `codex mcp get aistack`: they print the Library's settings in full, and a database address holds its password.
 
 If the tools are there but answer with an error that says what to do, such as another computer having updated the Library, tell the user exactly that.
 
@@ -25,7 +25,7 @@ AIStack keeps two skills folders in line, and every tool call names one of them 
 | `claude_code` | `~/.claude/skills` | Claude Code |
 | `agents` | `~/.agents/skills` | Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode, Amp |
 
-Call `sync` without a harness first: it syncs this computer's first folder and says which in `harness`, and its `folders` field lists every folder this computer has an agent for. Do steps 2 and 3 for each of those folders in turn, then step 4 once. Do not ask the user which folders to sync, and say nothing about a folder no agent here reads.
+Call `sync` without a harness first: it syncs this computer's first folder and says which in `harness`, and its `folders` field lists every folder this computer has an agent for. Do steps 2 and 3 for each of those folders in turn, then steps 4 and 5 once. Do not ask the user which folders to sync, and say nothing about a folder no agent here reads.
 
 ## 2. Call `sync`
 
@@ -50,7 +50,11 @@ When any folder reported `first_sync`, offer the Library itself. Call `list_skil
 
 Only when you synced both folders and at least one reported `first_sync`. Take the skills from the Library in each folder: its skill folders on disk after this sync, less anything still under `ask`, less `sync-aistack`. If one folder has skills the other lacks, ask once, naming them: "Use the same skills in Claude Code and in Codex and the other agents? That adds <names> to Claude Code and <names> to the agents folder." Yes: `get_skill` each missing skill with the harness of the folder that lacks it. No: nothing, and it is not asked again.
 
-## 5. Report
+## 5. In Codex, keep the connection current
+
+Later releases add settings to Codex's connection. Run `sed -n '/^\[mcp_servers\.aistack\]/,/^\[/p' ~/.codex/config.toml | grep -cE '^(startup_timeout_sec|tools\.(sync|list_skills|get_skill|push_skill)\.approval_mode)'`, which counts them without showing the connection's other lines. If it prints less than 5, run `<aistack-mcp> connect codex`: it rewrites the connection with the current settings and keeps the Library's place. Say so in one line.
+
+## 6. Report
 
 Say in a sentence or two what changed: what was installed or updated (between which revisions), what was backed up, and what is waiting on the user. When nothing changed, say everything is up to date.
 
@@ -62,5 +66,5 @@ When the user wants their Library somewhere else, such as from this computer onl
    - GitHub: it signs in as setup's choice 2 does; tell the user the code it prints, then run it again. Give `owner/name` after `github` to use a repository other than their own `aistack-library`.
    - PostgreSQL: the user sets `AISTACK_MOVE_TO_URL` to the new database's address in their own terminal and runs the command there, since the address holds the password. The database must be empty.
    - It refuses a place that already holds a Library, and a Library from before AIStack kept a log of its changes. For that one, use the old way: `<aistack-mcp> export ~/aistack-library`, set AIStack up in the new place, copy the exported folders into a skills folder, and sync.
-2. Replace this computer's connection with the variable the move printed: `claude mcp remove --scope user aistack`, then add it again as setup's step 6 says; in Codex, change the `env` line of the `[mcp_servers.aistack]` block. Restart once.
+2. Run `<aistack-mcp> connect claude-code` (or `codex`). It connects to the place the move recorded and replaces the old connection. For PostgreSQL, the user runs it in their own terminal with `AISTACK_DATABASE_URL` set to the new address. Restart once.
 3. Tell the user their other computers stay on the old place until each is set up again with the new one. A Library moved to this computer only is reached from no other computer.

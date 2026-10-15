@@ -13,8 +13,9 @@ import fastmcp
 import uvicorn
 from sqlalchemy.exc import OperationalError
 
-from aistack.bootstrap import github_setup, self_update
+from aistack.bootstrap import agent_config, github_setup, self_update
 from aistack.bootstrap.configuration.settings.settings_config import (
+    LIBRARY_FILE,
     LocalSettings,
     Settings,
     described,
@@ -25,11 +26,7 @@ from aistack.bootstrap.context.application_context import (
     build_local_context,
     needs_newer_release,
 )
-from aistack.bundled import (
-    SYNC_SKILL_NAME,
-    local_setup_instructions,
-    local_sync_skill_document,
-)
+from aistack.bundled import local_setup_instructions, local_sync_skill_document
 from aistack.commons.exceptions import AIStackError
 from aistack.commons.release import release
 from aistack.commons.text import loggable
@@ -205,10 +202,66 @@ def check_local() -> None:
 def write_sync_skill(skills_folder: Path) -> None:
     """`aistack sync-skill <skills folder>`: setup's step, the same on every system. Windows
     PowerShell 5.1 writes UTF-16 through `>`, which no agent reads as a skill."""
-    target = skills_folder / SYNC_SKILL_NAME / "SKILL.md"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(local_sync_skill_document(), encoding="utf-8", newline="\n")
-    print(f"Wrote {target}.")
+    print(f"Wrote {agent_config.write_sync_skill(skills_folder)}.")
+
+
+def use_agent_place(agent: str) -> None:
+    """`--agent`: start with the Library settings the agent starts AIStack with. They are
+    read from its config and never shown, because a database address holds a password."""
+    place = agent_config.configured_place(agent)
+    if not place and not agent_config.has_entry(agent):
+        sys.exit(f"{agent} has no AIStack connection on this computer. Run setup first.")
+    for name in agent_config.PLACE_VARIABLES:
+        os.environ.pop(name, None)
+    os.environ.update(place)
+
+
+def recorded_place(agent: str) -> dict[str, str]:
+    """With no place in the environment: where `check` or `move` last recorded the Library, so
+    a connection made after a move follows it. A database's address is never written down, so
+    for one the agent's existing connection supplies it; with nothing recorded, that
+    connection is brought up to date as it is."""
+    settings = LocalSettings()
+    if not (settings.home / LIBRARY_FILE).exists():
+        return agent_config.configured_place(agent)
+    try:
+        settings = settings.resolved(record=False)
+    except ValueError as refusal:
+        configured = agent_config.configured_place(agent)
+        if "AISTACK_DATABASE_URL" in configured:
+            return configured
+        sys.exit(str(refusal))
+    if settings.library_repo:
+        return {"AISTACK_LIBRARY_REPO": settings.library_repo}
+    if settings.database_url:
+        return {"AISTACK_DATABASE_URL": settings.database_url}
+    return {}
+
+
+def connect_agent(agent: str, hook: bool) -> None:
+    """`aistack connect claude-code|codex`: check the Library, install the sync skill, and
+    connect the agent, by this program's full path. Running it again changes nothing.
+
+    The Library's place comes from the environment, as `check` reads it, or else from where
+    the Library was last recorded (`recorded_place`)."""
+    if not self_update.installed_as_uv_tool():
+        sys.exit("Install AIStack first with `uv tool install aistack-mcp`, then run this "
+                 "from the installed command, so your agent can start it offline.")
+    place = agent_config.place_from_environment()
+    if not place.keys() & {"AISTACK_LIBRARY_REPO", "AISTACK_DATABASE_URL"}:
+        place = recorded_place(agent) | place
+        os.environ.update(place)
+    check_local()
+    program = agent_config.installed_program()
+    print(f"Wrote {agent_config.write_sync_skill(agent_config.skills_folder(agent))}.")
+    if agent == "claude-code":
+        agent_config.connect_claude_code(program, place)
+    else:
+        agent_config.connect_codex(program, place)
+    print(f"Connected {agent} to AIStack at {program}.")
+    if hook:
+        print(f"Added the sync reminder at session start to "
+              f"{agent_config.add_session_start_hook(agent)}.")
 
 
 def export_library(destination: Path) -> None:
@@ -336,37 +389,48 @@ def run() -> None:
                     "'check' whether this computer reaches its Library; 'github' signs in to "
                     "GitHub and finds or creates the private repository a Library lives in; "
                     "'export' writes every skill in the Library to a folder; 'move github', "
-                    "'move postgresql' or 'move here' moves it with its history; 'serve' "
-                    "runs the AIStack server.")
+                    "'move postgresql' or 'move here' moves it with its history; 'connect' "
+                    "connects Claude Code or Codex to it; 'serve' runs the AIStack server.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
                                                        "sync-skill", "check", "export",
-                                                       "github", "move"])
+                                                       "github", "move", "connect"])
     parser.add_argument("folder", nargs="?",
                         help="Where 'export' writes the skills, ./aistack-library by default; "
                              "the skills folder 'sync-skill' writes its skill into, instead of "
                              "printing it; where 'move' takes the Library: github, postgresql "
-                             f"(the address in {MOVE_TO_URL}) or here")
+                             f"(the address in {MOVE_TO_URL}) or here; the agent 'connect' "
+                             "connects, claude-code or codex")
     parser.add_argument("repository", nargs="?",
                         help="For 'move github': the private repository, as owner/name. "
                              "Without it, your own aistack-library, made if needed")
+    parser.add_argument("--agent", choices=agent_config.AGENTS,
+                        help="For 'check' and 'export': use the Library this agent is "
+                             "connected to, without showing its settings")
+    parser.add_argument("--hook", action="store_true",
+                        help="For 'connect': also remind the agent to sync at session start")
     arguments = parser.parse_args()
     command = arguments.command
+    folder = Path(arguments.folder).expanduser() if arguments.folder else None
 
     # Printed for an agent to follow or save: local mode has no server to fetch them from.
     if command == "setup":
         print(local_setup_instructions(), end="")
         return
     if command == "sync-skill":
-        if arguments.folder is None:
+        if folder is None:
             print(local_sync_skill_document(), end="")
         else:
-            write_sync_skill(Path(arguments.folder).expanduser())
+            write_sync_skill(folder)
         return
+    if command == "connect" and arguments.folder not in agent_config.AGENTS:
+        parser.error("connect takes the agent to connect: claude-code or codex")
 
     if command == "github":
         sys.exit(github_setup.connect(LocalSettings().home))
 
     try:
+        if arguments.agent:
+            use_agent_place(arguments.agent)
         if command == "serve":
             asyncio.run(main())
         elif command == "dashboard":
@@ -374,7 +438,7 @@ def run() -> None:
         elif command == "check":
             check_local()
         elif command == "export":
-            export_library(Path(arguments.folder or "aistack-library").expanduser())
+            export_library(folder or Path("aistack-library"))
         elif command == "move":
             if arguments.folder not in MOVE_DESTINATIONS:
                 parser.error("move takes where to: github, postgresql or here")
@@ -382,6 +446,8 @@ def run() -> None:
                 move_library(arguments.folder, arguments.repository)
             except AIStackError as refusal:
                 sys.exit(refusal.message)
+        elif command == "connect":
+            connect_agent(arguments.folder, arguments.hook)
         else:
             serve_local()
     except ValueError as error:
@@ -408,6 +474,8 @@ def run() -> None:
         logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
         logger.error(f"AIStack cannot start. {error}")
         sys.exit(1)
+    except agent_config.NotConnected as refusal:
+        sys.exit(str(refusal))
     except KeyboardInterrupt:
         logger.info("Received interrupt signal, shutting down...")
 

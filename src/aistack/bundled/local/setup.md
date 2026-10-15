@@ -6,7 +6,9 @@ The steps are written for Claude Code and for Codex; where the two differ, each 
 
 ## 1. Check it is not already set up
 
-Run `claude mcp get aistack` in Claude Code, or `codex mcp get aistack` in Codex. If it shows a server, stop: this computer is already connected, and the user can say "sync aistack". If it says there is no such server, go on.
+In Claude Code, run `claude mcp list`. In Codex, run `grep -c '^\[mcp_servers.aistack\]' ~/.codex/config.toml`. If `aistack` is listed, or the count is 1, stop: this computer is already connected, and the user can say "sync aistack". Otherwise go on.
+
+Never run `claude mcp get aistack` or `codex mcp get aistack`: they print the Library's settings in full, and a database address holds its password.
 
 ## 2. Ask where the Library should live
 
@@ -51,50 +53,21 @@ AISTACK_LIBRARY_REPO='<owner>/aistack-library' <aistack-mcp> check
 
 On Windows PowerShell, set `$env:AISTACK_LIBRARY_REPO` (or `$env:AISTACK_DATABASE_URL`) first and run `& <aistack-mcp> check`. The check prepares the Library, registers this computer, and says where the Library lives. Otherwise it says what is wrong: a repository it cannot reach, a database address or password that is wrong, or a database that already holds a team's server, which local mode will not open. Fix that before going on.
 
-## 5. Install the sync skill
+## 5. Connect your coding agent
 
-In Claude Code:
-
-```bash
-<aistack-mcp> sync-skill ~/.claude/skills
-```
-
-In Codex, the same with `~/.agents/skills`. It writes `sync-aistack/SKILL.md` in that folder, creating what is missing, and prints where. Do it before connecting: Claude Code only watches a skills folder that existed when it started.
-
-## 6. Connect your coding agent
-
-In Claude Code, with the same variable the check used (`-e AISTACK_LIBRARY_REPO=...` for choice 2, `-e AISTACK_DATABASE_URL=...` for choice 3, none for choice 1), and the full path written out:
+Ask whether to sync AIStack at the start of every session, and recommend it. Then run `connect` once, with the same variable the check used (none for choice 1). In Claude Code:
 
 ```bash
-claude mcp add --scope user -e AISTACK_LIBRARY_REPO='<owner>/aistack-library' aistack -- <aistack-mcp>
+AISTACK_LIBRARY_REPO='<owner>/aistack-library' <aistack-mcp> connect claude-code --hook
 ```
 
-In Codex, add this to `~/.codex/config.toml`, creating the file if needed and keeping everything already in it, then check it with `codex mcp get aistack`. The `env` line holds the same variable the check used; leave it out for choice 1.
+In Codex, `connect codex` instead of `connect claude-code`. Leave out `--hook` if the user said no. On Windows PowerShell, set the variable first, as for the check, and run `& <aistack-mcp> connect claude-code --hook`.
 
-```toml
-[mcp_servers.aistack]
-command = '<full path to aistack-mcp>'
-env = { AISTACK_LIBRARY_REPO = '<owner>/aistack-library' }
-startup_timeout_sec = 60
-tools.sync.approval_mode = "approve"
-tools.list_skills.approval_mode = "approve"
-tools.get_skill.approval_mode = "approve"
-tools.push_skill.approval_mode = "approve"
-```
+It checks the Library again, installs the `sync-aistack` skill, connects the agent with AIStack's full path, and with `--hook` adds a reminder to sync when a session starts. It keeps everything else in the agent's settings, and running it again changes nothing. It refuses a settings file that is not valid JSON or TOML and says which; fix that file and run it again.
 
-Keep the single quotes: they take a Windows path's backslashes and a password's symbols as they are. `startup_timeout_sec` gives AIStack time to read a large Library on its first start; Codex otherwise stops waiting after a few seconds. The four `tools` lines approve only what sync does without asking: comparing, listing the Library, installing, and backing up to the user's private Library. Tell the user so in one line.
+In Codex, tell the user in one line that the connection approves four AIStack tools without asking: comparing, listing the Library, installing, and backing up to their own Library. Everything else still asks. Codex also asks them once, in `/hooks`, to trust the new hook.
 
-## 7. Offer to sync at the start of every session
-
-Ask whether to sync AIStack at the start of every session, and recommend it. If they agree, add a `SessionStart` hook: in Claude Code to `~/.claude/settings.json`, in Codex to `~/.codex/hooks.json`. Read the file first, or start from `{}`, and keep everything already in it. Add this entry to the list under `hooks.SessionStart`, creating missing keys, unless an entry with this exact command is already there:
-
-```json
-{"matcher": "startup", "hooks": [{"type": "command", "command": "echo AIStack: before the first task, run the sync-aistack skill.", "timeout": 10}]}
-```
-
-Check the file is still valid JSON. Codex asks the user to trust a new hook once, in `/hooks`.
-
-## 8. Finish
+## 6. Finish
 
 Tell the user:
 
