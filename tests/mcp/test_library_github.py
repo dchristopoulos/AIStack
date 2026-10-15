@@ -350,7 +350,8 @@ def test_a_change_is_never_written_through_a_link_out_of_the_clone(tmp_path, rep
     repo.pull()
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
-    event = library_log.new_event(uuid.UUID(int=1), library_log.FOLDER_SYNCED, harness="claude")
+    event = library_log.Event(uuid.uuid4(), _soon(), uuid.UUID(int=1), library_log.FOLDER_SYNCED,
+                              {"harness": "claude"})
     (repo.folder / "log").mkdir()
     (repo.folder / "log" / str(event.machine_id)).symlink_to(elsewhere)
 
@@ -378,8 +379,8 @@ def test_git_run_from_a_hook_still_works_on_the_library(tmp_path, repository, mo
     monkeypatch.setenv("GIT_WORK_TREE", str(project))
 
     repo = LibraryRepo(tmp_path / "clone", str(repository))
-    repo.publish([library_log.new_event(uuid.UUID(int=1), library_log.FOLDER_SYNCED,
-                                        harness="claude")])
+    repo.publish([library_log.Event(uuid.uuid4(), _soon(), uuid.UUID(int=1),
+                                    library_log.FOLDER_SYNCED, {"harness": "claude"})])
 
     environment = {name: value for name, value in os.environ.items()
                    if not name.startswith("GIT_")}
@@ -405,3 +406,51 @@ def test_a_repository_with_a_credential_or_an_option_is_refused_unrepeated(repos
         validate_repository(repository)
     assert "ghp_secret123" not in refused.value.message
     assert "upload-pack" not in refused.value.message
+
+
+@contextlib.contextmanager
+def clock_ahead(monkeypatch, offset: timedelta):
+    """This computer's clock runs `offset` ahead, as a VM's can after sleep."""
+    class Ahead(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(tz) + offset
+
+    with monkeypatch.context() as patched:
+        patched.setattr(library_log, "datetime", Ahead)
+        yield
+
+
+def _latest() -> tuple[int, str]:
+    return _revisions()[-1]
+
+
+async def test_a_computer_whose_clock_runs_ahead_does_not_win_over_a_newer_edit(
+        computer, repository, monkeypatch):
+    """ENT-03: an edit made after another computer's change sorts after it, whatever the clocks
+    say, so every copy, and one rebuilt from the log, keeps the newer edit."""
+    with clock_ahead(monkeypatch, timedelta(hours=1)):
+        async with computer("laptop") as (laptop, home):
+            _write(home, "wizard", "Written on the laptop.")
+            await _call(laptop, "push_skill", name="wizard")
+
+    async with computer("desktop") as (desktop, home):
+        await _call(desktop, "sync")
+        _write(home, "wizard", "Edited later on the desktop.")
+        edited = await _call(desktop, "push_skill", name="wizard")
+        assert edited["revision"] == 2
+        newest = _latest()
+
+    with clock_ahead(monkeypatch, timedelta(hours=1)):
+        async with computer("laptop") as (laptop, _):
+            await _call(laptop, "sync")
+            assert _latest() == newest
+    async with computer("phone"):
+        application_context.library_before_read(force=True)
+        assert _latest() == newest
+
+    (repository.parent / "desktop" / ".aistack" / "github-copy.db").unlink()
+    async with computer("desktop") as (desktop, home):
+        assert _latest() == newest
+        report = await _call(desktop, "sync")
+        assert (report["update"], report["ask"]) == ([], [])

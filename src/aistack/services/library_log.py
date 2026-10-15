@@ -23,6 +23,8 @@ from aistack.db.models.machine import MACHINE_NAME_MAX_LENGTH, Machine
 from aistack.db.models.user import User
 from aistack.services import onboarding_service, skill_service, sync_service, visibility
 from aistack.services.harnesses import validated_harness
+from aistack.services.skill_archive import read_archive
+from aistack.services.skill_validation import ValidatedSkill, validated_skill
 
 MACHINE_ADDED = "machine_added"
 SKILL_PUSHED = "skill_pushed"
@@ -34,6 +36,8 @@ _AT_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 # Clocks disagree, but not by this much. A later time would sort every new event before it,
 # and each would rebuild the copy.
 _FUTURE_ALLOWED = timedelta(days=1)
+# The smallest step the text form of a time can show.
+_TICK = timedelta(microseconds=1)
 
 
 @dataclass(frozen=True)
@@ -79,15 +83,22 @@ class Event:
         return event
 
 
-def new_event(machine_id: uuid.UUID, kind: str, **data: Any) -> Event:
-    now = datetime.now(UTC).strftime(_AT_FORMAT)
-    return Event(uuid.uuid4(), now, machine_id, kind, data)
+def new_event(session: Session, machine_id: uuid.UUID, kind: str, **data: Any) -> Event:
+    """An event made on this computer, timed by a hybrid logical clock (ADR-0032): the wall
+    clock, or just after the newest event this copy holds when that is later. A change made
+    after reading another computer's then sorts after it, however far ahead that clock ran."""
+    at = datetime.now(UTC)
+    last = applied_through(session)
+    if last is not None:
+        newest = datetime.strptime(last.split("|", 1)[0], _AT_FORMAT).replace(tzinfo=UTC)
+        at = max(at, newest + _TICK)
+    return Event(uuid.uuid4(), at.strftime(_AT_FORMAT), machine_id, kind, data)
 
 
-def pushed(machine_id: uuid.UUID, name: str, origin: str | None, harness: str,
-           archive: bytes) -> Event:
+def pushed(session: Session, machine_id: uuid.UUID, name: str, origin: str | None,
+           harness: str, archive: bytes) -> Event:
     """A revision, with its files as the archive push validated."""
-    return new_event(machine_id, SKILL_PUSHED, name=name, origin=origin, harness=harness,
+    return new_event(session, machine_id, SKILL_PUSHED, name=name, origin=origin, harness=harness,
                      archive=base64.b64encode(archive).decode("ascii"))
 
 
@@ -97,8 +108,33 @@ def record(session: Session, event: Event, published: bool = False) -> None:
                              kind=event.kind, body=event.to_json(), published=published))
 
 
-def apply(session: Session, event: Event) -> Any:
-    """Make the change `event` describes, through the call the tool that recorded it made."""
+# Pushes' archives read ahead of a transaction, by event id: each as the text in its event,
+# and the skill it validated to.
+Prepared = dict[uuid.UUID, tuple[str, ValidatedSkill]]
+
+
+def prepared(events: list[Event]) -> Prepared:
+    """The archives of the pushes among `events`, read and validated, by event id: done before
+    a transaction, so replaying them holds SQLite's write lock only for the writes.
+
+    One that fails is left out, and `apply` reads it again, so the refusal names its file."""
+    validated = {}
+    for event in events:
+        if event.kind != SKILL_PUSHED:
+            continue
+        try:
+            archive = event.data["archive"]
+            validated[event.event_id] = (archive, validated_skill(
+                event.data["name"], read_archive(base64.b64decode(archive))))
+        except Exception:
+            continue
+    return validated
+
+
+def apply(session: Session, event: Event,
+          uploaded: ValidatedSkill | None = None) -> Any:
+    """Make the change `event` describes, through the call the tool that recorded it made.
+    `uploaded` is a push's archive as `prepared` validated it."""
     # Asked first: a newer release's change may also name a computer this one cannot place.
     if event.kind not in _KINDS:
         raise ValidationError(f"The Library's log has a change of a kind this release does "
@@ -112,6 +148,9 @@ def apply(session: Session, event: Event) -> Any:
                               f"'{event.machine_id}' before that computer was added.")
     data = event.data
     if event.kind == SKILL_PUSHED:
+        if uploaded is not None:
+            return skill_service.store(session, machine.machine_id, machine.user_id, uploaded,
+                                       data.get("origin"), data["harness"])
         return skill_service.push(session, machine.machine_id, machine.user_id, data["name"],
                                   data.get("origin"), base64.b64decode(data["archive"]),
                                   data["harness"])
@@ -138,11 +177,15 @@ def apply(session: Session, event: Event) -> Any:
     raise AssertionError(f"Unhandled event kind '{event.kind}'.")
 
 
-def _replay(session: Session, event: Event) -> None:
+def _replay(session: Session, event: Event,
+            validated: Prepared) -> None:
     """`apply`, for an event read from the repository: a failure names its file, which
     anyone who can write to the repository could have put there."""
+    ahead = validated.get(event.event_id)
+    # Only for the very archive it was read from: two files in a repository can claim one id.
+    uploaded = ahead[1] if ahead is not None and ahead[0] == event.data.get("archive") else None
     try:
-        apply(session, event)
+        apply(session, event, uploaded)
     except Exception as error:
         reason = (error.message if isinstance(error, AIStackError)
                   else "It is not a change AIStack makes; remove it from the repository.")
@@ -160,31 +203,49 @@ def known_ids(session: Session) -> set[uuid.UUID]:
     return set(session.scalars(select(LibraryEvent.event_id)))
 
 
+def arrivals(session: Session, events: list[Event]) -> list[Event]:
+    """The events this copy does not hold yet, in order."""
+    known = known_ids(session)
+    return sorted((event for event in events if event.event_id not in known),
+                  key=lambda event: event.sort_key)
+
+
+def append(session: Session, new: list[Event],
+           validated: Prepared | None = None) -> bool:
+    """Apply `new` on top of this copy when every one comes after what it holds. False, with
+    nothing applied, when one comes before: then only a rebuild puts the copy in order."""
+    last = applied_through(session)
+    if new and last is not None and new[0].sort_key <= last:
+        return False
+    for event in new:
+        _replay(session, event, validated or {})
+        record(session, event, published=True)
+    return True
+
+
 def catch_up(session: Session, arrived: list[Event]) -> bool:
     """Apply events from other computers: on top when they all come after what this copy
     holds, by rebuilding the copy from the whole log when one comes before. True on a rebuild.
+
+    The rebuild holds the transaction for the whole replay; `LibrarySharing` rebuilds beside
+    a copy other sessions use instead.
     """
-    known = known_ids(session)
-    new = sorted((event for event in arrived if event.event_id not in known),
-                 key=lambda event: event.sort_key)
-    if not new:
-        return False
-    last = applied_through(session)
-    if last is None or new[0].sort_key > last:
-        for event in new:
-            _replay(session, event)
-            record(session, event, published=True)
+    if append(session, arrivals(session, arrived)):
         return False
     rebuild(session, arrived)
     return True
 
 
-def rebuild(session: Session, events: list[Event]) -> None:
-    """Empty this copy and replay `events` with every event recorded here but not yet
-    published, in order, so every computer ends with the same Library."""
-    unpublished = [Event.from_json(body) for body in session.scalars(
-        select(LibraryEvent.body).where(LibraryEvent.published.is_(False)))]
-    everything = {event.event_id: event for event in [*events, *unpublished]}
+def rebuild(session: Session, events: list[Event], local: list[Event] | None = None,
+            validated: Prepared | None = None) -> None:
+    """Empty this copy and replay `events` with the events recorded on this computer but not
+    yet published, in order, so every computer ends with the same Library.
+
+    `local` is those events when they come from another copy than `session`'s; by default
+    they are read from it."""
+    if local is None:
+        local = unpublished(session)
+    everything = {event.event_id: event for event in [*events, *local]}
     published_ids = {event.event_id for event in events}
     # Children before parents, so no row is left pointing at one that is gone.
     for table in reversed(Base.metadata.sorted_tables):
@@ -193,7 +254,7 @@ def rebuild(session: Session, events: list[Event]) -> None:
     # The deleted rows may still be loaded; replay must not find them.
     session.expunge_all()
     for event in sorted(everything.values(), key=lambda event: event.sort_key):
-        _replay(session, event)
+        _replay(session, event, validated or {})
         record(session, event, published=event.event_id in published_ids)
 
 
