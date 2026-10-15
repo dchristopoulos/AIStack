@@ -291,7 +291,7 @@ The page is the only client these were written for, and they are documented so t
 
 **Invite links.** `GET /invite/{code}` is a team's invite link (ADR-0019): a page naming the team, with the sentence to paste into Claude Code or Codex. The code is the credential, as a ticket is for a transfer route: it is never logged, the page is sent with `Referrer-Policy: no-referrer` and a CSP that loads nothing, and a wrong or replaced code gets the same 404 as any other. `invite_to_team` and the dashboard both hand out the link.
 
-**Signing in.** `GET /app/login/{ticket}` takes the link `open_dashboard` returned, sets the session cookie `aistack_session` (HttpOnly, SameSite=Lax, Secure over https, eight hours), and answers `303` to `/app`, which takes the ticket out of the address bar. `GET /app` is the page. Either one, without a valid ticket or session, answers `401` with a short page saying how to get a link.
+**Signing in.** `GET /app/login/{ticket}` takes the link `open_dashboard` returned, sets the session cookie `aistack_session` (HttpOnly, SameSite=Lax, Secure over https, eight hours), and answers `303` to `/app`, which takes the ticket out of the address bar. `GET /app` is the page. Either one, without a valid ticket or session, answers `401` with a short page saying how to get a link and, on a server, the sentence that connects a computer that is not connected yet. `GET /` redirects to `/app`, because the server's address is what a person opens first.
 
 **What every `/api` route does.**
 

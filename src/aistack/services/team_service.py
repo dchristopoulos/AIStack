@@ -136,8 +136,12 @@ def invited_to(session: Session, code: str) -> Invite:
     transaction rather than trusted from the moment the bearer was verified.
     """
     invite = None
-    if isinstance(code, str) and code.strip().startswith(TEAM_INVITE_PREFIX):
-        invite = session.scalar(select(Invite).where(Invite.code_hash == hash_token(code.strip())))
+    if isinstance(code, str):
+        # The invite link is what people are sent, so it is accepted wherever the code is.
+        # The code is its last segment: a token_urlsafe code has no '/' in it.
+        code = code.strip().rstrip("/").rsplit("/", 1)[-1]
+    if isinstance(code, str) and code.startswith(TEAM_INVITE_PREFIX):
+        invite = session.scalar(select(Invite).where(Invite.code_hash == hash_token(code)))
     if invite is None or _status(invite) != "PENDING":
         # Used, cancelled, expired and unknown read alike, and the code is never repeated: a
         # near-miss of a real one is still a secret.

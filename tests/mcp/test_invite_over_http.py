@@ -61,6 +61,8 @@ async def test_a_wrong_or_used_code_reads_exactly_like_any_other_wrong_code(serv
     assert {(answer.status_code, answer.text) for answer in answers} == {
         (404, answers[0].text)}
     assert "acme" not in answers[0].text
+    # Whoever used it already is in the team, and the page says so instead of a dead end.
+    assert "already in the team" in answers[0].text
 
 
 async def test_an_invite_link_appears_in_no_log_line(server_url, caplog):
