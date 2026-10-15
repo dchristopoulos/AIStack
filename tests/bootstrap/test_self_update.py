@@ -9,7 +9,7 @@ from aistack.bootstrap import self_update
 
 @pytest.fixture(name="as_a_uv_tool")
 def as_a_uv_tool_fixture(monkeypatch):
-    monkeypatch.setattr(self_update, "_installed_as_uv_tool", lambda: True)
+    monkeypatch.setattr(self_update, "installed_as_uv_tool", lambda: True)
     monkeypatch.setattr(self_update, "_uv", lambda: "/opt/uv")
     monkeypatch.setattr(self_update.metadata, "version", lambda _: "0.1.0")
 
@@ -76,7 +76,7 @@ def test_pypi_is_asked_at_most_once_a_day(tmp_path, as_a_uv_tool):
 
 def test_only_a_uv_tool_install_upgrades_itself(tmp_path, monkeypatch):
     """A checkout, pipx, or the server's container is left alone."""
-    monkeypatch.setattr(self_update, "_installed_as_uv_tool", lambda: False)
+    monkeypatch.setattr(self_update, "installed_as_uv_tool", lambda: False)
     calls, run = _recorder()
     assert self_update.check_and_upgrade(tmp_path, lambda: "9.0.0", run) is None
     assert calls == []

@@ -15,8 +15,9 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from sqlalchemy import select, text, update
 
+from aistack.bootstrap import agent_config
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings
-from aistack.bundled import local_setup_instructions, local_sync_skill_document
+from aistack.bundled import local_sync_skill_document
 from aistack.bootstrap.context import application_context
 from aistack.commons.exceptions import Conflict
 from aistack.db.models.machine import Machine
@@ -314,11 +315,11 @@ def test_sync_skill_writes_itself_into_a_skills_folder_as_utf8(tmp_path):
     assert str(written) in done.stdout
 
 
-def test_local_setup_connects_codex_with_toml_that_takes_a_windows_path():
-    block = re.search(r"```toml\n(.*?)\n```", local_setup_instructions(), re.S).group(1)
+def test_connect_writes_codex_toml_that_takes_a_windows_path():
     path = r"C:\Users\maria\.local\bin\aistack-mcp.exe"
 
-    server = tomllib.loads(block.replace("<full path to aistack-mcp>", path))["mcp_servers"]
+    block = agent_config.codex_block(Path(path), {})
+    server = tomllib.loads(block)["mcp_servers"]
     assert server["aistack"]["command"] == path
     # list_skills too: a first sync lists the Library to offer what other computers have.
     assert {name for name, tool in server["aistack"]["tools"].items()

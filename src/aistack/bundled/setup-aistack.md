@@ -19,13 +19,15 @@ On Windows, use `curl.exe` wherever a step says `curl`.
 One connection serves the whole computer, so check both agents, whichever one you are:
 
 ```
-claude mcp get aistack
-codex mcp get aistack
+claude mcp list
+grep -c '^\[mcp_servers.aistack\]' ~/.codex/config.toml
 ```
 
-A command that is not installed counts as not connected. If both say there is no MCP server by that name, this computer is not connected yet: go to step 2.
+A command that is not installed, or a file that does not exist, counts as not connected. If `aistack` is not in the list and the count is 0, this computer is not connected yet: go to step 2.
 
-If either shows a server, stop. This computer is already connected, through that agent. Tell the user so, and that they can say "sync aistack" there: it keeps every skills folder on this computer current, this agent's included. Never register this computer a second time from here.
+If `aistack` is listed, or the count is 1, stop. This computer is already connected, through that agent. Tell the user so, and that they can say "sync aistack" there: it keeps every skills folder on this computer current, this agent's included. Never register this computer a second time from here.
+
+Never run `claude mcp get aistack` or `codex mcp get aistack`: they print this computer's token in full.
 
 ## 2. Install the sync skill
 
@@ -77,7 +79,7 @@ claude mcp add --transport http --scope user aistack {mcp_url} --header "Authori
 
 `--scope user` matters. Without it the server is only connected in the current folder.
 
-In Codex, add this to `~/.codex/config.toml`, creating the file if it does not exist and keeping everything already in it. `codex mcp add` cannot set a header, so the block is written by hand. Then check it with `codex mcp get aistack`.
+In Codex, add this to `~/.codex/config.toml`, creating the file if it does not exist and keeping everything already in it. `codex mcp add` cannot set a header, so the block is written by hand. Then check that `grep -c '^\[mcp_servers.aistack\]' ~/.codex/config.toml` prints 1: a second block makes the whole file invalid.
 
 ```toml
 [mcp_servers.aistack]
