@@ -294,6 +294,12 @@ def leave_team(session, user_id, path, body):
     team_service.leave_team(session, user_id, path["team"])
 
 
+# Deleting removes the team's copies of its skills for everyone in it (ADR-0028).
+@_action("/teams/{team}/delete", local=False)
+def delete_team(session, user_id, path, body):
+    team_service.delete_team(session, user_id, path["team"])
+
+
 @_action("/teams/{team}/invite", local=False)
 def new_invite_code(session, user_id, path, body):
     # Returned to the admin who asked, once, and never logged.
