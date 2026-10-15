@@ -114,7 +114,7 @@ def check_local() -> None:
             if library_log.unpublished(session):
                 sys.exit(f"AIStack is not ready. It could not push to {library['repository']}. "
                          "Check that `gh auth status` shows you signed in as someone who can "
-                         "write to it, and that `gh auth setup-git` has been run.")
+                         "write to it.")
     where = {
         "this_computer": "on this computer only",
         "github": f"in the GitHub repository {library.get('repository')}",

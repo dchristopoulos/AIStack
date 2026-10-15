@@ -289,6 +289,7 @@ What it does not show, stated plainly:
   - Both agents compared a team's revision number with the user's own, which count separately. `list_skills` now says so.
 
   The sessions ran with their permission checks off, inside a macOS sandbox that denied writes to the real skills folders and agent configuration. This is one run per agent with one model each, and no automated test repeats it.
+- A Library was shared through a real private GitHub repository (2026-10-15, Claude Code 2.1.241 headless, the built package through `uvx`, two scratch home folders as a laptop and a desktop, the owner's `gh` login). `aistack check` on each reported the repository. Told "sync aistack", the laptop's session backed up its skill, which put four event files in the repository. Asked what was in the Library and to install it, the desktop's session listed it and installed it byte for byte with its executable bit, in seven turns. The first attempt found two faults, fixed before this run: a clone that timed out left a broken clone that later passed for a working one, so changes were marked shared without being pushed; and git asked the macOS keychain helper Homebrew configures before `gh`, which hung. AIStack now clones into a temporary folder and moves it into place, and gives git `gh`'s login alone for GitHub.
 
 ## How this compares
 
