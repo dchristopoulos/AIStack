@@ -4,12 +4,13 @@ import threading
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from aistack.commons.exceptions import Conflict, NotFound, ValidationError
 from aistack.db.engine import build_session_factory
 from aistack.db.models.skill import Skill
 from aistack.db.models.invite import Invite
+from aistack.db.models.machine import Machine
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc, utc_now
 from aistack.services import onboarding_service, skill_service, sync_service, team_service
@@ -462,6 +463,83 @@ def test_a_member_who_may_no_longer_invite_cannot(session_factory, dimitris, mar
 
     with pytest.raises(ValidationError, match="Only an admin"):
         _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
+
+
+def _cancelled_is_unknown(session_factory, code):
+    """Whoever holds the code now, its maker included, is told what a wrong code is told."""
+    stranger = _join(session_factory, "stranger")
+    with pytest.raises(NotFound, match="not a team invite code"):
+        _do(session_factory, team_service.join_team, stranger.user.user_id, code)
+    with pytest.raises(NotFound, match="not a team invite code"):
+        _do(session_factory, onboarding_service.join, "newcomer", "box", "LINUX",
+            team_invite=code)
+
+
+def _let_maria_invite(session_factory, dimitris, acme) -> None:
+    _do(session_factory, team_service.set_member, dimitris.user.user_id, acme, "maria",
+        can_invite=True)
+
+
+def test_a_removed_members_invites_admit_nobody_themselves_included(session_factory, dimitris,
+                                                                    maria, acme):
+    _let_maria_invite(session_factory, dimitris, acme)
+    hers = _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
+
+    _do(session_factory, team_service.remove_member, dimitris.user.user_id, acme, "maria")
+
+    with pytest.raises(NotFound, match="not a team invite code"):
+        _do(session_factory, team_service.join_team, maria.user.user_id, hers)
+    _cancelled_is_unknown(session_factory, hers)
+    assert "CANCELLED" in _statuses(session_factory, dimitris, acme)
+
+
+def test_a_member_who_left_leaves_no_working_invite(session_factory, dimitris, maria, acme):
+    _let_maria_invite(session_factory, dimitris, acme)
+    hers = _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
+
+    _do(session_factory, team_service.leave_team, maria.user.user_id, acme)
+
+    _cancelled_is_unknown(session_factory, hers)
+
+
+@pytest.mark.parametrize("change", [{"role": "MEMBER"}, {"can_invite": False}],
+                         ids=["demoted", "no-longer-inviting"])
+def test_invites_die_when_their_maker_may_no_longer_invite(session_factory, dimitris, maria,
+                                                          acme, change):
+    _do(session_factory, team_service.set_member, dimitris.user.user_id, acme, "maria",
+        role="ADMIN" if "role" in change else None, can_invite=True if "can_invite" in change
+        else None)
+    hers = _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
+
+    _do(session_factory, team_service.set_member, dimitris.user.user_id, acme, "maria",
+        **change)
+
+    _cancelled_is_unknown(session_factory, hers)
+    assert "CANCELLED" in _statuses(session_factory, dimitris, acme)
+
+
+def test_an_admin_keeping_the_right_to_invite_keeps_their_invites(session_factory, dimitris,
+                                                                  maria, eve, acme):
+    _do(session_factory, team_service.set_member, dimitris.user.user_id, acme, "maria",
+        role="ADMIN", can_invite=True)
+    hers = _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
+
+    # Demoted, she may still invite, so what she made still works.
+    _do(session_factory, team_service.set_member, dimitris.user.user_id, acme, "maria",
+        role="MEMBER")
+
+    assert _do(session_factory, team_service.join_team, eve.user.user_id, hers) == acme
+
+
+def test_an_invite_from_someone_taken_off_the_server_admits_nobody(session_factory, dimitris,
+                                                                   maria, acme):
+    """OPERATING.md 'Someone left' deletes their machines and touches nothing in the team."""
+    _let_maria_invite(session_factory, dimitris, acme)
+    hers = _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
+    with session_factory.begin() as session:
+        session.execute(delete(Machine).where(Machine.user_id == maria.user.user_id))
+
+    _cancelled_is_unknown(session_factory, hers)
 
 
 # --- admins and members ---------------------------------------------------------------------
