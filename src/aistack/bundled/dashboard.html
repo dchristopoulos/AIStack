@@ -1258,7 +1258,9 @@ function libraryView() {
     if (!state.skills.length) {
       list.replaceChildren(empty('layers', 'Your library is empty',
         el('p', null, 'Skills appear here when your coding agent runs ', el('code', null, SYNC), ' on one of your computers. It backs up the skills it finds there, and you can then add them to your other computers or share them with a team.'),
-        el('p', null, 'You can also take one from a team: open a team and choose "Add to library".')));
+        state.server !== false && el('p', null, state.teams.length
+          ? 'You can also take one from a team: open a team and choose "Add to library".'
+          : 'You can also take one from a team once you are in one: choose "Add a team" to create one or join with an invite code.')));
     } else if (!shown.length) {
       list.replaceChildren(empty('search', 'No skill matches', el('p', null, `Nothing in your library matches "${search.trim()}".`),
         btn('Clear search', { on: { click: () => { input.value = search = ''; fill(); input.focus(); } } })));
@@ -1992,6 +1994,9 @@ function inviteCodeDialog(team, code) {
       el('p', null, 'Send this link to the people you want in the team. It says what to paste into their coding agent, and makes them an account if they have none. It will not be shown again: copy it now. If you lose it, create a new one.'),
       el('div', { class: 'field' }, el('div', { class: 'code-box' }, input, copy), copied),
       field('Invite code', codeInput, 'For someone already on this server: they say "join a team with this code".'),
+      // The link is built from this page's address, and a loopback one opens only here.
+      ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) && el('p', { class: 'help' },
+        `Only this computer can open this link: it starts with ${location.host}. To invite someone on another computer, the server needs an address they can reach. Whoever runs it sets AISTACK_PUBLIC_URL, as "Reaching it from other machines" in OPERATING.md describes.`),
     ],
   });
   copy.focus();
@@ -2087,6 +2092,12 @@ document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape' && $app.classList.contains('drawer-open')) { setDrawer(false); $drawerBtn.focus(); }
 });
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+// Back on the tab: show what changed meanwhile, such as a sync or a teammate joining, or that
+// the session ended. Not while a dialog is open: it holds what the user is typing.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !state || document.querySelector('dialog[open]')) return;
+  load().catch(e => { if (e instanceof SessionEnded) sessionEnded(); });
+});
 
 // A tooltip opens below its control, clear of the sticky bars, unless the window ends there.
 for (const type of ['pointerover', 'focusin']) {

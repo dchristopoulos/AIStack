@@ -7,6 +7,8 @@ tests state what the page must let someone do and stay true when its look change
 import pytest
 from playwright.async_api import expect
 
+from tests.mcp.conftest import call, join
+
 pytestmark = pytest.mark.anyio
 
 
@@ -283,6 +285,8 @@ async def test_a_team_is_created_and_joined_with_its_invite_code(sign_in):
     assert link.endswith(f"/invite/{code}")
     response = await page.request.get(link)
     assert response.status == 200 and "design" in await response.text()
+    # This server is on 127.0.0.1, so the link opens only on this computer, and it says so.
+    await expect(page.get_by_role("dialog").get_by_text("Only this computer can open this link")).to_be_visible()
     await page.get_by_role("dialog").get_by_role("button", name="Done").click()
 
     alex = await sign_in("alex")
@@ -290,7 +294,8 @@ async def test_a_team_is_created_and_joined_with_its_invite_code(sign_in):
     await alex.page.get_by_role("dialog").get_by_role("radio", name="Join with an invite code").check()
     await alex.page.get_by_role("dialog").get_by_role("button", name="Continue").click()
     join = alex.page.get_by_role("dialog", name="Join a team")
-    await join.get_by_label("Invite code").fill(code.strip())
+    # The link is what people are sent, so pasting it works as well as the code.
+    await join.get_by_label("Invite code").fill(link)
     await join.get_by_role("button", name="Join").click()
 
     await expect(alex.page.get_by_role("heading", name="design", level=1)).to_be_visible()
@@ -334,6 +339,49 @@ async def test_an_invite_is_listed_as_pending_and_cancelled_from_the_list(sign_i
     assert [invite["status"] for invite in _team(await dimitris.state(), "aistack")["invites"]
             if invite["created_by"] == "dimitris"][0] == "CANCELLED"
     assert dimitris.console_errors == []
+
+
+async def test_someone_new_with_no_team_is_shown_how_to_get_one(browser, server_url, links):
+    token = await join(server_url, "newbie", "laptop")
+    context = await browser.new_context()
+    page = await context.new_page()
+    await page.goto((await call(server_url, token, "open_dashboard"))["url"])
+
+    await expect(page.get_by_role("heading", name="Your library is empty")).to_be_visible()
+    await expect(page.get_by_text('choose "Add a team" to create one or join')).to_be_visible()
+    await context.close()
+
+
+async def _come_back_to_the_tab(page):
+    # A headless tab is never hidden, so the return is announced as a browser announces it.
+    await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+
+
+async def test_coming_back_to_the_tab_shows_what_changed_meanwhile(sign_in):
+    maria = await sign_in("maria")
+    name = (await maria.state())["skills"][0]["name"]
+    listed = maria.page.get_by_role("main").get_by_text(name, exact=True)
+    await expect(listed.first).to_be_visible()
+
+    # Removed somewhere else while this tab sat in the background.
+    removed = await maria.page.request.post(f"{maria.base_url}/api/skills/{name}/remove",
+                                            headers={"X-AIStack-Request": "1"})
+    assert removed.ok
+    await _come_back_to_the_tab(maria.page)
+
+    await expect(listed).to_have_count(0)
+    assert name not in [skill["name"] for skill in (await maria.state())["skills"]]
+    assert maria.console_errors == []
+
+
+async def test_coming_back_after_the_session_ended_says_so_before_any_click(sign_in):
+    maria = await sign_in("maria")
+
+    # What a server restart does to the session: the cookie no longer opens anything.
+    await maria.page.context.clear_cookies()
+    await _come_back_to_the_tab(maria.page)
+
+    await expect(maria.page.get_by_role("heading", name="Your session has ended.")).to_be_visible()
 
 
 async def test_signing_out_closes_the_dashboard_in_that_browser(sign_in):
