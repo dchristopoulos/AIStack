@@ -357,7 +357,13 @@ async def _come_back_to_the_tab(page):
     await page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
 
 
-async def test_coming_back_to_the_tab_shows_what_changed_meanwhile(sign_in):
+@pytest.mark.parametrize("return_event", [
+    # A headless tab is never hidden, so the return is announced as a browser announces it.
+    "document.dispatchEvent(new Event('visibilitychange'))",
+    # The browser beside the terminal stays visible; coming back to it is a focus.
+    "window.dispatchEvent(new Event('focus'))",
+])
+async def test_coming_back_to_the_tab_shows_what_changed_meanwhile(sign_in, return_event):
     maria = await sign_in("maria")
     name = (await maria.state())["skills"][0]["name"]
     listed = maria.page.get_by_role("main").get_by_text(name, exact=True)
@@ -367,7 +373,7 @@ async def test_coming_back_to_the_tab_shows_what_changed_meanwhile(sign_in):
     removed = await maria.page.request.post(f"{maria.base_url}/api/skills/{name}/remove",
                                             headers={"X-AIStack-Request": "1"})
     assert removed.ok
-    await _come_back_to_the_tab(maria.page)
+    await maria.page.evaluate(return_event)
 
     await expect(listed).to_have_count(0)
     assert name not in [skill["name"] for skill in (await maria.state())["skills"]]
