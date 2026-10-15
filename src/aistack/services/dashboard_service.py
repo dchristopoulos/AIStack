@@ -23,6 +23,7 @@ from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.team import Team, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
+from aistack.db.models.value_set import known
 from aistack.db.ordering import bytewise
 from aistack.services import skill_service, team_service, visibility
 from aistack.services.harnesses import DEFAULT_HARNESS, validated_harness
@@ -131,20 +132,21 @@ def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
     A computer with neither has not synced since harnesses existed, and is shown with Claude
     Code, the only harness there was before.
     """
-    known: dict[uuid.UUID, set[Harness]] = {}
+    harnesses_of: dict[uuid.UUID, set[Harness]] = {}
     for table in (MachineHarness, MachineSkill):
         for machine_id, harness in session.execute(
                 select(table.machine_id, table.harness).distinct()
                 .join(Machine, Machine.machine_id == table.machine_id)
-                .where(Machine.user_id == user_id)).all():
-            known.setdefault(machine_id, set()).add(harness)
+                .where(Machine.user_id == user_id, known(table.harness))).all():
+            harnesses_of.setdefault(machine_id, set()).add(harness)
     return [
         {"id": str(machine_id), "name": name, "os": os.value,
          "harnesses": [harness.value for harness in Harness
-                       if harness in known.get(machine_id, {DEFAULT_HARNESS})]}
+                       if harness in harnesses_of.get(machine_id, {DEFAULT_HARNESS})]}
         for machine_id, name, os in session.execute(
             select(Machine.machine_id, Machine.name, Machine.os)
-            .where(Machine.user_id == user_id).order_by(Machine.created_on)).all()
+            .where(Machine.user_id == user_id, known(Machine.os))
+            .order_by(Machine.created_on)).all()
     ]
 
 
@@ -204,7 +206,8 @@ def _my_skills(session: Session, user_id: uuid.UUID,
     for skill_id, machine_id, harness in session.execute(
             select(MachineSkill.skill_id, MachineSkill.machine_id, MachineSkill.harness)
             .join(Machine, Machine.machine_id == MachineSkill.machine_id)
-            .where(Machine.user_id == user_id, MachineSkill.enabled.is_(True))
+            .where(Machine.user_id == user_id, MachineSkill.enabled.is_(True),
+                   known(MachineSkill.harness))
             .order_by(Machine.created_on, Machine.machine_id, MachineSkill.harness)).all():
         placements.setdefault(skill_id, []).append({"machine": str(machine_id),
                                                     "harness": harness.value})
