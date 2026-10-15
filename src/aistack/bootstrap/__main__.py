@@ -10,6 +10,7 @@ from pathlib import Path
 import uvicorn
 from sqlalchemy.exc import OperationalError
 
+from aistack.bootstrap import self_update
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings, Settings
 from aistack.bootstrap.context.application_context import (
     build_application_context,
@@ -56,6 +57,7 @@ def serve_local() -> None:
     settings = LocalSettings()
     configure_logging(settings.log_level)
     build_local_context(settings)
+    self_update.start_in_background(settings.home)
 
     from aistack.mcp.local import local_mcp
 

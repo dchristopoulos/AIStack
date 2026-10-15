@@ -17,7 +17,7 @@ Open source and free, with no hosted service: it runs on your own computers, and
 | **A free PostgreSQL database** ([Neon](https://neon.tech) recommended; Supabase works) | A free account and one address pasted on each computer. Nothing to keep switched on. Supabase pauses after about a week unused | Your laptop and your desktop |
 | **A computer that stays on**, running the AIStack server | Free on a computer you own, but it must stay on (or a few dollars a month on a host) | Teams, and the only choice that works for one |
 
-For the first two, your coding agent starts AIStack itself and nothing runs in between ([ADR-0020](docs/adr/0020-local-mode-and-where-the-library-lives.md)). Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then paste this into Claude Code or Codex:
+For the first three, your coding agent starts AIStack itself and nothing runs in between ([ADR-0020](docs/adr/0020-local-mode-and-where-the-library-lives.md)). Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then paste this into Claude Code or Codex:
 
 ```text
 Set up AIStack: run `uvx aistack-mcp setup` and follow what it prints.
@@ -27,7 +27,7 @@ It asks which choice you want, creates the private repository with `gh` or walks
 
 For a team, run a server and connect each computer to it: see [Connecting a computer to a server](#connecting-a-computer-to-a-server).
 
-To move your own Library onto a team's server later, run `uvx aistack-mcp export` on a computer that has it. It writes every skill in the Library, at its latest revision, to `./aistack-library`, with each skill's files checked against the hash recorded when they were pushed. Then connect that computer to the server, copy the skill folders you want into `~/.claude/skills`, and say "sync aistack": sync backs up whatever the new Library lacks, without asking. Revision history and which computer had which skill stay behind.
+To move your own Library onto a team's server later, run `aistack-mcp export` on a computer that has it. It writes every skill in the Library, at its latest revision, to `./aistack-library`, with each skill's files checked against the hash recorded when they were pushed. Then connect that computer to the server, copy the skill folders you want into `~/.claude/skills`, and say "sync aistack": sync backs up whatever the new Library lacks, without asking. Revision history and which computer had which skill stay behind.
 
 ## Try it in two minutes
 
