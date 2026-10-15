@@ -28,17 +28,23 @@ Run `gh auth status` first: it tells you whether the GitHub CLI is installed and
 
 Every computer of theirs uses this same address. Never print it back in full: it holds the password.
 
-## 4. Check AIStack can reach it
+## 4. Install AIStack and check it can reach the Library
 
-`uvx` runs AIStack without installing it. If `uv --version` fails, ask the user before installing uv, then follow https://docs.astral.sh/uv/getting-started/installation/ (on macOS and Linux, `curl -LsSf https://astral.sh/uv/install.sh | sh`).
+AIStack is installed once with uv, so your agent starts it directly: it starts at once, works offline, and updates itself in the background once a day. If `uv --version` fails, ask the user before installing uv, then follow https://docs.astral.sh/uv/getting-started/installation/ (on macOS and Linux, `curl -LsSf https://astral.sh/uv/install.sh | sh`). Then:
+
+```bash
+uv tool install aistack-mcp
+```
+
+It puts the `aistack-mcp` command in the folder `uv tool dir --bin` prints. Use that full path from here on, below written `<aistack-mcp>`: on macOS and Linux it is `"$(uv tool dir --bin)/aistack-mcp"`, on Windows `"$(uv tool dir --bin)\aistack-mcp.exe"`. An agent started from a desktop app may not have that folder on its path, and would then fail to start AIStack without saying why.
 
 Run the check once, with the place in its environment: `AISTACK_LIBRARY_REPO` for choice 2, `AISTACK_DATABASE_URL` for choice 3, neither for choice 1:
 
 ```bash
-AISTACK_LIBRARY_REPO='<owner>/aistack-library' uvx aistack-mcp@latest check
+AISTACK_LIBRARY_REPO='<owner>/aistack-library' <aistack-mcp> check
 ```
 
-On Windows PowerShell, set `$env:AISTACK_LIBRARY_REPO` (or `$env:AISTACK_DATABASE_URL`) first. The check prepares the Library, registers this computer, and says where the Library lives. Otherwise it says what is wrong: a repository it cannot reach, a database address or password that is wrong, or a database that already holds a team's server, which local mode will not open. Fix that before going on. The first run also downloads AIStack, so it takes longer than later starts.
+On Windows PowerShell, set `$env:AISTACK_LIBRARY_REPO` (or `$env:AISTACK_DATABASE_URL`) first and run `& <aistack-mcp> check`. The check prepares the Library, registers this computer, and says where the Library lives. Otherwise it says what is wrong: a repository it cannot reach, a database address or password that is wrong, or a database that already holds a team's server, which local mode will not open. Fix that before going on.
 
 ## 5. Install the sync skill
 
@@ -46,27 +52,24 @@ Create the skills folder first if it is missing: Claude Code only watches a skil
 
 ```bash
 mkdir -p ~/.claude/skills/sync-aistack
-uvx aistack-mcp@latest sync-skill > ~/.claude/skills/sync-aistack/SKILL.md
+<aistack-mcp> sync-skill > ~/.claude/skills/sync-aistack/SKILL.md
 ```
 
 In Codex, the same into `~/.agents/skills/sync-aistack`. Check the file starts with `---` and `name: sync-aistack`.
 
 ## 6. Connect your coding agent
 
-Use the full path to `uvx` in the agent's settings, from `command -v uvx` (on Windows, `(Get-Command uvx).Source`): an agent started from a desktop app may not have the folder uv installed it in on its path, and would then fail to start AIStack without saying why.
-
-In Claude Code, with the same variable the check used (`-e AISTACK_LIBRARY_REPO=...` for choice 2, `-e AISTACK_DATABASE_URL=...` for choice 3, none for choice 1):
+In Claude Code, with the same variable the check used (`-e AISTACK_LIBRARY_REPO=...` for choice 2, `-e AISTACK_DATABASE_URL=...` for choice 3, none for choice 1), and the full path written out:
 
 ```bash
-claude mcp add --scope user -e AISTACK_LIBRARY_REPO='<owner>/aistack-library' aistack -- "$(command -v uvx)" aistack-mcp@latest
+claude mcp add --scope user -e AISTACK_LIBRARY_REPO='<owner>/aistack-library' aistack -- <aistack-mcp>
 ```
 
 In Codex, add this to `~/.codex/config.toml`, creating the file if needed and keeping everything already in it, then check it with `codex mcp get aistack`. The `env` line holds the same variable the check used; leave it out for choice 1.
 
 ```toml
 [mcp_servers.aistack]
-command = "<full path to uvx>"
-args = ["aistack-mcp@latest"]
+command = "<full path to aistack-mcp>"
 env = { AISTACK_LIBRARY_REPO = "<owner>/aistack-library" }
 startup_timeout_sec = 60
 tools.sync.approval_mode = "approve"
@@ -74,7 +77,7 @@ tools.get_skill.approval_mode = "approve"
 tools.push_skill.approval_mode = "approve"
 ```
 
-`startup_timeout_sec` gives AIStack time to download a new release when it starts after an update; Codex otherwise stops waiting after a few seconds. The three `tools` lines approve only what sync does without asking: comparing, installing, and backing up to the user's private Library. Tell the user so in one line. `@latest` keeps every computer on the same release, so when one upgrades the shared Library, the others follow at their next start.
+`startup_timeout_sec` gives AIStack time to read a large Library on its first start; Codex otherwise stops waiting after a few seconds. The three `tools` lines approve only what sync does without asking: comparing, installing, and backing up to the user's private Library. Tell the user so in one line.
 
 ## 7. Offer to sync at the start of every session
 
@@ -92,5 +95,5 @@ Tell the user:
 
 - **Restart Claude Code once**, or Codex if that is the agent you are. It reads its server list at startup. Skills installed from now on load without a restart.
 - After restarting, say **"sync aistack"**. It backs up this computer's skills to the Library and installs what their other computers put there.
-- **"open my aistack dashboard"** opens the Library in the browser, on this computer, for as long as the session runs. `uvx aistack-mcp dashboard` in a terminal does the same without an agent.
+- **"open my aistack dashboard"** opens the Library in the browser, on this computer, for as long as the session runs. `aistack-mcp dashboard` in a terminal does the same without an agent.
 - For another computer, paste the same setup there and choose the same place: the same repository or the same database. For choice 1 there is nothing to share.

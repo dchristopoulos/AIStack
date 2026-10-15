@@ -12,7 +12,7 @@ Bring this computer's skills in line with the Library, the user's private store 
 The `sync` tool and the others below come from the `aistack` MCP server. If they are not available in this session, stop: do not try to do their work another way. Tell the user AIStack is not connected in this session, and what to do:
 
 - If setup has just finished, restart Claude Code, or Codex if that is the agent you are, once. It reads its server list at startup.
-- Otherwise run `claude mcp get aistack` (in Codex, `codex mcp get aistack`) to see the command and settings it starts AIStack with, then run that same command in a terminal with `check` added in place of nothing else, for example `AISTACK_LIBRARY_REPO=<owner>/aistack-library uvx aistack-mcp@latest check`. It says what is wrong: a database or repository it cannot reach, a GitHub login that is missing, or `uvx` not being found, in which case the agent's settings need the full path that `command -v uvx` prints.
+- Otherwise run `claude mcp get aistack` (in Codex, `codex mcp get aistack`) to see the command and settings it starts AIStack with, then run that command in a terminal with the same settings and `check` after it, for example `AISTACK_LIBRARY_REPO=<owner>/aistack-library ~/.local/bin/aistack-mcp check`. It says what is wrong: a database or repository it cannot reach, or a GitHub login that is missing. If the command itself is not found, AIStack is not installed: `uv tool install aistack-mcp`.
 
 If the tools are there but answer with an error that says what to do, such as another computer having updated the Library, tell the user exactly that.
 
