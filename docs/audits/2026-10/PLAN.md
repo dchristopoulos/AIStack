@@ -1,6 +1,6 @@
 # Plan
 
-The audit's work as pull-request-sized steps, highest value and risk first. A later session follows it top to bottom: one step is one branch and one PR, shipped with the `ship-a-change` skill. Each step names the findings it closes (linked), the files it touches, the ADR it needs (drafts are in `docs/adr/`, status proposed), and its tests. A step marked **trust boundary** gets AGENTS.md's diff review and the PostgreSQL half before it merges.
+The audit's work as pull-request-sized steps, highest value and risk first. Work through it top to bottom: one step is one branch and one PR, shipped with the `ship-a-change` skill. Each step names the findings it closes (linked), the files it touches, the ADR it needs (drafts are in `docs/adr/`, status proposed), and its tests. A step marked **trust boundary** gets AGENTS.md's diff review and the PostgreSQL half before it merges.
 
 Before starting a step, reproduce its High and Critical findings: only the authorization and UX findings had an independent second pass (see README.md).
 
@@ -12,7 +12,7 @@ What changed since the audit was written (2026-10-15):
 - The owner set up PyPI trusted publishing for `aistack-mcp` (workflow `tests.yaml`, environment `pypi`). The name is claimed only when the first upload lands, which is when the owner pushes the `v0.1.0` tag. Check `https://pypi.org/pypi/aistack-mcp/json` before step 1: once it answers, step 1 is only the Windows gate and the install-sentence test.
 - Versions follow the rule now in AGENTS.md: never 1.0.0, a pull request never changes `version`, the owner cuts releases. `tests/test_release_version.py` holds it.
 
-A cloud session is ready to work when it starts: `.claude/hooks/session-start.sh` runs `poetry install`, starts PostgreSQL 16 on port 5433 when the image has it and sets `TEST_DATABASE_URL`, and points Playwright at the image's Chromium with `PLAYWRIGHT_BROWSERS_PATH`. On your own computer, follow README "Tests" instead.
+A cloud development environment is ready when it starts: `.claude/hooks/session-start.sh` runs `poetry install`, starts PostgreSQL 16 on port 5433 when the image has it and sets `TEST_DATABASE_URL`, and points Playwright at the image's Chromium with `PLAYWRIGHT_BROWSERS_PATH`. On your own computer, follow README "Tests" instead.
 
 The browser tests fail in that full Chromium until [UI-22](ui.md#ui-22-no-icon-is-declared-so-every-page-load-asks-for-faviconico-gets-404-and-the-browser-tests-fail-in-a-full-browser) (a missing favicon) is fixed: every failure is the same console 404. Fix it first, as its own small PR, if a step needs the browser tests.
 
