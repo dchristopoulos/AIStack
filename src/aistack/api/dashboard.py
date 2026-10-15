@@ -19,6 +19,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Route
 
 from aistack.bootstrap.context.application_context import (
+    get_local_principal,
     get_public_url,
     get_session_factory,
     get_ticket_signer,
@@ -30,7 +31,7 @@ from aistack.commons.exceptions import InvalidTicket, SignedOut, ValidationError
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.route_error_handler import handle_route_errors
 from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH
-from aistack.services import dashboard_service, skill_service, team_service
+from aistack.services import dashboard_service, library_log, skill_service, team_service
 from aistack.services.transfer_ticket import DASHBOARD_SESSION_LIFETIME_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -160,9 +161,15 @@ def _action(path: str, local: bool = True) -> Callable[[Action], Action]:
 
 @_action("/skills/{name}/machines/{machine_id}")
 def set_skill_on_machine(session, user_id, path, body):
-    dashboard_service.set_on_machine(session, user_id, path["name"], path["machine_id"],
-                                     _flag(body, "enabled"),
-                                     _text(body, "harness", required=False))
+    placed = dashboard_service.set_on_machine(session, user_id, path["name"],
+                                              path["machine_id"], _flag(body, "enabled"),
+                                              _text(body, "harness", required=False))
+    # Local mode logs every change, so other computers sharing the Library get it (ADR-0025).
+    if is_local_mode():
+        library_log.record(session, library_log.new_event(
+            get_local_principal().machine_id, library_log.SKILL_PLACED, name=placed.name,
+            harness=placed.harness, enabled=placed.enabled,
+            target_machine_id=str(placed.machine_id)))
 
 
 @_action("/skills/{name}/share", local=False)
@@ -179,7 +186,10 @@ def share_skill(session, user_id, path, body):
 
 @_action("/skills/{name}/remove")
 def remove_my_skill(session, user_id, path, body):
-    skill_service.remove_from_my_skills(session, user_id, path["name"])
+    removed = skill_service.remove_from_my_skills(session, user_id, path["name"])
+    if is_local_mode():
+        library_log.record(session, library_log.new_event(
+            get_local_principal().machine_id, library_log.SKILL_REMOVED, name=removed))
 
 
 @_action("/teams", local=False)

@@ -34,12 +34,14 @@ class JoinedMachine:
 
 
 def join(session: Session, username: str, machine_name: str, os: str,
-         team_invite: str | None = None, machine_id: uuid.UUID | None = None) -> JoinedMachine:
+         team_invite: str | None = None, machine_id: uuid.UUID | None = None,
+         user_id: uuid.UUID | None = None) -> JoinedMachine:
     """Create a user and first machine within the caller's transaction.
 
     With `team_invite`, the bearer the caller presented was that team's invite code, and the
-    new user is also made a member of the team (ADR-0019). `machine_id` is local mode's id
-    the computer already claimed; a server always makes a new one.
+    new user is also made a member of the team (ADR-0019). `machine_id` and `user_id` are
+    local mode's, which every computer sharing a log must agree on (ADR-0025); a server always
+    makes new ones.
     """
     started_at = perf_counter()
     username = _validated_username(username)
@@ -49,7 +51,7 @@ def join(session: Session, username: str, machine_name: str, os: str,
     # bearer was verified admits nobody.
     invite = None if team_invite is None else team_service.invited_to(session, team_invite)
 
-    user = User(username=username)
+    user = User(user_id=user_id, username=username)
     session.add(user)
     try:
         session.flush()

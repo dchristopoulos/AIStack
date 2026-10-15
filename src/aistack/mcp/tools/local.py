@@ -21,7 +21,7 @@ from aistack.mcp.local import local_mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.mcp.tools.skills import ListSkillsResult, SkillListing
 from aistack.mcp.tools.sync import SyncResult, sync_result
-from aistack.services import local_skills, skill_service, sync_service
+from aistack.services import library_log, local_skills, skill_service, sync_service
 from aistack.services.harnesses import HarnessKey, validated_harness
 from aistack.services.skill_validation import validated_origin, validated_skill_name
 from aistack.services.transfer_ticket import DASHBOARD_LINK_LIFETIME_SECONDS
@@ -67,6 +67,11 @@ def sync(harness: HarnessKey = "claude_code") -> SyncResult:
 
     with get_session_factory().begin() as session:
         report = sync_service.sync(session, caller.machine_id, caller.user_id, local, harness)
+        # Only the first sync of a folder is shared: it is what other computers and a rebuilt
+        # copy need, and logging every sync would grow the log by one file per session.
+        if report.first_sync:
+            library_log.record(session, library_log.new_event(
+                caller.machine_id, library_log.FOLDER_SYNCED, harness=harness))
 
     logger.info(f"Sync reported. Local skills: '{len(local)}'.")
     return sync_result(report, sync_skill_url=None)
@@ -134,6 +139,9 @@ def get_skill(name: str, harness: HarnessKey = "claude_code") -> LocalGetSkillRe
     with get_session_factory().begin() as session:
         skill = skill_service.get_skill(session, caller.machine_id, caller.user_id, name,
                                         harness=harness)
+        library_log.record(session, library_log.new_event(
+            caller.machine_id, library_log.SKILL_PLACED, name=skill.name, harness=harness,
+            enabled=True))
         _, packed = skill_service.archive_of(session, caller.machine_id, skill.skill_version_id)
 
     local_skills.install(folder, skill.name, packed, skill.content_hash)
@@ -189,6 +197,8 @@ def push_skill(name: str, origin: str | None = None,
     with get_session_factory().begin() as session:
         pushed = skill_service.push(session, caller.machine_id, caller.user_id, name, origin,
                                     packed, harness)
+        library_log.record(session, library_log.pushed(caller.machine_id, name, origin, harness,
+                                                       packed))
 
     logger.info(f"Skill pushed. Skill: '{pushed.name}'. Revision: '{pushed.revision}'.")
     return LocalPushSkillResult(name=pushed.name, revision=pushed.revision,
@@ -226,6 +236,9 @@ def disable_skill(name: str, harness: HarnessKey = "claude_code") -> LocalDisabl
     with get_session_factory().begin() as session:
         disabled = skill_service.disable_skill(session, caller.machine_id, caller.user_id,
                                                name, harness)
+        library_log.record(session, library_log.new_event(
+            caller.machine_id, library_log.SKILL_PLACED, name=disabled, harness=harness,
+            enabled=False))
 
     # The service returned the stored name, which passed validation when it was pushed.
     removed = local_skills.remove(_folder(harness), disabled)
