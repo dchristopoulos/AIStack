@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import os
 import shutil
 import socket
 import sys
@@ -57,6 +58,10 @@ def serve_local() -> None:
     settings = LocalSettings()
     configure_logging(settings.log_level)
     build_local_context(settings)
+    # The agent starts this process in the open project, and Windows runs a program named by
+    # its bare name from the current folder first: a project's git.exe or uv.exe would run.
+    # Nothing here reads a path relative to the project.
+    os.chdir(settings.home)
     self_update.start_in_background(settings.home)
 
     from aistack.mcp.local import local_mcp
