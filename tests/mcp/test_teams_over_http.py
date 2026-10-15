@@ -8,7 +8,7 @@ from datetime import timedelta
 import httpx
 import pytest
 from fastmcp.exceptions import ToolError
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from aistack.bootstrap.context import application_context
 from aistack.db.models.invite import Invite
@@ -157,25 +157,52 @@ async def test_a_team_invite_code_admits_a_new_person_to_that_team(server_url, s
             "dimitris", "maria"]
 
 
-async def test_a_cancelled_or_expired_invite_is_not_a_bearer(server_url, session_factory):
-    dimitris = await join(server_url)
+async def test_a_used_cancelled_expired_or_unknown_invite_is_not_a_bearer(server_url,
+                                                                         session_factory):
+    """All four answer the same 401 before any tool runs, so none says it was ever real."""
+    dimitris = await join(server_url, "dimitris", "macbook")
+    maria = await join(server_url, "maria", "laptop")
     await call(server_url, dimitris, "create_team", name="acme")
     cancelled = (await call(server_url, dimitris, "invite_to_team", team="acme"))["code"]
     expired = (await call(server_url, dimitris, "invite_to_team", team="acme"))["code"]
+    used = (await call(server_url, dimitris, "invite_to_team", team="acme"))["code"]
+    await call(server_url, maria, "join_team", code=used)
     with session_factory.begin() as session:
-        admin = session.scalar(select(User.user_id))
+        admin = session.scalar(select(User.user_id).where(User.username == "dimitris"))
         invites = session.scalars(select(Invite).order_by(Invite.created_on)).all()
         team_service.cancel_invite(session, admin, "acme", str(invites[0].invite_id))
         invites[1].expires_on = utc_now() - timedelta(seconds=1)
+        # Past the moments after its use, when the client that used it may still ask.
+        invites[2].used_on = utc_now() - timedelta(minutes=6)
 
-    for code in (cancelled, expired):
+    for code in (cancelled, expired, used, "aistinv_" + "x" * 32):
         with pytest.raises(Exception) as rejection:
             async with client_for(server_url, code) as client:
                 await client.list_tools()
         assert "401" in str(rejection.value)
         assert code not in str(rejection.value)
     with session_factory() as session:
-        assert session.scalars(select(User.username)).all() == ["dimitris"]
+        assert sorted(session.scalars(select(User.username))) == ["dimitris", "maria"]
+
+
+async def test_an_invite_from_someone_taken_off_the_server_is_not_a_bearer(server_url,
+                                                                           session_factory):
+    """OPERATING.md 'Someone left' deletes the person's machines; their invites die with it."""
+    dimitris = await join(server_url, "dimitris", "macbook")
+    maria = await join(server_url, "maria", "laptop")
+    await _team(server_url, dimitris, maria)
+    with session_factory.begin() as session:
+        admin = session.scalar(select(User.user_id).where(User.username == "dimitris"))
+        team_service.set_member(session, admin, "acme", "maria", can_invite=True)
+    hers = (await call(server_url, maria, "invite_to_team", team="acme"))["code"]
+    with session_factory.begin() as session:
+        gone = session.scalar(select(User.user_id).where(User.username == "maria"))
+        session.execute(delete(Machine).where(Machine.user_id == gone))
+
+    with pytest.raises(Exception) as rejection:
+        async with client_for(server_url, hers) as client:
+            await client.list_tools()
+    assert "401" in str(rejection.value)
 
 
 async def test_a_used_invite_admits_nobody_else_and_a_newer_one_cancels_nothing(server_url):
@@ -191,11 +218,12 @@ async def test_a_used_invite_admits_nobody_else_and_a_newer_one_cancels_nothing(
     assert "not a team invite code that works" in refusal and first not in refusal
     assert (await call(server_url, eve, "join_team", code=second)) == {"team": "acme"}
 
-    # Used, it still reaches `join` and nothing else, and `join` refuses it.
+    # Moments after its use it still reaches `join` and nothing else, and `join` refuses it.
     async with client_for(server_url, first) as client:
         assert {tool.name for tool in await client.list_tools()} == BOOTSTRAP_ONLY_TOOLS
     assert "not a team invite code that works" in await _refusal(
         server_url, first, "join", username="late", machine_name="box", os="LINUX")
+
 
 
 async def test_only_an_admin_can_make_an_invite_code(server_url):
