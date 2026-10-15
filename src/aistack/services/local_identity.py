@@ -36,8 +36,9 @@ def local_machine(session: Session, machine_id: uuid.UUID, username: str,
             "server instead, or point AISTACK_DATABASE_URL at a database of your own."
         )
     user_id = users[0].user_id if users else uuid.uuid4()
-    event = library_log.new_event(machine_id, library_log.MACHINE_ADDED, user_id=str(user_id),
-                                  username=username, machine_name=machine_name, os=os)
+    event = library_log.new_event(session, machine_id, library_log.MACHINE_ADDED,
+                                  user_id=str(user_id), username=username,
+                                  machine_name=machine_name, os=os)
     machine = library_log.apply(session, event)
     library_log.record(session, event)
     return machine

@@ -186,8 +186,8 @@ def set_skill_on_machine(session, user_id, path, body):
     # Local mode logs every change, so other computers sharing the Library get it (ADR-0025).
     if is_local_mode():
         library_log.record(session, library_log.new_event(
-            get_local_principal().machine_id, library_log.SKILL_PLACED, name=placed.name,
-            harness=placed.harness, enabled=placed.enabled,
+            session, get_local_principal().machine_id, library_log.SKILL_PLACED,
+            name=placed.name, harness=placed.harness, enabled=placed.enabled,
             target_machine_id=str(placed.machine_id)))
 
 
@@ -208,7 +208,7 @@ def remove_my_skill(session, user_id, path, body):
     removed = skill_service.remove_from_my_skills(session, user_id, path["name"])
     if is_local_mode():
         library_log.record(session, library_log.new_event(
-            get_local_principal().machine_id, library_log.SKILL_REMOVED, name=removed))
+            session, get_local_principal().machine_id, library_log.SKILL_REMOVED, name=removed))
 
 
 # A name for teammates to read; local mode has no teammates.

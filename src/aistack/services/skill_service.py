@@ -45,6 +45,9 @@ class PushedSkill:
     # Who pushed the revision that was latest before this upload; None for a new skill.
     previous_pushed_by: str | None
     stored_origin: str | None
+    # True when the push brought back a removed skill or changed what this harness of the
+    # machine has, which an unchanged push can still do.
+    placement_changed: bool = False
 
 
 def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
@@ -59,8 +62,16 @@ def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
     Everything about the archive is validated before the first query, so a rejected upload
     costs no database work and leaves no row.
     """
+    return store(session, machine_id, user_id, validated_skill(name, read_archive(archive)),
+                 origin, harness)
+
+
+def store(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
+          uploaded: ValidatedSkill, origin: str | None,
+          harness: str | None = None) -> PushedSkill:
+    """`push`, for an archive validated before the caller's transaction opened: parsing one
+    is slow, and nothing slow runs while SQLite's write lock is held."""
     started_at = perf_counter()
-    uploaded = validated_skill(name, read_archive(archive))
     harness = validated_harness(harness)
     _require_registered_machine(session, machine_id, user_id)
 
@@ -74,13 +85,14 @@ def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
         # Denormalized from the latest revision, so a listing reads one table.
         skill.description = uploaded.description
     # Pushing a skill the user had removed brings it back.
+    restored = skill.archived
     skill.archived = False
 
-    set_enabled(session, machine_id, harness, skill.skill_id, enabled=True,
-                revision=version.revision)
+    placed = set_enabled(session, machine_id, harness, skill.skill_id, enabled=True,
+                         revision=version.revision)
 
     logger.debug(
-        f"Push persisted. Skill: '{name}'. Revision: '{version.revision}'. "
+        f"Push persisted. Skill: '{skill.name}'. Revision: '{version.revision}'. "
         f"Created: '{created}'. Unchanged: '{unchanged}'. Files: '{len(uploaded.files)}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
@@ -93,6 +105,7 @@ def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
         file_count=len(uploaded.files),
         previous_pushed_by=previous_pushed_by,
         stored_origin=skill.origin,
+        placement_changed=restored or placed,
     )
 
 
@@ -128,6 +141,9 @@ class InstallableSkill:
     files: tuple[InstallableFile, ...]
     # Where the harness keeps its skills on this machine: the agent installs there.
     folder: str
+    # False when this harness of the machine already had this revision enabled, so the
+    # call changed nothing stored, though the files are installed again.
+    changed: bool = True
 
 
 def list_skills(session: Session, user_id: uuid.UUID) -> list[SkillSummary]:
@@ -176,10 +192,11 @@ def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name:
     # Saying yes brings it back.
     skill = (visibility.required_my_skill(session, user_id, name, removed_too=True)
              if team is None else take_from_team(session, user_id, name, team))
+    restored = skill.archived
     skill.archived = False
     version = _latest_version(session, skill.skill_id)
-    set_enabled(session, machine_id, harness, skill.skill_id, enabled=True,
-                revision=version.revision)
+    placed = set_enabled(session, machine_id, harness, skill.skill_id, enabled=True,
+                         revision=version.revision)
 
     files = session.execute(
         select(SkillFile.path, SkillFile.sha256, SkillFile.executable)
@@ -197,6 +214,7 @@ def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name:
         files=tuple(InstallableFile(path=path, sha256=sha256, executable=executable)
                     for path, sha256, executable in files),
         folder=folder(harness, session.get(Machine, machine_id).os),
+        changed=restored or placed,
     )
 
 
@@ -397,9 +415,10 @@ def export_library(session: Session, machine_id: uuid.UUID,
 
 
 def set_enabled(session: Session, machine_id: uuid.UUID, harness: Harness,
-                skill_id: uuid.UUID, enabled: bool, revision: int | None = None) -> None:
+                skill_id: uuid.UUID, enabled: bool, revision: int | None = None) -> bool:
     """Record a decision about a skill in one harness of a machine, keeping exactly one row
-    per machine, harness, and skill. `revision` is the one just installed or pushed there."""
+    per machine, harness, and skill. `revision` is the one just installed or pushed there.
+    True when the decision differs from the one stored."""
     decision = _machine_skill(session, machine_id, harness, skill_id)
     if decision is None:
         try:
@@ -408,12 +427,15 @@ def set_enabled(session: Session, machine_id: uuid.UUID, harness: Harness,
                 session.add(MachineSkill(machine_id=machine_id, harness=harness,
                                          skill_id=skill_id, enabled=enabled,
                                          revision=revision))
-            return
+            return True
         except IntegrityError:
             decision = _machine_skill(session, machine_id, harness, skill_id)
+    changed = decision.enabled != enabled or (revision is not None
+                                              and decision.revision != revision)
     decision.enabled = enabled
     if revision is not None:
         decision.revision = revision
+    return changed
 
 
 def _require_registered_machine(session: Session, machine_id: uuid.UUID,

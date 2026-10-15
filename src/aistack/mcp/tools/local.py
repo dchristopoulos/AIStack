@@ -89,7 +89,7 @@ def sync(harness: HarnessKey | None = None) -> LocalSyncResult:
         # copy need, and logging every sync would grow the log by one file per session.
         if report.first_sync:
             library_log.record(session, library_log.new_event(
-                caller.machine_id, library_log.FOLDER_SYNCED, harness=harness))
+                session, caller.machine_id, library_log.FOLDER_SYNCED, harness=harness))
 
     library_after_write()
     logger.info(f"Sync reported. Local skills: '{len(local)}'.")
@@ -161,9 +161,12 @@ def get_skill(name: str, harness: HarnessKey = "claude_code") -> LocalGetSkillRe
     with get_session_factory().begin() as session:
         skill = skill_service.get_skill(session, caller.machine_id, caller.user_id, name,
                                         harness=harness)
-        library_log.record(session, library_log.new_event(
-            caller.machine_id, library_log.SKILL_PLACED, name=skill.name, harness=harness,
-            enabled=True, revision=skill.revision))
+        # Installing again what was already installed changes nothing to share. The log is
+        # never trimmed, and every rebuild replays it.
+        if skill.changed:
+            library_log.record(session, library_log.new_event(
+                session, caller.machine_id, library_log.SKILL_PLACED, name=skill.name,
+                harness=harness, enabled=True, revision=skill.revision))
         _, packed = skill_service.archive_of(session, caller.machine_id, skill.skill_version_id)
 
     local_skills.install(folder, skill.name, packed, skill.content_hash)
@@ -224,8 +227,15 @@ def push_skill(name: str, origin: str | None = None,
     with get_session_factory().begin() as session:
         pushed = skill_service.push(session, caller.machine_id, caller.user_id, name, origin,
                                     packed, harness)
-        library_log.record(session, library_log.pushed(caller.machine_id, name, origin, harness,
-                                                       packed))
+        # An unchanged push stores no revision, so its archive is not logged again. What it
+        # may still change, a removed skill back or this folder enabled, is a placement.
+        if not pushed.unchanged:
+            library_log.record(session, library_log.pushed(session, caller.machine_id, name,
+                                                           origin, harness, packed))
+        elif pushed.placement_changed:
+            library_log.record(session, library_log.new_event(
+                session, caller.machine_id, library_log.SKILL_PLACED, name=pushed.name,
+                harness=harness, enabled=True, revision=pushed.revision))
 
     shared = library_after_write()
     logger.info(f"Skill pushed. Skill: '{pushed.name}'. Revision: '{pushed.revision}'.")
@@ -266,8 +276,8 @@ def disable_skill(name: str, harness: HarnessKey = "claude_code") -> LocalDisabl
         disabled = skill_service.disable_skill(session, caller.machine_id, caller.user_id,
                                                name, harness)
         library_log.record(session, library_log.new_event(
-            caller.machine_id, library_log.SKILL_PLACED, name=disabled, harness=harness,
-            enabled=False))
+            session, caller.machine_id, library_log.SKILL_PLACED, name=disabled,
+            harness=harness, enabled=False))
 
     library_after_write()
     # The service returned the stored name, which passed validation when it was pushed.

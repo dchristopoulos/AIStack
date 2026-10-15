@@ -137,14 +137,15 @@ async def _random_changes(client, home, seed: int, steps: int = 25) -> None:
                         removed = skill_service.remove_from_my_skills(session, caller.user_id,
                                                                       name)
                         library_log.record(session, library_log.new_event(
-                            caller.machine_id, library_log.SKILL_REMOVED, name=removed))
+                            session, caller.machine_id, library_log.SKILL_REMOVED,
+                            name=removed))
                     else:
                         placed = dashboard_service.set_on_machine(
                             session, caller.user_id, name, str(caller.machine_id),
                             chance.random() < 0.5, "agents")
                         library_log.record(session, library_log.new_event(
-                            caller.machine_id, library_log.SKILL_PLACED, name=placed.name,
-                            harness=placed.harness, enabled=placed.enabled,
+                            session, caller.machine_id, library_log.SKILL_PLACED,
+                            name=placed.name, harness=placed.harness, enabled=placed.enabled,
                             target_machine_id=str(placed.machine_id)))
         except (ToolError, AIStackError):
             # A refusal (no such skill yet, nothing to disable) changes nothing and logs nothing.
@@ -198,14 +199,44 @@ def test_two_new_computers_that_each_made_the_person_become_one_person(tmp_path)
     """Both started before either had pushed, so each logged a new user; the first one wins."""
     import uuid
 
-    first = library_log.new_event(uuid.uuid4(), library_log.MACHINE_ADDED,
-                                  user_id=str(uuid.uuid4()), username="maria",
-                                  machine_name="laptop", os="MACOS")
-    second = library_log.new_event(uuid.uuid4(), library_log.MACHINE_ADDED,
-                                   user_id=str(uuid.uuid4()), username="maria",
-                                   machine_name="laptop", os="MACOS")
+    first, second = (
+        library_log.Event(uuid.uuid4(), at, uuid.uuid4(), library_log.MACHINE_ADDED,
+                          {"user_id": str(uuid.uuid4()), "username": "maria",
+                           "machine_name": "laptop", "os": "MACOS"})
+        for at in ("2026-10-15T09:00:00.000000Z", "2026-10-15T09:00:01.000000Z"))
 
     replayed = _replayed(tmp_path, [second, first])
 
     assert [username for _, username in replayed["users"]] == ["maria"]
     assert sorted(name for _, name in replayed["machines"]) == ["laptop", "laptop-2"]
+
+
+async def test_a_call_that_changes_nothing_adds_nothing_to_the_log(computer):
+    """DB-11: the log is never trimmed and every rebuild replays it, so a push of unchanged
+    files and an install of what is installed record nothing."""
+    def kinds():
+        with application_context.get_session_factory().begin() as session:
+            return [event.kind for event in _events(session)]
+
+    async with computer("laptop") as (laptop, home):
+        _write(home, "wizard", "first")
+        await _call(laptop, "push_skill", name="wizard")
+        logged = kinds()
+        for _ in range(3):
+            assert (await _call(laptop, "push_skill", name="wizard"))["unchanged"]
+            await _call(laptop, "get_skill", name="wizard")
+        assert kinds() == logged
+
+        # Unchanged files, but a folder that did not have the skill: that is shared.
+        (home / ".agents" / "skills").mkdir(parents=True)
+        await _call(laptop, "get_skill", name="wizard", harness="agents")
+        await _call(laptop, "disable_skill", name="wizard")
+        await _call(laptop, "push_skill", name="wizard", harness="agents")
+        _write(home, "wizard", "first")
+        await _call(laptop, "push_skill", name="wizard")
+        assert kinds() == [*logged, library_log.SKILL_PLACED, library_log.SKILL_PLACED,
+                           library_log.SKILL_PLACED]
+        with application_context.get_session_factory().begin() as session:
+            built = _snapshot(session)
+            events = _events(session)
+    assert _replayed(home.parent, events) == built

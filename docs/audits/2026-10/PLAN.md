@@ -47,7 +47,7 @@ How to work through it:
 - [x] 18a. The schema test sees every constraint, and constraints have one name (#125)
 - [ ] 18b. Index what the services look up by; order and times alike on both databases
 - [ ] 18c. Write down what 'compatible' means and enforce it
-- [ ] 19. Order the local log so a fast clock cannot win, and rebuild without holding the lock
+- [x] 19. Order the local log so a fast clock cannot win, and rebuild without holding the lock (#128)
 - [ ] 20. Every command finds the same Library, and moving it is one step that keeps history
 - [ ] 21. A restored home folder is a new computer
 - [ ] 22. A second computer gets the sync skill and the session-start hook, whatever its agent
