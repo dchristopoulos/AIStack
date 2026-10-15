@@ -1,7 +1,16 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, Uuid
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aistack.db.models.base import Base
@@ -45,4 +54,8 @@ class Skill(Base):
 
     __table_args__ = (
         UniqueConstraint("team_id", "name", name="uq_skill_team_name"),
+        # Deleting a team skill or a group sets these to null, and PostgreSQL indexes no
+        # foreign key on its own.
+        Index("ix_skill_source_skill_id", "source_skill_id"),
+        Index("ix_skill_group_id", "group_id"),
     )
