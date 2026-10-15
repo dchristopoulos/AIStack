@@ -42,7 +42,7 @@ How to work through it:
 - [ ] 13. Scope the 'latest revision' queries and batch the dashboard's team queries
 - [ ] 14. Reads that change nothing stop taking SQLite's write lock
 - [ ] 15. Answer every conflict and limit with a sentence
-- [ ] 16. Fix the layouts that break at tablet width and with long names
+- [x] 16. Fix the layouts that break at tablet width and with long names (#139)
 - [ ] 17. Versions, a changelog, and a channel to stay on
 - [x] 18a. The schema test sees every constraint, and constraints have one name (#125)
 - [x] 18b. Index what the services look up by; order and times alike on both databases (#131)
