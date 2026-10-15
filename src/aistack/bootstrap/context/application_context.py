@@ -20,7 +20,10 @@ from aistack.bootstrap.configuration.settings.settings_config import (
 from aistack.commons.exceptions import AIStackError, Conflict
 from aistack.db.engine import build_engine, build_session_factory
 from aistack.db.schema import NewerSchema, migrate_schema
+from aistack.db.models.machine import Machine
 from aistack.mcp.auth.principal import MachinePrincipal
+from aistack.services.library_repo import LibraryRepo
+from aistack.services.library_sharing import LibrarySharing
 from aistack.services.local_identity import local_machine
 from aistack.services.transfer_ticket import SIGNING_KEY_BYTES, TicketSigner
 
@@ -35,10 +38,13 @@ _ticket_signer: TicketSigner | None = None
 _local_principal: MachinePrincipal | None = None
 # What the dashboard says about where the Library lives; never the address itself.
 _library: dict[str, str] = {"kind": "server"}
+# A Library on GitHub (ADR-0025): the clone and the copy kept in step with it.
+_sharing: LibrarySharing | None = None
 # Local mode on a Library a newer release changed beyond what this one can run on (ADR-0024).
 _local_refusal: str | None = None
 
 _MACHINE_ID_FILE = "machine-id"
+_LIBRARY_CLONE = "library"
 
 _OPERATING_SYSTEMS = {"Darwin": "MACOS", "Windows": "WINDOWS"}
 
@@ -80,10 +86,11 @@ def build_local_context(settings: LocalSettings) -> None:
     is whoever could start this process (ADR-0020).
     """
     global _engine, _session_factory, _ticket_signer, _local_principal, _local_refusal
-    global _library
+    global _library, _sharing
 
     settings.home.mkdir(parents=True, exist_ok=True)
-    _library = _described(settings.library_url())
+    _library = ({"kind": "github", "repository": settings.library_repo}
+                if settings.library_repo else _described(settings.library_url()))
     _engine = build_engine(settings.library_url())
     try:
         migrate_schema(_engine)
@@ -99,6 +106,19 @@ def build_local_context(settings: LocalSettings) -> None:
     _session_factory = build_session_factory(_engine)
     # Signs `aistack dashboard`'s sign-in link and session, fresh per process as on a server.
     _ticket_signer = TicketSigner(secrets.token_bytes(SIGNING_KEY_BYTES))
+
+    if settings.library_repo:
+        repo = LibraryRepo(settings.home / _LIBRARY_CLONE, settings.library_repo)
+        _sharing = LibrarySharing(repo, _session_factory)
+        first_start = not (repo.folder / ".git").is_dir()
+        _sharing.catch_up(force=True)
+        if first_start and not (repo.folder / ".git").is_dir():
+            # Without the log, this computer would start a second Library of its own.
+            _local_refusal = (
+                f"This computer has not read your Library from GitHub yet, and could not reach "
+                f"{settings.library_repo}. Check the internet connection and that `gh auth "
+                "status` shows you signed in, then restart your coding agent.")
+            return
 
     machine_id = _claimed_machine_id(settings.home / _MACHINE_ID_FILE)
     for attempt in range(2):
@@ -119,7 +139,27 @@ def build_local_context(settings: LocalSettings) -> None:
                 raise
 
     _local_principal = principal
+    library_after_write()
     logger.info(f"Local mode context built. Machine: '{principal.machine_id}'.")
+
+
+def library_before_read(force: bool = False) -> None:
+    """For a GitHub Library: catch the copy up on what other computers pushed."""
+    global _local_principal
+    if _sharing is None or _local_principal is None:
+        return
+    _sharing.catch_up(force)
+    # A rebuild can fold this computer under the person's first user (library_log).
+    with _session_factory.begin() as session:
+        machine = session.get(Machine, _local_principal.machine_id)
+        if machine is not None and machine.user_id != _local_principal.user_id:
+            _local_principal = MachinePrincipal(machine.machine_id, machine.user_id)
+
+
+def library_after_write() -> None:
+    """For a GitHub Library: push what this computer recorded."""
+    if _sharing is not None:
+        _sharing.publish()
 
 
 def is_local_mode() -> bool:
@@ -210,7 +250,7 @@ def get_ticket_signer() -> TicketSigner:
 def dispose_application_context() -> None:
     """Drop the engine and its pool. Used by tests between temporary databases."""
     global _settings, _engine, _session_factory, _ticket_signer, _local_principal
-    global _local_refusal, _library
+    global _local_refusal, _library, _sharing
 
     if _engine is not None:
         _engine.dispose()
@@ -221,3 +261,4 @@ def dispose_application_context() -> None:
     _local_principal = None
     _local_refusal = None
     _library = {"kind": "server"}
+    _sharing = None

@@ -173,11 +173,14 @@ def _add_machine(session: Session, event: Event) -> Machine:
     machine = session.get(Machine, event.machine_id)
     if machine is not None:
         return machine
-    user_id = uuid.UUID(data["user_id"])
-    if session.get(User, user_id) is None:
+    user = session.get(User, uuid.UUID(data["user_id"])) or session.scalar(select(User).limit(1))
+    if user is None:
         return onboarding_service.join(session, data["username"], data["machine_name"],
                                        data["os"], machine_id=event.machine_id,
-                                       user_id=user_id).machine
+                                       user_id=uuid.UUID(data["user_id"])).machine
+    # A Library is one person's. Two new computers that started at once each made the user,
+    # and the one that sorts first is the person: the other computer joins them.
+    user_id = user.user_id
     taken = set(session.scalars(select(Machine.name).where(Machine.user_id == user_id)))
     name, number = data["machine_name"], 1
     while name in taken:

@@ -122,6 +122,14 @@ class LocalSettings(BaseSettings):
                     "only this computer sees."
     )
 
+    library_repo: str | None = Field(
+        default=None,
+        validation_alias="aistack_library_repo",
+        description="A private GitHub repository, as owner/name, that holds the Library's log "
+                    "(ADR-0025). Each computer keeps its own copy in AISTACK_HOME. Instead of "
+                    "AISTACK_DATABASE_URL, not with it."
+    )
+
     username: str | None = Field(
         default=None,
         validation_alias="aistack_username",
@@ -142,6 +150,12 @@ class LocalSettings(BaseSettings):
         return value.upper() if isinstance(value, str) else value
 
     def library_url(self) -> str:
+        if self.library_repo and self.database_url:
+            raise ValueError("Set AISTACK_LIBRARY_REPO or AISTACK_DATABASE_URL, not both: the "
+                             "Library lives in one place.")
+        if self.library_repo:
+            # The copy this computer replays the repository's log into.
+            return f"sqlite:///{(self.home / 'github-copy.db').as_posix()}"
         return self.database_url or f"sqlite:///{(self.home / 'aistack.db').as_posix()}"
 
 
