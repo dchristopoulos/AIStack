@@ -40,7 +40,8 @@ How to work through it:
 - [ ] 9c. Remove and rename a computer in local mode (after a release that carries 9b)
 - [x] 10. Taking a team skill never silently replaces an unrelated skill of yours (#150)
 - [x] 11. Throttle failed credentials and keep caller text out of the log (#142)
-- [ ] 12. Backups that restore, and a snapshot before every upgrade
+- [x] 12a. Backups that restore, and a snapshot before every upgrade (#141)
+- [ ] 12b. Operator tasks are `aistack admin` commands, not Python copied from Markdown
 - [x] 13. Scope the 'latest revision' queries and batch the dashboard's team queries (#151)
 - [x] 14. Reads that change nothing stop taking SQLite's write lock (#143)
 - [ ] 15. Answer every conflict and limit with a sentence
@@ -252,16 +253,29 @@ Tests: Twenty wrong bearers from one address get 429 and a log line with the add
 
 What an operator needs before they trust it with a team: a restore that works, reads that do not block writes, and pages that stay fast as the server grows.
 
-### 12. Backups that restore, and a snapshot before every upgrade
+### 12a. Backups that restore, and a snapshot before every upgrade
 
-Closes: [STD-01](industry-standards.md#std-01-a-stopped-servers-data-lives-in-aistackdb-wal-and-the-obvious-restore-or-the-promised-upgrade-rollback-silently-restores-nothing), [PH-18](plot-holes.md#ph-18-operating-has-no-restore-procedure-no-guidance-for-a-new-server-address-and-a-recovery-script-that-crashes-on-a-typo), [AUTO-16](automation.md#auto-16-an-upgrade-relies-on-the-operator-remembering-to-back-up-first-the-server-could-snapshot-sqlite-itself-before-migrating), [AUTO-15](automation.md#auto-15-operator-tasks-are-python-copied-from-markdown-edited-by-hand-and-run-untested).
+Closes: [STD-01](industry-standards.md#std-01-a-stopped-servers-data-lives-in-aistackdb-wal-and-the-obvious-restore-or-the-promised-upgrade-rollback-silently-restores-nothing), [AUTO-16](automation.md#auto-16-an-upgrade-relies-on-the-operator-remembering-to-back-up-first-the-server-could-snapshot-sqlite-itself-before-migrating), and the restore half of [PH-18](plot-holes.md#ph-18-operating-has-no-restore-procedure-no-guidance-for-a-new-server-address-and-a-recovery-script-that-crashes-on-a-typo).
 Largest effort among them: M.
 
-Files: src/aistack/mcp/mcp.py (shutdown hook); src/aistack/bootstrap/context/application_context.py (checkpoint and dispose); src/aistack/bootstrap/__main__.py (`aistack backup`, `aistack restore`, pre-migration snapshot); docs/OPERATING.md (Backups, Restore, Upgrade rollback); compose.yaml (`stop_grace_period`); .github/workflows/tests.yaml (restore drill in the container job).
+Files: src/aistack/db/backup.py (new: back up, restore, snapshot); src/aistack/db/schema.py (snapshot before migrating); src/aistack/bootstrap/context/application_context.py (checkpoint and dispose at shutdown); src/aistack/bootstrap/__main__.py (`aistack backup`, `aistack restore`, close at exit); docs/OPERATING.md (Backups, Restore, Upgrade rollback); compose.yaml (`stop_grace_period`); scripts/container_smoke.py and .github/workflows/tests.yaml (restore drill in the container job).
 
 ADR: none needed.
 
-Tests: After `docker stop` the volume holds one file with the data; the container job backs up, changes, restores and finds the change gone; the old release starts after the documented rollback.
+Tests: After `docker stop` the volume holds one file with the data; the container job backs up, changes, restores and finds the change gone; migrating from an older revision leaves a snapshot at that revision, and a database at head gets none; restore refuses while another process has the database open.
+
+### 12b. Operator tasks are `aistack admin` commands, not Python copied from Markdown
+
+Split from step 12, which was bigger than one PR: the commands below replace every Python block in OPERATING.md, and share a service module with step 9's removal of a computer, so they come after it.
+
+Closes: [AUTO-15](automation.md#auto-15-operator-tasks-are-python-copied-from-markdown-edited-by-hand-and-run-untested), and the rest of [PH-18](plot-holes.md#ph-18-operating-has-no-restore-procedure-no-guidance-for-a-new-server-address-and-a-recovery-script-that-crashes-on-a-typo) (a sentence for an unknown username, the reconnect command beside a new token, changing the server's address).
+Largest effort among them: M. **Trust boundary** (it mints and revokes tokens).
+
+Files: src/aistack/bootstrap/__main__.py (`aistack admin machines|rotate|remove-machine|register-machine|teams|offboard`); src/aistack/services/admin_service.py (new, reached only from the operator command); docs/OPERATING.md (no Python blocks; a "Changing the server's address" section).
+
+ADR: none needed.
+
+Tests: tests/bootstrap/test_admin_cli.py runs every subcommand against SQLite and PostgreSQL; an unknown username exits with a sentence; OPERATING.md contains no Python blocks.
 
 ### 13. Scope the 'latest revision' queries and batch the dashboard's team queries
 

@@ -6,6 +6,7 @@ import platform
 import re
 import secrets
 import socket
+import sqlite3
 import subprocess
 import time
 import uuid
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine, make_url
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from aistack.bootstrap.configuration.settings.settings_config import (
@@ -24,6 +25,7 @@ from aistack.bootstrap.configuration.settings.settings_config import (
 from aistack.bootstrap.hardware import hardware_id
 from aistack.commons.exceptions import AIStackError, Conflict, NeedsNewerRelease
 from aistack.commons.release import UPDATE_AND_RESTART
+from aistack.db.backup import checkpoint
 from aistack.db.engine import build_engine, build_read_session_factory, build_session_factory
 from aistack.db.schema import NewerSchema, guard_schema, migrate_schema
 from aistack.db.models.machine import Machine
@@ -487,12 +489,19 @@ def get_join_limiter() -> FailureLimiter:
 
 
 def dispose_application_context() -> None:
-    """Drop the engine and its pool. Used by tests between temporary databases."""
+    """Close the database: at the end of every command, and in tests between temporary
+    databases. On SQLite the WAL is folded into the main file first, so a stopped server
+    leaves one file that holds everything (an operator's copy of it is then complete)."""
     global _settings, _engine, _session_factory, _read_session_factory, _ticket_signer
     global _local_principal, _local_refusal, _library, _sharing, _local_home
     global _failure_limiter, _join_limiter, _needs_newer_release, _local_settings
 
     if _engine is not None:
+        try:
+            checkpoint(_engine)
+        except (OperationalError, sqlite3.Error) as error:
+            # Another process still writing: its own close folds the WAL in instead.
+            logger.info(f"The database was closed without a checkpoint: {error}")
         _engine.dispose()
     _settings = None
     _engine = None

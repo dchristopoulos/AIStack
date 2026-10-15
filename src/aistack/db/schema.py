@@ -26,6 +26,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session, SessionTransaction, sessionmaker
 
 from aistack.commons.release import release
+from aistack.db.backup import snapshot_before_migrating
 
 logger = logging.getLogger(__name__)
 
@@ -80,11 +81,15 @@ def migrate_schema(engine: Engine, script_location: str | None = None) -> None:
     config, scripts = _scripts(script_location)
 
     with engine.connect() as connection:
+        sqlite = connection.dialect.name == "sqlite"
+        if sqlite:
+            # Taken before the transaction: the copy is a read, and writing it while holding
+            # the write lock would stop every other request for as long as it takes.
+            _snapshot_when_behind(engine, _sqlite_revision(connection), scripts)
         # A batch migration rebuilds a table by dropping the old one. With foreign keys on,
         # SQLite treats that drop as deleting every row, and the delete cascades to the
         # tables that reference it. The pragma is ignored inside a transaction, so it is set
         # on the driver connection before SQLAlchemy begins one.
-        sqlite = connection.dialect.name == "sqlite"
         if sqlite:
             connection.connection.driver_connection.execute("PRAGMA foreign_keys=OFF")
         try:
@@ -92,6 +97,8 @@ def migrate_schema(engine: Engine, script_location: str | None = None) -> None:
                 _hold_migration_lock(connection)
                 if _runs_on_a_newer_schema(connection, scripts):
                     return
+                if not sqlite:
+                    _snapshot_when_behind(engine, _revision(connection), scripts)
                 config.attributes["connection"] = connection
                 if _predates_migrations(connection):
                     command.stamp(config, BASELINE_REVISION)
@@ -137,6 +144,43 @@ def guard_schema(session_factory: sessionmaker[Session],
             raise refused(error) from None
 
     event.listen(session_factory, "after_begin", check)
+
+
+# What a database made before migrations existed reports as its revision.
+_BEFORE_MIGRATIONS = "before migrations"
+
+
+def _snapshot_when_behind(engine: Engine, current: str | None, scripts: ScriptDirectory) -> None:
+    """Keep a copy to go back to before a migration that will change the schema (ADR-0024
+    sends an operator to it when a later release refuses the database)."""
+    head = scripts.get_current_head()
+    known = {script.revision for script in scripts.walk_revisions()} | {_BEFORE_MIGRATIONS}
+    if current is None or current == head or current not in known:
+        return
+    snapshot_before_migrating(engine, current, head)
+
+
+def _sqlite_revision(connection: Connection) -> str | None:
+    """The revision, read through the driver so that no transaction is opened. None for a
+    database with no tables yet."""
+    driver = connection.connection.driver_connection
+    tables = {row[0] for row in driver.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if not tables:
+        return None
+    if _VERSION_TABLE not in tables:
+        return _BEFORE_MIGRATIONS
+    row = driver.execute(f"SELECT version_num FROM {_VERSION_TABLE}").fetchone()
+    return row[0] if row else None
+
+
+def _revision(connection: Connection) -> str | None:
+    tables = set(inspect(connection).get_table_names())
+    if not tables:
+        return None
+    if _VERSION_TABLE not in tables:
+        return _BEFORE_MIGRATIONS
+    return connection.execute(text(f"SELECT version_num FROM {_VERSION_TABLE}")).scalar()
 
 
 def _hold_migration_lock(connection: Connection) -> None:
