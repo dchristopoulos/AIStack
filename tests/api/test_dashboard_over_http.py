@@ -351,6 +351,33 @@ async def test_a_team_from_creation_to_an_update_taken_entirely_on_the_dashboard
     assert [entry["name"] for entry in report["install"]] == ["code-review"]
 
 
+async def test_taking_over_a_namesake_of_your_own_waits_for_replace(server_url):
+    dimitris_token = await _join(server_url, "dimitris")
+    maria_token = await _join(server_url, "maria")
+    await _push(server_url, maria_token, "code-review", files={"notes.md": "maria's own\n"})
+    await _push(server_url, dimitris_token, "code-review", files={"notes.md": "dimitris's\n"})
+    async with _browser(server_url, dimitris_token) as dimitris, \
+            _browser(server_url, maria_token) as maria:
+        await _post(dimitris, "/teams", name="acme")
+        code = (await _post(dimitris, "/teams/acme/invite")).json()["code"]
+        await _post(maria, "/teams/join", code=code)
+        await _post(dimitris, "/skills/code-review/share", team="acme")
+
+        refused = await _post(maria, "/teams/acme/take", name="code-review")
+        assert refused.status_code == 409
+        assert "your own 'code-review' (revision 1, last pushed by maria)" in refused.json()[
+            "error"]
+        assert (await _post(maria, "/teams/acme/take", name="code-review",
+                            replace="yes")).status_code == 400
+        assert (await _state(maria))["skills"][0]["pushed_by"] == "maria"
+
+        assert (await _post(maria, "/teams/acme/take", name="code-review",
+                            replace=True)).status_code == 200
+        mine = (await _state(maria))["skills"][0]
+        assert (mine["revision"], mine["pushed_by"], mine["source"]["team"]) == (
+            2, "dimitris", "acme")
+
+
 async def test_what_only_an_admin_may_do_is_refused_to_a_member_with_a_sentence(server_url):
     dimitris_token = await _join(server_url, "dimitris")
     maria_token = await _join(server_url, "maria")

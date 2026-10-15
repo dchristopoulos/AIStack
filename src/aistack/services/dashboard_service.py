@@ -241,6 +241,9 @@ def _my_skills(session: Session, user_id: uuid.UUID,
                                                     "harness": harness.value,
                                                     "revision": installed})
 
+    changed = skill_service.changed_since_taken(
+        session, [(row.skill_id, row.source_skill_id, row.source_revision) for row in rows
+                  if row.source_skill_id in team_skills])
     skills = []
     for (skill_id, name, description, source_id, source_revision, revision, pushed_by,
          pushed_on, files) in rows:
@@ -262,6 +265,8 @@ def _my_skills(session: Session, user_id: uuid.UUID,
                 "latest_revision": source["revision"],
                 "latest_pushed_by": source["pushed_by"],
                 "update_available": source["revision"] > source_revision,
+                # Taking the team's latest would replace the user's edits since they took it.
+                "own_changes": skill_id in changed,
             },
         })
     return skills

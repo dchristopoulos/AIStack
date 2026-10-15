@@ -141,13 +141,17 @@ async def seed(base_url: str, invite_code: str, long_names: bool = False) -> dic
         await dimitris.page(f"/skills/{name}/share", team="aistack", group=group)
     await dimitris.page("/skills/commit-messages/share", team="aistack")
 
-    # Maria takes two skills and switches them on; then one of them changes under her.
+    # Maria takes two skills and switches them on, and edits one; then it changes under her.
     maria_laptop = (await maria.browser.get("/api/state")).json()["machines"][0]["id"]
     for name in ("code-review", "sql-style"):
         await maria.page("/teams/aistack/take", name=name)
         await maria.page(f"/skills/{name}/machines/{maria_laptop}", enabled=True)
+    await maria.push("code-review", extra="Read the tests before the code.\n")
     await dimitris.push("code-review", extra="Also check that migrations are reviewed.\n")
     await dimitris.page("/skills/code-review/share", team="aistack")
+
+    # Alex wrote a release-notes of his own, unrelated to the one the team has.
+    await alex.push("release-notes", extra="Alex's own checklist for a release.\n")
 
     # A friends team that has nothing to do with the company.
     await maria.push("meeting-notes")

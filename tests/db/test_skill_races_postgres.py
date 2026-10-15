@@ -116,10 +116,11 @@ def test_taking_a_skill_while_an_admin_removes_it_runs_one_after_the_other(
     ann, bob = people["ann"], people["bob"]
 
     # The take has read the team's files and not yet linked bob's copy to the team's skill.
+    # Bob's own wizard is a different one, so he takes it with replace.
     outcomes = _first_held_after(
         monkeypatch, skill_service, "_stored_as_uploaded",
         _in(session_factory, skill_service.get_skill, bob.machine.machine_id,
-            bob.user.user_id, "wizard", "acme"),
+            bob.user.user_id, "wizard", "acme", None, True),
         _in(session_factory, team_service.remove_skill, ann.user.user_id, "acme", "wizard"))
 
     assert outcomes == {"first": "ok", "second": "ok"}

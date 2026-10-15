@@ -37,7 +37,7 @@ How to work through it:
 - [x] 8. A session belongs to the computer that opened it; signing out ends it (#127)
 - [x] 9. A person can remove and rename their own computers, and see when each last synced (#140)
 - [ ] 9b. Remove and rename a computer in local mode
-- [ ] 10. Taking a team skill never silently replaces an unrelated skill of yours
+- [x] 10. Taking a team skill never silently replaces an unrelated skill of yours (#150)
 - [x] 11. Throttle failed credentials and keep caller text out of the log (#142)
 - [ ] 12. Backups that restore, and a snapshot before every upgrade
 - [ ] 13. Scope the 'latest revision' queries and batch the dashboard's team queries
@@ -218,6 +218,8 @@ Files: src/aistack/services/skill_service.py (`take_from_team` reports `possibly
 ADR: none needed.
 
 Tests: Taking a namesake that was never linked is refused with a sentence naming both; with `replace` it lands and says so; the dashboard confirm names the skill it replaces; sharing from revision 2 over a team's revision 3 returns a warning.
+
+UX-06's second half, a flag stored on the team revision so teammates are told an offer replaces their skill with an unrelated one, needs a migration and moves to step 39 with the other history work. This step does its first half, the warning in the Share dialog before anything is stored.
 
 ### 11. Throttle failed credentials and keep caller text out of the log
 
@@ -739,6 +741,7 @@ Ranked by value for effort in improvements.md.
 ### 39. See what changed before taking an update, and get an older revision back
 
 Closes: [IMP-08](improvements.md#imp-08-no-way-to-see-what-a-teammate-changed-before-taking-an-offered-update), [PH-08](plot-holes.md#ph-08-it-stays-in-your-history-is-a-promise-nothing-can-keep-no-tool-page-or-script-reads-or-restores-an-older-revision).
+Also: the second half of [UX-06](ux.md#ux-06-sharing-over-a-teammates-unrelated-namesake-is-flagged-only-afterwards-and-teammates-who-took-the-original-are-offered-it-as-an-ordinary-update) (a nullable flag on `skill_version`, set when a share went over an unrelated namesake, carried in `team_updates`; a migration with `older_releases_compatible = True`), moved here from step 10.
 Largest effort among them: M.
 
 Files: src/aistack/services/skill_service.py (`diff`, `restore_revision`); src/aistack/api/dashboard.py; dashboard.html (a diff in the update row; History in the skill panel).

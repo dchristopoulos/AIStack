@@ -289,6 +289,8 @@ async def test_a_shared_skill_taken_by_a_teammate_downloads_the_same_files(serve
         "unchanged": False,
         "previous_pushed_by": None,
         "possibly_unrelated": False,
+        "overwrote_revision": None,
+        "updates_from": None,
     }
     assert taken["content_hash"] == pushed["content_hash"]
     assert taken["pushed_by"] == "dimitris"
@@ -319,7 +321,8 @@ async def test_a_teammates_change_is_offered_and_becomes_an_update_only_once_tak
 
     assert pushed_only["team_updates"] == [] and pushed_only["up_to_date"] == 1
     assert offered["team_updates"] == [{"name": "wizard", "team": "acme", "from_revision": 1,
-                                        "to_revision": 2, "pushed_by": "dimitris"}]
+                                        "to_revision": 2, "pushed_by": "dimitris",
+                                        "own_changes": False}]
     assert offered["update"] == [] and offered["ask"] == []
     assert offered["up_to_date"] == 1
 
@@ -425,7 +428,9 @@ async def _insider_outcome(server_url, eve, action) -> str:
         return "listed" if any(s["team"] == "acme" and s["name"] == "grouped"
                                for s in listed) else "unlisted"
     calls = {
-        "take": ("get_skill", {"name": "grouped", "team": "acme"}, "ghost-skill"),
+        # Her own 'grouped', pushed to share over, is a namesake she agrees to replace.
+        "take": ("get_skill", {"name": "grouped", "team": "acme", "replace": True},
+                 "ghost-skill"),
         "share_over": ("share_skill", {"name": "grouped", "team": "acme"}, None),
         "share_into": ("share_skill", {"name": "fresh", "team": "acme", "group": "squad"},
                        "ghost-group"),
