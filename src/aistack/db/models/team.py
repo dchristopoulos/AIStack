@@ -85,7 +85,8 @@ class TeamMember(Base):
         nullable=False
     )
     # Sees the skills of every group in the team, private ones included, without being added
-    # to each. Reading only: sharing into a group still takes membership of it.
+    # to each. Reading only: sharing into a group, or over its skills, still takes membership
+    # of it (ADR-0029).
     sees_all_groups: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # May make the team's invite link, and nothing else an admin can (ADR-0019).
     can_invite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,

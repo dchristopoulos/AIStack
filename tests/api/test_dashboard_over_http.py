@@ -15,6 +15,7 @@ from aistack.api.dashboard import REQUEST_HEADER, SESSION_COOKIE
 from aistack.bootstrap.context import application_context
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_skill import MachineSkill
+from aistack.mcp.mcp import mcp
 from tests.archives import skill_archive
 from tests.conftest import INVITE_CODE
 from tests.mcp.conftest import client_for
@@ -375,23 +376,53 @@ async def test_what_only_an_admin_may_do_is_refused_to_a_member_with_a_sentence(
         ("dimitris", "ADMIN"), ("maria", "MEMBER")]
 
 
+# Every dashboard route that names a team, with a body that is valid apart from the team. A
+# new team route fails `test_every_team_route_has_an_outsider_row` until it has a row here,
+# which is the decision about what it tells someone outside the team.
+OUTSIDER_ROUTES = {
+    "/teams/{team}/leave": {},
+    "/teams/{team}/delete": {},
+    "/teams/{team}/invite": {},
+    "/teams/{team}/invites/{invite_id}/cancel": {},
+    "/teams/{team}/take": {"name": "wizard"},
+    "/teams/{team}/members/{username}": {"role": "ADMIN"},
+    "/teams/{team}/members/{username}/remove": {},
+    "/teams/{team}/groups": {"name": "x"},
+    "/teams/{team}/group": {"path": "x", "subscribed": False},
+    "/teams/{team}/group/members": {"path": "x", "username": "dimitris", "member": True},
+    "/teams/{team}/skills/{name}/move": {"group": None},
+    "/teams/{team}/skills/{name}/remove": {},
+    "/skills/{name}/share": {"team": "{team}"},
+}
+_FILLED = {"{invite_id}": "00000000-0000-0000-0000-000000000000", "{username}": "dimitris",
+           "{name}": "wizard"}
+
+
+def test_every_team_route_has_an_outsider_row():
+    registered = {route.path.removeprefix("/api") for route in mcp._additional_http_routes
+                  if route.path.startswith("/api/teams/{team}")}
+
+    assert registered == {route for route in OUTSIDER_ROUTES if route.startswith("/teams/")}
+
+
 async def test_someone_outside_a_team_is_told_what_they_would_be_told_if_it_did_not_exist(
         server_url):
     dimitris_token = await _join(server_url, "dimitris")
     eve_token = await _join(server_url, "eve")
+    await _push(server_url, dimitris_token, "wizard")
     await _push(server_url, eve_token, "wizard")
     async with _browser(server_url, dimitris_token) as dimitris, \
             _browser(server_url, eve_token) as eve:
         await _post(dimitris, "/teams", name="acme")
+        await _post(dimitris, "/skills/wizard/share", team="acme")
 
-        for path, body in (("/teams/{team}/leave", {}), ("/teams/{team}/invite", {}),
-                           ("/teams/{team}/delete", {}),
-                           ("/teams/{team}/take", {"name": "wizard"}),
-                           ("/teams/{team}/groups", {"name": "x"}),
-                           ("/skills/wizard/share", {"team": "{team}"})):
+        for path, body in OUTSIDER_ROUTES.items():
+            for placeholder, value in _FILLED.items():
+                path = path.replace(placeholder, value)
             answers = []
             for team in ("acme", "nowhere"):
-                filled = {key: value.replace("{team}", team) for key, value in body.items()}
+                filled = {key: value.replace("{team}", team) if isinstance(value, str)
+                          else value for key, value in body.items()}
                 response = await _post(eve, path.replace("{team}", team), **filled)
                 answers.append((response.status_code,
                                 response.json()["error"].replace(team, "X")))

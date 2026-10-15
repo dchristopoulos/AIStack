@@ -27,6 +27,7 @@ from aistack.db.models.team import (
     TeamGroup,
     TeamKind,
     TeamMember,
+    TeamRole,
 )
 from aistack.services.skill_validation import validated_skill_name
 
@@ -122,6 +123,28 @@ def group_access(session: Session, user_id: uuid.UUID) -> GroupAccess:
             unsubscribed.add(group_id)
     return GroupAccess(visible=frozenset(visible), writable=frozenset(visible & belongs),
                        unsubscribed=frozenset(unsubscribed), member=member)
+
+
+def may_share_over(access: GroupAccess, skill: Skill) -> bool:
+    """Whether a member may share over an existing team skill (ADR-0029).
+
+    At team level any member may. In a group it takes what sharing a new skill into that
+    group takes: seeing a group is reading and taking it, not writing to it.
+    """
+    return skill.group_id is None or skill.group_id in access.writable
+
+
+def shows_membership(access: GroupAccess, viewer: TeamMember, group_id: uuid.UUID,
+                     private: bool) -> bool:
+    """Whether the team's member list shows the viewer that someone is in this group.
+
+    An admin sees every membership, to manage them. Anyone else sees a group they can see,
+    and a private one only from inside it: an open group under a private one would
+    otherwise name the private one in its path.
+    """
+    if viewer.role is TeamRole.ADMIN:
+        return True
+    return group_id in access.visible and (not private or group_id in access.member)
 
 
 def team_skills(session: Session, user_id: uuid.UUID) -> Select[tuple[Skill, str, str | None]]:

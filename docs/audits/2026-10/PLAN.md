@@ -33,7 +33,7 @@ How to work through it:
 - [x] 4. An invite dies with its maker's right to invite (#126)
 - [x] 5. Lock the team while its admins and members change (#132)
 - [x] 6. A team can always be managed: delete a team, let a lone admin leave, repair an orphaned one (#147)
-- [ ] 7. Sharing over a group's skill takes being able to share into that group
+- [x] 7. Sharing over a group's skill takes being able to share into that group (#149)
 - [x] 8. A session belongs to the computer that opened it; signing out ends it (#127)
 - [x] 9. A person can remove and rename their own computers, and see when each last synced (#140)
 - [ ] 9b. Remove and rename a computer in local mode
