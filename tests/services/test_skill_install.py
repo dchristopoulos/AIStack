@@ -11,10 +11,10 @@ from aistack.db.engine import build_session_factory
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.timestamps import as_utc
-from aistack.services import onboarding_service, skill_service
+from aistack.services import onboarding_service, skill_service, team_service
 from aistack.services.content_hash import file_digest
 from tests.archives import skill_archive, skill_document
-from tests.teams import SERVER_TEAM, enable, share_with_everyone, user_of
+from tests.teams import SERVER_TEAM, enable, make_team, share_with_everyone, user_of
 
 
 @pytest.fixture(name="session_factory")
@@ -178,6 +178,38 @@ def test_get_skill_on_an_unknown_name_says_where_to_look(session_factory, dimitr
     assert "no skill named 'sorcerer'" in str(rejection.value)
     assert "list_skills" in str(rejection.value)
     assert _decisions(session_factory) == {}
+
+
+def test_get_skill_without_a_team_names_the_teams_that_share_it(session_factory, dimitris,
+                                                                 maria):
+    """An agent that drops "from backend" learns the team from the refusal, not a listing."""
+    _push(session_factory, dimitris)
+
+    with pytest.raises(NotFound) as rejection, session_factory.begin() as session:
+        skill_service.get_skill(session, maria.machine.machine_id, maria.user.user_id, "wizard")
+
+    assert f"call get_skill with team '{SERVER_TEAM}'" in str(rejection.value)
+    assert maria.machine.machine_id not in _decisions(session_factory)
+
+
+def test_the_hint_never_names_a_team_or_group_the_caller_cannot_see(session_factory, dimitris,
+                                                                    maria):
+    with session_factory.begin() as session:
+        skill_service.push(session, machine_id=dimitris.machine.machine_id,
+                           user_id=dimitris.user.user_id, name="wizard", origin=None,
+                           archive=skill_archive("wizard"))
+        make_team(session, "secret", dimitris.user.user_id)
+        skill_service.share(session, dimitris.user.user_id, "wizard", "secret")
+        make_team(session, "open", dimitris.user.user_id, maria.user.user_id)
+        team_service.create_group(session, dimitris.user.user_id, "open", "inner",
+                                  private=True)
+        skill_service.share(session, dimitris.user.user_id, "wizard", "open", "inner")
+
+    with pytest.raises(NotFound) as rejection, session_factory.begin() as session:
+        skill_service.get_skill(session, maria.machine.machine_id, maria.user.user_id, "wizard")
+
+    assert "secret" not in str(rejection.value) and "open" not in str(rejection.value)
+    assert "You have no skill named 'wizard'." in str(rejection.value)
 
 
 @pytest.mark.parametrize("name", ["Wizard", "../wizard", "wizard\nFORGED", ""])
