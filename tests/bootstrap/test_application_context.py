@@ -55,3 +55,20 @@ def test_the_dashboard_names_the_librarys_provider_but_never_its_password():
     assert described == {"kind": "postgresql", "provider": "Neon",
                          "host": "ep-cool-1.eu-central-1.aws.neon.tech"}
     assert _described("sqlite:////home/maria/.aistack/aistack.db") == {"kind": "this_computer"}
+
+
+@pytest.mark.parametrize(("system", "hardware", "expected"), [
+    ("Darwin", "      Model Name: MacBook Pro\n      Chip: Apple M4 Pro\n", "MacBook Pro M4 Pro"),
+    # An Intel Mac reports a processor, not a chip: the model alone.
+    ("Darwin", "      Model Name: iMac\n      Processor Name: 6-Core Intel Core i5\n", "iMac"),
+    ("Windows", "", "Windows PC"),
+])
+def test_a_new_computer_is_named_as_its_owner_would_name_it(monkeypatch, system, hardware,
+                                                             expected):
+    import subprocess
+
+    monkeypatch.setattr(application_context.platform, "system", lambda: system)
+    monkeypatch.setattr(application_context.subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout=hardware))
+
+    assert application_context._computer_name() == expected
