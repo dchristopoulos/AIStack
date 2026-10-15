@@ -18,9 +18,10 @@ permissions:
 jobs:
   pytest:
     runs-on: ubuntu-latest
-    # The suite takes about three minutes. Without a bound, a hung test holds the runner for
-    # GitHub's six hours and the pull request reads "pending" instead of failed.
-    timeout-minutes: 15
+    # The suite, browser tests included, takes about fourteen minutes. Without a bound, a hung
+    # test holds the runner for GitHub's six hours and the pull request reads "pending"
+    # instead of failed; faulthandler_timeout below names a hung test well before this.
+    timeout-minutes: 25
 
     services:
       # The concurrent-admin race (ADR-0008) cannot be reproduced on SQLite, and the test that
