@@ -20,6 +20,11 @@ BROWSER = os.environ.get("AISTACK_UI_BROWSER", "chromium")
 _SEED_SCRIPT = pathlib.Path(__file__).parents[2] / "scripts" / "demo_seed.py"
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "long_names: seed a fourth person whose names are all as "
+                                       "long as the server allows")
+
+
 def _demo_seed():
     spec = importlib.util.spec_from_file_location("demo_seed", _SEED_SCRIPT)
     module = importlib.util.module_from_spec(spec)
@@ -28,14 +33,17 @@ def _demo_seed():
 
 
 @pytest.fixture(name="links")
-async def links_fixture(server_url) -> dict[str, str]:
+async def links_fixture(server_url, request) -> dict[str, str]:
     """A server filled by the demo script, and a sign-in link per person.
 
     dimitris administers `aistack`; maria is in its `developers` group and has an update
     waiting; alex is in `aistack` and in no group, so the private `security` group is hidden
-    from them.
+    from them. A test marked `long_names` also gets a fourth person whose names, computer,
+    team and group path are all as long as the server allows.
     """
-    return await _demo_seed().seed(server_url.removesuffix("/mcp"), INVITE_CODE)
+    return await _demo_seed().seed(server_url.removesuffix("/mcp"), INVITE_CODE,
+                                   long_names=request.node.get_closest_marker("long_names")
+                                   is not None)
 
 
 @pytest.fixture(name="browser")

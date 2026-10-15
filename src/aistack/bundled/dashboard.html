@@ -181,6 +181,8 @@ code, kbd { font-family: var(--mono); font-size: 12px; padding: 1px 6px; border-
 .where ol > svg { flex: none; color: var(--faint); margin-right: 4px; }
 .where li { display: flex; align-items: center; min-width: 0; }
 .where li:not(:last-child) { flex: 0 1 auto; }
+/* Where you are never gives way: the parts above it take the ellipsis first. */
+.where li:last-child { flex: none; max-width: 60%; }
 .where .sep { flex: none; padding: 0 2px; color: var(--border-strong); }
 .where a, .where span.seg {
   display: block; min-width: 0; padding: 3px 6px; border-radius: 6px;
@@ -235,9 +237,10 @@ a.place-pill:hover { color: var(--text); border-color: var(--border-strong); }
 .rail-item[aria-current="page"] .rail-btn::before { height: 34px; }
 /* Where a skill is: one line per computer, its agents as links. Information, not controls. */
 .where-list { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-.where-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-.where-line svg { flex: none; align-self: center; color: var(--faint); }
-.where-line .on { color: var(--muted); white-space: nowrap; }
+.where-line { min-width: 0; overflow-wrap: anywhere; }
+/* A line of text, not a row of boxes: a long computer name wraps, and its agents follow it. */
+.where-line svg { display: inline-block; margin-right: 6px; vertical-align: -2px; color: var(--faint); }
+.where-line .on { margin-right: 6px; color: var(--muted); }
 .where-line a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
 .where-line a:hover { text-decoration-color: var(--accent); color: var(--accent-text); }
 .not-placed { color: var(--faint); font-size: 13px; }
@@ -249,7 +252,7 @@ a.place-pill:hover { color: var(--text); border-color: var(--border-strong); }
 .space-head { padding: 2px 8px 12px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
 h1.mono { font-size: 28px; letter-spacing: -.03em; }
 h1 .mono { font-size: inherit; letter-spacing: -.03em; }
-.space-head h2.mono { font-size: 15px; }
+.space-head h2.mono { font-size: 15px; overflow-wrap: anywhere; }
 .space-head h2 { font-size: 15px; font-weight: 600; letter-spacing: -.02em; }
 .space-head p { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 /* Computers as a folder tree: computer, then each coding agent, then its folders. */
@@ -292,7 +295,8 @@ h1 .mono { font-size: inherit; letter-spacing: -.03em; }
 .nav-item .count { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
 .nav-item .count.upd { color: var(--accent-text); }
 /* A team's groups sit under its name, a step in for each level. */
-.nav-item.sub { --d: 0; width: auto; height: 28px; margin-right: 26px; padding-left: calc(34px + var(--d) * 14px); font-size: 13px; }
+.nav-item.sub { --d: 0; width: auto; height: auto; min-height: 28px; margin-right: 26px; padding-top: 4px; padding-bottom: 4px; padding-left: calc(34px + var(--d) * 14px); font-size: 13px; }
+.nav-item.sub .label { min-width: 0; white-space: normal; overflow-wrap: break-word; }
 .nav-item.sub .label.mono { font-size: 12.5px; }
 .nav-heading { display: flex; align-items: center; height: 32px; margin-top: 16px; padding: 0 8px; font-size: 12px; font-weight: 500; color: var(--faint); }
 .nav-foot { margin-top: auto; padding-top: 16px; }
@@ -308,7 +312,7 @@ h1 .mono { font-size: inherit; letter-spacing: -.03em; }
 .account .avatar { width: 32px; height: 32px; font-size: 13px; }
 .account .who { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
 .account .who b { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.account .who span { font-size: 12px; color: var(--faint); }
+.account .who span { font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-heading .btn.icon { width: 24px; height: 24px; margin-left: auto; margin-right: -4px; }
 .avatar {
   flex: none; width: 24px; height: 24px; border-radius: 6px;
@@ -326,7 +330,7 @@ main:focus { outline: none; }
 .wrap { max-width: 1200px; margin: 0 auto; padding: 0 var(--gutter); }
 .band > .wrap { padding-top: 32px; padding-bottom: 32px; }
 .band.has-tabs > .wrap { padding-bottom: 0; }
-.wrap.body { padding-top: 24px; padding-bottom: 96px; }
+.wrap.body { padding-top: 24px; padding-bottom: 96px; container: body / inline-size; }
 .page-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 24px; }
 .page-head .titles { flex: 1 1 260px; min-width: 0; }
 h1 { font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -.04em; overflow-wrap: anywhere; }
@@ -437,6 +441,8 @@ input[type="checkbox"]:checked { border-color: var(--accent); background-color: 
   font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; max-width: 100%;
 }
 .badge.mono { font: 500 11.5px/1 var(--mono); }
+/* A badge that holds a name or a path wraps rather than spill over the next column. */
+.chips .badge { height: auto; min-height: 22px; padding-top: 4px; padding-bottom: 4px; line-height: 1.2; white-space: normal; overflow-wrap: anywhere; }
 .badge.solid { background: var(--text); border-color: var(--text); color: var(--inverse); }
 .badge.info { background: var(--accent-soft); border-color: transparent; color: var(--accent-text); }
 .badge.private { background: var(--purple-soft); border-color: transparent; color: var(--purple); }
@@ -454,7 +460,7 @@ input[type="checkbox"]:checked { border-color: var(--accent); background-color: 
 .tbl { display: grid; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
 .tbl.library { grid-template-columns: minmax(240px, 1fr) fit-content(180px) minmax(0, 1.1fr) auto; }
 .tbl.folder { grid-template-columns: minmax(240px, 1fr) fit-content(180px) auto auto; }
-.tbl.tree { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+.tbl.tree { grid-template-columns: minmax(240px, 1fr) auto fit-content(180px) auto; }
 .tbl.groups { --gx: 8px; }
 .tr {
   --d: 0;
@@ -519,12 +525,12 @@ a.link:hover { text-decoration-color: var(--text); }
 .grp-cell { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
 .group-toggle {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
-  height: 44px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left;
+  min-height: 44px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left;
 }
 .group-toggle .chev { flex: none; width: var(--step); display: grid; place-items: center; color: var(--faint); transition: transform .15s; }
 .group-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
 .group-toggle:hover .chev, .group-toggle:hover .gicon { color: var(--text); }
-.group-toggle .gname { font: 600 13px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-toggle .gname { min-width: 0; font: 600 13px var(--mono); overflow-wrap: anywhere; }
 .group-toggle .gname.plain { font: 600 13.5px var(--font); }
 .group-toggle .gicon { display: inline-flex; color: var(--muted); margin-left: -4px; }
 .group-toggle .count { color: var(--faint); font-size: 12px; white-space: nowrap; }
@@ -562,6 +568,7 @@ a.link:hover { text-decoration-color: var(--text); }
 .tab .count { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
 .panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; margin-bottom: 16px; }
 .panel-head p { flex: 1 1 320px; }
+.panel-head a.btn { height: auto; min-height: 36px; padding-top: 6px; padding-bottom: 6px; white-space: normal; overflow-wrap: anywhere; }
 
 /* ---------- menu ---------- */
 .menu-wrap { position: relative; }
@@ -773,15 +780,30 @@ dialog.dlg.sheet[open] { animation: slide .2s var(--ease); }
   .btn.icon { width: 36px; }
   .switch { min-height: 36px; }
   .nav-item, .nav-btn { height: 40px; }
-  .nav-item.sub { height: 36px; margin-right: 34px; }
+  .nav-item.sub { min-height: 36px; margin-right: 34px; }
   .avatar.lg { width: 40px; height: 40px; }
+
+  .tabs { margin-top: 20px; }
+  .card-body { padding: 16px; }
+  .card-foot { padding: 12px 16px; }
+  .dlg-head { padding-left: 16px; }
+  .dlg-body { padding: 8px 16px 16px; }
+  .dlg-foot { padding: 12px 16px; }
+  #toasts { left: 16px; right: 16px; width: auto; }
+  [data-tip]:hover::after, [data-tip]:focus-visible::after { max-width: 220px; }
+}
+
+/* ---------- narrow content ----------
+   Tables become stacked cards when the room beside the sidebar runs out, whatever the window's
+   width: a tablet in portrait keeps the sidebar and has less room than a phone in landscape. */
+@container body (max-width: 760px) {
   .stats { margin-bottom: 16px; }
   .stat { padding: 12px 12px 10px; }
   .stat .v { font-size: 22px; }
   .stat .k { font-size: 12px; }
+  .stat .s { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; white-space: normal; overflow-wrap: anywhere; }
 
-  /* tables become stacked cards */
-  .tbl { display: block; }
+  .tbl { display: block; --step: 16px; }
   .tbl > .th-row { display: none; }
   .tr:not(.grp):not(.hint-row):not(.th-row) {
     display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px;
@@ -805,9 +827,9 @@ dialog.dlg.sheet[open] { animation: slide .2s var(--ease); }
   .tr > .td.grow { flex: 1 1 calc(100% - 100px); } /* a line of its own, less the two buttons beside it */
   .btn.collapse { padding: 0; }
   .btn.collapse span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .td.meta { flex-direction: row; align-items: baseline; gap: 6px; font-size: 13px; }
+  .td.meta { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 6px; font-size: 13px; }
   .td.src .t2::before { content: "/"; color: var(--faint); margin-right: 6px; }
-  .tr > .td.end { flex: 1 1 auto; justify-content: flex-start; }
+  .tr > .td.end { flex: 1 1 auto; flex-wrap: wrap; min-width: min-content; justify-content: flex-start; }
   .tr > .td.acts { flex: 0 0 auto; margin-left: auto; }
   .tbl.groups .td.acts { order: 1; }
   .tbl.groups .td.row:not(.acts) { order: 2; }
@@ -817,14 +839,6 @@ dialog.dlg.sheet[open] { animation: slide .2s var(--ease); }
   .tr.grp { padding-right: 8px; }
   .group-toggle .gicon { margin-left: 0; }
   .tbl-foot { flex-direction: column; }
-  .tabs { margin-top: 20px; }
-  .card-body { padding: 16px; }
-  .card-foot { padding: 12px 16px; }
-  .dlg-head { padding-left: 16px; }
-  .dlg-body { padding: 8px 16px 16px; }
-  .dlg-foot { padding: 12px 16px; }
-  #toasts { left: 16px; right: 16px; width: auto; }
-  [data-tip]:hover::after, [data-tip]:focus-visible::after { max-width: 220px; }
 }
 </style>
 </head>
@@ -1371,7 +1385,7 @@ function renderSidebar(r) {
     ...list);
   document.getElementById('account').replaceChildren(
     el('span', { class: 'avatar round', 'aria-hidden': 'true' }, state.user.username[0]),
-    el('span', { class: 'who', title: state.user.username }, el('b', null, state.user.full_name || state.user.username),
+    el('span', { class: 'who', title: state.user.full_name ? `${state.user.full_name} (${state.user.username})` : state.user.username }, el('b', null, state.user.full_name || state.user.username),
       el('span', null, state.user.full_name ? state.user.username : plural(state.machines.length, 'computer'))),
     btn(null, { class: 'btn ghost icon', fk: 'sign-out', title: 'Sign out', 'aria-label': 'Sign out', on: { click: ev => signOut(ev.currentTarget) } }, 'logout'));
 }
@@ -1972,7 +1986,7 @@ function teamSkillRow(team, s, admin, depth) {
         update && el('span', { class: 'badge info' }, el('span', { class: 'dot accent' }), 'Update available')),
       s.description && el('span', { class: 't2' }, s.description)),
     td('meta nowrap', el('span', { class: 't1 mono', title: 'Revision ' + s.revision }, 'r' + s.revision)),
-    td('meta nowrap',
+    td('meta',
       el('span', { class: 't1' }, s.pushed_by),
       el('span', { class: 't2' }, when(s.updated_on))),
     td('row end',
