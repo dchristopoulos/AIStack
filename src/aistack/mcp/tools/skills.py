@@ -110,6 +110,8 @@ class ShareSkillResult(TypedDict):
     unchanged: bool
     previous_pushed_by: str | None
     possibly_unrelated: bool
+    overwrote_revision: int | None
+    updates_from: str | None
 
 
 @mcp.tool(
@@ -126,6 +128,11 @@ class ShareSkillResult(TypedDict):
       - "possibly_unrelated" true: the team already had a skill of this name, last pushed
         by "previous_pushed_by", that the user's copy was never taken from. Say plainly
         that this may have replaced a different skill that shares the name.
+      - "overwrote_revision" set: the user's copy was taken from an older team revision,
+        and this replaced the team's newer one, last pushed by "previous_pushed_by", which
+        the user never took. Say that its changes are no longer in the team's latest.
+      - "updates_from" set: the user's copy was taken from that other team and still
+        follows it for updates; sharing it here did not change that.
 
     Args:
         name: The skill's name, one of the user's own.
@@ -137,7 +144,8 @@ class ShareSkillResult(TypedDict):
             - name, team, group: where the skill now is
             - revision: its revision number in that team
             - created: true when the team did not have this skill before
-            - unchanged, previous_pushed_by, possibly_unrelated: as described above
+            - unchanged, previous_pushed_by, possibly_unrelated, overwrote_revision,
+              updates_from: as described above
     """)
 @handle_mcp_errors
 def share_skill(name: str, team: str, group: str | None = None) -> ShareSkillResult:
@@ -159,6 +167,8 @@ def share_skill(name: str, team: str, group: str | None = None) -> ShareSkillRes
         unchanged=shared.unchanged,
         previous_pushed_by=shared.previous_pushed_by,
         possibly_unrelated=shared.possibly_unrelated,
+        overwrote_revision=shared.overwrote_revision,
+        updates_from=shared.updates_from,
     )
 
 
@@ -241,11 +251,11 @@ class GetSkillResult(TypedDict):
     have the latest revision". It replaces the local folder, so if sync reported local
     edits, the user must have agreed to lose them. With team, the team's latest revision
     is first copied into the user's own skills: that is how a team's skill is installed
-    and an offered update accepted.
+    and an offered update accepted. Refused over their own namesake: ask, then replace.
 
-    Install the files from a shell, where <skills> is the result's folder and <stage> is
-    <skills>/.aistack-staging. Run them for each skill on its own, with every path
-    written out: Claude Code refuses an rm of a shell variable, so no loops or functions.
+    Install from a shell, where <skills> is the result's folder and <stage> is
+    <skills>/.aistack-staging. Run these per skill with every path written out: Claude
+    Code refuses an rm of a shell variable, so no loops or functions.
 
         curl -sS -o <stage>/<name>.tgz "<download_url>"
         mkdir <stage>/<name>, then: tar -xzf <stage>/<name>.tgz -C <stage>/<name>
@@ -253,15 +263,14 @@ class GetSkillResult(TypedDict):
         delete <stage>/<name>.tgz
 
     Create <stage> first and clear any leftover <stage>/<name>. If tar fails, the .tgz is a
-    JSON error: read it. On Windows use curl.exe and tar.exe. It is usable without a
-    restart; if it is not found at once, try again. tar restores file modes. Leave <stage>
-    in place; sync ignores it.
+    JSON error: read it. On Windows use curl.exe and tar.exe. No restart is needed; if it
+    is not found at once, try again. Leave <stage>; sync ignores it.
 
     Args:
         name: The skill's name.
-        team: The team to take it from, as the user named it ("from backend"). Omit for
-             one of the user's own.
+        team: The team to take it from ("from backend"). Omit for the user's own.
         harness: The skills folder, as given to sync. Omit for claude_code.
+        replace: True once the user agreed to replace their own skill.
 
     Returns:
         GetSkillResult containing:
@@ -269,20 +278,20 @@ class GetSkillResult(TypedDict):
             - revision: the revision you are installing
             - version: the author's version string, or null
             - pushed_by: who uploaded this revision, not necessarily its author
-            - content_hash, files: hashes and executable bits, that need no checking
-            - download_url: the archive. A credential: keep it private.
+            - content_hash, files: hashes and modes, needing no check
+            - download_url: the archive, a credential: keep it private
             - expires_in_seconds: how long the URL works
     """)
 @handle_mcp_errors
 def get_skill(name: str, team: str | None = None,
-              harness: HarnessKey = "claude_code") -> GetSkillResult:
+              harness: HarnessKey = "claude_code", replace: bool = False) -> GetSkillResult:
     started_at = perf_counter()
     caller = current_machine()
     logger.debug(f"Getting skill. Skill: '{loggable(name)}'. Machine: '{caller.machine_id}'.")
 
     with get_session_factory().begin() as session:
         skill = skill_service.get_skill(session, caller.machine_id, caller.user_id, name, team,
-                                        harness)
+                                        harness, replace)
 
     ticket = get_ticket_signer().sign_download(DownloadTicket(
         machine_id=caller.machine_id,

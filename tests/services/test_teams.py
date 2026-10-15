@@ -14,6 +14,7 @@ from aistack.db.models.machine import Machine
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc, utc_now
 from aistack.services import (
+    dashboard_service,
     onboarding_service,
     operator_service,
     skill_service,
@@ -261,6 +262,129 @@ def test_sharing_exactly_what_the_team_has_adds_nothing(session_factory, dimitri
 
 
 # --- what someone outside a team is told ----------------------------------------------------
+
+def _mine(session_factory, joined, name="wizard") -> tuple[int, str]:
+    listed = {skill.name: skill for skill in _do(session_factory, skill_service.list_skills,
+                                                 joined.user.user_id) if skill.team is None}
+    return listed[name].revision, listed[name].pushed_by
+
+
+def test_taking_a_namesake_you_never_took_is_refused_until_you_say_replace(session_factory,
+                                                                          dimitris, maria,
+                                                                          acme):
+    """maria's own wizard is a different skill from the one dimitris shared as wizard."""
+    _push(session_factory, maria, files={"x.md": "maria's own\n"})
+    _push(session_factory, dimitris, files={"x.md": "dimitris's\n"})
+    _share(session_factory, dimitris, acme)
+
+    with pytest.raises(Conflict) as refused:
+        _take(session_factory, maria, acme)
+
+    assert ("your own 'wizard' (revision 1, last pushed by maria) that was not taken from team "
+            "'acme'" in str(refused.value))
+    assert "replaces yours on laptop at their next sync" in str(refused.value)
+    assert _mine(session_factory, maria) == (1, "maria")
+
+    taken = _do(session_factory, skill_service.get_skill, maria.machine.machine_id,
+                maria.user.user_id, "wizard", acme, replace=True)
+
+    assert (taken.revision, taken.pushed_by) == (2, "dimitris")
+    assert _mine(session_factory, maria) == (2, "dimitris")
+
+
+def test_taking_a_namesake_with_the_same_content_needs_no_replace(session_factory, dimitris,
+                                                                 maria, acme):
+    _push(session_factory, maria)
+    _push(session_factory, dimitris)
+    _share(session_factory, dimitris, acme)
+
+    assert _take(session_factory, maria, acme).revision == 1
+
+
+def test_an_update_over_your_own_changes_is_offered_as_one(session_factory, dimitris, maria,
+                                                          acme):
+    _push(session_factory, dimitris, files={"notes.md": "one\n"})
+    _share(session_factory, dimitris, acme)
+    _take(session_factory, maria, acme)
+    _push(session_factory, maria, files={"notes.md": "maria's edit\n"})
+    _push(session_factory, dimitris, files={"notes.md": "two\n"})
+    _share(session_factory, dimitris, acme)
+
+    local = {"wizard": local_digests(files={"notes.md": "maria's edit\n"})}
+    offered = _sync(session_factory, maria, local).team_updates
+    with session_factory() as session:
+        source = next(skill["source"] for skill in dashboard_service.state(
+            session, maria.user.user_id)["skills"] if skill["name"] == "wizard")
+
+    assert [(update.from_revision, update.to_revision, update.own_changes)
+            for update in offered] == [(1, 2, True)]
+    assert (source["update_available"], source["own_changes"]) == (True, True)
+    # Her copy follows acme, so accepting needs no replace.
+    assert _take(session_factory, maria, acme).pushed_by == "dimitris"
+
+
+def test_an_update_with_no_changes_of_yours_says_so(session_factory, dimitris, maria, acme):
+    _push(session_factory, dimitris, files={"notes.md": "one\n"})
+    _share(session_factory, dimitris, acme)
+    _take(session_factory, maria, acme)
+    _push(session_factory, dimitris, files={"notes.md": "two\n"})
+    _share(session_factory, dimitris, acme)
+
+    offered = _sync(session_factory, maria, {"wizard": local_digests(
+        files={"notes.md": "one\n"})}).team_updates
+
+    assert [update.own_changes for update in offered] == [False]
+
+
+def test_sharing_an_edit_of_an_older_team_revision_names_the_one_it_replaced(session_factory,
+                                                                            dimitris, maria,
+                                                                            acme):
+    _push(session_factory, dimitris, files={"notes.md": "rule A\n"})
+    _share(session_factory, dimitris, acme)
+    _take(session_factory, maria, acme)
+    _push(session_factory, dimitris, files={"notes.md": "rule A\nrule B\n"})
+    _share(session_factory, dimitris, acme)
+    _push(session_factory, maria, files={"notes.md": "rule A\nrule C\n"})
+
+    shared = _share(session_factory, maria, acme)
+
+    assert (shared.revision, shared.overwrote_revision, shared.previous_pushed_by,
+            shared.possibly_unrelated) == (3, 2, "dimitris", False)
+
+
+def test_sharing_from_the_latest_team_revision_replaces_nothing_unseen(session_factory,
+                                                                      dimitris, maria, acme):
+    _push(session_factory, dimitris)
+    _share(session_factory, dimitris, acme)
+    _take(session_factory, maria, acme)
+    _push(session_factory, maria, files={"notes.md": "maria's edit\n"})
+
+    assert _share(session_factory, maria, acme).overwrote_revision is None
+
+
+def test_a_skill_taken_from_one_team_and_shared_with_another_still_follows_the_first(
+        session_factory, dimitris, maria, acme):
+    with session_factory.begin() as session:
+        make_team(session, "beta", maria.user.user_id)
+    _push(session_factory, dimitris, files={"notes.md": "one\n"})
+    _share(session_factory, dimitris, acme)
+    _take(session_factory, maria, acme)
+
+    shared = _share(session_factory, maria, "beta")
+    assert (shared.created, shared.updates_from) == (True, "acme")
+    _push(session_factory, maria, files={"notes.md": "one, for beta\n"})
+    # Her second share into beta goes over what her first put there: nothing unrelated.
+    again = _share(session_factory, maria, "beta")
+    assert (again.revision, again.possibly_unrelated, again.updates_from) == (2, False, "acme")
+
+    _push(session_factory, dimitris, files={"notes.md": "two\n"})
+    _share(session_factory, dimitris, acme)
+    offered = _sync(session_factory, maria, {"wizard": local_digests(
+        files={"notes.md": "one, for beta\n"})}).team_updates
+
+    assert [(update.team, update.to_revision, update.own_changes)
+            for update in offered] == [("acme", 2, True)]
+
 
 def test_a_team_you_are_not_in_reads_exactly_like_one_that_does_not_exist(session_factory,
                                                                          dimitris, eve, acme):

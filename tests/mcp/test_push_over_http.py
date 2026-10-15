@@ -107,6 +107,8 @@ async def test_sharing_over_a_skill_never_taken_is_told_who_was_there_first(serv
         "unchanged": False,
         "previous_pushed_by": "dimitris",
         "possibly_unrelated": True,
+        "overwrote_revision": None,
+        "updates_from": None,
     }
 
 

@@ -57,16 +57,70 @@ async def test_a_sign_in_link_opens_the_library_and_the_page_talks_only_to_this_
     assert maria.foreign_requests == []
 
 
-async def test_an_offered_update_is_taken_with_one_click(sign_in):
+async def test_an_update_over_your_own_changes_names_them_before_it_is_taken(sign_in):
     maria = await sign_in("maria")
-    assert _skill(await maria.state(), "code-review")["source"]["update_available"]
+    source = _skill(await maria.state(), "code-review")["source"]
+    assert (source["update_available"], source["own_changes"]) == (True, True)
 
     await maria.page.get_by_role("button", name="Take update").click()
+    dialog = maria.page.get_by_role("dialog", name="Take the update to code-review?")
+    await expect(dialog.get_by_text("replaces your r2")).to_be_visible()
+    await expect(dialog.get_by_text("replaced on work-laptop")).to_be_visible()
+    assert _skill(await maria.state(), "code-review")["revision"] == 2
+
+    await dialog.get_by_role("button", name="Take update").click()
 
     await expect(maria.page.get_by_role("button", name="Take update")).to_have_count(0)
     code_review = _skill(await maria.state(), "code-review")
-    assert (code_review["revision"], code_review["source"]["update_available"]) == (2, False)
+    assert (code_review["revision"], code_review["pushed_by"],
+            code_review["source"]["update_available"]) == (3, "dimitris", False)
     assert maria.console_errors == []
+
+
+async def test_a_team_skill_named_like_one_of_yours_replaces_it_only_once_confirmed(sign_in):
+    alex = await sign_in("alex")
+    await _open_team(alex, "aistack")
+    row = alex.page.get_by_role("row").filter(has_text="release-notes")
+
+    await row.get_by_role("button", name="Replace yours…").click()
+    dialog = alex.page.get_by_role("dialog", name="Replace your release-notes?")
+    await expect(dialog.get_by_text("your own release-notes, r1, last pushed by alex")
+                 ).to_be_visible()
+    await expect(dialog.get_by_text("replaced on thinkpad")).to_be_visible()
+    assert _skill(await alex.state(), "release-notes")["pushed_by"] == "alex"
+
+    await dialog.get_by_role("button", name="Replace yours").click()
+
+    await expect(row.get_by_text("In your library")).to_be_visible()
+    mine = _skill(await alex.state(), "release-notes")
+    assert (mine["revision"], mine["pushed_by"], mine["source"]["team"]) == (
+        2, "dimitris", "aistack")
+    assert alex.console_errors == []
+
+
+async def test_the_share_dialog_says_what_sharing_would_go_over_before_it_does(sign_in):
+    alex = await sign_in("alex")
+    await alex.page.get_by_role("button", name="Details of release-notes").click()
+    await alex.page.get_by_role("dialog", name="release-notes").get_by_role(
+        "button", name="Share with a team…").click()
+    dialog = alex.page.get_by_role("dialog", name="Share release-notes")
+
+    await expect(dialog.get_by_text("aistack already has a different release-notes, last "
+                                    "pushed by dimitris")).to_be_visible()
+    await expect(dialog.get_by_role("button", name="Share anyway")).to_be_visible()
+    await dialog.get_by_role("button", name="Cancel").click()
+    assert _skill(_team(await alex.state(), "aistack"), "release-notes")["revision"] == 1
+
+    maria = await sign_in("maria")
+    await maria.page.get_by_role("button", name="Details of code-review").click()
+    await maria.page.get_by_role("dialog", name="code-review").get_by_role(
+        "button", name="Share with a team…").click()
+    dialog = maria.page.get_by_role("dialog", name="Share code-review")
+
+    await expect(dialog.get_by_text("aistack has r2 of code-review from dimitris, which you "
+                                    "never took")).to_be_visible()
+    await expect(dialog.get_by_role("button", name="Share anyway")).to_be_visible()
+    assert alex.console_errors == [] and maria.console_errors == []
 
 
 async def test_a_skill_is_added_to_another_computer_from_the_library(sign_in):

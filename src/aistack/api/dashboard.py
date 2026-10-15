@@ -287,6 +287,8 @@ def share_skill(session, user_id, path, body):
         "created": shared.created, "unchanged": shared.unchanged,
         "previous_pushed_by": shared.previous_pushed_by,
         "possibly_unrelated": shared.possibly_unrelated,
+        "overwrote_revision": shared.overwrote_revision,
+        "updates_from": shared.updates_from,
     }
 
 
@@ -353,7 +355,8 @@ def cancel_invite(session, user_id, path, body):
 
 @_action("/teams/{team}/take", local=False)
 def take_from_team(session, user_id, path, body):
-    skill_service.take_from_team(session, user_id, _text(body, "name"), path["team"])
+    skill_service.take_from_team(session, user_id, _text(body, "name"), path["team"],
+                                 replace=_flag(body, "replace", required=False) or False)
 
 
 @_action("/teams/{team}/members/{username}", local=False)

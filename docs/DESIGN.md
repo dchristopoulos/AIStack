@@ -103,9 +103,11 @@ add_machine(name, os)         → registers another machine for this user; retur
 list_skills                   → the caller's own skills, then every team skill they may
                                 see (this is also the search, and the only discovery
                                 mechanism, sync is not)
-get_skill(name, team?, harness?)
+get_skill(name, team?, harness?, replace?)
                               → with a team, first takes that team's latest revision into
-                                the caller's own skills. Then enables the skill in that
+                                the caller's own skills; a skill of theirs of that name
+                                that was not taken from it is refused unless replace is
+                                true, because the user must agree first. Then enables the skill in that
                                 harness of the calling machine and returns the
                                 latest revision's metadata, its file list, the folder to
                                 install into, and a signed download URL for the archive.
@@ -144,9 +146,9 @@ There is no `delete_skill` tool. Removal is a dashboard action, in two forms. Re
 
 **Back up** (push): "push my wizard skill to aistack", or a name sync listed under `backup`: the agent calls `push_skill` with the skill's name and gets back a signed upload URL, then sends a gzipped tar of the skill directory to it with `tar` and `curl`, as the tool's description spells out. The server validates the archive, stores the revision in the caller's own skills, and answers the upload with the result the agent reports; a rejection comes back as the same kind of sentence a tool error would carry. Uploading content identical to the latest revision creates nothing and says so, so repeating "push all my skills" does not mint a revision per skill per run. Pushing a name the user already has adds a revision. Push records an optional `origin` URL (GitHub repo, marketplace page) the first time, when the agent knows it. Push enables the skill for the calling machine and shares nothing.
 
-**Share**: "share wizard with backend": `share_skill` copies the latest revision of the caller's own skill into a team, or a group in it. No bytes move through the client. The team's copy has its own history, and every revision in it names who shared it (`pushed_by` means exactly that, AIStack never claims authorship). Any member may share over a team's skill at team level, and over one in a group if they may share into that group (ADR-0029). When the team already had that name and the sharer's copy was never taken from it, the result says so (`possibly_unrelated`), because it may be an unrelated skill that shares the name.
+**Share**: "share wizard with backend": `share_skill` copies the latest revision of the caller's own skill into a team, or a group in it. No bytes move through the client. The team's copy has its own history, and every revision in it names who shared it (`pushed_by` means exactly that, AIStack never claims authorship). Any member may share over a team's skill at team level, and over one in a group if they may share into that group (ADR-0029). When the team already had that name and the sharer's copy was never taken from it, the result says so (`possibly_unrelated`), because it may be an unrelated skill that shares the name. When the sharer's copy was taken from an older revision than the team's latest, the result names the revision it went over (`overwrote_revision`), because that revision's changes are no longer in the team's latest.
 
-**Take**: "install wizard from backend": `get_skill` with a team copies that team's latest revision into the caller's own skills, remembers the source and its revision, and then installs as below. The copy stays theirs if they leave the team.
+**Take**: "install wizard from backend": `get_skill` with a team copies that team's latest revision into the caller's own skills, remembers the source and its revision, and then installs as below. The copy stays theirs if they leave the team. When the caller already has a different skill of that name that was never taken from this team, the call is refused with a sentence naming their revision and the computers it is on, until it is repeated with `replace` true: taking replaces it everywhere, and it may be an unrelated skill that only shares the name. A copy follows one team for updates; sharing it into another team leaves it following the first (`updates_from` in the share result).
 
 **Gathering rules**: `tar` archives a symlink as a symlink, not as its target, so a link to `~/.ssh/id_rsa` inside a skill folder arrives as a link entry and the server rejects the push by naming it. The same goes for sockets, devices, FIFOs, and hard links. The push prompt tells the agent to set `COPYFILE_DISABLE=1` on macOS so `tar` does not synthesize `._*` AppleDouble entries, and to leave `.git` out. The server enforces all of it regardless (§4 Push validation); the prompt only makes the first attempt succeed.
 
@@ -262,7 +264,7 @@ Three places hold skills, and they nest in that order of privacy.
 
 **The four verbs.** *Back up* (`push_skill`): a local skill goes into the Library. *Share* (`share_skill`, or a tick on the dashboard): the team gets a copy of the latest revision. *Take* (`get_skill` with a team): the team's latest revision is copied into the Library and installed. *Remove*: from one computer (`disable_skill`), from the Library on every computer (dashboard), or from a team (its admin).
 
-**Updates from a team are offers.** A personal skill remembers its team source and that source's revision. When the team's copy is newer, sync lists it under `team_updates` and the user answers each time; yes is *take*. A user who unsubscribes from a group is not offered its updates.
+**Updates from a team are offers.** A personal skill remembers its team source and that source's revision. When the team's copy is newer, sync lists it under `team_updates` and the user answers each time; yes is *take*. Each offer says whether the user changed their copy since taking it (`own_changes`), because taking replaces those changes on every computer. A user who unsubscribes from a group is not offered its updates.
 
 **What leaving a team changes:** what the user can list and take. Nothing they already took is touched, because their machines never ran the team's copy.
 
@@ -308,7 +310,7 @@ The page is the only client these were written for, and they are documented so t
 | `GET /api/state` | | Everything the page shows, below |
 | `POST /api/logout` | `{}` | Ends the session, wherever its cookie was copied, and clears the cookie |
 | `POST /api/skills/{name}/machines/{machine_id}` | `enabled` (true or false), optional `harness` (`claude_code`, the default, or `agents`) | Switches one of the user's own skills on or off in one harness of one of their computers. The files move at that harness's next sync there |
-| `POST /api/skills/{name}/share` | `team`, `group` (a path, or null for team level) | `team`, `group`, `revision`, `created`, `unchanged`, `previous_pushed_by`, `possibly_unrelated`: what `share_skill` returns |
+| `POST /api/skills/{name}/share` | `team`, `group` (a path, or null for team level) | `team`, `group`, `revision`, `created`, `unchanged`, `previous_pushed_by`, `possibly_unrelated`, `overwrote_revision`, `updates_from`: what `share_skill` returns |
 | `POST /api/skills/{name}/remove` | `{}` | Removes the skill from the Library on every computer |
 | `POST /api/machines/{machine_id}/remove` | `{}` | `removed`: the computer's name. Its token, sessions and transfer URLs end at once. The user's last computer is refused with `409`. Server only (ADR-0027) |
 | `POST /api/machines/{machine_id}/rename` | `name` | `name`, unique among the user's computers. Server only |
@@ -319,7 +321,7 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/teams/{team}/delete` | `{}` | Deletes the team, its copies of its skills, its groups and its invites. Members' Library copies stay. Admin only (ADR-0028) |
 | `POST /api/teams/{team}/invite` | `{}` | `code`, shown this once: a new invite, one use, seven days. Admins and members who can invite (ADR-0022) |
 | `POST /api/teams/{team}/invites/{invite_id}/cancel` | `{}` | `ok`. Its maker, or an admin |
-| `POST /api/teams/{team}/take` | `name` | Copies the team's latest revision of that skill into the Library |
+| `POST /api/teams/{team}/take` | `name`, `replace` (optional, true when the person agreed to replace their own unrelated skill of that name) | Copies the team's latest revision of that skill into the Library |
 | `POST /api/teams/{team}/members/{username}` | `role` (`ADMIN` or `MEMBER`) and/or `sees_all_groups` (true or false) | Admin only |
 | `POST /api/teams/{team}/members/{username}/remove` | `{}` | Admin only |
 | `POST /api/teams/{team}/groups` | `name`, optional `parent` (a path), optional `private` | `path`. Admin only |
