@@ -266,6 +266,8 @@ Add a four-way status assertion to tests/mcp/test_invite_over_http.py.
 
 **Done when.** invite_probe.py prints the same bearer status for used, cancelled and unknown codes.
 
+**Resolution (step 4).** Neither proposed fix holds up as written. Accepting only PENDING breaks a real join: the FastMCP client sends `tools/list` right after a `tools/call` on the same connection, so the bearer that has just been used answers 401 and the agent sees the join fail (`test_a_team_invite_code_appears_in_no_log_line` reproduces it). Treating every `aistinv_` bearer as a bootstrap principal would let any guessed string reach `join`. A used code now stands as a bearer for five minutes after its use and answers 401 like an unknown one after that.
+
 Related: [AUTHZ-01](#authz-01-removing-demoting-or-offboarding-an-inviter-leaves-their-invite-links-working-so-the-person-can-rejoin-the-team-or-create-a-new-account-on-the-server), [DB-06](schema.md#db-06-a-team-invite-outlives-its-makers-right-to-invite-offboarding-by-deleting-machines-removal-from-the-team-and-revoking-can_invite-all-leave-it-working), [ENT-09](concurrency-and-reliability.md#ent-09-an-admin-is-told-an-invite-was-cancelled-while-the-same-invite-admits-its-holder), [PH-02](plot-holes.md#ph-02-invites-outlive-the-person-who-made-them-so-removed-members-and-people-taken-off-the-server-keep-letting-new-accounts-in), [SEC-06](#sec-06-on-postgresql-an-admins-cancel-can-report-success-while-the-person-it-was-meant-to-stop-joins).
 
 ### SEC-08: One team invite link, or the server code, is an unlimited oracle for every username and team name on the server
