@@ -12,7 +12,7 @@ Bring this machine's skills in line with the Library, the user's private space o
 The `sync` tool and the others below come from the `aistack` MCP server. If they are not available in this session, stop: do not reach the server another way, such as `curl`, and never read a token out of a configuration file. Tell the user AIStack is not connected in this session, and what to do:
 
 - If setup has just finished, restart Claude Code, or Codex if that is the agent you are, once. It reads its server list at startup.
-- Otherwise run `claude mcp get aistack` (in Codex, `codex mcp get aistack`) and say what it reports. If the server cannot be reached, it is down or not reachable from this computer. If it reports an authentication failure, this computer's token no longer works: whoever runs the server can rotate it, or the user says "add my other computer" on a computer that is still connected and runs the command it gives here, after `claude mcp remove aistack --scope user`.
+- Otherwise run `claude mcp list` and say what it reports for `aistack`. Never run `claude mcp get aistack` or `codex mcp get aistack`: they print this computer's token in full. In Codex, `grep -c '^\[mcp_servers.aistack\]' ~/.codex/config.toml` says whether the connection is there; a count above 1 makes the whole file invalid, so keep one block. If the server cannot be reached, it is down or not reachable from this computer. If it reports an authentication failure, this computer's token no longer works: whoever runs the server can rotate it, or the user says "add my other computer" on a computer that is still connected and runs the command it gives here, after `claude mcp remove aistack --scope user`.
 
 ## 1. Find the skills folders on this computer
 
@@ -31,7 +31,7 @@ ls -d ~/.claude ~/.agents/skills ~/.codex ~/.gemini ~/.kimi-code ~/.cursor ~/.co
 
 On Windows, run `Test-Path` on the same paths under `$HOME`.
 
-Sync `claude_code` when `~/.claude` exists. Sync `agents` when `~/.agents/skills` exists or any of the other paths does. Do steps 2 to 4 for each of those folders in turn, `claude_code` first, then step 5 once, and pass that folder's `harness` to every `sync`, `get_skill`, `push_skill`, and `disable_skill` call. Do not ask the user which folders to sync, and say nothing about a folder no agent here reads.
+Sync `claude_code` when `~/.claude` exists. Sync `agents` when `~/.agents/skills` exists or any of the other paths does. Do steps 2 to 4 for each of those folders in turn, `claude_code` first, then steps 5 and 6 once, and pass that folder's `harness` to every `sync`, `get_skill`, `push_skill`, and `disable_skill` call. Do not ask the user which folders to sync, and say nothing about a folder no agent here reads.
 
 ## 2. List what is on disk
 
@@ -142,6 +142,19 @@ When any folder reported `first_sync`, offer the Library itself. Call `list_skil
 
 Only when you synced both folders and at least one reported `first_sync`. Take the skills from the Library in each folder: its skill folders on disk after this sync, less anything still under `ask`, less `sync-aistack`. If one folder has skills the other lacks, ask once, naming them: "Use the same skills in Claude Code and in Codex and the other agents? That adds <names> to Claude Code and <names> to the agents folder." Yes: `get_skill` each missing skill with the harness of the folder that lacks it, and install. No: nothing, and it is not asked again, because `first_sync` is true only once.
 
-## 6. Tell the user what happened
+## 6. In Codex, keep the connection current
+
+Later releases approve more of what sync does without asking. Run `sed -n '/^\[mcp_servers\.aistack\]/,/^\[/p' ~/.codex/config.toml | grep -cE '^(tools\.(sync|list_skills|get_skill|push_skill)\.approval_mode)'`, which counts the approvals without showing the connection's other lines. If it prints less than 4, add whichever of these lines are missing directly under `[mcp_servers.aistack]` in `~/.codex/config.toml`, with your file-editing tool and without printing the file, because it holds this computer's token:
+
+```toml
+tools.sync.approval_mode = "approve"
+tools.list_skills.approval_mode = "approve"
+tools.get_skill.approval_mode = "approve"
+tools.push_skill.approval_mode = "approve"
+```
+
+Say so in one line.
+
+## 7. Tell the user what happened
 
 One short summary per folder, naming the agents that read it: what was installed, what was updated, what was backed up, what was asked and decided, and which team updates were accepted or left. For each update, say which revision it moved from and to, and who pushed the new one; a skill is instructions to an agent, so the user should know whose instructions just changed. If nothing needed doing, say that everything is up to date and how many skills that covers.

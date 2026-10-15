@@ -29,7 +29,7 @@ How to work through it:
 
 - [x] 1. Claim and publish `aistack-mcp`, and make every install sentence resolve (#129)
 - [x] 2. Bump PyJWT and pin the build (#133)
-- [ ] 3. Make local setup's agent commands work and stop printing secrets
+- [x] 3. Make local setup's agent commands work and stop printing secrets (#134)
 - [x] 4. An invite dies with its maker's right to invite (#126)
 - [x] 5. Lock the team while its admins and members change (#132)
 - [x] 6. A team can always be managed: delete a team, let a lone admin leave, repair an orphaned one (#147)
@@ -120,6 +120,8 @@ Files: src/aistack/bundled/local/setup.md; src/aistack/bundled/setup-aistack.md;
 ADR: none needed.
 
 Tests: A static test that every `claude mcp add` line in `bundled/**` names the server before `-e`/`-H`; a test that no bundled text runs `claude mcp get` or `codex mcp get` without a filter; `connect` writes the same config twice idempotently.
+
+Outcome: `aistack connect claude-code|codex [--hook]` replaces local setup's steps 5 to 7. It runs the check, writes the sync skill, connects the agent by the installed program's full path with the name before `-e`, and merges the session-start hook; a second run changes nothing, and a settings file that is not valid JSON or TOML is left alone. `check --agent` and `export --agent` read the Library's place from the agent's own config without showing it, which is how the local sync skill troubleshoots and moves a Library now. Nothing bundled runs `mcp get` any more: Claude Code checks with `claude mcp list` and Codex with a `grep -c` on its config. Both sync skills count Codex's approvals without printing the connection and bring them up to date (AUTO-23). AUTO-01 and AUTO-04 were reproduced with Claude Code 2.1.300 in a scratch home before the change.
 
 ## Close the trust-boundary holes
 
