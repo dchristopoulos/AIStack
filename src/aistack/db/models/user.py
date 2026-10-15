@@ -8,6 +8,7 @@ from aistack.db.models.base import Base
 from aistack.db.models.timestamps import utc_now
 
 USERNAME_MAX_LENGTH = 64
+FULL_NAME_MAX_LENGTH = 100
 
 
 class User(Base):
@@ -15,6 +16,9 @@ class User(Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     username: Mapped[str] = mapped_column(String(USERNAME_MAX_LENGTH), nullable=False, unique=True)
+    # What teammates read beside the username, such as "Maria Papadopoulou". Optional, and
+    # never an identity: two people may share one, and `pushed_by` stays the username.
+    full_name: Mapped[str | None] = mapped_column(String(FULL_NAME_MAX_LENGTH), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                  default=utc_now)

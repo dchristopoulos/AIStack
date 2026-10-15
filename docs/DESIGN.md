@@ -247,7 +247,7 @@ Push is the trust boundary: everything below is enforced by the server on the up
 
 **`origin`.** Optional, at most 255 characters, no control characters, and an `http://` or `https://` URL: it will be rendered as a link.
 
-**Usernames.** A lowercase handle: letters and digits joined by single `.`, `-`, or `_`. A username is the `pushed_by` teammates read before a skill changes on their machine, so no two may differ only in case or alphabet. A username is also the name of the user's personal team, so usernames and team names share one namespace. Machine names are seen only by their owner and may be any printable text.
+**Usernames.** A lowercase handle: letters and digits joined by single `.`, `-`, or `_`. A username is the `pushed_by` teammates read before a skill changes on their machine, so no two may differ only in case or alphabet. A username is also the name of the user's personal team, so usernames and team names share one namespace. Machine names are seen only by their owner and may be any printable text. A user may also give a full name, up to 100 printable characters, in the dashboard's Settings on a server: teammates read it beside the username in a team's member list. It is not an identity, so two people may share one; `pushed_by` stays the username.
 
 ### Personal space, teams, and groups (ADR-0015)
 
@@ -309,6 +309,7 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/skills/{name}/machines/{machine_id}` | `enabled` (true or false), optional `harness` (`claude_code`, the default, or `agents`) | Switches one of the user's own skills on or off in one harness of one of their computers. The files move at that harness's next sync there |
 | `POST /api/skills/{name}/share` | `team`, `group` (a path, or null for team level) | `team`, `group`, `revision`, `created`, `unchanged`, `previous_pushed_by`, `possibly_unrelated`: what `share_skill` returns |
 | `POST /api/skills/{name}/remove` | `{}` | Removes the skill from the Library on every computer |
+| `POST /api/account` | `full_name` (blank clears it) | `full_name`. Server only |
 | `POST /api/teams` | `name` | `name`. The caller is the new team's admin |
 | `POST /api/teams/join` | `code` (a team's invite code) | `team` |
 | `POST /api/teams/{team}/leave` | `{}` | |
@@ -329,7 +330,7 @@ A group's path contains slashes, so it always travels in the body and never in t
 
 ```json
 {
-  "user": {"username": "dimitris"},
+  "user": {"username": "dimitris", "full_name": "Dimitris Christopoulos"},
   "machines": [
     {"id": "af6c2628-…", "name": "macbook", "os": "MACOS", "harnesses": ["claude_code"]}
   ],
@@ -353,7 +354,7 @@ A group's path contains slashes, so it always travels in the body and never in t
     {
       "name": "acme", "kind": "SHARED", "role": "ADMIN", "sees_all_groups": false,
       "members": [
-        {"username": "maria", "role": "MEMBER", "sees_all_groups": false, "groups": ["backend"]}
+        {"username": "maria", "full_name": null, "role": "MEMBER", "sees_all_groups": false, "groups": ["backend"]}
       ],
       "groups": [
         {"path": "backend/aistack", "private": false, "member": true, "subscribed": true}
@@ -398,6 +399,7 @@ Portability: runs identically on SQLite and Postgres. Enums are `VARCHAR + CHECK
 USER
   user_id       UUID PK
   username      VARCHAR(64)  NOT NULL UNIQUE
+  full_name     VARCHAR(100)                          -- optional, what teammates read beside it
   is_admin      BOOLEAN      NOT NULL DEFAULT FALSE   -- first user to join. Enforced by a unique
                                                       -- partial index on is_admin WHERE is_admin
                                                       -- (ADR-0008). The guarded UPDATE (... AND NOT

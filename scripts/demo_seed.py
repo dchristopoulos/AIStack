@@ -100,6 +100,9 @@ async def seed(base_url: str, invite_code: str) -> dict[str, str]:
         await dimitris.push(name)
     for person in (dimitris, maria, alex):
         await person.sign_in()
+    # The name teammates read beside a username. Alex leaves it empty: it is optional.
+    await dimitris.page("/account", full_name="Dimitris Christopoulos")
+    await maria.page("/account", full_name="Maria Papadopoulou")
 
     # The macbook's shared agents folder, which Codex reads, has synced once and holds two skills.
     macbook = (await dimitris.browser.get("/api/state")).json()["machines"][0]["id"]

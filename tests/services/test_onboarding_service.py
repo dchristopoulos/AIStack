@@ -292,3 +292,28 @@ def test_the_server_invite_code_joins_no_shared_team(session_factory):
 
     assert joined.team is None
     assert "acme" not in _memberships(session_factory, joined.user.user_id)
+
+
+def test_a_full_name_is_set_trimmed_shared_and_cleared(session_factory):
+    dimitris = _join(session_factory, username="dimitris", machine_name="macbook").user.user_id
+    maria = _join(session_factory, username="maria", machine_name="laptop").user.user_id
+
+    with session_factory.begin() as session:
+        assert onboarding_service.set_full_name(
+            session, dimitris, "  Dimitris Christopoulos ") == "Dimitris Christopoulos"
+        # A name is not an identity: two people may share one, the username tells them apart.
+        onboarding_service.set_full_name(session, maria, "Dimitris Christopoulos")
+    with session_factory.begin() as session:
+        assert onboarding_service.set_full_name(session, dimitris, "   ") is None
+
+    with session_factory() as session:
+        names = dict(session.execute(select(User.username, User.full_name)).all())
+    assert names == {"dimitris": None, "maria": "Dimitris Christopoulos"}
+
+
+@pytest.mark.parametrize("full_name", ["x" * 101, "Dimitris\nadmin", "Dimitris\x1b[2J", 7])
+def test_a_full_name_that_could_pass_for_something_else_is_rejected(session_factory, full_name):
+    user_id = _join(session_factory).user.user_id
+
+    with pytest.raises(ValidationError), session_factory.begin() as session:
+        onboarding_service.set_full_name(session, user_id, full_name)
