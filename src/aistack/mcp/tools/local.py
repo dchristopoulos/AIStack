@@ -14,6 +14,8 @@ from typing import TypedDict
 from aistack.bootstrap.context.application_context import (
     get_local_principal,
     get_session_factory,
+    library_after_write,
+    library_before_read,
 )
 from aistack.bundled import SYNC_SKILL_NAME, local_sync_skill_document
 from aistack.mcp import local_dashboard
@@ -57,6 +59,7 @@ def _folder(harness: HarnessKey) -> Path:
     """)
 @handle_mcp_errors
 def sync(harness: HarnessKey = "claude_code") -> SyncResult:
+    library_before_read(force=True)
     caller = get_local_principal()
     folder = _folder(harness)
     local = local_skills.observed(folder)
@@ -73,6 +76,7 @@ def sync(harness: HarnessKey = "claude_code") -> SyncResult:
             library_log.record(session, library_log.new_event(
                 caller.machine_id, library_log.FOLDER_SYNCED, harness=harness))
 
+    library_after_write()
     logger.info(f"Sync reported. Local skills: '{len(local)}'.")
     return sync_result(report, sync_skill_url=None)
 
@@ -89,6 +93,7 @@ def sync(harness: HarnessKey = "claude_code") -> SyncResult:
     """)
 @handle_mcp_errors
 def list_skills() -> ListSkillsResult:
+    library_before_read()
     with get_session_factory().begin() as session:
         skills = skill_service.list_skills(session, get_local_principal().user_id)
 
@@ -133,6 +138,7 @@ class LocalGetSkillResult(TypedDict):
     """)
 @handle_mcp_errors
 def get_skill(name: str, harness: HarnessKey = "claude_code") -> LocalGetSkillResult:
+    library_before_read()
     caller = get_local_principal()
     folder = _folder(harness)
 
@@ -145,6 +151,7 @@ def get_skill(name: str, harness: HarnessKey = "claude_code") -> LocalGetSkillRe
         _, packed = skill_service.archive_of(session, caller.machine_id, skill.skill_version_id)
 
     local_skills.install(folder, skill.name, packed, skill.content_hash)
+    library_after_write()
 
     logger.info(f"Skill installed. Skill: '{skill.name}'. Revision: '{skill.revision}'.")
     return LocalGetSkillResult(
@@ -200,6 +207,7 @@ def push_skill(name: str, origin: str | None = None,
         library_log.record(session, library_log.pushed(caller.machine_id, name, origin, harness,
                                                        packed))
 
+    library_after_write()
     logger.info(f"Skill pushed. Skill: '{pushed.name}'. Revision: '{pushed.revision}'.")
     return LocalPushSkillResult(name=pushed.name, revision=pushed.revision,
                                 created=pushed.created, unchanged=pushed.unchanged)
@@ -240,6 +248,7 @@ def disable_skill(name: str, harness: HarnessKey = "claude_code") -> LocalDisabl
             caller.machine_id, library_log.SKILL_PLACED, name=disabled, harness=harness,
             enabled=False))
 
+    library_after_write()
     # The service returned the stored name, which passed validation when it was pushed.
     removed = local_skills.remove(_folder(harness), disabled)
     logger.info(f"Skill disabled. Skill: '{disabled}'. Removed: '{removed}'.")
@@ -266,6 +275,7 @@ class LocalDashboardResult(TypedDict):
     """)
 @handle_mcp_errors
 def open_dashboard() -> LocalDashboardResult:
+    library_before_read()
     url = local_dashboard.dashboard_link()
     try:
         webbrowser.open(url)

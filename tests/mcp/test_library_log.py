@@ -191,3 +191,20 @@ async def test_two_computers_that_changed_one_skill_offline_end_up_the_same(comp
     assert laptop_sees == desktop_sees
     assert [revision for name, revision, _ in laptop_sees["revisions"]] == [1, 2, 3]
     assert len(laptop_sees["machines"]) == 2 and len(laptop_sees["users"]) == 1
+
+
+def test_two_new_computers_that_each_made_the_person_become_one_person(tmp_path):
+    """Both started before either had pushed, so each logged a new user; the first one wins."""
+    import uuid
+
+    first = library_log.new_event(uuid.uuid4(), library_log.MACHINE_ADDED,
+                                  user_id=str(uuid.uuid4()), username="maria",
+                                  machine_name="laptop", os="MACOS")
+    second = library_log.new_event(uuid.uuid4(), library_log.MACHINE_ADDED,
+                                   user_id=str(uuid.uuid4()), username="maria",
+                                   machine_name="laptop", os="MACOS")
+
+    replayed = _replayed(tmp_path, [second, first])
+
+    assert [username for _, username in replayed["users"]] == ["maria"]
+    assert sorted(name for _, name in replayed["machines"]) == ["laptop", "laptop-2"]

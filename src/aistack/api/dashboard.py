@@ -24,6 +24,8 @@ from aistack.bootstrap.context.application_context import (
     get_session_factory,
     get_ticket_signer,
     is_local_mode,
+    library_after_write,
+    library_before_read,
     library_description,
 )
 from aistack.bundled import dashboard_page
@@ -120,6 +122,8 @@ async def app(request: Request) -> Response:
 @handle_route_errors
 async def state(request: Request) -> Response:
     user_id = _signed_in(request)
+    if is_local_mode():
+        await asyncio.to_thread(library_before_read)
     shown = await asyncio.to_thread(_in_transaction, dashboard_service.state, user_id)
     # The page hides what only a server can do, such as creating a team, when this is false.
     return _json(shown | {"server": not is_local_mode(), "library": library_description()})
@@ -152,6 +156,8 @@ def _action(path: str, local: bool = True) -> Callable[[Action], Action]:
             body = await _json_body(request)
             result = await asyncio.to_thread(_in_transaction, function, user_id,
                                              dict(request.path_params), body)
+            if is_local_mode():
+                await asyncio.to_thread(library_after_write)
             return _json(result or {"ok": True})
 
         _route(API_PATH + path, methods=["POST"], local=local)(handle_route_errors(route))
