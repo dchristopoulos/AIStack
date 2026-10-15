@@ -10,34 +10,41 @@ Run `claude mcp get aistack` in Claude Code, or `codex mcp get aistack` in Codex
 
 ## 2. Ask where the Library should live
 
-Put these three choices to the user, each with its line, and recommend the second when they have more than one computer:
+Run `gh auth status` first: it tells you whether the GitHub CLI is installed and signed in. Then put these four choices to the user, each with its line. Recommend the second when `gh` is signed in, the third when it is not and they have more than one computer, and the first when they only want to try AIStack:
 
 1. **Only this computer.** Free and nothing to set up. No other computer can reach it.
-2. **A free PostgreSQL database, shared by all their computers.** Neon is recommended: free, and it wakes by itself after a quiet spell. Supabase works too, but pauses after about a week unused and needs a click to wake. Each computer keeps the database's address, so if a laptop is lost they reset the database password and paste the new address on the others.
-3. **A computer that stays on, running the AIStack server.** Free on a computer they own, if it stays switched on. It is the only choice that works for a team. If they pick this, stop here: they need the server's address and an invite code, and then "Set up AIStack: fetch <server address>/setup and follow it."
+2. **A private GitHub repository, shared by all their computers.** Free, nothing to keep switched on, nothing that pauses, and every change is visible on GitHub. Each computer uses their own GitHub login; AIStack keeps no password.
+3. **A free PostgreSQL database, shared by all their computers.** Neon is recommended: free, and it wakes by itself after a quiet spell. Supabase works too, but pauses after about a week unused. Each computer keeps the database's address, so if a laptop is lost they reset the database password and paste the new address on the others.
+4. **A computer that stays on, running the AIStack server.** Free on a computer they own, if it stays switched on. It is the only choice that works for a team. If they pick this, stop here: they need the server's address and an invite code, and then "Set up AIStack: fetch <server address>/setup and follow it."
 
-## 3. Get the database's address (choice 2 only)
+## 3. Prepare the place they chose
 
-Walk the user through it; they create the account themselves.
+**Choice 2, GitHub.** If `gh` is missing, ask before installing it (https://cli.github.com); if it is not signed in, ask the user to run `gh auth login` and finish it in their browser. Then let git use that login, which is how AIStack reaches the repository without a password of its own:
+
+```bash
+gh auth setup-git
+```
+
+On their first computer, create the repository, private: `gh repo create aistack-library --private`. On a later computer, it already exists: `gh repo view <owner>/aistack-library` finds it. The Library's place is then `<owner>/aistack-library`, with their GitHub username as the owner.
+
+**Choice 3, PostgreSQL.** Walk the user through it; they create the account themselves.
 
 - **Neon:** sign in at https://neon.tech, create a project, open **Connect**, turn **Connection pooling off**, and copy the connection string. It starts with `postgresql://`.
 - **Supabase:** create a project at https://supabase.com, open **Connect**, choose **Session pooler**, and copy the connection string with the database password filled in. Its user looks like `postgres.<project ref>`, and it works over IPv4.
 
 Every computer of theirs uses this same address. Never print it back in full: it holds the password.
 
-## 4. Check AIStack starts
+## 4. Check AIStack can reach it
 
 `uvx` runs AIStack without installing it. If `uv --version` fails, ask the user before installing uv, then follow https://docs.astral.sh/uv/getting-started/installation/ (on macOS and Linux, `curl -LsSf https://astral.sh/uv/install.sh | sh`).
 
-Start AIStack once with its input closed, so it connects, prepares the Library, registers this computer, and exits. For choice 2, put the address in the environment of this one command:
+Run the check once, with the place in its environment: `AISTACK_LIBRARY_REPO` for choice 2, `AISTACK_DATABASE_URL` for choice 3, neither for choice 1:
 
 ```bash
-AISTACK_DATABASE_URL='<address>' uvx aistack-mcp@latest < /dev/null
+AISTACK_LIBRARY_REPO='<owner>/aistack-library' uvx aistack-mcp@latest check
 ```
 
-For choice 1, leave `AISTACK_DATABASE_URL=...` out. On Windows PowerShell, set `$env:AISTACK_DATABASE_URL` first and pipe `$null` into the command instead.
-
-It prints nothing when it works. An error says what is wrong: an address it cannot reach, a wrong password, or a database that already holds a team's server, which local mode will not open.
+On Windows PowerShell, set `$env:AISTACK_LIBRARY_REPO` (or `$env:AISTACK_DATABASE_URL`) first. The check prepares the Library, registers this computer, and says where the Library lives. Otherwise it says what is wrong: a repository it cannot reach, a database address or password that is wrong, or a database that already holds a team's server, which local mode will not open. Fix that before going on. The first run also downloads AIStack, so it takes longer than later starts.
 
 ## 5. Install the sync skill
 
@@ -52,19 +59,19 @@ In Codex, the same into `~/.agents/skills/sync-aistack`. Check the file starts w
 
 ## 6. Connect your coding agent
 
-In Claude Code, with `-e AISTACK_DATABASE_URL='<address>'` for choice 2 and without it for choice 1:
+In Claude Code, with the same variable the check used (`-e AISTACK_LIBRARY_REPO=...` for choice 2, `-e AISTACK_DATABASE_URL=...` for choice 3, none for choice 1):
 
 ```bash
-claude mcp add --scope user -e AISTACK_DATABASE_URL='<address>' aistack -- uvx aistack-mcp@latest
+claude mcp add --scope user -e AISTACK_LIBRARY_REPO='<owner>/aistack-library' aistack -- uvx aistack-mcp@latest
 ```
 
-In Codex, add this to `~/.codex/config.toml`, creating the file if needed and keeping everything already in it, then check it with `codex mcp get aistack`. Leave out the `env` line for choice 1.
+In Codex, add this to `~/.codex/config.toml`, creating the file if needed and keeping everything already in it, then check it with `codex mcp get aistack`. The `env` line holds the same variable the check used; leave it out for choice 1.
 
 ```toml
 [mcp_servers.aistack]
 command = "uvx"
 args = ["aistack-mcp@latest"]
-env = { AISTACK_DATABASE_URL = "<address>" }
+env = { AISTACK_LIBRARY_REPO = "<owner>/aistack-library" }
 startup_timeout_sec = 60
 tools.sync.approval_mode = "approve"
 tools.get_skill.approval_mode = "approve"
@@ -90,4 +97,4 @@ Tell the user:
 - **Restart Claude Code once**, or Codex if that is the agent you are. It reads its server list at startup. Skills installed from now on load without a restart.
 - After restarting, say **"sync aistack"**. It backs up this computer's skills to the Library and installs what their other computers put there.
 - **"open my aistack dashboard"** opens the Library in the browser, on this computer, for as long as the session runs. `uvx aistack-mcp dashboard` in a terminal does the same without an agent.
-- For another computer, paste the same setup there and choose the same database. For choice 1 there is nothing to share.
+- For another computer, paste the same setup there and choose the same place: the same repository or the same database. For choice 1 there is nothing to share.

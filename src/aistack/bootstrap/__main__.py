@@ -90,6 +90,39 @@ async def serve_dashboard() -> None:
     await uvicorn.Server(dashboard_server_config(settings.log_level)).serve(sockets=[listener])
 
 
+def check_local() -> None:
+    """`aistack check`: set up this computer's side of the Library once, and say whether it
+    works. Setup runs it before connecting an agent, which would hide a failure."""
+    settings = LocalSettings()
+    configure_logging(settings.log_level)
+    build_local_context(settings)
+
+    from aistack.bootstrap.context.application_context import (
+        get_local_principal,
+        get_session_factory,
+        library_description,
+    )
+    from aistack.services import library_log
+
+    try:
+        get_local_principal()
+    except AIStackError as refusal:
+        sys.exit(f"AIStack is not ready. {refusal}")
+    library = library_description()
+    if library["kind"] == "github":
+        with get_session_factory().begin() as session:
+            if library_log.unpublished(session):
+                sys.exit(f"AIStack is not ready. It could not push to {library['repository']}. "
+                         "Check that `gh auth status` shows you signed in as someone who can "
+                         "write to it, and that `gh auth setup-git` has been run.")
+    where = {
+        "this_computer": "on this computer only",
+        "github": f"in the GitHub repository {library.get('repository')}",
+        "postgresql": f"in a {library.get('provider')} database at {library.get('host')}",
+    }[library["kind"]]
+    print(f"AIStack is ready. Your Library lives {where}.")
+
+
 def export_library(destination: Path) -> None:
     """`aistack export <folder>`: every skill in this Library as a skill folder (ADR-0020).
 
@@ -125,11 +158,12 @@ def run() -> None:
         prog="aistack",
         description="With no command, serve your own Library to the coding agent that started "
                     "this over stdio. 'dashboard' opens it in the browser; 'setup' prints "
-                    "setup steps for a coding agent, and 'sync-skill' the skill they install; "
+                    "setup steps for a coding agent, 'sync-skill' the skill they install, and "
+                    "'check' whether this computer reaches its Library; "
                     "'export' writes every skill in the Library to a folder; 'serve' runs the "
                     "AIStack server.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
-                                                       "sync-skill", "export"])
+                                                       "sync-skill", "check", "export"])
     parser.add_argument("folder", nargs="?", type=Path, default=Path("aistack-library"),
                         help="Where 'export' writes the skills. Default: ./aistack-library")
     arguments = parser.parse_args()
@@ -148,6 +182,8 @@ def run() -> None:
             asyncio.run(main())
         elif command == "dashboard":
             asyncio.run(serve_dashboard())
+        elif command == "check":
+            check_local()
         elif command == "export":
             export_library(arguments.folder)
         else:
