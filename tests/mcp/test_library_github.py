@@ -192,3 +192,43 @@ def test_github_is_reached_through_the_gh_login_alone():
     assert github._credentials == ["-c", "credential.helper=",
                                    "-c", "credential.helper=!gh auth git-credential"]
     assert LibraryRepo(pathlib.Path("clone"), "/srv/library.git")._credentials == []
+
+
+async def test_a_github_library_exports_and_moves_by_copy_and_sync(computer, repository,
+                                                                    tmp_path):
+    """Leaving GitHub, or arriving there, is export, copy into a skills folder, and sync."""
+    import os
+    import sys
+
+    async with computer("laptop") as (laptop, home):
+        _write(home, "wizard", "Cast.")
+        await _call(laptop, "push_skill", name="wizard")
+
+    exported = tmp_path / "exported"
+    environment = {**os.environ, "HOME": str(tmp_path / "laptop"),
+                   "USERPROFILE": str(tmp_path / "laptop"),
+                   "AISTACK_HOME": str(tmp_path / "laptop" / ".aistack"),
+                   "AISTACK_LIBRARY_REPO": str(repository)}
+    environment.pop("AISTACK_DATABASE_URL", None)
+    done = subprocess.run([sys.executable, "-m", "aistack.bootstrap", "export", str(exported)],
+                          env=environment, capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert (exported / "wizard" / "SKILL.md").read_text().endswith("Cast.\n")
+
+    # A Library of its own elsewhere takes the folders in with one sync.
+    other = repository.with_name("other.git")
+    subprocess.run(["git", "init", "--quiet", "--bare", str(other)], check=True)
+    home = tmp_path / "newplace"
+    shutil.copytree(exported / "wizard", home / ".claude" / "skills" / "wizard")
+    application_context.build_local_context(LocalSettings(
+        aistack_home=home / ".aistack", aistack_library_repo=str(other),
+        aistack_username="maria"))
+    try:
+        async with Client(local_mcp) as client:
+            report = await _call(client, "sync")
+            assert report["backup"] == ["wizard"]
+            await _call(client, "push_skill", name="wizard")
+            assert [s["name"] for s in (await _call(client, "list_skills"))["skills"]] == \
+                ["wizard"]
+    finally:
+        application_context.dispose_application_context()

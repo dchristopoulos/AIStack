@@ -40,6 +40,14 @@ _Avoid_: Registry, marketplace, "the vault" for the whole server
 A user's personal team: private, a mirror of what is on their computers, and the only place their machines install from. On the wire it is a skill whose `team` is null; in code it keeps its older name, as in `visibility.my_skills`.
 _Avoid_: My skills (its name until #62), personal vault, private team, workspace, home
 
+**Log**:
+In local mode, the list of events that built a Library: one per change, recorded in the same transaction (`library_event`) and, for a Library on GitHub, one file each in the repository (ADR-0025). Replaying it in order gives the same Library on any computer.
+_Avoid_: history (git's word for commits), changelog, journal
+
+**Copy**:
+The SQLite database on one computer that holds a GitHub Library, built by replaying the log, and safe to delete: it is rebuilt from the repository.
+_Avoid_: cache (it is the Library the tools read), mirror, replica
+
 **Team**:
 A set of people who share skills (ADR-0015). A member shares into it and takes from it; nothing installs from it directly. Every team is created by a user and joined with its invite code or invite link. Until ADR-0019 every user was also in a server-wide team, `everyone`; an upgraded server keeps it as an ordinary team.
 _Avoid_: Org, tenant, workspace, account
