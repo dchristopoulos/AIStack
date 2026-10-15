@@ -245,6 +245,12 @@ docker compose -f compose.test.yaml up -d
 TEST_DATABASE_URL=postgresql+psycopg://aistack:aistack@localhost:5433/aistack_test poetry run pytest
 ```
 
+The GitHub half skips too: a Library in a private GitHub repository is otherwise tested against a local stand-in. To run it against real GitHub, with your `gh` login and a private repository kept for this alone (every run adds to its history):
+
+```bash
+AISTACK_E2E_GITHUB_REPO=<owner>/aistack-library-e2e poetry run pytest tests/e2e
+```
+
 CI also builds the container and drives it from outside as two users: one pushes and shares, the other takes the skill and gets the same bytes, across a restart and on both databases.
 
 ### How the whole thing was verified
