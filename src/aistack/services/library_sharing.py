@@ -36,6 +36,12 @@ class LibrarySharing:
                            f"works from its copy for now. {error}")
             return
         self._pulled_at = time.monotonic()
+        self.replay_clone()
+        # Online again: what an earlier, failed push left behind goes out now.
+        self.publish()
+
+    def replay_clone(self) -> None:
+        """Apply what the clone holds, without the network."""
         events = self.repo.events()
         with self.session_factory.begin() as session:
             if library_log.catch_up(session, events):

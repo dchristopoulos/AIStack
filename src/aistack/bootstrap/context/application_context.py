@@ -107,12 +107,19 @@ def build_local_context(settings: LocalSettings) -> None:
     # Signs `aistack dashboard`'s sign-in link and session, fresh per process as on a server.
     _ticket_signer = TicketSigner(secrets.token_bytes(SIGNING_KEY_BYTES))
 
+    first_start = False
     if settings.library_repo:
         repo = LibraryRepo(settings.home / _LIBRARY_CLONE, settings.library_repo)
         _sharing = LibrarySharing(repo, _session_factory)
         first_start = not (repo.folder / ".git").is_dir()
         try:
-            _sharing.catch_up(force=True)
+            # Only a first start reaches the network, to clone. Any other start replays what
+            # the last pull brought and answers at once: an agent may send its first request
+            # before a slow start finishes, and the tools pull before they read anyway.
+            if first_start:
+                _sharing.catch_up(force=True)
+            else:
+                _sharing.replay_clone()
         except AIStackError as error:
             # A log this release cannot replay, such as a change of a kind a newer release
             # made: still serve, so the agent tells its user what to do.
@@ -146,7 +153,9 @@ def build_local_context(settings: LocalSettings) -> None:
                 raise
 
     _local_principal = principal
-    library_after_write()
+    if _sharing is not None and first_start:
+        # A new computer is announced at once, so the check setup runs proves it can push.
+        _sharing.publish()
     logger.info(f"Local mode context built. Machine: '{principal.machine_id}'.")
 
 
