@@ -126,7 +126,7 @@ with build_engine(Settings().database_url).begin() as connection:
 
 ### A laptop was lost or stolen: rotate its token
 
-This is the answer to both "revoke the old one" and "let the user back in". The old token stops working on its next request, the machine keeps its name and its enabled skills, and you hand the user the new token.
+This is the answer to both "revoke the old one" and "let the user back in". The old token stops working on its next request, the machine keeps its name and its enabled skills, and you hand the user the new token. Every dashboard session that laptop opened, and every transfer URL it was given, ends with the old token (ADR-0027).
 
 ```python
 import hashlib, secrets
@@ -156,6 +156,12 @@ claude mcp add --transport http --scope user aistack https://aistack.example.com
 ```
 
 The token is printed once, in your terminal. Send it to the user over something private.
+
+Whoever holds the laptop may have used it before you rotated. Then:
+
+- **Computers it added.** List the user's machines with the query above. Any `created_on` after the loss that the user does not recognise was added with `add_machine` from the laptop: delete it with the script below. Its token, sessions and URLs end with it.
+- **Skills it changed.** A machine installs its user's newest revision without asking. Have the user look over their Library on the dashboard and push their own copy back over anything they did not write.
+- **Invites it made.** If the user is a team admin or may invite, the team's admins check the team's pending invites on the dashboard and cancel any the user did not make.
 
 ### A machine is gone for good: delete it
 
@@ -200,7 +206,7 @@ print(f"Registered '{MACHINE}' for {USERNAME}. Token: {added.token}")
 
 ### Someone left: take them off the server
 
-Delete each of their machines with the script above. With no machine they have no token, so they can reach neither the MCP endpoint nor the dashboard, and a dashboard session they still hold ends within eight hours, or at once if you restart. Their account, the skills they shared, and the `pushed_by` on each revision stay. Team invites they made stop working too: an invite works only while its maker is on the server and may still invite into its team. Then rotate the server's invite code, below.
+Delete each of their machines with the script above. With no machine they have no token, so they can reach neither the MCP endpoint nor the dashboard, and a dashboard session they still hold ends with the machine that opened it. Their account, the skills they shared, and the `pushed_by` on each revision stay. Team invites they made stop working too: an invite works only while its maker is on the server and may still invite into its team. Then rotate the server's invite code, below.
 
 A team's admin removes a person from that team in the dashboard. That cancels the invites the person made into the team, as leaving it does, and as losing the right to invite does. Leaving the server altogether is this operation.
 

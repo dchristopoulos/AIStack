@@ -217,6 +217,23 @@ async def test_a_machine_revoked_after_the_url_was_issued_cannot_use_it(server_u
     assert "no longer registered" in response.json()["error"]
 
 
+async def test_a_machine_given_a_new_token_after_the_url_was_issued_cannot_use_it(
+        server_url, session_factory):
+    """The operator's lost-laptop rotation keeps the machine's id, so the id alone is not
+    enough: the URL names the token that minted it (ADR-0027)."""
+    token = await _join(server_url)
+    url = await _upload_url(server_url, token)
+    with session_factory.begin() as session:
+        session.scalar(select(Machine)).token_hash = "0" * 64
+
+    response = await _put(url, skill_archive())
+
+    assert response.status_code == 403
+    assert "no longer registered" in response.json()["error"]
+    with session_factory() as session:
+        assert session.scalar(select(Skill)) is None
+
+
 async def test_the_upload_url_is_bound_to_the_name_it_was_issued_for(server_url):
     token = await _join(server_url)
 

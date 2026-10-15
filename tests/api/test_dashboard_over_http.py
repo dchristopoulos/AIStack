@@ -1,11 +1,14 @@
 """The dashboard from a browser's side: sign in with a link, then the JSON routes."""
 
+import hashlib
 import logging
+import re
+import secrets
 from contextlib import asynccontextmanager
 
 import httpx
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from aistack.api.dashboard import REQUEST_HEADER, SESSION_COOKIE
 from aistack.bootstrap.context import application_context
@@ -180,6 +183,109 @@ async def test_signing_out_ends_the_session_in_that_browser(server_url):
         after = await browser.get("/api/state")
 
     assert after.status_code == 401
+
+
+async def test_signing_out_ends_the_session_wherever_its_cookie_was_copied(server_url):
+    """A copy taken from devtools or by an extension stops working too (ADR-0027)."""
+    async with _browser(server_url, await _join(server_url, "dimitris")) as browser:
+        copied = browser.cookies[SESSION_COOKIE]
+        await _post(browser, "/logout")
+
+    async with httpx.AsyncClient(base_url=_base(server_url)) as elsewhere:
+        response = await elsewhere.get("/api/state", cookies={SESSION_COOKIE: copied})
+
+    assert response.status_code == 401
+
+
+async def test_somebody_elses_link_asks_before_it_replaces_the_session(server_url):
+    """A link anyone can mint for their own account must not quietly become the victim's
+    dashboard, where they would paste an invite code meant for themselves."""
+    attacker = await _join(server_url, "mallory")
+    sent_link = httpx.URL((await _call(server_url, attacker, "open_dashboard"))["url"]).path
+
+    async with _browser(server_url, await _join(server_url, "dimitris")) as victim:
+        asked = await victim.get(sent_link)
+        still = await _state(victim)
+        switch = re.search(r'"(/app/login/[^"]+)"', asked.text).group(1)
+        switched = await victim.post(switch, headers=HEADERS)
+        after = await _state(victim)
+
+    assert asked.status_code == 200 and "set-cookie" not in asked.headers
+    assert "signed in as <strong>dimitris</strong>" in asked.text
+    assert "Sign in as mallory" in asked.text
+    assert still["user"]["username"] == "dimitris"
+    assert switched.status_code == 200
+    assert after["user"]["username"] == "mallory"
+
+
+async def test_switching_needs_the_header_and_a_link_that_is_still_good(server_url):
+    attacker = await _join(server_url, "mallory")
+    link = httpx.URL((await _call(server_url, attacker, "open_dashboard"))["url"]).path
+
+    async with httpx.AsyncClient(base_url=_base(server_url)) as browser:
+        forged = await browser.post(link)
+        used = await browser.post(link, headers=HEADERS)
+        again = await browser.post(link, headers=HEADERS)
+
+    assert forged.status_code == 400 and "set-cookie" not in forged.headers
+    assert used.status_code == 200
+    assert again.status_code == 401 and "set-cookie" not in again.headers
+
+
+async def test_opening_your_own_link_again_signs_in_without_asking(server_url):
+    token = await _join(server_url, "dimitris")
+    async with _browser(server_url, token) as browser:
+        link = httpx.URL((await _call(server_url, token, "open_dashboard"))["url"]).path
+        again = await browser.get(link)
+
+    assert again.status_code == 303
+
+
+def _rotate(session_factory, machine_name):
+    """The operator's lost-laptop step in docs/OPERATING.md: a new token for one computer."""
+    with session_factory.begin() as session:
+        machine = session.scalar(select(Machine).where(Machine.name == machine_name))
+        machine.token_hash = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
+
+
+async def test_a_session_ends_when_the_computer_that_opened_it_gets_a_new_token(
+        server_url, session_factory):
+    """The person still has another computer, so the account stays; the thief's session goes."""
+    laptop = await _join(server_url, "dimitris", machine_name="laptop")
+    added = await _call(server_url, laptop, "add_machine", name="desktop", os="LINUX")
+    desktop = re.search(r"Bearer (aist_[\w-]+)", added["command"]).group(1)
+
+    async with _browser(server_url, laptop) as thief, _browser(server_url, desktop) as owner:
+        _rotate(session_factory, "laptop")
+
+        assert (await thief.get("/api/state")).status_code == 401
+        assert (await _post(thief, "/teams", name="acme")).status_code == 401
+        assert (await owner.get("/api/state")).status_code == 200
+
+
+async def test_a_session_ends_when_the_computer_that_opened_it_is_deleted(
+        server_url, session_factory):
+    laptop = await _join(server_url, "dimitris", machine_name="laptop")
+    await _call(server_url, laptop, "add_machine", name="desktop", os="LINUX")
+
+    async with _browser(server_url, laptop) as thief:
+        with session_factory.begin() as session:
+            session.execute(delete(Machine).where(Machine.name == "laptop"))
+
+        assert (await thief.get("/api/state")).status_code == 401
+
+
+async def test_a_link_from_a_computer_that_has_since_lost_its_token_signs_nobody_in(
+        server_url, session_factory):
+    laptop = await _join(server_url, "dimitris", machine_name="laptop")
+    await _call(server_url, laptop, "add_machine", name="desktop", os="LINUX")
+    link = (await _call(server_url, laptop, "open_dashboard"))["url"]
+    _rotate(session_factory, "laptop")
+
+    async with httpx.AsyncClient(base_url=_base(server_url)) as thief:
+        response = await thief.get(link)
+
+    assert response.status_code == 401 and "set-cookie" not in response.headers
 
 
 # --- what it shows and does -----------------------------------------------------------------

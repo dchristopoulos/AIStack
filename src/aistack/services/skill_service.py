@@ -1,3 +1,4 @@
+import hmac
 import logging
 import uuid
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ from aistack.db.models.team import Team, TeamGroup
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
 from aistack.db.ordering import bytewise
-from aistack.services import visibility
+from aistack.services import transfer_ticket, visibility
 from aistack.services.harnesses import folder, validated_harness
 from aistack.services.skill_archive import build_archive, read_archive
 from aistack.services.skill_validation import ValidatedFile, ValidatedSkill, validated_skill
@@ -52,7 +53,8 @@ class PushedSkill:
 
 
 def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
-         origin: str | None, archive: bytes, harness: str | None = None) -> PushedSkill:
+         origin: str | None, archive: bytes, harness: str | None = None,
+         token_prefix: str | None = None) -> PushedSkill:
     """Store an uploaded archive as the next revision of the user's own skill `name`, and
     enable it for the machine in the harness it was pushed from.
 
@@ -61,20 +63,21 @@ def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
     folder only: the machine's other harnesses have not decided about it (ADR-0018).
 
     Everything about the archive is validated before the first query, so a rejected upload
-    costs no database work and leaves no row.
+    costs no database work and leaves no row. An upload URL passes the `token_prefix` it was
+    minted with, and lands only while its machine still holds that token (ADR-0027).
     """
     return store(session, machine_id, user_id, validated_skill(name, read_archive(archive)),
-                 origin, harness)
+                 origin, harness, token_prefix)
 
 
 def store(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
           uploaded: ValidatedSkill, origin: str | None,
-          harness: str | None = None) -> PushedSkill:
+          harness: str | None = None, token_prefix: str | None = None) -> PushedSkill:
     """`push`, for an archive validated before the caller's transaction opened: parsing one
     is slow, and nothing slow runs while SQLite's write lock is held."""
     started_at = perf_counter()
     harness = validated_harness(harness)
-    _require_registered_machine(session, machine_id, user_id)
+    _require_registered_machine(session, machine_id, user_id, token_prefix)
 
     skill, created = _find_or_create_skill(
         session, visibility.personal_team(session, user_id).team_id, uploaded, origin, user_id)
@@ -355,19 +358,15 @@ def disable_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
     return skill.name
 
 
-def archive_of(session: Session, machine_id: uuid.UUID,
-               skill_version_id: uuid.UUID) -> tuple[str, bytes]:
+def archive_of(session: Session, machine_id: uuid.UUID, skill_version_id: uuid.UUID,
+               token_prefix: str | None = None) -> tuple[str, bytes]:
     """The skill name and gzipped tar of one exact revision, for a machine still registered.
 
     The revision was chosen when the ticket was minted, so a push that lands between the
     tool call and the download cannot serve files that disagree with what the tool described.
+    A download URL passes the `token_prefix` it was minted with (ADR-0027).
     """
-    machine = session.get(Machine, machine_id)
-    if machine is None:
-        raise InvalidTicket(
-            "The machine this transfer URL was issued to is no longer registered, so the URL "
-            "is void. Reconnect this computer to AIStack before trying again."
-        )
+    machine = _require_registered_machine(session, machine_id, None, token_prefix)
 
     revision = session.execute(
         select(Skill.skill_id, Skill.name, SkillVersion.created_on)
@@ -441,14 +440,18 @@ def set_enabled(session: Session, machine_id: uuid.UUID, harness: Harness,
 
 
 def _require_registered_machine(session: Session, machine_id: uuid.UUID,
-                                user_id: uuid.UUID) -> None:
-    """A ticket outlives the tool call that minted it, so the machine may be gone by now."""
+                                user_id: uuid.UUID | None, token_prefix: str | None) -> Machine:
+    """A ticket outlives the tool call that minted it, so the machine may be gone by now, or
+    hold a new token after the old one was lost (ADR-0027)."""
     machine = session.get(Machine, machine_id)
-    if machine is None or machine.user_id != user_id:
+    if (machine is None or (user_id is not None and machine.user_id != user_id)
+            or (token_prefix is not None and not hmac.compare_digest(
+                transfer_ticket.token_prefix(machine.token_hash), token_prefix))):
         raise InvalidTicket(
             "The machine this transfer URL was issued to is no longer registered, so the URL "
             "is void. Reconnect this computer to AIStack before trying again."
         )
+    return machine
 
 
 def _find_or_create_skill(session: Session, team_id: uuid.UUID, uploaded: ValidatedSkill,

@@ -41,7 +41,7 @@ async def local_dashboard(home: Path, library_url: str):
                             raise RuntimeError("The dashboard stopped before startup.")
                         await asyncio.sleep(0.01)
                 ticket = application_context.get_ticket_signer().sign_dashboard_link(
-                    caller.user_id)
+                    caller.dashboard_holder())
                 yield base, f"{base}{DASHBOARD_LOGIN_PATH}/{ticket}"
             finally:
                 server.should_exit = True
