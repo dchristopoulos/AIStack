@@ -35,14 +35,21 @@ playwright-report/
 aistack-library/
 .aistack/
 
-# Agent tooling
-# Claude Code's local state, except the project skills it shares with .agents/skills, and
-# the settings and session-start hook every cloud session uses.
+# Coding-agent tooling: per-developer state stays local. Only the shared project skills,
+# settings and development-environment hook under .claude/ are tracked.
 .claude/*
 !.claude/skills/
 !.claude/settings.json
 !.claude/hooks/
+CLAUDE.local.md
+AGENTS.override.md
 .codex/
+.cursor/
+.gemini/
+.kimi-code/
+.opencode/
+.windsurf/
+.aider*
 .overnight/
 
 # Editors / OS
