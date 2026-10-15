@@ -266,7 +266,7 @@ Three places hold skills, and they nest in that order of privacy.
 
 **What leaving a team changes:** what the user can list and take. Nothing they already took is touched, because their machines never ran the team's copy.
 
-**Roles.** Admin and member. An admin manages the invite code, members and their roles, groups and their members, and where a team's skill sits. A team keeps at least one admin. An admin can mark a member "can invite" (`team_member.can_invite`, migration 0004): that member may make the team's invite link and nothing else an admin can (ADR-0019).
+**Roles.** Admin and member. An admin manages the invite code, members and their roles, groups and their members, and where a team's skill sits. A team keeps at least one admin while anyone is in it: the last member leaving deletes the team, and an admin can delete it, which removes the team's copies of its skills, its groups and its invites and leaves every member's Library copy (ADR-0028). An admin can mark a member "can invite" (`team_member.can_invite`, migration 0004): that member may make the team's invite link and nothing else an admin can (ADR-0019).
 
 **Where the rule lives.** `services/visibility.py` decides who sees what; `services/team_service.py` is team administration. A team, group, or skill the caller may not see answers exactly like one that does not exist.
 
@@ -315,7 +315,8 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/account` | `full_name` (blank clears it) | `full_name`. Server only |
 | `POST /api/teams` | `name` | `name`. The caller is the new team's admin |
 | `POST /api/teams/join` | `code` (a team's invite code) | `team` |
-| `POST /api/teams/{team}/leave` | `{}` | |
+| `POST /api/teams/{team}/leave` | `{}` | The last member leaving deletes the team (ADR-0028) |
+| `POST /api/teams/{team}/delete` | `{}` | Deletes the team, its copies of its skills, its groups and its invites. Members' Library copies stay. Admin only (ADR-0028) |
 | `POST /api/teams/{team}/invite` | `{}` | `code`, shown this once: a new invite, one use, seven days. Admins and members who can invite (ADR-0022) |
 | `POST /api/teams/{team}/invites/{invite_id}/cancel` | `{}` | `ok`. Its maker, or an admin |
 | `POST /api/teams/{team}/take` | `name` | Copies the team's latest revision of that skill into the Library |

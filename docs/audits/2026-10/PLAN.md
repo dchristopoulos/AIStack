@@ -32,7 +32,7 @@ How to work through it:
 - [ ] 3. Make local setup's agent commands work and stop printing secrets
 - [x] 4. An invite dies with its maker's right to invite (#126)
 - [x] 5. Lock the team while its admins and members change (#132)
-- [ ] 6. A team can always be managed: delete a team, let a lone admin leave, repair an orphaned one
+- [x] 6. A team can always be managed: delete a team, let a lone admin leave, repair an orphaned one (#147)
 - [ ] 7. Sharing over a group's skill takes being able to share into that group
 - [x] 8. A session belongs to the computer that opened it; signing out ends it (#127)
 - [x] 9. A person can remove and rename their own computers, and see when each last synced (#140)
@@ -154,6 +154,8 @@ Largest effort among them: M. **Trust boundary.**
 Files: src/aistack/services/team_service.py (`delete_team`, last-member leave deletes); src/aistack/api/dashboard.py, dashboard.html (Delete team in Team settings); docs/OPERATING.md (script: name a new admin).
 
 ADR: [ADR-0028 (draft)](../../adr/0028-a-team-can-be-deleted.md): A team can be deleted, and nobody is kept in one.
+
+PH-12's service half lands here: an admin's move or remove of a skill in a private group they are not in answers like a missing skill. Its page half, showing such a group as not joined instead of empty, moves to step 37.
 
 Tests: Service tests: the last member leaving deletes the team and frees its name; an admin deletes a team and members' Library copies stay; the operator script names an admin. A UI test deletes a team by the button's words.
 

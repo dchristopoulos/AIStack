@@ -2434,6 +2434,7 @@ function settingsTab(team, admin) {
     el('div', { class: 'card-foot' }, el('span', null, hint), action));
   const admins = members(team).filter(m => m.role === 'ADMIN').map(m => m.username);
   const closed = team.groups.filter(g => g.private).length;
+  const alone = members(team).length === 1;
   const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
   const about = el('section', { class: 'card', 'aria-label': 'About this team' },
     el('div', { class: 'card-body' },
@@ -2458,16 +2459,30 @@ function settingsTab(team, admin) {
     (admin || team.can_invite) && invitesList(team, admin),
     card(' danger', 'Leave team',
       'You stop seeing this team\'s skills and groups. Skills you added to your library stay yours.',
-      'To come back you need an invite code.',
+      alone ? 'You are its only member, so leaving deletes it.' : 'To come back you need an invite code.',
       btn('Leave team', { class: 'btn danger', fk: 'leave', on: { click: () => confirmDialog({
         title: `Leave ${team.name}?`,
-        submitLabel: 'Leave team',
-        lines: ['You stop seeing this team\'s skills and groups, and are no longer offered its updates.', 'Skills you added to your library stay yours. To come back you need an invite code.'],
+        submitLabel: alone ? 'Leave and delete' : 'Leave team',
+        lines: alone
+          ? [`You are its only member, so leaving deletes ${team.name} and its copies of its skills.`, 'Skills you added to your library stay yours.']
+          : ['You stop seeing this team\'s skills and groups, and are no longer offered its updates.', 'Skills you added to your library stay yours. To come back you need an invite code.'],
         onSubmit: async () => {
           await api(`/api/teams/${enc(team.name)}/leave`, {});
-          return () => { toast(`You left ${team.name}.`); go('#/library'); };
+          return () => { toast(alone ? `You left ${team.name}, and it was deleted.` : `You left ${team.name}.`); go('#/library'); };
         },
-      }) } }, 'logout'))), about);
+      }) } }, 'logout')),
+    admin && !alone && card(' danger', 'Delete team',
+      'Deletes the team for everyone in it: its copies of its skills, its groups and its invites.',
+      'Skills members added to their library stay theirs.',
+      btn('Delete team', { class: 'btn danger', fk: 'delete-team', on: { click: () => confirmDialog({
+        title: `Delete ${team.name}?`,
+        submitLabel: 'Delete team',
+        lines: [`Everyone in ${team.name} loses it, with its skills, groups and invites. This cannot be undone.`, 'Every skill a member added to their library stays theirs, on their computers too.'],
+        onSubmit: async () => {
+          await api(`/api/teams/${enc(team.name)}/delete`, {});
+          return () => { toast(`Deleted ${team.name}.`); go('#/library'); };
+        },
+      }) } }, 'trash'))), about);
 }
 
 // Invites are records (ADR-0022): pending until someone uses one, and each can be cancelled.
@@ -2750,6 +2765,12 @@ const DEMO_ROUTES = [
   [/^\/api\/teams\/([^/]+)\/leave$/, (b, team) => {
     const t = dTeam(team);
     if (t.role === 'ADMIN' && t.members.filter(m => m.role === 'ADMIN').length === 1 && t.members.length > 1) fail(`You are the only admin of ${t.name}. Make someone else an admin before you leave.`);
+    DB.teams = DB.teams.filter(x => x !== t);
+    DB.skills.forEach(s => { if (s.source && s.source.team === team) s.source = null; });
+  }],
+  [/^\/api\/teams\/([^/]+)\/delete$/, (b, team) => {
+    const t = dTeam(team);
+    if (t.role !== 'ADMIN') fail(`Only an admin of ${t.name} can do that. Ask one of its admins.`);
     DB.teams = DB.teams.filter(x => x !== t);
     DB.skills.forEach(s => { if (s.source && s.source.team === team) s.source = null; });
   }],

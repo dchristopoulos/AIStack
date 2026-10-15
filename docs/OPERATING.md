@@ -96,7 +96,7 @@ There are two kinds of invite code, and you manage only one.
 - **The server's invite code** is `AISTACK_INVITE_CODE`. It lets a new person create an account on this server, in no team. It is for you and the people you hand it to yourself; everyone else usually arrives through a team's invite link.
 - **A team's invite code** starts with `aistinv_`. A team's admin, or a member the admin lets invite, makes one from chat or the dashboard. Each one lets one person in and lasts seven days, making another cancels none, and any pending one can be cancelled from the team's settings. Its link, `/invite/<code>`, tells someone new to the server what to paste, and the same code then creates their account. The server stores only its hash, so there is nothing to read back out of the database.
 
-Users create teams and groups themselves and administer them. Nothing in a team needs the operator.
+Users create teams and groups themselves and administer them. An admin can delete a team, and the last member leaving deletes it. The operator steps in only when a team's admins are all gone: see "Name a team's admin" below.
 
 ## Admin operations
 
@@ -210,9 +210,40 @@ print(f"Registered '{MACHINE}' for {USERNAME}. Token: {added.token}")
 
 ### Someone left: take them off the server
 
-Delete each of their machines with the script above. With no machine they have no token, so they can reach neither the MCP endpoint nor the dashboard, and a dashboard session they still hold ends with the machine that opened it. Their account, the skills they shared, and the `pushed_by` on each revision stay. Team invites they made stop working too: an invite works only while its maker is on the server and may still invite into its team. Then rotate the server's invite code, below.
+First take them out of their teams. A team they were the only admin of needs someone to take it over: name that member in `SUCCESSORS`, and the script refuses, changing nothing, while one is missing. A team they were the only member of is deleted. Their pending invites stop working.
+
+```python
+from aistack.bootstrap.configuration.settings.settings_config import Settings
+from aistack.db.engine import build_engine, build_session_factory
+from aistack.services import operator_service
+
+USERNAME = "maria"
+SUCCESSORS = {}   # team name -> the member who becomes its admin, e.g. {"acme": "dimitris"}
+
+with build_session_factory(build_engine(Settings().database_url)).begin() as session:
+    teams = operator_service.take_out_of_teams(session, USERNAME, SUCCESSORS)
+print(f"Took {USERNAME} out of: {', '.join(teams) or 'no team'}.")
+```
+
+Then delete each of their machines with the script above. With no machine they have no token, so they can reach neither the MCP endpoint nor the dashboard, and a dashboard session they still hold ends with the machine that opened it. Their account, the skills they shared, and the `pushed_by` on each revision stay. Team invites they made stop working too: an invite works only while its maker is on the server and may still invite into its team. Then rotate the server's invite code, below.
 
 A team's admin removes a person from that team in the dashboard. That cancels the invites the person made into the team, as leaving it does, and as losing the right to invite does. Leaving the server altogether is this operation.
+
+### Name a team's admin
+
+For a team whose admins are all gone, for instance because one was taken off the server before the script above existed. The person must already be in the team.
+
+```python
+from aistack.bootstrap.configuration.settings.settings_config import Settings
+from aistack.db.engine import build_engine, build_session_factory
+from aistack.services import operator_service
+
+TEAM, USERNAME = "acme", "dimitris"
+
+with build_session_factory(build_engine(Settings().database_url)).begin() as session:
+    operator_service.name_admin(session, TEAM, USERNAME)
+print(f"{USERNAME} is an admin of {TEAM}.")
+```
 
 ### List teams and who is in them
 
