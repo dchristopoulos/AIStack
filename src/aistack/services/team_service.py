@@ -307,9 +307,11 @@ def list_teams(session: Session, user_id: uuid.UUID) -> list[TeamSummary]:
 def members(session: Session, user_id: uuid.UUID, team: str) -> list[MemberSummary]:
     """Who is in the team. Any member may see this, as in any team's member list.
 
-    A member's private groups are shown only to admins and to people in those groups.
+    A member's groups are shown only where `visibility.shows_membership` says so: never a
+    private group, or one under it, to someone outside it.
     """
     found, me = visibility.membership(session, user_id, team)
+    access = visibility.group_access(session, user_id)
     rows = session.execute(
         select(User.user_id, User.username, TeamMember.role, TeamMember.sees_all_groups,
                TeamMember.can_invite, User.full_name)
@@ -317,13 +319,11 @@ def members(session: Session, user_id: uuid.UUID, team: str) -> list[MemberSumma
         .where(TeamMember.team_id == found.team_id, known(TeamMember.role))
         .order_by(bytewise(User.username))
     ).all()
-    mine = _groups_of(session, found.team_id, user_id)
     result = []
     for member_id, username, role, sees_all, can_invite, full_name in rows:
-        theirs = _groups_of(session, found.team_id, member_id)
         shown = tuple(sorted(
-            name for name, private in theirs.items()
-            if not private or me.role is TeamRole.ADMIN or name in mine))
+            path for group_id, path, private in _groups_of(session, found.team_id, member_id)
+            if visibility.shows_membership(access, me, group_id, private)))
         result.append(MemberSummary(username, role, sees_all, can_invite, shown, full_name))
     return result
 
@@ -352,8 +352,11 @@ def set_subscribed(session: Session, user_id: uuid.UUID, team: str, group: str,
     the group's updates.
     """
     found, _ = visibility.membership(session, user_id, team)
-    target = _group(session, found, group)
-    if target.group_id not in visibility.group_access(session, user_id).visible:
+    # Looked up among the groups the caller sees, so a hidden one costs what a missing one does.
+    target = session.scalar(select(TeamGroup).where(
+        TeamGroup.team_id == found.team_id, TeamGroup.path == group,
+        TeamGroup.group_id.in_(visibility.group_access(session, user_id).visible)))
+    if target is None:
         raise NotFound(f"Team '{found.name}' has no group '{loggable(group)}'.")
     session.execute(delete(GroupUnsubscribed).where(GroupUnsubscribed.group_id == target.group_id,
                                                     GroupUnsubscribed.user_id == user_id))
@@ -568,10 +571,11 @@ def _skill(session: Session, team: Team, name: str, user_id: uuid.UUID) -> Skill
     return found
 
 
-def _groups_of(session: Session, team_id: uuid.UUID, user_id: uuid.UUID) -> dict[str, bool]:
-    """The groups of this team that a user was added to, as path → private."""
-    return dict(session.execute(
-        select(TeamGroup.path, TeamGroup.private)
+def _groups_of(session: Session, team_id: uuid.UUID,
+               user_id: uuid.UUID) -> list[tuple[uuid.UUID, str, bool]]:
+    """The groups of this team that a user was added to, as (id, path, private)."""
+    return list(session.execute(
+        select(TeamGroup.group_id, TeamGroup.path, TeamGroup.private)
         .join(GroupMember, GroupMember.group_id == TeamGroup.group_id)
         .where(TeamGroup.team_id == team_id, GroupMember.user_id == user_id)).all())
 

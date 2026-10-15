@@ -275,11 +275,12 @@ def share(session: Session, user_id: uuid.UUID, name: str, team: str,
 
     The team keeps its own copy with its own history, so later changes to either side reach
     the other only when someone shares or takes again. Any member may share over a team's
-    skill; every revision says who did.
+    skill where they may share a new one (ADR-0029); every revision says who did.
     """
     mine = visibility.required_my_skill(session, user_id, name)
     destination, _ = team_service.lock(session, user_id, team)
-    target_group = None if group is None else _group_to_share_into(session, user_id,
+    access = visibility.group_access(session, user_id)
+    target_group = None if group is None else _group_to_share_into(session, access,
                                                                     destination, group)
     copied = _stored_as_uploaded(session, mine, _latest_version(session, mine.skill_id))
 
@@ -290,6 +291,12 @@ def share(session: Session, user_id: uuid.UUID, name: str, team: str,
         raise Conflict(
             f"Team '{destination.name}' already uses the name '{mine.name}' somewhere you "
             "cannot see. Ask a team admin, or share it under a different name."
+        )
+    if existing is not None and not visibility.may_share_over(access, existing):
+        raise Conflict(
+            f"'{mine.name}' is in group '{_group_name(session, existing.group_id)}' of team "
+            f"'{destination.name}', which you can read but not share into. Ask a team admin "
+            "to add you to it, or share yours under a different name."
         )
     if existing is not None and target_group is not None \
             and existing.group_id != target_group.group_id:
@@ -566,17 +573,17 @@ def _stored_as_uploaded(session: Session, skill: Skill, version: SkillVersion) -
     )
 
 
-def _group_to_share_into(session: Session, user_id: uuid.UUID, team: Team,
+def _group_to_share_into(session: Session, access: visibility.GroupAccess, team: Team,
                          group: str) -> TeamGroup:
     """The group at this path, if the caller may share into it.
 
     That takes belonging to the group or to one above it. A group they may not see is
-    answered like one that does not exist.
+    answered like one that does not exist, after the same queries, so it takes no longer.
     """
     found = session.scalar(select(TeamGroup).where(TeamGroup.team_id == team.team_id,
-                                                   TeamGroup.path == group))
-    if found is None or found.group_id not in visibility.group_access(session,
-                                                                     user_id).writable:
+                                                   TeamGroup.path == group,
+                                                   TeamGroup.group_id.in_(access.writable)))
+    if found is None:
         raise NotFound(f"You are not in a group '{loggable(group)}' in team '{team.name}'. "
                        "Share without a group, or ask a team admin to add you to it.")
     return found
