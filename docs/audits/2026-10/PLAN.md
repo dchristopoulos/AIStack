@@ -14,7 +14,7 @@ What changed since the audit was written (2026-10-15):
 
 A cloud development environment is ready when it starts: `.claude/hooks/session-start.sh` runs `poetry install`, starts PostgreSQL 16 on port 5433 when the image has it and sets `TEST_DATABASE_URL`, and points Playwright at the image's Chromium with `PLAYWRIGHT_BROWSERS_PATH`. On your own computer, follow README "Tests" instead.
 
-The browser tests fail in that full Chromium until [UI-22](ui.md#ui-22-no-icon-is-declared-so-every-page-load-asks-for-faviconico-gets-404-and-the-browser-tests-fail-in-a-full-browser) (a missing favicon) is fixed: every failure is the same console 404. Fix it first, as its own small PR, if a step needs the browser tests.
+The browser tests pass in that full Chromium: [UI-22](ui.md#ui-22-no-icon-is-declared-so-every-page-load-asks-for-faviconico-gets-404-and-the-browser-tests-fail-in-a-full-browser) (a missing favicon) was fixed ahead of step 36.
 
 How to work through it:
 
@@ -598,7 +598,9 @@ Tests: A skip link reaches main in one Tab; focus lands on the new page's headin
 Closes: [UI-17](ui.md#ui-17-the-signed-out-and-invite-pages-have-no-lang-no-dark-theme-no-main-landmark-and-the-signed-out-pages-title-does-not-say-signed-out), [STD-18](industry-standards.md#std-18-the-pages-a-newcomer-sees-first-fail-wcag-22-level-a-and-dashboard-messages-disappear-on-a-timer), [UI-22](ui.md#ui-22-no-icon-is-declared-so-every-page-load-asks-for-faviconico-gets-404-and-the-browser-tests-fail-in-a-full-browser), [UI-09](ui.md#ui-09-local-mode-forgets-the-theme-accent-and-picked-agents-every-run-each-dashboard-gets-a-new-port-and-so-a-new-origin), [UX-02](ux.md#ux-02-a-sign-in-link-works-once-but-the-wording-says-five-minutes-and-reopening-it-says-you-are-not-signed-in-even-to-a-signed-in-browser).
 Largest effort among them: M.
 
-Files: src/aistack/api/dashboard.py (signed-out page); src/aistack/mcp/routes/invite.py; src/aistack/mcp/routes/setup.py; dashboard.html (icon; `aistack dashboard` reuses its last port when free).
+UI-22 is done: every page names the logo inline (`ICON_LINK` in `aistack.bundled`), and the invite page's policy allows that one image.
+
+Files: src/aistack/api/dashboard.py (signed-out page); src/aistack/mcp/routes/invite.py; src/aistack/mcp/routes/setup.py; dashboard.html (`aistack dashboard` reuses its last port when free).
 
 ADR: none needed.
 

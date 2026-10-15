@@ -530,3 +530,22 @@ async def test_the_sidebar_shows_a_member_no_private_group_they_are_not_in(sign_
     await alex.page.goto(f"{alex.base_url}/app#/t/aistack/skills/security")
     await expect(alex.page.get_by_role("table", name="Skills in aistack")).to_be_visible()
     await expect(alex.page.get_by_text("pentest-checklist")).to_have_count(0)
+
+
+@pytest.mark.parametrize("path", ["/app", "/invite/aistinv_not-a-code"])
+async def test_the_pages_before_sign_in_ask_for_nothing_that_fails(browser, server_url, path):
+    """Each page names its icon inline, so a browser never asks for /favicon.ico, gets a 404,
+    and logs an error on every load."""
+    page = await browser.new_page()
+    errors = []
+    page.on("console", lambda message: errors.append(message.location["url"])
+            if message.type == "error" else None)
+
+    address = server_url.removesuffix("/mcp") + path
+    await page.goto(address)
+    await page.get_by_role("heading", level=1).wait_for()
+    await page.wait_for_load_state("networkidle")
+
+    # The page itself answers 401 or 404 on purpose, and the browser logs that too.
+    assert [url for url in errors if url != address] == []
+    await page.close()

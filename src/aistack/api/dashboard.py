@@ -29,7 +29,7 @@ from aistack.bootstrap.context.application_context import (
     library_before_read,
     library_description,
 )
-from aistack.bundled import dashboard_page
+from aistack.bundled import ICON_LINK, dashboard_page
 from aistack.commons.exceptions import InvalidTicket, SignedOut, ValidationError
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.route_error_handler import handle_route_errors
@@ -371,6 +371,7 @@ def _signed_out_page(request: Request) -> Response:
     return HTMLResponse(
         "<!doctype html><meta charset=utf-8>"
         "<meta name=viewport content=\"width=device-width,initial-scale=1\"><title>AIStack</title>"
+        + ICON_LINK +
         "<body style=\"font:16px/1.5 system-ui;margin:15vh auto;max-width:32rem;padding:0 1rem\">"
         "<h1 style=\"font-size:1.25rem\">You are not signed in</h1>"
         "<p>Ask your coding agent to <strong>open my aistack dashboard</strong>. It will "

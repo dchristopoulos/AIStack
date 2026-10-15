@@ -13,6 +13,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response
 
 from aistack.bootstrap.context.application_context import get_session_factory
+from aistack.bundled import ICON_LINK
 from aistack.commons.exceptions import NotFound
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.route_error_handler import handle_route_errors
@@ -22,9 +23,10 @@ from aistack.services import team_service
 logger = logging.getLogger(__name__)
 
 # The code is in the address bar: nothing on the page may load from elsewhere or send it on.
+# The one image is the inline icon.
 _HEADERS = {
-    "Content-Security-Policy": ("default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; "
-                                "form-action 'none'; frame-ancestors 'none'"),
+    "Content-Security-Policy": ("default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+                                "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"),
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Cache-Control": "no-store",
@@ -32,6 +34,7 @@ _HEADERS = {
 
 _PAGE = """<!doctype html><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>{title} · AIStack</title>
+{icon}
 <body style="font:16px/1.5 system-ui;margin:12vh auto;max-width:36rem;padding:0 1rem">
 {body}"""
 
@@ -73,5 +76,5 @@ def _team_name(code: str) -> str:
 
 
 def _page(title: str, status: int, body: str) -> Response:
-    return HTMLResponse(_PAGE.format(title=escape(title), body=body), status_code=status,
+    return HTMLResponse(_PAGE.format(title=escape(title), icon=ICON_LINK, body=body), status_code=status,
                         headers=_HEADERS)
