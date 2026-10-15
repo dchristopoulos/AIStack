@@ -4,10 +4,13 @@ For whoever runs the server. Everything here is one container and one volume: th
 
 ## Run it
 
+Make the server's invite code once, into a file you keep, then start the container with it:
+
 ```bash
+openssl rand -base64 24 > invite-code.txt && chmod 600 invite-code.txt
 docker run -d --name aistack \
   -p 8000:8000 \
-  -e AISTACK_INVITE_CODE="$(openssl rand -base64 24)" \
+  -e AISTACK_INVITE_CODE="$(cat invite-code.txt)" \
   -v aistack-data:/data \
   --restart unless-stopped \
   ghcr.io/dchristopoulos/aistack:latest
@@ -18,16 +21,17 @@ The image is published by CI from every commit on `main` that passed the tests, 
 Without Docker, the same server runs from PyPI with [uv](https://docs.astral.sh/uv/), which fetches Python 3.13 if it needs to. The database is a SQLite file in the current folder unless `DATABASE_URL` says otherwise:
 
 ```bash
-AISTACK_INVITE_CODE="$(openssl rand -base64 24)" uvx aistack-mcp serve
+AISTACK_INVITE_CODE_FILE=invite-code.txt uvx aistack-mcp serve
 ```
 
-Or with Compose, which reads `AISTACK_INVITE_CODE` from the environment or a `.env` file:
+Or with Compose, which reads `AISTACK_INVITE_CODE` from a `.env` file next to `compose.yaml`:
 
 ```bash
-AISTACK_INVITE_CODE="$(openssl rand -base64 24)" docker compose up -d
+echo "AISTACK_INVITE_CODE=$(openssl rand -base64 24)" > .env && chmod 600 .env
+docker compose up -d
 ```
 
-Write the invite code down before you run either. You chose it, the server never prints it, and there is no command that shows it afterwards. The startup log says only `Invite code: 'configured'`.
+The file is where the code lives: the server never prints it, and there is no command that shows it afterwards. The startup log says only `Invite code: 'configured'`. The server refuses a code shorter than 24 characters, one with fewer than 10 different characters, and the examples printed in AIStack's documents, so a generated code is the only kind that starts it.
 
 The volume at `/data` holds the SQLite database, which is every user, machine, team, group, skill, and revision. Stopping, removing, and recreating the container keeps all of it as long as the volume stays.
 
@@ -39,7 +43,9 @@ All of it is environment variables.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `AISTACK_INVITE_CODE` | none, required | The shared secret new users join the server with. At least 16 characters. The server refuses to start without one |
+| `AISTACK_INVITE_CODE` | none, required | The shared secret new users join the server with. At least 24 characters, at least 10 of them different. The server refuses to start without one |
+| `AISTACK_INVITE_CODE_FILE` | unset | A file holding the invite code, instead of `AISTACK_INVITE_CODE`, such as a mounted Docker secret. Set one or the other. The container's user, uid 10001, must be able to read it |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | The addresses whose `X-Forwarded-For` the server believes. Behind a proxy on another host or container, set it to the proxy's address, or every client looks like the proxy and one person's wrong token turns everyone away |
 | `AISTACK_PUBLIC_URL` | taken from each request | The address clients reach the server at, such as `https://aistack.example.com`. Set it behind a reverse proxy |
 | `DATABASE_URL` | `sqlite:////data/aistack.db` | Any `postgresql+psycopg://` URL switches to PostgreSQL |
 | `AISTACK_HOST` | `0.0.0.0` | Interface to bind |
@@ -268,7 +274,16 @@ with build_engine(Settings().database_url).begin() as connection:
 
 ### Rotate the server's invite code
 
-Change `AISTACK_INVITE_CODE` and restart the container. Everyone who already joined is unaffected: they authenticate with machine tokens, not the code. Rotate it when someone leaves, and whenever it has been shared somewhere less private than you meant. The restart signs dashboard users out, as any restart does.
+Write a new code to the file and recreate the container, which reads its environment only when it is created: `docker restart` keeps the old code working.
+
+```bash
+openssl rand -base64 24 > invite-code.txt
+docker rm -f aistack
+```
+
+Then run the `docker run` command from the top of this page again; the volume keeps every account and skill. With Compose, put the new code in `.env` and run `docker compose up -d`, which recreates the container because its environment changed. With `AISTACK_INVITE_CODE_FILE`, a plain restart is enough: the file is read each time the server starts.
+
+Everyone who already joined is unaffected: they authenticate with machine tokens, not the code. Rotate it when someone leaves, and whenever it has been shared somewhere less private than you meant. Recreating the container signs dashboard users out, as any restart does.
 
 ## Backups
 
@@ -339,4 +354,36 @@ There is no downgrade. The way back from an upgrade you regret is the backup you
 
 Who joined, which skill was pushed at which revision, what sync reported, and how long each call took. Never the server's invite code, a team's invite code, a machine token, a transfer link, or a dashboard link. The HTTP access log is off for the last two: both links carry their credential in the URL path.
 
-At `DEBUG`, AIStack's own lines add arguments such as names. The third-party libraries that print raw protocol payloads stay at `INFO` regardless, because a `join` result is a token on the wire.
+At `DEBUG`, AIStack's own lines add arguments such as names. The third-party libraries that print raw protocol payloads, FastMCP among them, stay at `INFO` regardless, because a `join` result is a token on the wire and a `join_team` call carries a team's invite code.
+
+### Refused credentials, and fail2ban
+
+A wrong machine token, server or team invite code, invite link, or dashboard link is logged at `INFO` with the address it came from, never with what was sent:
+
+```
+2026-10-15 19:20:01,512 INFO     [aistack.mcp.auth.aistack_token_verifier.verify_token] Bearer rejected: not an invite code that works and no machine holds it. Client: '203.0.113.7'. Elapsed: '3ms'.
+```
+
+After 20 refusals within a minute, the address is answered `429` with `Retry-After` until the minute has passed, before anything reaches the database, and one `WARNING` line says so: `Client throttled: ... Client: '203.0.113.7'`. A refused `join` for a name already taken is limited separately, to 5 an hour per address and per team code, because each one says whether a name exists. Both counts are in memory and a restart forgets them.
+
+The address is the one uvicorn resolved, so behind a proxy set `FORWARDED_ALLOW_IPS` (above). To ban a repeated guesser at the firewall, a fail2ban filter matches the throttle line:
+
+```ini
+# /etc/fail2ban/filter.d/aistack.conf
+[Definition]
+failregex = Client throttled: .* Client: '<HOST>'
+```
+
+```ini
+# /etc/fail2ban/jail.d/aistack.conf
+[aistack]
+enabled  = true
+filter   = aistack
+backend  = systemd
+journalmatch = CONTAINER_NAME=aistack
+maxretry = 3
+findtime = 1h
+bantime  = 1d
+```
+
+`journalmatch` assumes Docker's `journald` log driver; with a log file, use `logpath` instead.

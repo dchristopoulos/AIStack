@@ -12,9 +12,13 @@ from html import escape
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response
 
-from aistack.bootstrap.context.application_context import get_read_session_factory
+from aistack.bootstrap.context.application_context import (
+    get_failure_limiter,
+    get_read_session_factory,
+)
 from aistack.bundled import ICON_LINK
 from aistack.commons.exceptions import NotFound
+from aistack.mcp.auth.failure_limiter import client_address, note_failure
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.route_error_handler import handle_route_errors
 from aistack.mcp.server_url import INVITE_PATH, server_base_url
@@ -47,7 +51,9 @@ async def invite(request: Request) -> Response:
         team = await asyncio.to_thread(_team_name, code)
     except NotFound:
         # Never logs or echoes the code: a near-miss of a real one is still a secret.
-        logger.info("Invite page refused: not an invite code that works.")
+        address = client_address(request)
+        logger.info(f"Invite page refused: not an invite code that works. Client: '{address}'.")
+        note_failure(get_failure_limiter(), address, "invite link")
         return _page("Invite not found", 404,
                      "<h1 style=\"font-size:1.25rem\">This invite link does not work</h1>"
                      "<p>An invite link lets one person in and lasts seven days. This one has "

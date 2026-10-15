@@ -13,7 +13,7 @@ def context_fixture(sqlite_url):
         application_context.build_application_context(Settings(
             _env_file=None,
             database_url=sqlite_url,
-            aistack_invite_code="a-real-invite-code",
+            aistack_invite_code="a-real-invite-code-of-enough-length",
             **overrides,
         ))
 
