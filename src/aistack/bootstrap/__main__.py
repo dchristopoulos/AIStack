@@ -11,7 +11,7 @@ from pathlib import Path
 import uvicorn
 from sqlalchemy.exc import OperationalError
 
-from aistack.bootstrap import self_update
+from aistack.bootstrap import github_setup, self_update
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings, Settings
 from aistack.bootstrap.context.application_context import (
     build_application_context,
@@ -179,11 +179,13 @@ def run() -> None:
         description="With no command, serve your own Library to the coding agent that started "
                     "this over stdio. 'dashboard' opens it in the browser; 'setup' prints "
                     "setup steps for a coding agent, 'sync-skill' the skill they install, and "
-                    "'check' whether this computer reaches its Library; "
+                    "'check' whether this computer reaches its Library; 'github' signs in to "
+                    "GitHub and finds or creates the private repository a Library lives in; "
                     "'export' writes every skill in the Library to a folder; 'serve' runs the "
                     "AIStack server.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
-                                                       "sync-skill", "check", "export"])
+                                                       "sync-skill", "check", "export",
+                                                       "github"])
     parser.add_argument("folder", nargs="?", type=Path,
                         help="Where 'export' writes the skills, ./aistack-library by default; "
                              "the skills folder 'sync-skill' writes its skill into, instead of "
@@ -201,6 +203,9 @@ def run() -> None:
         else:
             write_sync_skill(arguments.folder.expanduser())
         return
+
+    if command == "github":
+        sys.exit(github_setup.connect(LocalSettings().home))
 
     try:
         if command == "serve":

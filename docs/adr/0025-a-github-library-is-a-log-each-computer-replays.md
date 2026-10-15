@@ -1,6 +1,6 @@
 # A Library on GitHub is a log each computer replays
 
-Status: proposed, 2026-10-15. Amends ADR-0020, which planned a storage interface under the services with a files-only second implementation. Issue: #96.
+Status: accepted, 2026-10-15. Amends ADR-0020, which planned a storage interface under the services with a files-only second implementation. Issue: #96.
 
 ADR-0020 offers one person a private GitHub repository as the place their Library lives: free, nothing to keep switched on, nothing that pauses. Every service, the tools and the dashboard are written against SQLAlchemy. A second implementation of all of them over files would be the largest change AIStack has had, and it would have to reproduce, in a second form, everything the database enforces today.
 
@@ -14,7 +14,7 @@ ADR-0020 offers one person a private GitHub repository as the place their Librar
 
 **A copy that is behind replays only what is new, and a copy that disagrees is rebuilt.** When everything pulled sorts after what this computer already applied, it is applied on top. When something sorts earlier, because two computers worked offline at once, the copy is emptied and the whole log replayed in order, inside one transaction, so every computer ends with the same revisions in the same order.
 
-**git does the carrying, with the person's own GitHub login.** The repository is cloned into `~/.aistack/library`, through the `git` command and the credential `gh` set up, so AIStack stores no token. Setup creates the repository with `gh repo create --private`.
+**git does the carrying, with the person's own GitHub login.** The repository is cloned into `~/.aistack/library`, through the `git` command and the credential `gh` set up, so AIStack stores no token. The person does nothing on github.com but sign in: `aistack github` starts the GitHub CLI's browser sign-in with a one-time code, then finds their private `aistack-library` repository or creates it. This is for one person's Library; a team's Library on GitHub is not offered.
 
 **What is never in the log:** a machine token, a session, a sign-in link. They are minted per computer and mean nothing on another.
 
