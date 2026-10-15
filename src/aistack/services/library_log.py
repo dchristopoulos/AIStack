@@ -102,7 +102,8 @@ def apply(session: Session, event: Event) -> Any:
     # Asked first: a newer release's change may also name a computer this one cannot place.
     if event.kind not in _KINDS:
         raise ValidationError(f"The Library's log has a change of a kind this release does "
-                              f"not know, '{event.kind}'. Update AIStack on this computer.")
+                              f"not know, '{event.kind}'. Update AIStack on this computer: run "
+                              "`uv tool upgrade aistack-mcp`, then restart your coding agent.")
     if event.kind == MACHINE_ADDED:
         return _add_machine(session, event)
     machine = session.get(Machine, event.machine_id)

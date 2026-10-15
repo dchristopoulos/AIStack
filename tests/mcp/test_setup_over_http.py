@@ -86,7 +86,8 @@ async def test_the_setup_page_connects_codex_with_one_block_of_valid_toml(server
     assert server["http_headers"] == {"Authorization": "Bearer <token>"}
     # Only what sync does without asking is pre-approved; sharing and teams still ask.
     approved = {name for name, tool in server["tools"].items() if tool["approval_mode"] == "approve"}
-    assert approved == {"sync", "get_skill", "push_skill"}
+    # list_skills too: a first sync lists the Library to offer what other computers have.
+    assert approved == {"sync", "list_skills", "get_skill", "push_skill"}
     assert approved <= {tool.name for tool in await mcp._list_tools()}
     # Codex reads skills from the shared folder, so that is where setup puts the sync skill.
     assert "mkdir -p ~/.agents/skills/sync-aistack" in text

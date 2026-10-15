@@ -1,10 +1,12 @@
 import contextlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
 import threading
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -13,7 +15,7 @@ from fastmcp.exceptions import ToolError
 from sqlalchemy import select, text, update
 
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings
-from aistack.bundled import local_sync_skill_document
+from aistack.bundled import local_setup_instructions, local_sync_skill_document
 from aistack.bootstrap.context import application_context
 from aistack.commons.exceptions import Conflict
 from aistack.db.models.machine import Machine
@@ -301,6 +303,28 @@ def test_the_command_prints_local_setup_and_its_skill(command, starts):
     assert printed.startswith(starts)
 
 
+def test_sync_skill_writes_itself_into_a_skills_folder_as_utf8(tmp_path):
+    """Setup's step on every system: PowerShell 5.1's `>` would write UTF-16."""
+    done = subprocess.run([sys.executable, "-m", "aistack.bootstrap", "sync-skill",
+                           str(tmp_path / "skills")], capture_output=True, text=True, check=True)
+
+    written = tmp_path / "skills" / "sync-aistack" / "SKILL.md"
+    assert written.read_bytes() == local_sync_skill_document().encode("utf-8")
+    assert str(written) in done.stdout
+
+
+def test_local_setup_connects_codex_with_toml_that_takes_a_windows_path():
+    block = re.search(r"```toml\n(.*?)\n```", local_setup_instructions(), re.S).group(1)
+    path = r"C:\Users\maria\.local\bin\aistack-mcp.exe"
+
+    server = tomllib.loads(block.replace("<full path to aistack-mcp>", path))["mcp_servers"]
+    assert server["aistack"]["command"] == path
+    # list_skills too: a first sync lists the Library to offer what other computers have.
+    assert {name for name, tool in server["aistack"]["tools"].items()
+            if tool["approval_mode"] == "approve"} == {"sync", "list_skills", "get_skill",
+                                                       "push_skill"}
+
+
 async def test_export_writes_the_library_as_skill_folders(computer, tmp_path, library_url):
     """The way a Library moves onto a team's server: export, copy into a skills folder, sync."""
     async with computer("laptop") as (laptop, home):
@@ -348,7 +372,8 @@ async def test_a_breaking_upgrade_elsewhere_is_explained_through_the_agent(compu
         engine.dispose()
 
     async with computer("laptop") as (laptop, _):
-        with pytest.raises(ToolError, match="updated by AIStack 9.9.0 on another computer"):
+        with pytest.raises(ToolError, match="updated by AIStack 9.9.0 on another computer.*"
+                                                "Run `uv tool upgrade aistack-mcp`"):
             await _call(laptop, "sync")
 
 

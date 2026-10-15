@@ -1895,7 +1895,7 @@ function storageView() {
   const choice = key => el('li', null, el('strong', null, STORAGE[key].title, key === lib.kind ? ' (now)' : ''), el('p', null, STORAGE[key].cost));
   const move = lib.kind === 'server'
     ? 'Everyone on this server shares it, and the operator backs it up. To keep a Library of your own instead, set AIStack up again on your computer and choose where it lives there.'
-    : 'To move it, ask your coding agent to run "uvx aistack-mcp export". It writes every skill to a folder. Connect your computer to the new place, copy the skills into its skills folder, and say "sync aistack": sync backs them up there.';
+    : 'To move it, tell your coding agent "move my AIStack Library to …" with the new place. It writes every skill to a folder, connects this computer to the new place, and copies the skills back, so the next sync backs them up there.';
   return [
     el('div', { class: 'band' }, el('div', { class: 'wrap page-head' }, el('div', { class: 'titles' },
       el('h1', null, 'Where your Library lives'),

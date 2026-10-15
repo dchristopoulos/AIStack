@@ -89,11 +89,12 @@ In Codex, add this to `~/.codex/config.toml`, creating the file if it does not e
 url = "{mcp_url}"
 http_headers = { "Authorization" = "Bearer <token>" }
 tools.sync.approval_mode = "approve"
+tools.list_skills.approval_mode = "approve"
 tools.get_skill.approval_mode = "approve"
 tools.push_skill.approval_mode = "approve"
 ```
 
-Codex otherwise asks before every AIStack call. The three `tools` lines approve only what sync does without asking: comparing, installing, and backing up to the user's private Library. Tell the user so in one line: everything else, such as sharing a skill with a team, still asks, and Codex still asks before writing into `~/.agents/skills`.
+Codex otherwise asks before every AIStack call. The four `tools` lines approve only what sync does without asking: comparing, listing the Library, installing, and backing up to the user's private Library. Tell the user so in one line: everything else, such as sharing a skill with a team, still asks, and Codex still asks before writing into `~/.agents/skills`.
 
 Then delete both temporary files. The response file holds the token.
 

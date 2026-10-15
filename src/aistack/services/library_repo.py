@@ -116,9 +116,12 @@ class LibraryRepo:
                 if path.parent.resolve() != log / str(event.machine_id):
                     raise RepoUnavailable(f"{path.parent} leads outside the clone; remove it.")
                 path.write_text(event.to_json(), encoding="utf-8")
-            self._git("add", LOG_FOLDER)
+            # With no events there is nothing to add, and a new repository has no log folder
+            # for `git add` to name.
+            if events:
+                self._git("add", LOG_FOLDER)
             # Nothing to commit means another session on this computer published them first.
-            if self._git("status", "--porcelain", LOG_FOLDER).strip():
+            if events and self._git("status", "--porcelain", LOG_FOLDER).strip():
                 self._git("commit", "--quiet", "--no-verify", "-m",
                           f"AIStack: {len(events)} change{'s' if len(events) != 1 else ''}")
             if not self._ahead():
