@@ -48,7 +48,10 @@ How to work through it:
 - [x] 18b. Index what the services look up by; order and times alike on both databases (#131)
 - [x] 18c. Write down what 'compatible' means and enforce it (#135)
 - [x] 19. Order the local log so a fast clock cannot win, and rebuild without holding the lock (#128)
-- [ ] 20. Every command finds the same Library, and moving it is one step that keeps history
+- [x] 20. Every terminal command finds the agent's Library (#130)
+- [ ] 20b. Moving a Library is one command that keeps history
+- [ ] 20c. Say when GitHub cannot be reached, and nudge a Library kept on this computer only
+- [ ] 20d. A moved Library tells the computers still on the old place
 - [ ] 21. A restored home folder is a new computer
 - [ ] 22. A second computer gets the sync skill and the session-start hook, whatever its agent
 - [ ] 23. Setup can be run again, and a stopped setup can finish
@@ -334,18 +337,53 @@ Tests: Two computers with clocks an hour apart converge on the newer edit by cau
 
 The remaining local-mode gaps are about finding the right Library and moving it without losing anything.
 
-### 20. Every command finds the same Library, and moving it is one step that keeps history
+### 20. Every terminal command finds the agent's Library
 
-Closes: [AUTO-03](automation.md#auto-03-terminal-commands-silently-open-a-different-empty-library-unless-the-agents-settings-are-repeated), [AUTO-05](automation.md#auto-05-after-moving-a-library-the-other-computers-stop-at-setup-step-1-and-quietly-stay-on-the-old-one), [AUTO-06](automation.md#auto-06-moving-a-library-is-a-hand-re-import-that-loses-history-placements-and-removals-though-publishing-the-existing-log-already-works), [PH-14](plot-holes.md#ph-14-readmes-move-to-a-teams-server-starts-with-an-export-that-cannot-see-a-github-or-postgresql-library-and-reports-exported-0-skills), [UX-18](ux.md#ux-18-the-move-here-dialog-says-the-same-thing-for-every-destination-wrong-for-only-this-computer-silent-on-history-and-restart), [AUTO-08](automation.md#auto-08-a-github-library-that-cannot-be-reached-or-whose-login-was-revoked-syncs-as-up-to-date-from-a-stale-copy), [UX-08](ux.md#ux-08-for-a-github-library-the-dashboard-says-connected-and-each-computer-picks-up-the-change-when-github-cannot-be-reached), [UX-P01](ux.md#ux-p01-a-library-kept-on-this-computer-only-is-never-shown-as-at-risk-propose-a-nudge-not-a-gate).
+Split from the original step 20, which needed a new log event kind and so a release in between (ADR-0024): 20 to 20d below.
+
+Closes: [AUTO-03](automation.md#auto-03-terminal-commands-silently-open-a-different-empty-library-unless-the-agents-settings-are-repeated), [PH-14](plot-holes.md#ph-14-readmes-move-to-a-teams-server-starts-with-an-export-that-cannot-see-a-github-or-postgresql-library-and-reports-exported-0-skills).
+Largest effort among them: M.
+
+Files: src/aistack/bootstrap/configuration/settings/settings_config.py (read where the Library lives from `AISTACK_HOME/library.toml` when the environment says nothing; never a password); src/aistack/bootstrap/__main__.py (the agent's server and `check` record the place; `dashboard`, `export` and `check` refuse a place that disagrees, and `export` refuses a Library that does not exist yet); bundled/local/setup.md and the local sync skill (terminal commands need no settings copied out of `claude mcp get`).
+
+ADR: none needed.
+
+Tests: `check` with AISTACK_LIBRARY_REPO, then `check`, `export` and `dashboard`'s context without it report the same repository and create no aistack.db; a conflicting variable exits non-zero naming both places; a PostgreSQL place with no URL set refuses with a sentence; `export` with no Library anywhere leaves no `~/.aistack` behind.
+
+### 20b. Moving a Library is one command that keeps history
+
+Closes: [AUTO-06](automation.md#auto-06-moving-a-library-is-a-hand-re-import-that-loses-history-placements-and-removals-though-publishing-the-existing-log-already-works), [UX-18](ux.md#ux-18-the-move-here-dialog-says-the-same-thing-for-every-destination-wrong-for-only-this-computer-silent-on-history-and-restart), and parts 1 and 3 of [AUTO-05](automation.md#auto-05-after-moving-a-library-the-other-computers-stop-at-setup-step-1-and-quietly-stay-on-the-old-one) (setup's step 1 notices a connection to a different place and replaces it).
 Largest effort among them: M.
 
 ADR-0025 already says a Library can move to GitHub by publishing the log it records, so no new ADR.
 
-Files: src/aistack/bootstrap/configuration/settings/settings_config.py (read where the Library lives from `AISTACK_HOME/library.toml` when the environment says nothing); src/aistack/bootstrap/__main__.py (`aistack move github|postgresql|here`, publishing the existing log); src/aistack/services/library_repo.py; dashboard.html (Where it lives says when GitHub is unreachable; the 'only on this computer' notice); bundled/local/setup.md.
+Files: src/aistack/bootstrap/__main__.py (`aistack move github|postgresql|here`: publish the existing log, or replay it into the new database in one transaction, then record the new place); src/aistack/services/library_repo.py (refuse a repository whose log holds another Library); dashboard.html (each destination's own 'after' sentence; history moves with the Library; the agent restarts once); bundled/local/setup.md, bundled/setup-aistack.md and the local sync skill ('Moving the Library' becomes one command and a restart).
+
+Tests: `aistack move github` on a SQLite Library that holds a removed skill and two computers' placements produces the same `/api/state` on a second computer that replays the repository, and sync there does not list the removed skill's folder under backup; a UI test of 'Move to only this computer' does not find 'other computers then need'; a setup text test finds the 'different place' branch in step 1 of both setup files.
+
+### 20c. Say when GitHub cannot be reached, and nudge a Library kept on this computer only
+
+Closes: [AUTO-08](automation.md#auto-08-a-github-library-that-cannot-be-reached-or-whose-login-was-revoked-syncs-as-up-to-date-from-a-stale-copy), [UX-08](ux.md#ux-08-for-a-github-library-the-dashboard-says-connected-and-each-computer-picks-up-the-change-when-github-cannot-be-reached), [UX-P01](ux.md#ux-p01-a-library-kept-on-this-computer-only-is-never-shown-as-at-risk-propose-a-nudge-not-a-gate).
+Largest effort among them: M.
+
+Files: src/aistack/services/library_sharing.py (remember the last pull's and push's outcome); src/aistack/mcp/tools/local.py (`library_reachable` and `library_problem` on sync and list_skills); src/aistack/api/dashboard.py (the state says whether GitHub was reached; a local action returns `shared`); dashboard.html (Where it lives and the pill say when GitHub is unreachable; the 'only on this computer' notice).
 
 ADR: none needed.
 
-Tests: `aistack dashboard` with no environment opens the agent's Library; `aistack move github` on a Library with history produces the same `/api/state` on a second computer that replays it; a this-computer Library with one skill shows the notice and a GitHub one does not.
+Tests: with the repository moved away, `sync` returns `library_reachable` false and a sentence, and with a fake `gh` that is signed out the sentence names `aistack github`; `/api/state` reports it and a placement change returns `shared` false; a this-computer Library with one skill shows the notice in the browser and a GitHub one does not.
+
+### 20d. A moved Library tells the computers still on the old place
+
+Closes: part 2 of [AUTO-05](automation.md#auto-05-after-moving-a-library-the-other-computers-stop-at-setup-step-1-and-quietly-stay-on-the-old-one).
+Largest effort among them: M.
+
+A `library_moved` event is a new kind, so it ships in two releases (ADR-0024): one that reads it and answers every tool with "Your Library moved to <place> on <date>; set AIStack up again with that place", then one where `aistack move` records it in the old Library. Never a secret in the event: the kind and the repository or host.
+
+Files: src/aistack/services/library_log.py; src/aistack/bootstrap/__main__.py; src/aistack/mcp/tools/local.py.
+
+ADR: none needed.
+
+Tests: a release that reads but does not write the event replays a log holding one; after a move recorded in a SQLite or PostgreSQL Library, a second process on the old Library gets the moved sentence from `sync`.
 
 ### 21. A restored home folder is a new computer
 
