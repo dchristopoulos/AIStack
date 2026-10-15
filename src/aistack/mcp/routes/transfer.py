@@ -62,6 +62,7 @@ def _store_upload(ticket: UploadTicket, archive: bytes) -> skill_service.PushedS
             origin=ticket.origin,
             archive=archive,
             harness=ticket.harness,
+            token_prefix=ticket.token_prefix,
         )
 
 
@@ -87,7 +88,8 @@ async def download_skill(request: Request) -> Response:
 
 def _load_download(ticket: DownloadTicket) -> tuple[str, bytes]:
     with get_session_factory().begin() as session:
-        return skill_service.archive_of(session, ticket.machine_id, ticket.skill_version_id)
+        return skill_service.archive_of(session, ticket.machine_id, ticket.skill_version_id,
+                                        token_prefix=ticket.token_prefix)
 
 
 async def _bounded_body(request: Request) -> bytes:

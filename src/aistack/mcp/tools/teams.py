@@ -173,7 +173,7 @@ class DashboardResult(TypedDict):
 def open_dashboard() -> DashboardResult:
     started_at = perf_counter()
     caller = current_machine()
-    ticket = get_ticket_signer().sign_dashboard_link(caller.user_id)
+    ticket = get_ticket_signer().sign_dashboard_link(caller.dashboard_holder())
     # The URL carries the ticket, so it is returned and never logged.
     logger.info(f"Dashboard link issued. User: '{caller.user_id}'. "
                 f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")

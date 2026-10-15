@@ -1,7 +1,9 @@
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastmcp.server.dependencies import get_access_token
+
+from aistack.services.transfer_ticket import DashboardHolder
 
 
 @dataclass(frozen=True)
@@ -10,6 +12,14 @@ class MachinePrincipal:
 
     machine_id: uuid.UUID
     user_id: uuid.UUID
+    # Of the token this call came with: what the tickets it mints are bound to (ADR-0027).
+    # Not part of who the caller is: a local Library rebuilt from its log gives the same
+    # computer a new token.
+    token_prefix: str = field(compare=False)
+
+    def dashboard_holder(self) -> DashboardHolder:
+        """Who a dashboard link minted by this call signs in."""
+        return DashboardHolder(self.user_id, self.machine_id, self.token_prefix)
 
 
 def current_machine() -> MachinePrincipal:
@@ -24,4 +34,5 @@ def current_machine() -> MachinePrincipal:
     return MachinePrincipal(
         machine_id=uuid.UUID(claims["machine_id"]),
         user_id=uuid.UUID(claims["user_id"]),
+        token_prefix=claims["token_prefix"],
     )

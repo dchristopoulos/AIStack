@@ -17,7 +17,7 @@ from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.timestamps import utc_now
 from aistack.db.models.user import User
 from aistack.services import team_service
-from aistack.services.transfer_ticket import DownloadTicket
+from aistack.services.transfer_ticket import DownloadTicket, token_prefix
 from tests.archives import local_digests, skill_document
 from tests.mcp.conftest import call, client_for, join, push
 from tests.mcp.test_tool_authorization import BOOTSTRAP_ONLY_TOOLS
@@ -386,13 +386,14 @@ async def test_a_download_url_serves_only_the_machines_users_own_skills(server_u
     await call(server_url, dimitris, "share_skill", name="wizard", team="everyone")
     own_url = (await call(server_url, dimitris, "get_skill", name="wizard"))["download_url"]
     with session_factory() as session:
-        marias_laptop = session.scalar(select(Machine.machine_id).where(Machine.name == "laptop"))
+        marias_laptop = session.scalar(select(Machine).where(Machine.name == "laptop"))
         versions = session.scalars(select(SkillVersion.skill_version_id)).all()
     signer = application_context.get_ticket_signer()
 
     refusals = [
         await _download(own_url.rsplit("/", 1)[0] + "/" + signer.sign_download(DownloadTicket(
-            machine_id=marias_laptop,
+            machine_id=marias_laptop.machine_id,
+            token_prefix=token_prefix(marias_laptop.token_hash),
             skill_version_id=version,
         )))
         for version in versions

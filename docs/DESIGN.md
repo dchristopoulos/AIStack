@@ -292,12 +292,12 @@ The page is the only client these were written for, and they are documented so t
 
 **Invite links.** `GET /invite/{code}` is a team's invite link (ADR-0019): a page naming the team, with the sentence to paste into Claude Code or Codex. The code is the credential, as a ticket is for a transfer route: it is never logged, the page is sent with `Referrer-Policy: no-referrer` and a CSP that loads nothing, and a wrong or replaced code gets the same 404 as any other. `invite_to_team` and the dashboard both hand out the link.
 
-**Signing in.** `GET /app/login/{ticket}` takes the link `open_dashboard` returned, sets the session cookie `aistack_session` (HttpOnly, SameSite=Lax, Secure over https, eight hours), and answers `303` to `/app`, which takes the ticket out of the address bar. `GET /app` is the page. Either one, without a valid ticket or session, answers `401` with a short page saying how to get a link and, on a server, the sentence that connects a computer that is not connected yet. `GET /` redirects to `/app`, because the server's address is what a person opens first.
+**Signing in.** `GET /app/login/{ticket}` takes the link `open_dashboard` returned, sets the session cookie `aistack_session` (`__Host-aistack_session` over https; HttpOnly, SameSite=Lax, Secure over https, eight hours), and answers `303` to `/app`, which takes the ticket out of the address bar. A link and its session belong to the computer that asked for the link, and end when that computer is removed or given a new token (ADR-0027). A browser already signed in as somebody else gets a page asking first; its button is `POST /app/login/{ticket}`, with the request header, which switches. `GET /app` is the page. Either one, without a valid ticket or session, answers `401` with a short page saying how to get a link and, on a server, the sentence that connects a computer that is not connected yet. `GET /` redirects to `/app`, because the server's address is what a person opens first.
 
 **What every `/api` route does.**
 
 - It reads the user from the session cookie and from nowhere else. No route takes a user id.
-- It answers `401` when there is no valid session, or when the user's last computer has been removed from the server.
+- It answers `401` when there is no valid session: none, signed out, or opened by a computer that has since been removed or given a new token.
 - A `POST` must carry the header `X-AIStack-Request` (any value) and a JSON object as its body, at most 16 KiB. `{}` is a valid body for a route that needs nothing.
 - It runs one service call in one transaction and returns what that call returned. A route with nothing to return answers `{"ok": true}`.
 - A refusal is `{"error": "<a sentence saying what to fix>"}` with `400` for a value that is not valid, `404` for something that does not exist or that this user may not see (the two are never told apart), `409` for a conflict such as a name already taken, and `500` with no detail for anything unexpected.
@@ -306,7 +306,7 @@ The page is the only client these were written for, and they are documented so t
 | Route | Body | Returns |
 |---|---|---|
 | `GET /api/state` | | Everything the page shows, below |
-| `POST /api/logout` | `{}` | Clears the cookie |
+| `POST /api/logout` | `{}` | Ends the session, wherever its cookie was copied, and clears the cookie |
 | `POST /api/skills/{name}/machines/{machine_id}` | `enabled` (true or false), optional `harness` (`claude_code`, the default, or `agents`) | Switches one of the user's own skills on or off in one harness of one of their computers. The files move at that harness's next sync there |
 | `POST /api/skills/{name}/share` | `team`, `group` (a path, or null for team level) | `team`, `group`, `revision`, `created`, `unchanged`, `previous_pushed_by`, `possibly_unrelated`: what `share_skill` returns |
 | `POST /api/skills/{name}/remove` | `{}` | Removes the skill from the Library on every computer |
