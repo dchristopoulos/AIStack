@@ -25,15 +25,7 @@ AIStack keeps two skills folders in line, and every tool call names one of them 
 | `claude_code` | `~/.claude/skills` | Claude Code |
 | `agents` | `~/.agents/skills` | Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode, Amp |
 
-See which agents this computer has:
-
-```bash
-ls -d ~/.claude ~/.agents/skills ~/.codex ~/.gemini ~/.kimi-code ~/.cursor ~/.copilot ~/.config/opencode ~/.config/amp 2>/dev/null
-```
-
-On Windows, run `Test-Path` on the same paths under `$HOME`.
-
-Sync `claude_code` when `~/.claude` exists. Sync `agents` when `~/.agents/skills` exists or any of the other paths does. Do steps 2 and 3 for each of those folders in turn, `claude_code` first, then step 4 once. Do not ask the user which folders to sync, and say nothing about a folder no agent here reads.
+Call `sync` without a harness first: it syncs `claude_code`, and its `folders` field lists every folder this computer has an agent for. Do steps 2 and 3 for each of those folders in turn, `claude_code` first, then step 4 once. Do not ask the user which folders to sync, and say nothing about a folder no agent here reads.
 
 ## 2. Call `sync`
 
@@ -51,6 +43,8 @@ Work through the fields in this order, passing the same harness to every tool yo
 `up_to_date` counts enabled skills that already match and needs no action. `team_updates` is always empty here, because teams live on a server. Sync changes nothing and deletes nothing; only the calls you make afterwards do.
 
 ## 4. The first sync on this computer
+
+When any folder reported `first_sync`, offer the Library itself. Call `list_skills`: the user's own skills (those whose `team` is null) that are in neither folder on disk after this sync, and not under `ask`, come from their other computers. If there are any, ask once, naming them: "Your Library has <names> from your other computers. Install them here?" Yes: `get_skill` each into `claude_code` when this computer has Claude Code, otherwise into `agents`. No: nothing; they can say "install <name>" whenever they want one. Ask this before the question above, so a skill installed now is counted when the folders are compared.
 
 Only when you synced both folders and at least one reported `first_sync`. Take the skills from the Library in each folder: its skill folders on disk after this sync, less anything still under `ask`, less `sync-aistack`. If one folder has skills the other lacks, ask once, naming them: "Use the same skills in Claude Code and in Codex and the other agents? That adds <names> to Claude Code and <names> to the agents folder." Yes: `get_skill` each missing skill with the harness of the folder that lacks it. No: nothing, and it is not asked again.
 
