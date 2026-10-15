@@ -29,14 +29,47 @@ def _push(session_factory, joined, content):
         )
 
 
-def test_concurrent_shares_never_share_a_revision_number(postgres_engine, monkeypatch, caplog):
-    """Every member reads the same MAX(revision) of the team's skill before any of them writes.
+def test_concurrent_pushes_never_share_a_revision_number(postgres_engine, monkeypatch, caplog):
+    """Every computer of one person reads the same MAX(revision) before any of them writes.
 
-    Several people sharing over one team skill is the one place different users contend for a
-    revision: a push lands in the pusher's own skills. The barrier sits after the read and
-    before the insert, which is the whole window. Without the unique constraint on
-    (skill_id, revision) all three would store revision 2.
+    Several computers backing up one skill is where pushes contend for a revision: a push
+    lands in the pusher's own skills, and sharing into a team holds the team's lock. The
+    barrier sits after the read and before the insert, which is the whole window. Without the
+    unique constraint on (skill_id, revision) all three would store revision 2.
     """
+    session_factory = build_session_factory(postgres_engine)
+    with session_factory.begin() as session:
+        pushers = machines_of_one_user(session, PUSHER_COUNT)
+    _push(session_factory, pushers[0], "revision one\n")
+
+    at_the_insert = threading.Barrier(PUSHER_COUNT)
+    store_revision = skill_service._store_revision
+
+    def store_together(session, skill, uploaded, latest, user_id):
+        at_the_insert.wait(timeout=30)
+        return store_revision(session, skill, uploaded, latest, user_id)
+
+    monkeypatch.setattr(skill_service, "_store_revision", store_together)
+
+    with caplog.at_level("INFO"), ThreadPoolExecutor(max_workers=PUSHER_COUNT) as pool:
+        pushed = list(pool.map(
+            lambda index: _push(session_factory, pushers[index], f"from box {index}\n"),
+            range(PUSHER_COUNT)))
+
+    assert sorted(result.revision for result in pushed) == [2, 3, 4]
+    with session_factory() as session:
+        stored = session.scalars(select(SkillVersion.revision)
+                                 .order_by(SkillVersion.revision)).all()
+    assert stored == [1, 2, 3, 4]
+    # Two lost the race for 2, then one of those lost the race for 3.
+    retries = [record for record in caplog.records
+               if "Revision number taken concurrently" in record.getMessage()]
+    assert len(retries) == 3
+
+
+def test_concurrent_shares_take_turns_and_each_names_the_one_before(postgres_engine,
+                                                                    monkeypatch):
+    """Members sharing over one team skill at once wait for the team's lock, one at a time."""
     session_factory = build_session_factory(postgres_engine)
     with session_factory.begin() as session:
         members = [onboarding_service.join(session, f"pusher-{index}", "box", "LINUX")
@@ -48,31 +81,22 @@ def test_concurrent_shares_never_share_a_revision_number(postgres_engine, monkey
     for index, member in enumerate(members):
         _push(session_factory, member, f"from pusher {index}\n")
 
-    at_the_insert = threading.Barrier(PUSHER_COUNT)
-    store_revision = skill_service._store_revision
-
-    def store_together(session, skill, uploaded, latest, user_id):
-        at_the_insert.wait(timeout=30)
-        return store_revision(session, skill, uploaded, latest, user_id)
-
-    monkeypatch.setattr(skill_service, "_store_revision", store_together)
+    # All three set off together; the lock, not the scheduler, decides the order.
+    at_the_start = threading.Barrier(PUSHER_COUNT)
 
     def share(index):
+        at_the_start.wait(timeout=30)
         with session_factory.begin() as session:
             return skill_service.share(session, members[index].user.user_id, "wizard", "acme")
 
-    with caplog.at_level("INFO"), ThreadPoolExecutor(max_workers=PUSHER_COUNT) as pool:
+    with ThreadPoolExecutor(max_workers=PUSHER_COUNT) as pool:
         pushed = list(pool.map(share, range(PUSHER_COUNT)))
 
     assert sorted(result.revision for result in pushed) == [2, 3, 4]
-    # Each response names the revision it actually followed. The value read before the race
-    # was "pusher-0" for all three; only the winner of revision 2 may still say so.
-    pusher_of = {2: None, 3: None, 4: None}
-    for index, result in enumerate(pushed):
-        pusher_of[result.revision] = f"pusher-{index}"
+    pusher_of = {result.revision: f"pusher-{index}" for index, result in enumerate(pushed)}
+    pusher_of[1] = "pusher-0"
     for result in pushed:
-        expected = "pusher-0" if result.revision == 2 else pusher_of[result.revision - 1]
-        assert result.previous_pushed_by == expected
+        assert result.previous_pushed_by == pusher_of[result.revision - 1]
     with session_factory() as session:
         stored = session.scalars(
             select(SkillVersion.revision)
@@ -80,10 +104,6 @@ def test_concurrent_shares_never_share_a_revision_number(postgres_engine, monkey
             .join(Team, Team.team_id == Skill.team_id)
             .where(Team.name == "acme").order_by(SkillVersion.revision)).all()
     assert stored == [1, 2, 3, 4]
-    # Two lost the race for 2, then one of those lost the race for 3.
-    retries = [record for record in caplog.records
-               if "Revision number taken concurrently" in record.getMessage()]
-    assert len(retries) == 3
 
 
 def test_two_first_pushes_of_one_name_become_one_skill(postgres_engine, monkeypatch):
