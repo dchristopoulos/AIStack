@@ -55,6 +55,14 @@ def required_my_skill(session: Session, user_id: uuid.UUID, name: str,
     bring it back or finish removing it."""
     skill = my_skill(session, user_id, validated_skill_name(name))
     if skill is None or (skill.archived and not removed_too):
+        # Only teams the caller sees, so naming them reveals nothing a listing would not.
+        teams = sorted({row.team for row in session.execute(
+            team_skills(session, user_id).where(Skill.name == name))})
+        if teams:
+            holders = (f"team '{teams[0]}' shares one" if len(teams) == 1 else
+                       f"teams {', '.join(repr(team) for team in teams)} share one")
+            raise NotFound(f"You have no skill named '{name}' of your own, but {holders}. "
+                           f"To install it, call get_skill with team '{teams[0]}'.")
         raise NotFound(f"You have no skill named '{name}'. Call list_skills to see yours and "
                        "your teams'; to take one from a team, call get_skill with its team.")
     return skill
