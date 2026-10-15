@@ -36,9 +36,12 @@ aistack-library/
 .aistack/
 
 # Agent tooling
-# Claude Code's local state, except the project skills it shares with .agents/skills.
+# Claude Code's local state, except the project skills it shares with .agents/skills, and
+# the settings and session-start hook every cloud session uses.
 .claude/*
 !.claude/skills/
+!.claude/settings.json
+!.claude/hooks/
 .codex/
 .overnight/
 

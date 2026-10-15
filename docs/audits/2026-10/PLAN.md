@@ -4,6 +4,73 @@ The audit's work as pull-request-sized steps, highest value and risk first. A la
 
 Before starting a step, reproduce its High and Critical findings: only the authorization and UX findings had an independent second pass (see README.md).
 
+## Start here
+
+What changed since the audit was written (2026-10-15):
+
+- The audit merged as #118.
+- The owner set up PyPI trusted publishing for `aistack-mcp` (workflow `tests.yaml`, environment `pypi`). The name is claimed only when the first upload lands, which is when the owner pushes the `v0.1.0` tag. Check `https://pypi.org/pypi/aistack-mcp/json` before step 1: once it answers, step 1 is only the Windows gate and the install-sentence test.
+- Versions follow the rule now in AGENTS.md: never 1.0.0, a pull request never changes `version`, the owner cuts releases. `tests/test_release_version.py` holds it.
+
+A cloud session is ready to work when it starts: `.claude/hooks/session-start.sh` runs `poetry install`, starts PostgreSQL 16 on port 5433 when the image has it and sets `TEST_DATABASE_URL`, and points Playwright at the image's Chromium with `PLAYWRIGHT_BROWSERS_PATH`. On your own computer, follow README "Tests" instead.
+
+The browser tests fail in that full Chromium until [UI-22](ui.md#ui-22-no-icon-is-declared-so-every-page-load-asks-for-faviconico-gets-404-and-the-browser-tests-fail-in-a-full-browser) (a missing favicon) is fixed: every failure is the same console 404. Fix it first, as its own small PR, if a step needs the browser tests.
+
+How to work through it:
+
+- Take the first unticked step below. Read its findings in full and reproduce the High and Critical ones: the reproduction is described in each.
+- One step is one branch from `main` and one PR, shipped with the `ship-a-change` skill. Steps 4 to 11, 18, 19, and the project steps marked **trust boundary** get its extra checks.
+- Tick the step here in the same PR, with the PR's number: `- [x] 4. … (#123)`.
+- A step that needs an ADR moves its draft from proposed to accepted in the same PR, once the code agrees with it.
+- If a step turns out wrong or bigger than one PR, split or rewrite it here first, then work.
+- A finding that turns out false: say so under it, with what you ran, and move on.
+
+### Progress
+
+- [ ] 1. Claim and publish `aistack-mcp`, and make every install sentence resolve
+- [ ] 2. Bump PyJWT and pin the build
+- [ ] 3. Make local setup's agent commands work and stop printing secrets
+- [ ] 4. An invite dies with its maker's right to invite
+- [ ] 5. Lock the team while its admins and members change
+- [ ] 6. A team can always be managed: delete a team, let a lone admin leave, repair an orphaned one
+- [ ] 7. Sharing over a group's skill takes being able to share into that group
+- [ ] 8. A session belongs to the computer that opened it; signing out ends it
+- [ ] 9. A person can remove and rename their own computers, and see when each last synced
+- [ ] 10. Taking a team skill never silently replaces an unrelated skill of yours
+- [ ] 11. Throttle failed credentials and keep caller text out of the log
+- [ ] 12. Backups that restore, and a snapshot before every upgrade
+- [ ] 13. Scope the 'latest revision' queries and batch the dashboard's team queries
+- [ ] 14. Reads that change nothing stop taking SQLite's write lock
+- [ ] 15. Answer every conflict and limit with a sentence
+- [ ] 16. Fix the layouts that break at tablet width and with long names
+- [ ] 17. Versions, a changelog, and a channel to stay on
+- [ ] 18. Write down what 'compatible' means and enforce it
+- [ ] 19. Order the local log so a fast clock cannot win, and rebuild without holding the lock
+- [ ] 20. Every command finds the same Library, and moving it is one step that keeps history
+- [ ] 21. A restored home folder is a new computer
+- [ ] 22. A second computer gets the sync skill and the session-start hook, whatever its agent
+- [ ] 23. Setup can be run again, and a stopped setup can finish
+- [ ] 24. Record the decision: ADR-0026 and the glossary
+- [ ] 25. Identify a project from its remote or its path
+- [ ] 26. Add the project tables (one compatible migration)
+- [ ] 27. Project placements in the services, and a removed skill wanted nowhere
+- [ ] 28. Replay project events before anything records them (bridge release)
+- [ ] 29. Sync a project folder
+- [ ] 30. Server-mode tools take a project
+- [ ] 31. Teach the server's sync-aistack skill the project steps
+- [ ] 32. Local mode: git-hardened project folders
+- [ ] 33. Dashboard API for project folders
+- [ ] 34. Dashboard page: projects in the computer tree
+- [ ] 35. Keyboard and screen reader
+- [ ] 36. The pages before sign-in, the icon, and local mode's remembered choices
+- [ ] 37. Shorter text, and words that say what is true
+- [ ] 38. Bring DESIGN.md, OPERATING.md and the README back in line with the code
+- [ ] 39. See what changed before taking an update, and get an older revision back
+- [ ] 40. Cheaper syncs
+- [ ] 41. Audit trail, logs and an export
+- [ ] 42. Tests and checks the code is missing
+- [ ] 43. Finish the security pass this audit could not
+
 ## Unblock newcomers and the supply chain
 
 Nothing else matters if the first sentence of the README fails, and the publishing jobs are the one place an outsider could ship code to every user.
@@ -19,7 +86,7 @@ Files: .github/workflows/tests.yaml (add `windows` to the `needs:` of `publish` 
 
 ADR: none needed.
 
-Tests: A test that collects every `uvx …`/`uv tool install …` sentence in `bundled/**` and the page and asserts they use one constant; a CI job that runs that command in a clean container after publishing. The owner pushes the `v0.1.0` tag once this is merged: that is the one step a session cannot do.
+Tests: A test that collects every `uvx …`/`uv tool install …` sentence in `bundled/**` and the page and asserts they use one constant; a CI job that runs that command in a clean container after publishing. The owner pushes the `v0.1.0` tag: that is the one step a session cannot do. If PyPI already answers for `aistack-mcp`, drop the `git+` fallback below.
 
 ### 2. Bump PyJWT and pin the build
 
@@ -203,7 +270,7 @@ ADR-0024's promise that computers on different releases keep working depends on 
 Closes: [STD-08](industry-standards.md#std-08-every-build-calls-itself-010-so-adr-0024s-refusal-names-a-release-nobody-can-find), [STD-09](industry-standards.md#std-09-latest-is-every-commit-on-main-and-there-is-no-release-tag-or-changelog-to-stay-on), [AUTO-07](automation.md#auto-07-a-computer-on-an-upgraded-library-is-told-to-run-uv-tool-upgrade-by-hand-while-the-self-updater-sits-out-its-24-hour-wait), [STD-16](industry-standards.md#std-16-local-mode-installs-a-new-release-every-day-with-no-way-to-opt-out-or-pin-a-version).
 Largest effort among them: S.
 
-Files: pyproject.toml (version per release); CHANGELOG.md (new); .github/workflows/tests.yaml (`stable` and version image tags; `edge` for main); src/aistack/bootstrap/self_update.py (`AISTACK_AUTO_UPDATE=off`, update at once when a tool meets a newer schema); docs/OPERATING.md.
+Files: CHANGELOG.md (new; the owner's release notes, one section per release, written when a release is cut, not per PR); pyproject.toml (only when the owner cuts a release, per the AGENTS.md version rule); .github/workflows/tests.yaml (`stable` and version image tags; `edge` for main); src/aistack/bootstrap/self_update.py (`AISTACK_AUTO_UPDATE=off`, update at once when a tool meets a newer schema); docs/OPERATING.md.
 
 ADR: none needed.
 
