@@ -18,6 +18,8 @@ from aistack.bootstrap.context.application_context import (
     library_after_write,
     library_before_read,
     library_problem,
+    restore_reported,
+    restored_here,
 )
 from aistack.bundled import SYNC_SKILL_NAME, local_sync_skill_document
 from aistack.mcp import local_dashboard
@@ -42,6 +44,7 @@ class LocalSyncResult(SyncResult):
     harness: str
     library_reachable: bool
     library_problem: str | None
+    new_computer: bool
 
 
 class LocalListSkillsResult(ListSkillsResult):
@@ -65,15 +68,16 @@ class LocalListSkillsResult(ListSkillsResult):
         loses_local_edits: say their edits will be lost. edited_from < latest_revision:
         say push replaces another computer's newer edit. enable, restore = get_skill;
         push = push_skill; remove = disable_skill; skip = nothing.
-      - up_to_date: how many enabled skills match.
+      - up_to_date: enabled skills that match.
       - folders: every skills folder this computer has an agent for, and harness the one
         this call synced. Sync each of the others too.
       - first_sync: true the first time this folder syncs here. Then call list_skills and
         ask once whether to install the user's own skills that are on no folder here: they
         come from their other computers. See the sync-aistack skill.
-      - library_reachable: false when the Library's GitHub repository could not be
-        reached, so this compared against this computer's copy. Tell the user
-        library_problem, as it is, before anything else.
+      - library_reachable: false when GitHub could not be reached, so this used this
+        computer's copy. Tell the user library_problem first.
+      - new_computer: true once, on a home folder restored from another computer.
+        See the sync-aistack skill.
     team_updates is always empty and sync_skill_url always null here.
 
     Args:
@@ -104,11 +108,13 @@ def sync(harness: HarnessKey | None = None) -> LocalSyncResult:
                 session, caller.machine_id, library_log.FOLDER_SYNCED, harness=harness))
 
     library_after_write()
+    new_computer = restored_here()
+    restore_reported()
     logger.info(f"Sync reported. Local skills: '{len(local)}'.")
     problem = library_problem()
     return LocalSyncResult(**sync_result(report, sync_skill_url=None), folders=folders,
                            harness=harness, library_reachable=problem is None,
-                           library_problem=problem)
+                           library_problem=problem, new_computer=new_computer)
 
 
 @local_mcp.tool(

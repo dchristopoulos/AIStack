@@ -16,21 +16,16 @@ On Windows, use `curl.exe` wherever a step says `curl`.
 
 ## 1. Check it is not already set up
 
-In Claude Code:
+One connection serves the whole computer, so check both agents, whichever one you are:
 
 ```
 claude mcp get aistack
-```
-
-In Codex:
-
-```
 codex mcp get aistack
 ```
 
-If it prints an error saying there is no MCP server by that name and exits non-zero, this computer is not connected yet: go to step 2.
+A command that is not installed counts as not connected. If both say there is no MCP server by that name, this computer is not connected yet: go to step 2.
 
-If it shows a server, stop. This computer is already connected. Tell the user so, and that they can say "sync aistack".
+If either shows a server, stop. This computer is already connected, through that agent. Tell the user so, and that they can say "sync aistack" there: it keeps every skills folder on this computer current, this agent's included. Never register this computer a second time from here.
 
 ## 2. Install the sync skill
 
@@ -69,7 +64,7 @@ curl -sS {mcp_url} -H "Authorization: Bearer <invite code>" -H "Content-Type: ap
 The response file is one plain JSON object, not an event stream. Read it:
 
 - `result.structuredContent.token` is this computer's permanent token. Go to step 4.
-- `result.isError` is true: the text in `result.content` says what to fix. Fix it and send again. If it says the username is taken and this is the same person on a second computer, stop: they should say "add my other computer" from a computer that is already connected, and paste the command it gives them here.
+- `result.isError` is true: the text in `result.content` says what to fix. Fix it and send again. If it says the username is taken and this is the same person on a second computer (step 1 found no agent connected on this one), stop: they should say "add my other computer" from a computer that is already connected, and paste the command it gives them here.
 - An HTTP 401 with no result: the invite code is wrong. Ask the user to check it.
 
 ## 4. Connect your coding agent
