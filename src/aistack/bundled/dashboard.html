@@ -1875,6 +1875,7 @@ function groupPeopleDialog(team, g) {
 // The three answers to "Where should your Library live?", each with what it costs.
 const STORAGE = {
   this_computer: { title: 'Only this computer', cost: 'Free and nothing to keep switched on. No other computer reaches it.' },
+  github: { title: 'A private GitHub repository', cost: 'Every computer of yours shares it through your own GitHub login, nothing has to stay on, and every change is in the repository\'s history.' },
   postgresql: { title: 'A free PostgreSQL database', cost: 'Every computer of yours uses it, and nothing has to stay on. Each computer keeps its address; if a laptop is lost, reset the database password and paste the new address on the others.' },
   server: { title: 'An AIStack server', cost: 'Your computers reach it over the network, so it must stay on. The only choice that works for a team.' },
 };
@@ -1885,6 +1886,8 @@ function storageView() {
   const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
   const facts = lib.kind === 'postgresql'
     ? [fact('Database', lib.provider), fact('Host', el('span', { class: 'mono' }, lib.host))]
+    : lib.kind === 'github'
+    ? [fact('Repository', el('a', { class: 'mono', href: `https://github.com/${lib.repository}`, target: '_blank', rel: 'noopener noreferrer' }, lib.repository))]
     : lib.kind === 'server' ? [fact('Server', el('span', { class: 'mono' }, location.host))]
     : [fact('Computer', 'The one showing this page')];
   const choice = key => el('li', null, el('strong', null, STORAGE[key].title, key === lib.kind ? ' (now)' : ''), el('p', null, STORAGE[key].cost));

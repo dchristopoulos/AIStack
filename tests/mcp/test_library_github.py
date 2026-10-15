@@ -154,3 +154,28 @@ async def test_computers_that_edited_one_skill_offline_agree_once_back(computer,
 
     assert seen["laptop"] == seen["desktop"]
     assert [revision for revision, _ in seen["laptop"]] == [1, 2, 3]
+
+
+def _check(home, environment_extra):
+    import os
+    import sys
+    environment = {**os.environ, "HOME": str(home), "USERPROFILE": str(home),
+                   "AISTACK_HOME": str(home / ".aistack"), **environment_extra}
+    environment.pop("AISTACK_DATABASE_URL", None)
+    return subprocess.run([sys.executable, "-m", "aistack.bootstrap", "check"],
+                          env=environment, capture_output=True, text=True)
+
+
+def test_check_says_where_the_library_lives_or_what_is_wrong(tmp_path, repository):
+    ready = _check(tmp_path / "laptop", {"AISTACK_LIBRARY_REPO": str(repository)})
+    assert ready.returncode == 0, ready.stderr
+    assert f"in the GitHub repository {repository}" in ready.stdout
+
+    unreachable = _check(tmp_path / "desktop",
+                         {"AISTACK_LIBRARY_REPO": str(tmp_path / "missing.git")})
+    assert unreachable.returncode == 1
+    assert "AIStack is not ready" in unreachable.stderr
+    assert "has not read your Library from GitHub yet" in unreachable.stderr
+
+    alone = _check(tmp_path / "solo", {})
+    assert alone.returncode == 0 and "on this computer only" in alone.stdout

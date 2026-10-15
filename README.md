@@ -13,6 +13,7 @@ Open source and free, with no hosted service: it runs on your own computers, and
 | Choice | What it costs you | For |
 |---|---|---|
 | **Only this computer** | Nothing to set up. No other computer reaches it | Trying it out, or one computer |
+| **A private GitHub repository** | Your own GitHub login on each computer, through the `gh` command. Nothing to keep switched on, nothing pauses, and every change is in the repository's history ([ADR-0025](docs/adr/0025-a-github-library-is-a-log-each-computer-replays.md)) | Your laptop and your desktop |
 | **A free PostgreSQL database** ([Neon](https://neon.tech) recommended; Supabase works) | A free account and one address pasted on each computer. Nothing to keep switched on. Supabase pauses after about a week unused | Your laptop and your desktop |
 | **A computer that stays on**, running the AIStack server | Free on a computer you own, but it must stay on (or a few dollars a month on a host) | Teams, and the only choice that works for one |
 
@@ -22,7 +23,7 @@ For the first two, your coding agent starts AIStack itself and nothing runs in b
 Set up AIStack: run `uvx aistack-mcp setup` and follow what it prints.
 ```
 
-It asks which choice you want, walks you through creating the Neon database if you pick it, connects your agent, and installs the `sync-aistack` skill. On another computer, paste the same and give it the same database address. If a laptop is lost, reset the database password and paste the new address on the others ([ADR-0023](docs/adr/0023-every-computer-keeps-the-database-address.md)). "Open my aistack dashboard" opens your Library in the browser, on that computer only, as it does on a server.
+It asks which choice you want, creates the private repository with `gh` or walks you through creating the Neon database, connects your agent, and installs the `sync-aistack` skill. On another computer, paste the same and choose the same repository or database. If a laptop is lost, revoke GitHub CLI under Settings → Applications on github.com and sign in again on the others with `gh auth login`, or reset the database password and paste the new address on the others ([ADR-0023](docs/adr/0023-every-computer-keeps-the-database-address.md)). "Open my aistack dashboard" opens your Library in the browser, on that computer only, as it does on a server.
 
 For a team, run a server and connect each computer to it: see [Connecting a computer to a server](#connecting-a-computer-to-a-server).
 
