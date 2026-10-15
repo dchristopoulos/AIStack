@@ -132,7 +132,8 @@ def add_machine(name: str, os: Literal["MACOS", "WINDOWS", "LINUX"]) -> AddMachi
     endpoint = mcp_endpoint_url(get_http_request())
 
     with get_session_factory().begin() as session:
-        added = onboarding_service.add_machine(session, caller.user_id, name, os)
+        added = onboarding_service.add_machine(session, caller.user_id, name, os,
+                                               added_by=caller.machine_id)
         result = AddMachineResult(
             machine_name=added.machine.name,
             os=added.machine.os.value,

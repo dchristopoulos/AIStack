@@ -4,6 +4,7 @@ import hashlib
 import logging
 import re
 import secrets
+import uuid
 from contextlib import asynccontextmanager
 
 import httpx
@@ -330,7 +331,8 @@ async def test_a_team_from_creation_to_an_update_taken_entirely_on_the_dashboard
         await _post(maria, f"/skills/code-review/machines/{machine}", enabled=True)
         mine = (await _state(maria))["skills"][0]
         assert (mine["name"], mine["placements"], mine["source"]["update_available"]) == (
-            "code-review", [{"machine": machine, "harness": "claude_code"}], False)
+            "code-review", [{"machine": machine, "harness": "claude_code", "revision": None}],
+            False)
 
         # Dimitris changes it and shares again: Maria is offered it, and takes it.
         await _push(server_url, dimitris_token, "code-review", files={"notes.md": "two\n"})
@@ -427,15 +429,15 @@ async def test_removing_a_skill_and_switching_it_per_computer_and_harness(server
         state = await _state(browser)
         laptop, desktop = (machine["id"] for machine in state["machines"])
         assert state["skills"][0]["placements"] == [{"machine": laptop,
-                                                     "harness": "claude_code"}]
+                                                     "harness": "claude_code", "revision": 1}]
 
         await _post(browser, f"/skills/wizard/machines/{desktop}", enabled=True)
         await _post(browser, f"/skills/wizard/machines/{desktop}", enabled=True,
                     harness="agents")
         await _post(browser, f"/skills/wizard/machines/{laptop}", enabled=False)
         assert (await _state(browser))["skills"][0]["placements"] == [
-            {"machine": desktop, "harness": "agents"},
-            {"machine": desktop, "harness": "claude_code"}]
+            {"machine": desktop, "harness": "agents", "revision": None},
+            {"machine": desktop, "harness": "claude_code", "revision": None}]
 
         unknown = await _post(browser, f"/skills/wizard/machines/{desktop}", enabled=True,
                               harness="cursor")
@@ -492,3 +494,100 @@ async def test_a_session_ends_when_its_users_last_computer_is_taken_off_the_serv
 
         assert (await browser.get("/api/state")).status_code == 401
         assert (await _post(browser, "/teams", name="acme")).status_code == 401
+
+
+# --- a person's own computers ---------------------------------------------------------------
+
+async def _two_computers(server_url):
+    laptop = await _join(server_url, "dimitris", machine_name="laptop")
+    added = await _call(server_url, laptop, "add_machine", name="desktop", os="LINUX")
+    return laptop, re.search(r"Bearer (aist_[\w-]+)", added["command"]).group(1)
+
+
+def _machine_id(state, name):
+    return next(machine["id"] for machine in state["machines"] if machine["name"] == name)
+
+
+async def test_a_person_removes_their_own_lost_computer_and_its_token_stops_at_once(
+        server_url):
+    laptop, desktop = await _two_computers(server_url)
+
+    async with _browser(server_url, desktop) as owner:
+        laptop_id = _machine_id(await _state(owner), "laptop")
+        removed = await _post(owner, f"/machines/{laptop_id}/remove")
+        after = await _state(owner)
+
+    assert removed.status_code == 200 and removed.json() == {"removed": "laptop"}
+    assert [machine["name"] for machine in after["machines"]] == ["desktop"]
+    with pytest.raises(httpx.HTTPStatusError, match="401"):
+        await _call(server_url, laptop, "list_skills")
+
+
+async def test_removing_the_computer_behind_a_session_ends_that_session(server_url):
+    laptop, _ = await _two_computers(server_url)
+
+    async with _browser(server_url, laptop) as browser:
+        laptop_id = _machine_id(await _state(browser), "laptop")
+        assert (await _post(browser, f"/machines/{laptop_id}/remove")).status_code == 200
+
+        assert (await browser.get("/api/state")).status_code == 401
+
+
+async def test_the_last_computer_cannot_be_removed(server_url):
+    async with _browser(server_url, await _join(server_url, "dimitris")) as browser:
+        only = _machine_id(await _state(browser), "laptop")
+        refused = await _post(browser, f"/machines/{only}/remove")
+        still = await _state(browser)
+
+    assert refused.status_code == 409
+    assert "your only computer" in refused.json()["error"]
+    assert [machine["name"] for machine in still["machines"]] == ["laptop"]
+
+
+@pytest.mark.parametrize("action,body", [("remove", {}), ("rename", {"name": "mine-now"})])
+async def test_somebody_elses_computer_is_one_that_does_not_exist(server_url, action, body):
+    maria = await _join(server_url, "maria")
+    await _call(server_url, maria, "add_machine", name="desktop", os="LINUX")
+    async with _browser(server_url, maria) as browser:
+        marias = _machine_id(await _state(browser), "desktop")
+
+    async with _browser(server_url, await _join(server_url, "dimitris")) as browser:
+        unknown = str(uuid.uuid4())
+        hers = await _post(browser, f"/machines/{marias}/{action}", **body)
+        nobodys = await _post(browser, f"/machines/{unknown}/{action}", **body)
+
+    assert hers.status_code == nobodys.status_code == 404
+    assert (hers.json()["error"].replace(marias, "?")
+            == nobodys.json()["error"].replace(unknown, "?"))
+
+
+async def test_a_computer_is_renamed_and_names_stay_unique(server_url):
+    _, desktop = await _two_computers(server_url)
+
+    async with _browser(server_url, desktop) as browser:
+        laptop_id = _machine_id(await _state(browser), "laptop")
+        renamed = await _post(browser, f"/machines/{laptop_id}/rename", name="  old laptop ")
+        taken = await _post(browser, f"/machines/{laptop_id}/rename", name="desktop")
+        names = [machine["name"] for machine in (await _state(browser))["machines"]]
+
+    assert renamed.json() == {"name": "old laptop"}
+    assert taken.status_code == 409 and "already have a computer named" in taken.text
+    assert names == ["old laptop", "desktop"]
+
+
+async def test_each_computer_says_when_it_was_added_from_where_and_when_it_last_synced(
+        server_url):
+    laptop, desktop = await _two_computers(server_url)
+    await _call(server_url, laptop, "sync", local={})
+
+    async with _browser(server_url, desktop) as browser:
+        before = {machine["name"]: machine for machine in (await _state(browser))["machines"]}
+        await _post(browser, f"/machines/{before['laptop']['id']}/remove")
+        after = {machine["name"]: machine for machine in (await _state(browser))["machines"]}
+
+    assert before["laptop"]["added_by"] is None and before["desktop"]["added_by"] == "laptop"
+    assert before["laptop"]["last_synced"]["claude_code"] is not None
+    assert before["desktop"]["last_synced"] == {"claude_code": None}
+    assert before["laptop"]["added_on"] <= before["desktop"]["added_on"]
+    # The computer that added it is gone, and that is still worth saying.
+    assert after["desktop"]["added_by"] is None and after["desktop"]["added_by_removed"]

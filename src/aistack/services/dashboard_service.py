@@ -12,8 +12,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from aistack.commons.exceptions import NotFound, SignedOut
-from aistack.commons.text import loggable
+from aistack.commons.exceptions import SignedOut
 from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
@@ -26,7 +25,7 @@ from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
 from aistack.db.models.value_set import known
 from aistack.db.ordering import bytewise
-from aistack.services import skill_service, team_service, visibility
+from aistack.services import onboarding_service, skill_service, team_service, visibility
 from aistack.services.harnesses import DEFAULT_HARNESS, validated_harness
 from aistack.services.transfer_ticket import DashboardHolder, token_prefix
 
@@ -123,13 +122,7 @@ def set_on_machine(session: Session, user_id: uuid.UUID, name: str, machine_id: 
     """
     harness = validated_harness(harness)
     skill = visibility.required_my_skill(session, user_id, name)
-    try:
-        machine = session.get(Machine, uuid.UUID(machine_id))
-    except (ValueError, TypeError, AttributeError):
-        machine = None
-    # Somebody else's computer is answered like one that does not exist.
-    if machine is None or machine.user_id != user_id:
-        raise NotFound(f"You have no computer '{loggable(str(machine_id))}'.")
+    machine = onboarding_service.own_machine(session, user_id, machine_id)
     skill_service.set_enabled(session, machine.machine_id, harness, skill.skill_id,
                               enabled=bool(enabled))
     return Placed(skill.name, machine.machine_id, harness.value, bool(enabled))
@@ -140,7 +133,9 @@ def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
     there and those holding a decision about a skill.
 
     A computer with neither has not synced since harnesses existed, and is shown with Claude
-    Code, the only harness there was before.
+    Code, the only harness there was before. Each says when it was added and from which
+    computer, and when each harness last synced, so a computer nobody recognises, or one that
+    stopped syncing, stands out (ADR-0027).
     """
     harnesses_of: dict[uuid.UUID, set[Harness]] = {}
     for table in (MachineHarness, MachineSkill):
@@ -149,15 +144,36 @@ def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
                 .join(Machine, Machine.machine_id == table.machine_id)
                 .where(Machine.user_id == user_id, known(table.harness))).all():
             harnesses_of.setdefault(machine_id, set()).add(harness)
-    return [
-        {"id": str(machine_id), "name": name, "os": os.value,
-         "harnesses": [harness.value for harness in Harness
-                       if harness in harnesses_of.get(machine_id, {DEFAULT_HARNESS})]}
-        for machine_id, name, os in session.execute(
-            select(Machine.machine_id, Machine.name, Machine.os)
+    synced: dict[tuple[uuid.UUID, Harness], str | None] = {
+        (machine_id, harness): None if at is None else as_utc(at).isoformat()
+        for machine_id, harness, at in session.execute(
+            select(MachineHarness.machine_id, MachineHarness.harness,
+                   MachineHarness.last_synced_on)
+            .join(Machine, Machine.machine_id == MachineHarness.machine_id)
+            .where(Machine.user_id == user_id, known(MachineHarness.harness))).all()
+    }
+    names = dict(session.execute(
+        select(Machine.machine_id, Machine.name).where(Machine.user_id == user_id)).all())
+    shown = []
+    for machine_id, name, os, created_on, added_by in session.execute(
+            select(Machine.machine_id, Machine.name, Machine.os, Machine.created_on,
+                   Machine.added_by_machine_id)
             .where(Machine.user_id == user_id, known(Machine.os))
-            .order_by(Machine.created_on)).all()
-    ]
+            .order_by(Machine.created_on)).all():
+        harnesses = [harness for harness in Harness
+                     if harness in harnesses_of.get(machine_id, {DEFAULT_HARNESS})]
+        shown.append({
+            "id": str(machine_id), "name": name, "os": os.value,
+            "harnesses": [harness.value for harness in harnesses],
+            "added_on": as_utc(created_on).isoformat(),
+            # None for a first computer; "added_by_removed" for one added from a computer
+            # that has since been removed.
+            "added_by": names.get(added_by),
+            "added_by_removed": added_by is not None and added_by not in names,
+            "last_synced": {harness.value: synced.get((machine_id, harness))
+                            for harness in harnesses},
+        })
+    return shown
 
 
 def _newest() -> Any:
@@ -212,15 +228,18 @@ def _my_skills(session: Session, user_id: uuid.UUID,
         .join(newest, newest.c.skill_id == mine.c.skill_id)
         .order_by(bytewise(mine.c.name))
     ).all()
-    placements: dict[uuid.UUID, list[dict[str, str]]] = {}
-    for skill_id, machine_id, harness in session.execute(
-            select(MachineSkill.skill_id, MachineSkill.machine_id, MachineSkill.harness)
+    placements: dict[uuid.UUID, list[dict[str, Any]]] = {}
+    for skill_id, machine_id, harness, installed in session.execute(
+            select(MachineSkill.skill_id, MachineSkill.machine_id, MachineSkill.harness,
+                   MachineSkill.revision)
             .join(Machine, Machine.machine_id == MachineSkill.machine_id)
             .where(Machine.user_id == user_id, MachineSkill.enabled.is_(True),
                    known(MachineSkill.harness))
             .order_by(Machine.created_on, Machine.machine_id, MachineSkill.harness)).all():
+        # `revision` is what was last installed or pushed there; None until it syncs.
         placements.setdefault(skill_id, []).append({"machine": str(machine_id),
-                                                    "harness": harness.value})
+                                                    "harness": harness.value,
+                                                    "revision": installed})
 
     skills = []
     for (skill_id, name, description, source_id, source_revision, revision, pushed_by,
