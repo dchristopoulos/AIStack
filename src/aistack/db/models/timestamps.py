@@ -14,8 +14,11 @@ def utc_now() -> datetime:
 def as_utc(moment: datetime) -> datetime:
     """A stored timestamp as an aware UTC datetime, whichever database returned it.
 
-    Postgres hands back timestamptz with its offset. SQLite stores text and hands back a naive
-    datetime, which Python would then read as local time. Every timestamp is written by
-    `utc_now`, so a naive one is UTC by construction.
+    Postgres hands back timestamptz in the session's time zone, which is the database's
+    default and need not be UTC. SQLite stores text and hands back a naive datetime, which
+    Python would then read as local time. Every timestamp is written by `utc_now`, so a naive
+    one is UTC by construction.
     """
-    return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
