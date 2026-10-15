@@ -68,7 +68,7 @@ async def test_a_skill_is_added_to_another_computer_from_the_library(sign_in):
     page = dimitris.page
     row = page.get_by_role("row").filter(has_text="sql-style")
 
-    await row.get_by_role("button", name="Add to…").click()
+    await row.get_by_role("button", name="Add to computer").click()
     dialog = page.get_by_role("dialog")
     await expect(dialog.get_by_role("checkbox", name="macbook / Claude Code")).to_be_checked()
     await dialog.get_by_role("checkbox", name="desktop / Claude Code").check()
@@ -79,13 +79,18 @@ async def test_a_skill_is_added_to_another_computer_from_the_library(sign_in):
     assert dimitris.console_errors == []
 
 
-async def test_a_skill_is_taken_off_a_computer_from_its_tag_and_stays_in_the_library(sign_in):
+async def test_a_skill_is_taken_off_a_computer_from_its_details_and_stays_in_the_library(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-
     row = page.get_by_role("row").filter(has_text="release-notes")
+    # Where a skill is reads as words; nothing in the row removes it by accident.
+    await expect(row.get_by_role("button", name="macbook", exact=False)).to_have_count(0)
 
-    await row.get_by_role("button", name="Remove release-notes from macbook / Claude Code").click()
+    await row.get_by_role("button", name="Details of release-notes").click()
+    details = page.get_by_role("dialog", name="release-notes")
+    await expect(details.get_by_text("r1, 2 files")).to_be_visible()
+    await details.get_by_role("checkbox", name="macbook / Claude Code").uncheck()
+    await details.get_by_role("button", name="Save").click()
 
     await expect(row.get_by_text("Only in your library")).to_be_visible()
     state = await dimitris.state()
@@ -175,7 +180,7 @@ async def test_a_skill_is_added_to_the_agents_folder_from_the_library(sign_in):
     page = dimitris.page
     row = page.get_by_role("row").filter(has_text="sql-style")
 
-    await row.get_by_role("button", name="Add to…").click()
+    await row.get_by_role("button", name="Add to computer").click()
     dialog = page.get_by_role("dialog")
     await expect(dialog.get_by_role("checkbox", name="macbook / Agents folder")).not_to_be_checked()
     await dialog.get_by_role("checkbox", name="macbook / Agents folder").check()
@@ -199,12 +204,57 @@ async def test_adding_a_computer_says_what_to_ask_the_agent(sign_in):
     await expect(page.get_by_role("dialog")).to_have_count(0)
 
 
+async def test_an_agent_is_added_to_a_computer_and_given_a_skill(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    navigation = page.get_by_role("navigation", name="Main")
+
+    await navigation.get_by_role("button", name="Add an agent to desktop").click()
+    dialog = page.get_by_role("dialog")
+    await dialog.get_by_role("radio", name="Agents folder").check()
+    await dialog.get_by_role("button", name="Open its folder").click()
+    await expect(page.get_by_role("heading", name="Agents folder on desktop", level=1)).to_be_visible()
+    await expect(navigation.get_by_role("link", name="desktop / Agents folder")).to_be_visible()
+
+    await page.get_by_role("button", name="Add skills").first.click()
+    await page.get_by_role("dialog").get_by_role("checkbox", name="meeting-notes").check()
+    await page.get_by_role("dialog").get_by_role("button", name="Add", exact=True).click()
+
+    await expect(page.get_by_role("table", name="Skills in Agents folder on desktop")
+                 .get_by_text("meeting-notes", exact=True)).to_be_visible()
+    state = await dimitris.state()
+    desktop = next(m["id"] for m in state["machines"] if m["name"] == "desktop")
+    assert {"machine": desktop, "harness": "agents"} in _skill(state, "meeting-notes")["placements"]
+    assert dimitris.console_errors == []
+
+
+async def test_appearance_is_chosen_in_settings_and_kept_in_this_browser(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    root = page.locator("html")
+
+    await page.get_by_role("navigation", name="Main").get_by_role("link", name="Settings").click()
+    await page.get_by_role("radio", name="Dark").check()
+    await page.get_by_role("radio", name="Teal").check()
+
+    await expect(root).to_have_attribute("data-theme", "dark")
+    await expect(root).to_have_attribute("data-accent", "teal")
+    await page.reload()
+    await expect(root).to_have_attribute("data-theme", "dark")
+    await expect(page.get_by_role("radio", name="Teal")).to_be_checked()
+
+    await page.get_by_role("radio", name="Light").check()
+    await expect(root).to_have_attribute("data-theme", "light")
+    assert dimitris.console_errors == []
+
+
 async def test_a_skill_is_shared_into_a_nested_group_from_a_dialog(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
 
-    await page.get_by_role("button", name="More actions for meeting-notes").click()
-    await page.get_by_role("menuitem", name="Share with a team…").click()
+    await page.get_by_role("button", name="meeting-notes", exact=True).click()
+    await page.get_by_role("dialog", name="meeting-notes").get_by_role(
+        "button", name="Share with a team…").click()
     dialog = page.get_by_role("dialog")
     await dialog.get_by_label("Team", exact=True).select_option("aistack")
     await dialog.get_by_role("radio", name="developers/backend").check()
@@ -258,8 +308,7 @@ async def test_a_member_is_shown_no_private_group_and_no_admin_control(sign_in):
     await expect(page.get_by_role("button", name="developers", exact=False).first).to_be_visible()
     await expect(page.get_by_text("pentest-checklist")).to_have_count(0)
     await expect(page.get_by_role("switch", name="Subscribed to security")).to_have_count(0)
-    await expect(page.get_by_role("button", name="More actions for code-review")
-                 ).to_have_count(0)
+    await expect(page.get_by_role("button", name="Manage code-review")).to_have_count(0)
 
     await page.get_by_role("tab", name="Groups").click()
     await expect(page.get_by_role("button", name="New group")).to_have_count(0)

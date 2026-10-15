@@ -5,78 +5,126 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <title>AIStack</title>
-<style>
-:root {
-  color-scheme: light dark;
-  --bg: #fafafa;
-  --band: #ffffff;
-  --surface: #ffffff;
-  --surface-2: #f4f4f4;
-  --head: #fafafa;
-  --active: #ebebeb;
-  --border: #eaeaea;
-  --border-strong: #d4d4d4;
-  --track: #8f8f8f; /* 3.2:1 on white: an off switch must still be seen */
-  --text: #0a0a0a;
-  --ink-hover: #383838;
-  --inverse: #ffffff;
-  --muted: #5e5e5e;
-  --faint: #707070;
-  --blue: #0060d1;
-  --blue-dot: #0070f3;
-  --blue-soft: #edf5ff;
-  --purple: #7422b8;
-  --purple-soft: #f8f1fe;
-  --amber-dot: #f5a623;
-  --danger: #c4242b;
-  --danger-soft: #fff0f0;
-  --ok: #1f8a3d;
-  --scrim: rgba(0, 0, 0, .4);
-  --shadow-menu: 0 0 0 1px rgba(0, 0, 0, .03), 0 2px 4px rgba(0, 0, 0, .04), 0 12px 28px -6px rgba(0, 0, 0, .14);
-  --shadow-lg: 0 0 0 1px rgba(0, 0, 0, .03), 0 2px 4px rgba(0, 0, 0, .04), 0 16px 32px -8px rgba(0, 0, 0, .12), 0 40px 80px -16px rgba(0, 0, 0, .2);
-  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235e5e5e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-  --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
-  --r-sm: 6px;
-  --r: 8px;
-  --top: 56px;
-  --side: 240px;
-  --gutter: 32px;
-  --step: 24px;
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #000000;
-    --band: #000000;
-    --surface: #0a0a0a;
-    --surface-2: #171717;
-    --head: #0f0f0f;
-    --active: #1f1f1f;
-    --border: #222222;
-    --border-strong: #363636;
-    --track: #6b6b6b;
-    --text: #ededed;
-    --ink-hover: #cfcfcf;
-    --inverse: #000000;
-    --muted: #a1a1a1;
-    --faint: #8a8a8a;
-    --blue: #52a8ff;
-    --blue-dot: #3291ff;
-    --blue-soft: #0a1b30;
-    --purple: #c58bf2;
-    --purple-soft: #1c1028;
-    --amber-dot: #f5a623;
-    --danger: #ff6166;
-    --danger-soft: #2a1012;
-    --ok: #62c073;
-    --scrim: rgba(0, 0, 0, .72);
-    --shadow-menu: 0 0 0 1px rgba(255, 255, 255, .04), 0 12px 28px -6px rgba(0, 0, 0, .9);
-    --shadow-lg: 0 0 0 1px rgba(255, 255, 255, .04), 0 24px 64px -8px rgba(0, 0, 0, 1);
-    --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1a1' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-    --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000000' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+<meta name="theme-color" content="#f4f4f6">
+<script>
+// Appearance is chosen in Settings and kept in this browser only. It is applied before the
+// page paints, so a dark choice never flashes light first.
+window.appearance = (() => {
+  const KEY = 'aistack.appearance.v1';
+  const ACCENTS = ['blue', 'teal', 'green', 'amber', 'rose', 'graphite'];
+  const THEMES = ['system', 'light', 'dark'];
+  const system = matchMedia('(prefers-color-scheme: dark)');
+  let chosen = {};
+  try { chosen = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) { /* private mode or bad JSON: defaults */ }
+  const get = () => ({
+    theme: THEMES.includes(chosen.theme) ? chosen.theme : 'system',
+    accent: ACCENTS.includes(chosen.accent) ? chosen.accent : 'blue',
+  });
+  function apply() {
+    const { theme, accent } = get(), root = document.documentElement;
+    root.dataset.theme = theme === 'system' ? (system.matches ? 'dark' : 'light') : theme;
+    root.dataset.accent = accent;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = root.dataset.theme === 'dark' ? '#161719' : '#f4f4f6';
   }
+  function set(change) {
+    chosen = { ...get(), ...change };
+    try { localStorage.setItem(KEY, JSON.stringify(chosen)); } catch (_) { /* kept for this visit only */ }
+    apply();
+  }
+  system.addEventListener('change', apply);
+  apply();
+  return { get, set, ACCENTS, THEMES };
+})();
+</script>
+<style>
+/* Tokens: docs/design-system.md. Light is the base; [data-theme="dark"] swaps the neutrals and
+   [data-accent] swaps the one colour that marks what you can act on and where you are. */
+:root {
+  color-scheme: light;
+  --bg: #f4f4f6;
+  --band: #fafafb;
+  --surface: #ffffff;
+  --surface-2: #efeff2;
+  --head: #f8f8fa;
+  --active: #e7e7eb;
+  --border: #e2e2e7;
+  --border-strong: #cdcdd4;
+  --track: #8b8c95; /* 3.3:1 on white: an off switch must still be seen */
+  --text: #18181b;
+  --ink-hover: #3a3a41;
+  --inverse: #ffffff;
+  --muted: #585962;
+  --faint: #696a73;
+  --purple: #7422b8;
+  --purple-soft: #f6effd;
+  --amber-dot: #e09512;
+  --danger: #c4242b;
+  --danger-soft: #fdf0f0;
+  --ok: #1f8a3d;
+  --scrim: rgba(24, 24, 27, .42);
+  --shadow-menu: 0 0 0 1px rgba(24, 24, 27, .04), 0 2px 4px rgba(24, 24, 27, .04), 0 12px 28px -6px rgba(24, 24, 27, .16);
+  --shadow-lg: 0 0 0 1px rgba(24, 24, 27, .04), 0 16px 32px -8px rgba(24, 24, 27, .14), 0 40px 80px -16px rgba(24, 24, 27, .22);
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23585962' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+
+  /* Accent, per theme: the fill (-l/-d) and the text that sits on it (on-…-l/-d). Blue unless chosen. */
+  --a-l: #2259d6; --a-d: #7aa7ff; --on-a-l: #ffffff; --on-a-d: #0c1a36;
+  --accent: var(--a-l);
+  --on-accent: var(--on-a-l);
+  --accent-text: color-mix(in srgb, var(--accent) 88%, var(--text));
+  --accent-soft: color-mix(in srgb, var(--accent) 11%, var(--surface));
+  --accent-hover: color-mix(in srgb, var(--accent) 85%, var(--text));
+
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  --top: 56px;
+  --side: 264px;
+  --gutter: 32px;
+  --step: 22px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #161719;
+  --band: #1a1b1e;
+  --surface: #1e1f23;
+  --surface-2: #26272c;
+  --head: #212226;
+  --active: #2c2d33;
+  --border: #2e2f35;
+  --border-strong: #41434a;
+  --track: #71737c;
+  --text: #ececef;
+  --ink-hover: #cfd0d5;
+  --inverse: #161719;
+  --muted: #a6a8b0;
+  --faint: #8f919a;
+  --purple: #c9a2f5;
+  --purple-soft: #2a2236;
+  --amber-dot: #f2b13a;
+  --danger: #ff7a7f;
+  --danger-soft: #3a1d20;
+  --ok: #6bcb7f;
+  --scrim: rgba(8, 8, 10, .62);
+  --shadow-menu: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 28px -6px rgba(0, 0, 0, .55);
+  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, .06), 0 24px 64px -8px rgba(0, 0, 0, .65);
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a6a8b0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23161719' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+  --accent: var(--a-d);
+  --on-accent: var(--on-a-d);
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  --accent-hover: color-mix(in srgb, var(--accent) 85%, var(--text));
+}
+[data-accent="blue"] { --a-l: #2259d6; --a-d: #7aa7ff; --on-a-l: #ffffff; --on-a-d: #0c1a36; }
+[data-accent="teal"] { --a-l: #0e7369; --a-d: #4fd1c0; --on-a-l: #ffffff; --on-a-d: #042b28; }
+[data-accent="green"] { --a-l: #1b7a3c; --a-d: #6ad38a; --on-a-l: #ffffff; --on-a-d: #062712; }
+[data-accent="amber"] { --a-l: #a85208; --a-d: #f5b942; --on-a-l: #ffffff; --on-a-d: #2e1d02; }
+[data-accent="rose"] { --a-l: #c0264b; --a-d: #ff8aa0; --on-a-l: #ffffff; --on-a-d: #3a0714; }
+[data-accent="graphite"] { --a-l: #18181b; --a-d: #ececef; --on-a-l: #ffffff; --on-a-d: #161719; }
 
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -95,17 +143,17 @@ fieldset { border: 0; min-width: 0; }
 button, input, select { font: inherit; color: inherit; }
 a { color: inherit; text-decoration: none; }
 svg.ico { flex: none; }
-:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; border-radius: var(--r-sm); }
-::selection { background: var(--text); color: var(--inverse); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
 .sr-only {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 .muted { color: var(--muted); }
 .mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: -.01em; }
-code, kbd { font-family: var(--mono); font-size: 12px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+code, kbd { font-family: var(--mono); font-size: 12px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
 .dot { flex: none; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
-.dot.blue { background: var(--blue-dot); }
+.dot.accent { background: var(--accent); }
 .dot.amber { background: var(--amber-dot); }
 
 /* ---------- shell ---------- */
@@ -122,21 +170,31 @@ code, kbd { font-family: var(--mono); font-size: 12px; padding: 1px 5px; border-
   background: var(--band); border-bottom: 1px solid var(--border);
 }
 .topbar .drawer-btn { display: none; }
-.crumbs { flex: 1; min-width: 0; }
-.crumbs ol { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.crumbs li { display: flex; min-width: 0; }
-.crumbs .sep { flex: none; color: var(--border-strong); font-size: 20px; font-weight: 300; line-height: 1; padding: 0 2px; transform: skewX(-8deg); }
-.crumb {
-  display: inline-flex; align-items: center; gap: 10px; min-width: 0;
-  height: 32px; padding: 0 8px; border-radius: var(--r-sm);
-  color: var(--muted); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+/* Where you are, written like a path: each part above the last one opens that place. */
+.home { flex: none; display: inline-flex; align-items: center; gap: 10px; height: 32px; padding-right: 4px; font-weight: 650; font-size: 15px; letter-spacing: -.02em; }
+.where { flex: 1; min-width: 0; display: flex; }
+.where ol {
+  display: flex; align-items: center; min-width: 0; max-width: 100%; height: 34px; padding: 0 6px 0 10px;
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface);
 }
-.crumb.mono { font-size: 13px; display: block; line-height: 32px; }
-a.crumb:hover { background: var(--surface-2); color: var(--text); }
-.crumb.home { color: var(--text); font-weight: 600; letter-spacing: -.02em; font-size: 15px; padding-left: 0; overflow: visible; }
-a.crumb.home:hover { background: none; }
-.crumb.cur { color: var(--text); }
-.logo { flex: none; width: 24px; height: 24px; border-radius: 6px; background: var(--text); color: var(--inverse); display: grid; place-items: center; }
+.where ol > svg { flex: none; color: var(--faint); margin-right: 4px; }
+.where li { display: flex; align-items: center; min-width: 0; }
+.where li:not(:last-child) { flex: 0 1 auto; }
+.where .sep { flex: none; padding: 0 2px; color: var(--border-strong); }
+.where a, .where span.seg {
+  display: block; min-width: 0; padding: 3px 6px; border-radius: 6px;
+  color: var(--muted); font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.where a:hover { background: var(--surface-2); color: var(--text); }
+.where [aria-current="page"] { color: var(--text); font-weight: 550; }
+.where .seg.mono, .where a.mono { font-size: 13px; }
+.place-pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12.5px; white-space: nowrap;
+}
+a.place-pill:hover { color: var(--text); border-color: var(--border-strong); }
+.dot.ok { background: var(--ok); }
+.logo { flex: none; width: 26px; height: 26px; border-radius: 8px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; }
 .top-right { display: flex; align-items: center; gap: 8px; }
 
 /* The rail, the space's list, and the account bar under both: one sticky column. */
@@ -159,10 +217,10 @@ a.crumb.home:hover { background: none; }
   transition: border-radius .15s, background .15s, color .15s;
 }
 .rail-btn:hover { border-radius: 14px; }
-.rail-btn[aria-current="page"] { border-radius: 14px; background: var(--text); color: var(--inverse); border-color: var(--text); }
+.rail-btn[aria-current="page"] { border-radius: 14px; background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .rail-btn::before {
   content: ""; position: absolute; left: -14px; top: 50%; width: 4px; height: 0; border-radius: 0 4px 4px 0;
-  background: var(--text); transform: translateY(-50%); transition: height .15s;
+  background: var(--accent); transform: translateY(-50%); transition: height .15s;
 }
 .rail-btn:hover::before { height: 18px; }
 .rail-btn[aria-current="page"]::before { height: 34px; }
@@ -172,26 +230,42 @@ a.crumb.home:hover { background: none; }
 .rail-item[aria-current="page"] .rail-name { color: var(--text); }
 .rail-item:hover .rail-btn { border-radius: 14px; }
 .rail-item:hover .rail-btn::before { height: 18px; }
-.rail-item[aria-current="page"] .rail-btn { border-radius: 14px; background: var(--text); color: var(--inverse); border-color: var(--text); }
+.rail-item[aria-current="page"] .rail-btn { border-radius: 14px; background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .rail-item[aria-current="page"] .rail-btn::before { height: 34px; }
-.placed { display: flex; flex-wrap: wrap; gap: 4px; }
-.place-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; max-width: 100%; padding: 0 4px 0 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); font: 12px var(--mono); color: var(--text); }
-.place-chip a { color: inherit; }
-.place-chip button { width: 18px; height: 18px; display: grid; place-items: center; border: 0; border-radius: 4px; background: none; color: var(--faint); cursor: pointer; padding: 0; }
-.place-chip button:hover { background: var(--active); color: var(--danger); }
+/* Where a skill is: one line per computer, its agents as links. Information, not controls. */
+.where-list { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.where-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.where-line svg { flex: none; align-self: center; color: var(--faint); }
+.where-line .on { color: var(--muted); white-space: nowrap; }
+.where-line a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+.where-line a:hover { text-decoration-color: var(--accent); color: var(--accent-text); }
 .not-placed { color: var(--faint); font-size: 13px; }
 .folder-path { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; }
 .target-group { border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 4px; }
 .target-group + .target-group { margin-top: 8px; }
 .target-group .head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 4px; font-weight: 500; font-size: 13px; }
-.rail-btn .pip { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: var(--blue-dot); border: 2px solid var(--surface-2); }
+.rail-btn .pip { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface-2); }
 .space-head { padding: 2px 8px 12px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
 h1.mono { font-size: 28px; letter-spacing: -.03em; }
 h1 .mono { font-size: inherit; letter-spacing: -.03em; }
 .space-head h2.mono { font-size: 15px; }
 .space-head h2 { font-size: 15px; font-weight: 600; letter-spacing: -.02em; }
 .space-head p { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-.agent-tag { font: 500 10.5px/1 var(--mono); padding: 3px 5px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); background: var(--surface); }
+/* Computers as a folder tree: computer, then each coding agent, then its folders. */
+.tree { display: flex; flex-direction: column; gap: 1px; }
+.tree-comp { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px 0 4px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text); font-weight: 500; cursor: pointer; text-align: left; }
+.tree-comp:hover { background: var(--active); }
+.tree-comp .chev { flex: none; display: grid; place-items: center; width: 16px; color: var(--faint); transition: transform .15s var(--ease); }
+.tree-comp[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.tree-comp svg.ico { color: var(--muted); }
+.tree-comp .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-kids { margin: 0 0 6px 15px; padding-left: 8px; border-left: 1px solid var(--border); }
+.tree-agent { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; color: var(--muted); font-size: 13px; }
+.tree-agent svg { color: var(--faint); }
+.nav-item.leaf { height: 30px; padding-left: 30px; font-size: 13px; }
+.nav-item.leaf .path { color: var(--faint); font: 11.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-add { display: flex; align-items: center; gap: 8px; height: 28px; width: 100%; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--faint); font-size: 13px; cursor: pointer; text-align: left; }
+.tree-add:hover { background: var(--active); color: var(--text); }
 .sidebar {
   grid-area: side; min-height: 0;
   display: flex; flex-direction: column;
@@ -201,7 +275,7 @@ h1 .mono { font-size: inherit; letter-spacing: -.03em; }
 }
 .side-brand { display: none; }
 .side-brand .grow { flex: 1; }
-.nav { display: flex; flex-direction: column; gap: 1px; }
+.nav { flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .nav-item, .nav-btn {
   display: flex; align-items: center; gap: 10px; width: 100%;
   height: 32px; padding: 0 8px; border: 0; border-radius: var(--r-sm);
@@ -209,16 +283,22 @@ h1 .mono { font-size: inherit; letter-spacing: -.03em; }
 }
 .nav-item svg, .nav-btn svg { color: var(--faint); }
 .nav-item:hover, .nav-btn:hover { background: var(--active); color: var(--text); }
-.nav-item[aria-current="page"] { background: var(--active); color: var(--text); font-weight: 500; }
+.nav-item[aria-current="page"] { background: var(--accent-soft); color: var(--text); font-weight: 550; }
+.nav-item[aria-current="page"] svg { color: var(--accent-text) !important; }
 .nav-item[aria-current="page"] svg, .nav-item:hover svg, .nav-btn:hover svg { color: var(--text); }
 .nav-item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .nav-item .label.mono { font-size: 13px; }
-.nav-item .count { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
-.nav-item .count.upd { color: var(--blue); }
+.nav-item .count { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.nav-item .count.upd { color: var(--accent-text); }
 /* A team's groups sit under its name, a step in for each level. */
 .nav-item.sub { --d: 0; width: auto; height: 28px; margin-right: 26px; padding-left: calc(34px + var(--d) * 14px); font-size: 13px; }
 .nav-item.sub .label.mono { font-size: 12.5px; }
 .nav-heading { display: flex; align-items: center; height: 32px; margin-top: 16px; padding: 0 8px; font-size: 12px; font-weight: 500; color: var(--faint); }
+.nav-foot { margin-top: auto; padding-top: 16px; }
+/* Local mode has no teams, so no column of spaces. */
+#app.no-rail { grid-template-columns: var(--side) minmax(0, 1fr); }
+#app.no-rail .nav-shell { grid-template-columns: 0 minmax(0, 1fr); }
+#app.no-rail .rail { display: none; }
 .account {
   grid-area: account; display: flex; align-items: center; gap: 10px;
   height: 56px; padding: 0 12px 0 20px;
@@ -226,17 +306,17 @@ h1 .mono { font-size: inherit; letter-spacing: -.03em; }
 }
 .account .avatar { width: 32px; height: 32px; font-size: 13px; }
 .account .who { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
-.account .who b { font: 600 13px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account .who b { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account .who span { font-size: 12px; color: var(--faint); }
 .nav-heading .btn.icon { width: 24px; height: 24px; margin-left: auto; margin-right: -4px; }
 .avatar {
   flex: none; width: 24px; height: 24px; border-radius: 6px;
   display: grid; place-items: center;
   background: var(--surface); color: var(--text); border: 1px solid var(--border-strong);
-  font: 600 11px var(--mono); text-transform: uppercase;
+  font-weight: 600; font-size: 11px; text-transform: uppercase;
 }
 .avatar.round { border-radius: 50%; }
-.avatar.lg { width: 44px; height: 44px; border-radius: 8px; font-size: 18px; background: var(--text); color: var(--inverse); border-color: var(--text); }
+.avatar.lg { width: 44px; height: 44px; border-radius: var(--r); font-size: 18px; background: var(--accent-soft); color: var(--accent-text); border-color: transparent; }
 .scrim { display: none; }
 
 main { grid-area: main; min-width: 0; }
@@ -268,9 +348,9 @@ h1 { font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -.04em
 }
 .btn:hover { background: var(--surface-2); border-color: var(--faint); }
 .btn svg { color: var(--muted); }
-.btn.primary { background: var(--text); border-color: var(--text); color: var(--inverse); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn.primary svg { color: inherit; }
-.btn.primary:hover { background: var(--ink-hover); border-color: var(--ink-hover); }
+.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn.danger { color: var(--danger); }
 .btn.danger svg { color: inherit; }
 .btn.danger:hover { background: var(--danger-soft); border-color: var(--danger); }
@@ -293,7 +373,7 @@ h1 { font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -.04em
 }
 .input::placeholder { color: var(--faint); opacity: 1; }
 .input:hover { border-color: var(--faint); }
-.input:focus-visible { outline: none; border-color: var(--text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 14%, transparent); }
+.input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 .input[type="search"]::-webkit-search-cancel-button { display: none; }
 select.input {
   appearance: none; -webkit-appearance: none; cursor: pointer;
@@ -310,9 +390,9 @@ input[type="radio"], input[type="checkbox"] {
 }
 input[type="radio"] { border-radius: 50%; }
 input[type="checkbox"] { border-radius: 4px; }
-input[type="radio"]:hover, input[type="checkbox"]:hover { border-color: var(--text); }
-input[type="radio"]:checked { border-color: var(--text); background-image: radial-gradient(circle, var(--text) 0 3.5px, transparent 4px); }
-input[type="checkbox"]:checked { border-color: var(--text); background-color: var(--text); background-image: var(--tick); }
+input[type="radio"]:hover, input[type="checkbox"]:hover { border-color: var(--accent); }
+input[type="radio"]:checked { border-color: var(--accent); background-image: radial-gradient(circle, var(--accent) 0 3.5px, transparent 4px); }
+input[type="checkbox"]:checked { border-color: var(--accent); background-color: var(--accent); background-image: var(--tick); }
 .search { position: relative; flex: 0 1 300px; min-width: 180px; }
 .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--faint); pointer-events: none; }
 .search .input { padding-left: 32px; padding-right: 36px; }
@@ -333,8 +413,8 @@ input[type="checkbox"]:checked { border-color: var(--text); background-color: va
   border-radius: 50%; background: #fff; transition: transform .15s, background .15s;
 }
 .switch[aria-checked="true"] { color: var(--text); }
-.switch[aria-checked="true"] .track { background: var(--text); }
-.switch[aria-checked="true"] .track::after { transform: translateX(12px); background: var(--inverse); }
+.switch[aria-checked="true"] .track { background: var(--accent); }
+.switch[aria-checked="true"] .track::after { transform: translateX(12px); background: var(--on-accent); }
 .switch:disabled { opacity: 1; }
 .switch:disabled > span { opacity: .5; }
 .switch .mono { font-size: 12.5px; }
@@ -351,13 +431,13 @@ input[type="checkbox"]:checked { border-color: var(--text); background-color: va
 
 .badge {
   display: inline-flex; align-items: center; gap: 5px;
-  height: 20px; padding: 0 7px; border-radius: 4px;
+  height: 22px; padding: 0 8px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--surface); color: var(--muted);
   font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; max-width: 100%;
 }
 .badge.mono { font: 500 11.5px/1 var(--mono); }
 .badge.solid { background: var(--text); border-color: var(--text); color: var(--inverse); }
-.badge.info { background: var(--blue-soft); border-color: transparent; color: var(--blue); }
+.badge.info { background: var(--accent-soft); border-color: transparent; color: var(--accent-text); }
 .badge.private { background: var(--purple-soft); border-color: transparent; color: var(--purple); }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 
@@ -381,11 +461,11 @@ input[type="checkbox"]:checked { border-color: var(--text); background-color: va
   border-top: 1px solid var(--border);
   transition: background-color .1s;
 }
-.tr:last-child { border-radius: 0 0 7px 7px; }
+.tr:last-child { border-radius: 0 0 calc(var(--r) - 1px) calc(var(--r) - 1px); }
 .tr:not(.th-row):not(.grp):not(.hint-row):hover { background-color: var(--head); }
 .th-row {
   position: sticky; top: var(--top); z-index: 5;
-  border-top: 0; border-radius: 7px 7px 0 0;
+  border-top: 0; border-radius: calc(var(--r) - 1px) calc(var(--r) - 1px) 0 0;
   background: var(--head); box-shadow: 0 1px 0 var(--border);
 }
 .th { display: flex; align-items: center; height: 36px; padding: 0 16px; font-size: 12px; font-weight: 500; color: var(--faint); white-space: nowrap; }
@@ -430,7 +510,7 @@ a.link:hover { text-decoration-color: var(--text); }
 .update .grow { flex: 1 1 auto; color: var(--muted); }
 .in-mine { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 4px; color: var(--muted); font-size: 13px; white-space: nowrap; }
 .tbl-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 24px; margin-top: 12px; padding: 0 2px; color: var(--muted); font-size: 13px; }
-.tbl-foot .count { font: 12px/1.6 var(--mono); color: var(--faint); }
+.tbl-foot .count { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
 
 /* group header rows inside the skills tree */
 .tr.grp, .tr.hint-row { display: flex; align-items: center; }
@@ -446,7 +526,7 @@ a.link:hover { text-decoration-color: var(--text); }
 .group-toggle .gname { font: 600 13px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-toggle .gname.plain { font: 600 13.5px var(--font); }
 .group-toggle .gicon { display: inline-flex; color: var(--muted); margin-left: -4px; }
-.group-toggle .count { color: var(--faint); font: 12px var(--mono); white-space: nowrap; }
+.group-toggle .count { color: var(--faint); font-size: 12px; white-space: nowrap; }
 .tr.hint-row { padding: 12px 16px 12px calc(16px + var(--d) * var(--step)); color: var(--muted); font-size: 13px; }
 .tree-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
 .tree-name .gicon { display: inline-flex; color: var(--muted); }
@@ -476,9 +556,9 @@ a.link:hover { text-decoration-color: var(--text); }
 .tab::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; background: transparent; }
 .tab:hover { color: var(--text); }
 .tab[aria-selected="true"] { color: var(--text); font-weight: 500; }
-.tab[aria-selected="true"]::after { background: var(--text); }
+.tab[aria-selected="true"]::after { background: var(--accent); }
 .tab:focus-visible { outline-offset: -4px; }
-.tab .count { font: 11.5px var(--mono); color: var(--faint); }
+.tab .count { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
 .panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; margin-bottom: 16px; }
 .panel-head p { flex: 1 1 320px; }
 
@@ -518,7 +598,7 @@ a.link:hover { text-decoration-color: var(--text); }
 .card-body p { color: var(--muted); margin-top: 8px; max-width: 600px; }
 .card-foot {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px;
-  padding: 12px 24px; border-top: 1px solid var(--border); background: var(--head); border-radius: 0 0 7px 7px;
+  padding: 12px 24px; border-top: 1px solid var(--border); background: var(--head); border-radius: 0 0 calc(var(--r) - 1px) calc(var(--r) - 1px);
   color: var(--muted); font-size: 13px;
 }
 .card.danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
@@ -527,7 +607,7 @@ a.link:hover { text-decoration-color: var(--text); }
 /* ---------- dialog ---------- */
 dialog.dlg {
   width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
-  padding: 0; border: 1px solid var(--border); border-radius: 8px;
+  padding: 0; border: 1px solid var(--border); border-radius: var(--r-lg);
   background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg);
 }
 dialog.dlg[open] { animation: pop .16s ease-out; }
@@ -538,7 +618,7 @@ dialog.dlg::backdrop { background: var(--scrim); }
 .dlg-head h2 { flex: 1; font-size: 18px; line-height: 1.3; font-weight: 600; letter-spacing: -.025em; padding-top: 4px; overflow-wrap: anywhere; }
 .dlg-body { padding: 8px 24px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
 .dlg-body p { color: var(--muted); overflow-wrap: anywhere; }
-.dlg-foot { display: flex; justify-content: space-between; gap: 8px; padding: 12px 24px; border-top: 1px solid var(--border); background: var(--head); border-radius: 0 0 7px 7px; }
+.dlg-foot { display: flex; justify-content: space-between; gap: 8px; padding: 12px 24px; border-top: 1px solid var(--border); background: var(--head); border-radius: 0 0 calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px); }
 .dlg-foot .btn:only-child { margin-left: auto; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field > label, .picker legend { font-weight: 500; font-size: 13px; color: var(--muted); }
@@ -568,6 +648,67 @@ dialog.dlg::backdrop { background: var(--scrim); }
 .steps { list-style: decimal; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); }
 .code-box { display: flex; gap: 8px; }
 .code-box .input, .input.mono { font-family: var(--mono); font-size: 13px; }
+
+
+/* ---------- library rows and the skill panel ---------- */
+.name-btn { align-self: flex-start; max-width: 100%; padding: 0; border: 0; background: none; color: var(--text); cursor: pointer; text-align: left; }
+.name-btn:hover .name { color: var(--accent-text); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; }
+.head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+dialog.dlg.sheet {
+  width: min(520px, 100vw); height: 100vh; max-height: none; margin: 0 0 0 auto;
+  border-width: 0 0 0 1px; border-radius: var(--r-lg) 0 0 var(--r-lg);
+}
+dialog.dlg.sheet[open] { animation: slide .2s var(--ease); }
+@keyframes slide { from { opacity: .4; transform: translateX(24px); } }
+.dlg.sheet form { height: 100%; max-height: none; }
+.dlg.sheet .dlg-body { flex: 1; gap: 20px; }
+.dlg.sheet .dlg-head h2 { font: 650 18px/1.3 var(--mono); letter-spacing: -.02em; }
+.dlg.sheet .dlg-foot { border-radius: 0; }
+.dlg-body p.lead { color: var(--text); }
+.sheet-sec { display: flex; flex-direction: column; gap: 10px; }
+.sheet-sec + .sheet-sec { padding-top: 20px; border-top: 1px solid var(--border); }
+.sheet-sec legend { color: var(--text); font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.sheet-sec .facts { margin: 0; }
+.sheet-sec.actions { flex-direction: row; flex-wrap: wrap; }
+
+/* ---------- where it lives, settings ---------- */
+.wrap.body.narrow { max-width: 880px; margin-left: 0; }
+.place-title { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+.place-title h2 { font-size: 18px; }
+.status { display: flex; align-items: center; gap: 8px; margin: 2px 0 0 !important; color: var(--muted); font-size: 13px; }
+.section-title { margin: 32px 0 12px; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.choice-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.card.choice-card { display: flex; flex-direction: column; margin: 0; }
+.choice-card .card-body { flex: 1; padding: 20px; }
+.choice-card h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.choice-card h3 svg { color: var(--muted); }
+.choice-card .card-foot { justify-content: flex-end; padding: 10px 16px; }
+.card-body.stack { display: flex; flex-direction: column; gap: 20px; }
+.seg-choice, .swatches { display: flex; flex-wrap: wrap; gap: 12px; }
+.seg-choice legend, .swatches legend { width: 100%; margin-bottom: 10px; padding: 0; font-size: 13px; font-weight: 500; color: var(--muted); }
+.theme-opt { position: relative; display: flex; flex-direction: column; gap: 8px; width: 156px; padding: 8px; border: 1px solid var(--border-strong); border-radius: var(--r); cursor: pointer; }
+.theme-opt:hover { border-color: var(--faint); }
+.theme-opt:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.theme-opt:has(input:focus-visible), .swatch:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The radio covers its whole card, unseen, so the card is the control. */
+.seg-choice input, .swatches input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; border: 0; border-radius: inherit; opacity: 0; cursor: pointer; }
+.opt-label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.opt-label svg { color: var(--muted); }
+/* A tiny page in each theme: a sidebar, a header bar, a row. */
+.preview { display: grid; grid-template-columns: 30% 1fr; grid-template-rows: 14px 1fr; gap: 4px; height: 64px; padding: 6px; border-radius: 8px; border: 1px solid var(--border); }
+.preview i { border-radius: 3px; }
+.preview i:first-child { grid-row: 1 / 3; }
+.preview.light { background: #f4f4f6; } .preview.light i { background: #ffffff; } .preview.light i:nth-child(2) { background: var(--a-l); }
+.preview.dark { background: #161719; } .preview.dark i { background: #26272c; } .preview.dark i:nth-child(2) { background: var(--a-d); }
+.preview.system { background: linear-gradient(105deg, #f4f4f6 50%, #161719 50%); }
+.preview.system i { background: rgba(127, 127, 127, .3); } .preview.system i:nth-child(2) { background: var(--accent); }
+.swatch { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 64px; padding: 8px 4px; border-radius: var(--r); cursor: pointer; --accent: var(--a-l); }
+:root[data-theme="dark"] .swatch { --accent: var(--a-d); }
+.swatch:hover { background: var(--surface-2); }
+.swatch .chip { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); box-shadow: inset 0 0 0 1px rgba(127, 127, 127, .25); }
+.swatch:has(input:checked) .chip { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.swatch:has(input:checked) .opt-label { color: var(--text); font-weight: 550; }
+.swatch .opt-label { color: var(--muted); font-size: 12.5px; }
 
 /* ---------- toasts ---------- */
 #toasts { position: fixed; right: 16px; bottom: 16px; z-index: 100; display: flex; flex-direction: column; gap: 8px; width: min(400px, calc(100vw - 32px)); pointer-events: none; }
@@ -604,10 +745,9 @@ dialog.dlg::backdrop { background: var(--scrim); }
   #app { display: block; }
   .topbar { padding: 0 12px 0 8px; gap: 4px; }
   .topbar .drawer-btn { display: inline-flex; }
-  .crumb.home { padding: 0 4px; }
-  .home-text { display: none; }
+  .home-text, .place-pill .label { display: none; }
   /* Only the logo and where you are fit: the sidebar shows the rest. */
-  .crumbs li:not(:first-child):not(:nth-last-child(-n+2)) { display: none; }
+  .where li:not(:nth-last-child(-n+2)) { display: none; }
   .nav-shell {
     position: fixed; z-index: 60; top: 0; left: 0; bottom: 0; height: auto;
     width: min(364px, 92vw); grid-template-columns: 64px minmax(0, 1fr);
@@ -649,7 +789,7 @@ dialog.dlg::backdrop { background: var(--scrim); }
     background-size: max(0px, calc(var(--d) * var(--step) - var(--step) + 1px)) 100%;
     background-position: calc(16px + var(--gx, var(--step) / 2)) 0;
   }
-  .tr:first-child, .th-row + .tr { border-top: 0; border-radius: 7px 7px 0 0; }
+  .tr:first-child, .th-row + .tr { border-top: 0; border-radius: calc(var(--r) - 1px) calc(var(--r) - 1px) 0 0; }
   .tr > .td { flex: 0 1 auto; padding: 0; }
   .tr > .c-main { background: none; }
   .tr > .c-main, .td.wide { flex: 1 1 100%; }
@@ -692,7 +832,8 @@ dialog.dlg::backdrop { background: var(--scrim); }
     <button type="button" class="btn ghost icon drawer-btn" id="drawer-btn" aria-label="Open navigation" aria-expanded="false" aria-controls="nav-shell">
       <svg class="ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
     </button>
-    <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"><div class="skel" style="height:20px;width:180px"></div></nav>
+    <a class="home" href="#/library" aria-label="AIStack, your Library"><span class="logo"><svg class="ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></span><span class="home-text">AIStack</span></a>
+    <nav class="where" id="where" aria-label="You are here"><div class="skel" style="height:20px;width:220px"></div></nav>
     <div class="top-right" id="top-right"></div>
   </header>
   <div class="nav-shell" id="nav-shell">
@@ -767,6 +908,7 @@ const ICONS = {
   plus: 'M12 5v14M5 12h14',
   more: 'M12 12h.01M19 12h.01M5 12h.01',
   chev: 'M9 18l6-6-6-6',
+  down: 'M6 9l6 6 6-6',
   check: 'M20 6L9 17l-5-5',
   x: 'M18 6L6 18M6 6l12 12',
   copy: 'M11 9h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1',
@@ -782,6 +924,12 @@ const ICONS = {
   move: 'M5 12h14M12 5l7 7-7 7',
   laptop: 'M4 5h16v10H4zM2 19h20',
   monitor: 'M3 4h18v12H3zM8 20h8M12 16v4',
+  terminal: 'M4 17l6-5-6-5M12 19h8',
+  settings: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
+  sun: 'M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
+  moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
+  auto: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 2v20',
+  external: 'M15 3h6v6M10 14L21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6',
 };
 function icon(name, size = 16) {
   const NS = 'http://www.w3.org/2000/svg';
@@ -911,7 +1059,7 @@ document.addEventListener('click', ev => {
   if (hit) lastFk = hit.dataset.fk;
 }, true);
 // Native <dialog>.showModal() gives the focus trap, Escape, and the inert background.
-function openDialog({ title, body, submitLabel = 'Save', danger, onSubmit, cancelLabel = 'Cancel', returnFk }) {
+function openDialog({ title, body, submitLabel = 'Save', danger, onSubmit, cancelLabel = 'Cancel', returnFk, sheet }) {
   const opener = document.activeElement;
   // Safari does not focus a button on click, so fall back to the last control clicked.
   const fk = returnFk || (opener && opener.dataset && opener.dataset.fk) || lastFk;
@@ -926,7 +1074,7 @@ function openDialog({ title, body, submitLabel = 'Save', danger, onSubmit, cance
     el('div', { class: 'dlg-foot' },
       cancelLabel && btn(cancelLabel, { on: { click: () => dlg.close() } }),
       submit));
-  const dlg = el('dialog', { class: 'dlg', 'aria-labelledby': id }, form);
+  const dlg = el('dialog', { class: 'dlg' + (sheet ? ' sheet' : ''), 'aria-labelledby': id }, form);
   form.addEventListener('submit', async ev => {
     ev.preventDefault();
     err.hidden = true;
@@ -975,8 +1123,9 @@ function menu(label, fk, items) {
   const list = el('div', { class: 'menu', role: 'menu', hidden: true }, items.map(it =>
     btn(it.label, { class: 'menu-item' + (it.danger ? ' danger' : ''), role: 'menuitem', tabIndex: -1,
       on: { click: () => { close(); trigger.focus(); it.run(); } } }, it.icon)));
-  const trigger = btn(null, { class: 'btn ghost icon', fk, 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-label': label,
-    on: { click: () => (list.hidden ? open() : close()) } }, 'more');
+  // Labelled, never a bare "⋯": a person should know what is behind it before opening it.
+  const trigger = el('button', { type: 'button', class: 'btn sm', fk, 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-label': label,
+    on: { click: () => (list.hidden ? open() : close()) } }, el('span', null, 'Manage'), icon('down', 14));
   const wrap = el('div', { class: 'menu-wrap' }, trigger, list);
   const outside = ev => { if (!wrap.contains(ev.target)) close(); };
   function open() {
@@ -1057,9 +1206,11 @@ function route() {
   const path = parts.slice(3).join('/');
   const group = team && tab === 'skills' && team.groups.some(g => g.path === path) ? path : null;
   if (team) return { view: 'team', team, tab, group };
+  // Any agent opens on any computer: one it has not synced to yet opens empty, ready for skills.
   const machine = parts[0] === 'f' && state.machines.find(m => m.id === parts[1]);
-  if (machine && agentsOf(machine).includes(parts[2])) return { view: 'folder', machine, agent: parts[2] };
+  if (machine && Object.hasOwn(AGENTS, parts[2])) return { view: 'folder', machine, agent: parts[2] };
   if (parts[0] === 'storage') return { view: 'storage' };
+  if (parts[0] === 'settings') return { view: 'settings' };
   return { view: 'library' };
 }
 const teamHash = (name, tab = 'skills', group) => `#/t/${enc(name)}/${tab}` + (group ? '/' + group.split('/').map(enc).join('/') : '');
@@ -1081,41 +1232,82 @@ const logo = (size = 14) => el('span', { class: 'logo' }, icon('layers', size));
 const people = n => plural(n, 'person').replace('persons', 'people');
 const some = (names, max = 3) => names.slice(0, max).join(', ') + (names.length > max ? ` and ${names.length - max} more` : '');
 
+const VIEWS = {
+  team: r => teamView(r.team, r.tab, r.group),
+  folder: r => folderView(r.machine, r.agent),
+  storage: () => storageView(),
+  settings: () => settingsView(),
+  library: () => libraryView(),
+};
+const TITLES = {
+  team: r => (r.group ? r.group + ' · ' : '') + r.team.name,
+  folder: r => `${AGENTS[r.agent].name} on ${r.machine.name}`,
+  storage: () => 'Where your Library lives',
+  settings: () => 'Settings',
+  library: () => 'Library',
+};
+
 function render() {
   if (!state) return;
   const active = document.activeElement;
   const fk = active && active.dataset ? active.dataset.fk : null;
   const r = route();
   renderSidebar(r);
-  $main.replaceChildren(el('div', { class: 'page' }, r.view === 'team' ? teamView(r.team, r.tab, r.group) : r.view === 'folder' ? folderView(r.machine, r.agent) : r.view === 'storage' ? storageView() : libraryView()));
-  document.title = (r.view === 'team' ? (r.group ? r.group + ' · ' : '') + r.team.name
-    : r.view === 'folder' ? `${AGENTS[r.agent].name} on ${r.machine.name}` : r.view === 'storage' ? 'Where your Library lives' : 'Library') + ' · AIStack';
+  $main.replaceChildren(el('div', { class: 'page' }, VIEWS[r.view](r)));
+  document.title = TITLES[r.view](r) + ' · AIStack';
   if (fk && !document.querySelector('dialog[open]')) { const t = byFk(fk); if (t) t.focus(); }
 }
 
+// The path to where you are, like a folder path: every part but the last opens that place.
+function wherePath(r) {
+  const me = { label: state.user.username, href: '#/library' };
+  if (r.view === 'team') {
+    const t = r.team, parts = [{ label: 'teams' }, { label: t.name, href: teamHash(t.name), mono: true }];
+    if (!r.group) return parts.concat({ label: TAB_LABELS[r.tab] });
+    // Each group above this one is a place of its own, when the user can see it.
+    let path = '';
+    for (const name of r.group.split('/')) {
+      path = path ? `${path}/${name}` : name;
+      parts.push({ label: name, mono: true, href: t.groups.some(g => g.path === path) ? teamHash(t.name, 'skills', path) : null });
+    }
+    return parts;
+  }
+  if (r.view === 'folder') {
+    return [me, { label: 'computers' }, { label: r.machine.name }, { label: AGENTS[r.agent].name }, { label: AGENTS[r.agent].folder, mono: true }];
+  }
+  return [me, { label: { library: 'Library', storage: 'Where it lives', settings: 'Settings' }[r.view] }];
+}
+
+// Where the Library lives, in a few words for the top bar.
+const PLACE_SHORT = { this_computer: 'This computer', github: 'GitHub', postgresql: 'PostgreSQL', server: 'Server' };
+const library = () => state.library || { kind: 'server' };
+
 function renderSidebar(r) {
-  const sep = () => el('li', { class: 'sep', 'aria-hidden': 'true' }, '/');
-  const here = label => el('li', null, el('span', { class: 'crumb cur', 'aria-current': 'page' }, label));
-  const personalCrumb = () => el('li', null, el('a', { class: 'crumb', href: '#/library' }, 'Personal'));
-  document.getElementById('crumbs').replaceChildren(el('ol', null,
-    el('li', null, el('a', { class: 'crumb home', href: '#/library', 'aria-label': 'AIStack' }, logo(), el('span', { class: 'home-text' }, 'AIStack'))),
-    sep(),
-    r.view === 'team'
-      ? [el('li', null, el('a', { class: 'crumb mono', href: teamHash(r.team.name), title: r.team.name }, r.team.name)), sep(),
-         r.group ? [el('li', null, el('a', { class: 'crumb', href: teamHash(r.team.name) }, TAB_LABELS.skills)), sep(),
-                    el('li', null, el('span', { class: 'crumb cur mono', 'aria-current': 'page', title: r.group }, r.group))]
-                 : here(TAB_LABELS[r.tab])]
-      : r.view === 'folder' ? [personalCrumb(), sep(), el('li', null, el('span', { class: 'crumb mono' }, r.machine.name)), sep(), here(AGENTS[r.agent].name)]
-      : [personalCrumb(), sep(), here(r.view === 'storage' ? 'Where it lives' : 'Library')]));
+  const path = wherePath(r);
+  document.getElementById('where').replaceChildren(el('ol', null, icon('folder', 15), path.map((p, i) => {
+    const last = i === path.length - 1;
+    const cls = p.mono ? 'mono' : null;
+    return el('li', null,
+      last || !p.href ? el('span', { class: 'seg' + (cls ? ' ' + cls : ''), 'aria-current': last ? 'page' : null, title: p.label }, p.label)
+        : el('a', { class: cls, href: p.href, title: p.label }, p.label),
+      !last && el('span', { class: 'sep', 'aria-hidden': 'true' }, '/'));
+  })));
+  const lib = library();
   document.getElementById('top-right').replaceChildren(
-    ...(DEMO ? [el('span', { class: 'badge' }, el('span', { class: 'dot amber' }), 'Demo data')] : []));
+    ...(DEMO ? [el('span', { class: 'badge' }, el('span', { class: 'dot amber' }), 'Demo data')] : []),
+    el('a', { class: 'place-pill', href: '#/storage', title: 'Where your Library lives' },
+      el('span', { class: 'dot ok', 'aria-hidden': 'true' }), el('span', { class: 'label' }, 'Library: ' + PLACE_SHORT[lib.kind]),
+      el('span', { class: 'sr-only' }, ', connected')));
 
   const link = (hash, current, ...kids) => el('a', { class: 'nav-item', href: hash, 'aria-current': current ? 'page' : null }, kids);
   const updates = state.skills.filter(s => s.source && s.source.update_available).length;
   const personal = r.view !== 'team';
+  // A team needs a server everyone reaches; `aistack dashboard` on this computer has none (ADR-0020).
+  const local = state.server === false;
+  $app.classList.toggle('no-rail', local);
 
   // The rail: you on top, then every team, like a server list. The letter is decoration; the name below it is the link's name.
-  document.getElementById('rail').replaceChildren(
+  document.getElementById('rail').replaceChildren(...(local ? [] : [
     el('a', { class: 'rail-item', href: '#/library', 'aria-current': personal ? 'page' : null },
       el('span', { class: 'rail-btn', 'aria-hidden': 'true' }, state.user.username[0], updates ? el('span', { class: 'pip', title: plural(updates, 'update') + ' waiting' }) : null),
       el('span', { class: 'rail-name' }, 'Personal'),
@@ -1125,32 +1317,24 @@ function renderSidebar(r) {
       title: t.name, 'aria-current': r.view === 'team' && r.team === t ? 'page' : null },
       el('span', { class: 'rail-btn', 'aria-hidden': 'true' }, t.name[0]),
       el('span', { class: 'rail-name' }, t.name))),
-    // A team needs a server everyone reaches; `aistack dashboard` on this computer has none (ADR-0020).
-    ...(state.server === false ? []
-      : [el('button', { type: 'button', class: 'rail-btn ghost', fk: 'add-team', title: 'Add a team', 'aria-label': 'Add a team', on: { click: addTeamDialog } }, icon('plus', 18))]));
+    el('button', { type: 'button', class: 'rail-btn ghost', fk: 'add-team', title: 'Add a team', 'aria-label': 'Add a team', on: { click: addTeamDialog } }, icon('plus', 18)),
+  ]));
 
   let list;
   if (personal) {
     list = [
-      el('div', { class: 'space-head' }, el('h2', null, 'Personal'), el('p', null, 'Only you see this')),
+      el('div', { class: 'space-head' }, el('h2', null, local ? 'Your Library' : 'Personal'),
+        el('p', null, local ? `Lives on ${PLACE_SHORT[lib.kind] === 'This computer' ? 'this computer' : PLACE_SHORT[lib.kind]}` : 'Only you see this')),
       el('nav', { class: 'nav', 'aria-label': 'Main' },
         link('#/library', r.view === 'library', icon('layers'), el('span', { class: 'label' }, 'Library'),
-          updates ? el('span', { class: 'count upd', title: plural(updates, 'update') + ' waiting' }, el('span', { class: 'dot blue' }), String(updates))
+          updates ? el('span', { class: 'count upd', title: plural(updates, 'update') + ' waiting' }, el('span', { class: 'dot accent' }), String(updates))
             : el('span', { class: 'count' }, String(state.skills.length))),
-        link('#/storage', r.view === 'storage', icon('globe'), el('span', { class: 'label' }, 'Where it lives')),
         el('div', { class: 'nav-heading' }, 'Computers',
           btn(null, { class: 'btn ghost icon', fk: 'add-computer', title: 'Add a computer', 'aria-label': 'Add a computer', on: { click: addComputerDialog } }, 'plus')),
-        // One row per harness on each computer: the skills folders it syncs (ADR-0018).
-        targets().map(t => {
-          const a = link(folderHash(t.m, t.agent), r.view === 'folder' && r.machine === t.m && r.agent === t.agent,
-            icon(t.m.os === 'MACOS' ? 'laptop' : 'monitor'),
-            el('span', { class: 'label mono' }, t.m.name),
-            el('span', { class: 'agent-tag', title: AGENTS[t.agent].name }, AGENTS[t.agent].glyph),
-            el('span', { class: 'count' }, String(placedOn(t).length)));
-          // The glyph is two letters; a screen reader hears the agent's name instead.
-          a.setAttribute('aria-label', `${targetName(t)}, ${plural(placedOn(t).length, 'skill')}`);
-          return a;
-        })),
+        computerTree(r),
+        el('div', { class: 'nav-foot' },
+          link('#/storage', r.view === 'storage', icon('globe'), el('span', { class: 'label' }, 'Where it lives')),
+          link('#/settings', r.view === 'settings', icon('settings'), el('span', { class: 'label' }, 'Settings')))),
     ];
   } else {
     const t = r.team;
@@ -1159,7 +1343,7 @@ function renderSidebar(r) {
       && s.source.group && (s.source.group === path || isUnder(s.source.group, path)));
     list = [
       el('div', { class: 'space-head' }, el('h2', { class: 'mono' }, t.name),
-        el('p', null, plural(members(t).length, 'member'), ' · ', t.role === 'ADMIN' ? 'you are an admin' : 'member')),
+        el('p', null, plural(members(t).length, 'member'), ', ', t.role === 'ADMIN' ? 'you are an admin' : 'you are a member')),
       el('nav', { class: 'nav', 'aria-label': 'Main' },
         link(teamHash(t.name), r.tab === 'skills' && !r.group, icon('layers'), el('span', { class: 'label' }, 'All skills'), el('span', { class: 'count' }, String(t.skills.length))),
         groups.length ? el('div', { class: 'nav-heading' }, 'Groups') : null,
@@ -1168,7 +1352,7 @@ function renderSidebar(r) {
             icon(node.g.private ? 'lock' : 'folder', 14),
             el('span', { class: 'label mono', title: node.path }, node.host ? node.path.slice(node.host.path.length + 1) : node.path),
             node.g.private && el('span', { class: 'sr-only' }, '(private)'),
-            waiting(node.path) ? el('span', { class: 'count upd', title: 'An update is waiting' }, el('span', { class: 'dot blue' }), String(countSkills(node)))
+            waiting(node.path) ? el('span', { class: 'count upd', title: 'An update is waiting' }, el('span', { class: 'dot accent' }), String(countSkills(node)))
               : el('span', { class: 'count' }, String(countSkills(node))));
           a.classList.add('sub');
           a.style.setProperty('--d', Math.min(depth, 6));
@@ -1176,7 +1360,7 @@ function renderSidebar(r) {
         }),
         el('div', { class: 'nav-heading' }, 'Team'),
         link(teamHash(t.name, 'members'), r.tab === 'members', icon('users'), el('span', { class: 'label' }, 'Members'), el('span', { class: 'count' }, String(members(t).length))),
-        link(teamHash(t.name, 'settings'), r.tab === 'settings', icon('key'), el('span', { class: 'label' }, 'Settings'))),
+        link(teamHash(t.name, 'settings'), r.tab === 'settings', icon('key'), el('span', { class: 'label' }, 'Team settings'))),
     ];
   }
   $sidebar.replaceChildren(
@@ -1190,44 +1374,137 @@ function renderSidebar(r) {
     btn(null, { class: 'btn ghost icon', fk: 'sign-out', title: 'Sign out', 'aria-label': 'Sign out', on: { click: ev => signOut(ev.currentTarget) } }, 'logout'));
 }
 
-function addComputerDialog() {
-  const say = el('input', { class: 'input mono', type: 'text', value: 'add my Windows PC to aistack', spellcheck: false, 'aria-label': 'What to say' });
-  const copied = el('span', { class: 'help', role: 'status' });
-  const copy = btn('Copy', { on: { click: async () => {
-    try { await navigator.clipboard.writeText(say.value); }
-    catch (_) { say.select(); document.execCommand('copy'); }
-    copied.textContent = 'Copied. Paste it into your coding agent.';
-  } } }, 'copy');
+/* ---------- computers, as a folder tree ---------- */
+
+const folded = new Set(); // ids of computers folded shut in the sidebar
+
+// Agents picked on a computer before any skill is there. Kept in this browser until a sync or a
+// skill makes the server know about it, at which point the server's list takes over.
+const PICKED_KEY = 'aistack.picked-agents.v1';
+function pickedAgents() {
+  try { return JSON.parse(localStorage.getItem(PICKED_KEY)) || {}; } catch (_) { return {}; }
+}
+function pickAgent(m, agent) {
+  const all = pickedAgents();
+  all[m.id] = [...new Set([...(all[m.id] || []), agent])];
+  try { localStorage.setItem(PICKED_KEY, JSON.stringify(all)); } catch (_) { /* shown for this visit only */ }
+}
+// The agents a computer shows: the server's, then any picked here, in the order AGENTS lists them.
+function agentsShown(m, also) {
+  const picked = new Set([...m.harnesses, ...(pickedAgents()[m.id] || []), ...(also ? [also] : [])]);
+  return Object.keys(AGENTS).filter(a => picked.has(a));
+}
+
+function computerTree(r) {
+  return el('div', { class: 'tree' }, state.machines.map(m => {
+    const open = !folded.has(m.id);
+    const here = r.view === 'folder' && r.machine === m;
+    const shown = agentsShown(m, here ? r.agent : null);
+    const missing = Object.keys(AGENTS).filter(a => !shown.includes(a));
+    const kids = el('div', { class: 'tree-kids', hidden: !open },
+      shown.map(agent => {
+        const t = { m, agent }, n = placedOn(t).length;
+        const leaf = el('a', {
+          class: 'nav-item leaf', href: folderHash(m, agent), title: AGENTS[agent].folder,
+          'aria-current': here && r.agent === agent ? 'page' : null,
+          'aria-label': `${m.name} / ${AGENTS[agent].name}, global folder, ${plural(n, 'skill')}`,
+        }, icon('folder', 14), el('span', { class: 'label' }, 'Global'), el('span', { class: 'count' }, String(n)));
+        // Projects will hang here too, beside Global, once a project folder can hold skills.
+        return [el('div', { class: 'tree-agent' }, icon('terminal', 14), AGENTS[agent].name), leaf];
+      }),
+      missing.length ? el('button', { type: 'button', class: 'tree-add', fk: 'add-agent:' + m.id, on: { click: () => addAgentDialog(m, missing) } },
+        icon('plus', 14), 'Add an agent', el('span', { class: 'sr-only' }, ' to ' + m.name)) : null);
+    return el('div', null,
+      el('button', {
+        type: 'button', class: 'tree-comp', fk: 'cmp:' + m.id, 'aria-expanded': String(open),
+        on: { click: () => { if (open) folded.add(m.id); else folded.delete(m.id); render(); } },
+      }, el('span', { class: 'chev' }, icon('chev', 14)), icon(m.os === 'MACOS' ? 'laptop' : 'monitor', 15), el('span', { class: 'label', title: m.name }, m.name)),
+      kids);
+  }));
+}
+
+function addAgentDialog(m, missing) {
+  const name = 'add-agent';
   openDialog({
-    title: 'Add a computer',
-    submitLabel: 'Done',
-    cancelLabel: null,
+    title: `Add an agent to ${m.name}`,
+    submitLabel: 'Open its folder',
     body: [
-      el('ol', { class: 'steps' },
-        el('li', null, 'On a computer that is already connected, say this to your coding agent. Name the new computer however you like.'),
-        el('li', null, 'It answers with one command. Run it on the new computer and restart the coding agent there.'),
-        el('li', null, 'Say ', el('code', null, SYNC), ' on the new computer. Then add skills to it here.')),
-      el('div', { class: 'field' }, el('div', { class: 'code-box' }, say, copy), copied),
+      el('p', null, 'Pick the coding agent. Its folder opens empty; add skills there and they arrive the next time you say ', el('code', null, SYNC), ' on that computer.'),
+      el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, 'Coding agent'), el('div', { class: 'picker-list' },
+        missing.map((a, i) => el('label', { class: 'picker-opt choice' },
+          el('input', { type: 'radio', name, value: a, checked: i === 0 }),
+          el('span', null, el('strong', null, AGENTS[a].name), el('small', null, `${AGENTS[a].folder}, read by ${AGENTS[a].readers}`)))))),
     ],
+    onSubmit: async () => {
+      const agent = document.querySelector(`input[name="${name}"]:checked`).value;
+      pickAgent(m, agent);
+      folded.delete(m.id);
+      return () => go(folderHash(m, agent));
+    },
   });
+}
+
+/* ---------- adding a computer: what is true depends on where the Library lives ---------- */
+
+// A read-only line with a Copy button, for anything a person pastes somewhere else.
+function copyField(value, label, done = 'Copied. Paste it into your coding agent.') {
+  const input = el('input', { class: 'input mono', type: 'text', value, spellcheck: false, autocomplete: 'off', 'aria-label': label });
+  const said = el('span', { class: 'help', role: 'status' });
+  const copy = btn('Copy', { on: { click: async () => {
+    try { await navigator.clipboard.writeText(input.value); }
+    catch (_) { input.select(); document.execCommand('copy'); }
+    said.textContent = done;
+  } } }, 'copy');
+  return el('div', { class: 'field' }, el('div', { class: 'code-box' }, input, copy), said);
+}
+
+const SETUP = 'Set up AIStack: run `uvx aistack-mcp setup` and follow what it prints.';
+const ADD_COMPUTER = {
+  server: () => [
+    el('ol', { class: 'steps' },
+      el('li', null, 'On a computer that is already connected, say this to your coding agent. Name the new computer however you like.'),
+      el('li', null, 'It answers with one command. Run it on the new computer and restart the coding agent there.'),
+      el('li', null, 'Say ', el('code', null, SYNC), ' on the new computer. Then add skills to it here.')),
+    copyField('add my Windows PC to aistack', 'What to say'),
+  ],
+  this_computer: () => [
+    el('p', null, 'Your Library lives only on this computer, so another computer cannot reach it.'),
+    el('p', null, 'Move it to a private GitHub repository first: every computer of yours then shares it through your own GitHub sign-in, and nothing has to stay switched on.'),
+    el('a', { class: 'btn', style: 'align-self:flex-start', href: '#/storage', on: { click: () => document.querySelector('dialog[open]').close() } }, icon('globe'), el('span', null, 'See where it can move')),
+  ],
+  github: lib => [
+    el('p', null, 'On the new computer, paste this into the coding agent. Setup asks you to sign in to GitHub once; choose the same repository.'),
+    copyField(`${SETUP} My Library is in the private GitHub repository ${lib.repository}.`, 'What to paste on the new computer'),
+    el('p', { class: 'help' }, 'Then say ', el('code', null, SYNC), ' there. It shows up here at its first sync.'),
+  ],
+  postgresql: lib => [
+    el('p', null, `On the new computer, paste this into the coding agent, and choose the same ${lib.provider} database when setup asks.`),
+    copyField(`${SETUP} My Library is in my ${lib.provider} database at ${lib.host}.`, 'What to paste on the new computer'),
+    el('p', { class: 'help' }, 'Setup asks for the database address with its password. It is the one you pasted on this computer; it is not shown here.'),
+  ],
+};
+
+function addComputerDialog() {
+  const lib = library();
+  openDialog({ title: 'Add a computer', submitLabel: 'Done', cancelLabel: null, body: ADD_COMPUTER[lib.kind](lib) });
 }
 
 /* ---------- Library and computers ---------- */
 
 // The harnesses the server knows, by key (ADR-0018), and the coding agents that read each folder.
-// A computer lists the ones that have synced there.
+// A computer lists the ones that have synced there, and any picked here before that.
 const AGENTS = {
-  claude_code: { name: 'Claude Code', glyph: 'CC', folder: '~/.claude/skills', readers: 'Claude Code' },
-  agents: { name: 'Agents folder', glyph: 'AG', folder: '~/.agents/skills',
+  claude_code: { name: 'Claude Code', folder: '~/.claude/skills', readers: 'Claude Code' },
+  agents: { name: 'Agents folder', folder: '~/.agents/skills',
             readers: 'Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode, and Amp' },
 };
-const agentsOf = m => m.harnesses;
-const targets = () => state.machines.flatMap(m => agentsOf(m).map(agent => ({ m, agent })));
+const targets = () => state.machines.flatMap(m => agentsShown(m).map(agent => ({ m, agent })));
 const targetName = t => `${t.m.name} / ${AGENTS[t.agent].name}`;
 const isPlaced = (s, t) => s.placements.some(p => p.machine === t.m.id && p.harness === t.agent);
 const placedOn = t => state.skills.filter(s => isPlaced(s, t));
 const sameTarget = (a, b) => a.m === b.m && a.agent === b.agent;
 const place = (s, t, on) => api(`/api/skills/${enc(s.name)}/machines/${enc(t.m.id)}`, { enabled: on, harness: t.agent });
+const osIcon = m => (m.os === 'MACOS' ? 'laptop' : 'monitor');
 
 const SORTS = {
   name: s => s.name,
@@ -1257,7 +1534,7 @@ function libraryView() {
       .sort((a, b) => (get(a) < get(b) ? -1 : get(a) > get(b) ? 1 : 0) * sort.dir || a.name.localeCompare(b.name));
     if (!state.skills.length) {
       list.replaceChildren(empty('layers', 'Your library is empty',
-        el('p', null, 'Skills appear here when your coding agent runs ', el('code', null, SYNC), ' on one of your computers. It backs up the skills it finds there, and you can then add them to your other computers or share them with a team.'),
+        el('p', null, 'Skills appear here when your coding agent runs ', el('code', null, SYNC), ' on one of your computers. It backs up the skills it finds there, and you can then add them to your other computers', state.server !== false ? ' or share them with a team.' : '.'),
         state.server !== false && el('p', null, state.teams.length
           ? 'You can also take one from a team: open a team and choose "Add to library".'
           : 'You can also take one from a team once you are in one: choose "Add a team" to create one or join with an invite code.')));
@@ -1267,14 +1544,14 @@ function libraryView() {
     } else {
       list.replaceChildren(
         el('div', { class: 'tbl library', role: 'table', 'aria-label': 'Library' },
-          el('div', { class: 'tr th-row', role: 'row' }, sortTh('name', 'Skill'), sortTh('source', 'Source'), th('In use on'), thActions()),
+          el('div', { class: 'tr th-row', role: 'row' }, sortTh('name', 'Skill'), sortTh('source', 'Source'), th('Where it is'), thActions()),
           shown.map(libraryRow)),
         el('div', { class: 'tbl-foot' },
           el('span', null, 'A skill reaches a computer the next time your coding agent there runs ', el('code', null, SYNC), '.'),
           el('span', { class: 'count' }, shown.length === state.skills.length ? plural(shown.length, 'skill') : `${shown.length} of ${plural(state.skills.length, 'skill')}`)));
     }
   };
-  const input = el('input', { class: 'input', type: 'search', id: 'search', fk: 'search', placeholder: 'Search your library', value: search, autocomplete: 'off',
+  const input = el('input', { class: 'input', type: 'search', id: 'search', fk: 'search', placeholder: 'Search your library…', value: search, autocomplete: 'off',
     on: {
       input: () => { search = input.value; fill(); },
       keydown: ev => { if (ev.key === 'Escape' && input.value) { input.value = search = ''; fill(); } },
@@ -1290,15 +1567,15 @@ function libraryView() {
       el('div', { class: 'wrap page-head' },
         el('div', { class: 'titles' },
           el('h1', null, 'Library'),
-          el('p', { class: 'subtitle' }, 'Every skill you keep. Add one to a coding agent on any of your computers.')),
+          el('p', { class: 'subtitle' }, 'Every skill you keep. Open one to choose the computers and agents that have it.')),
         el('div', { class: 'search' }, el('label', { class: 'sr-only', htmlFor: 'search' }, 'Search your library'), icon('search'), input,
           el('kbd', { 'aria-hidden': 'true', title: 'Press / to search' }, '/')))),
     el('div', { class: 'wrap body' },
       state.skills.length ? el('div', { class: 'stats' },
-        stat('In your library', state.skills.length, plural(state.skills.filter(s => s.source).length, 'skill') + ' from a team'),
-        stat('Not on any computer', unplaced.length, unplaced.map(s => s.name).join(' · ') || 'Everything is in use'),
+        stat('In your library', state.skills.length, state.server === false ? 'Backed up from your computers' : plural(state.skills.filter(s => s.source).length, 'skill') + ' from a team'),
+        stat('Not on any computer', unplaced.length, unplaced.map(s => s.name).join(', ') || 'Everything is in use'),
         stat('Updates', updating.length,
-          updating.map(s => s.name).join(' · ') || 'Everything is current', updating.length ? el('span', { class: 'dot blue' }) : null)) : null,
+          updating.map(s => s.name).join(', ') || 'Everything is current', updating.length ? el('span', { class: 'dot accent' }) : null)) : null,
       list),
   ];
 }
@@ -1308,35 +1585,33 @@ const sourceCell = src => td(src ? 'meta src' : 'meta',
          el('span', { class: 't2' + (src.group ? ' mono' : '') }, src.group || 'Team level')]
     : el('span', { class: 't2' }, 'Your own'));
 
+// Where a skill is, as words: a line per computer, naming its agents. Each agent opens that folder.
+function whereItIs(s) {
+  const placed = targets().filter(t => isPlaced(s, t));
+  if (!placed.length) return el('span', { class: 'not-placed' }, 'Only in your library');
+  return el('div', { class: 'where-list' }, state.machines.filter(m => placed.some(t => t.m === m)).map(m =>
+    el('div', { class: 'where-line' }, icon(osIcon(m), 14),
+      el('span', { class: 'on' }, m.name),
+      el('span', null, placed.filter(t => t.m === m).map((t, i) => [i ? ', ' : null,
+        el('a', { href: folderHash(m, t.agent), 'aria-label': targetName(t) }, AGENTS[t.agent].name)])))));
+}
+
 function libraryRow(s) {
   const src = s.source;
-  const placed = targets().filter(t => isPlaced(s, t));
   const update = src && src.update_available;
   return el('div', { class: 'tr', role: 'row' },
     td('c-main',
-      el('span', { class: 'name' }, s.name),
+      el('button', { type: 'button', class: 'name-btn', fk: 'open:' + s.name, title: 'Open ' + s.name, on: { click: () => skillSheet(s) } },
+        el('span', { class: 'name' }, s.name)),
       s.description && el('span', { class: 't2' }, s.description)),
     sourceCell(src),
-    td('row wide', placed.length
-      ? el('div', { class: 'placed' }, placed.map(t => el('span', { class: 'place-chip' },
-          el('a', { href: folderHash(t.m, t.agent) }, targetName(t)),
-          el('button', {
-            type: 'button', fk: `unplace:${s.name}:${t.m.id}:${t.agent}`, title: 'Remove from ' + targetName(t), 'aria-label': `Remove ${s.name} from ${targetName(t)}`,
-            on: { click: ev => run(ev.currentTarget, async () => {
-              await place(s, t, false);
-              return `${s.name} leaves ${targetName(t)} at its next sync. It stays in your library.`;
-            }) },
-          }, icon('x', 12)))))
-      : el('span', { class: 'not-placed' }, 'Only in your library')),
+    td('wide', whereItIs(s)),
     td('row end',
-      btn('Add to…', { class: 'btn sm', fk: 'addto:' + s.name, on: { click: () => addToDialog(s) } }),
-      menu(`More actions for ${s.name}`, 'lm:' + s.name, [
-        state.server !== false && { label: 'Share with a team…', icon: 'share', run: () => shareDialog(s) },
-        { label: 'Remove from library', icon: 'trash', danger: true, run: () => removeMineDialog(s) },
-      ].filter(Boolean))),
+      btn('Add to computer', { class: 'btn sm', fk: 'addto:' + s.name, on: { click: () => addToDialog(s) } }, 'plus'),
+      btn('Details', { class: 'btn ghost sm', fk: 'details:' + s.name, 'aria-label': `Details of ${s.name}`, on: { click: () => skillSheet(s) } })),
     update && td('update-cell',
       el('div', { class: 'update' },
-        el('span', { class: 'dot blue' }),
+        el('span', { class: 'dot accent' }),
         el('strong', null, 'Update available'),
         el('span', { class: 'mono' }, `r${src.revision} → r${src.latest_revision}`),
         el('span', { class: 'grow' }, `pushed by ${src.latest_pushed_by}`),
@@ -1348,22 +1623,57 @@ async function placeAll(pairs) {
   for (const [s, t, on] of pairs) await place(s, t, on);
 }
 
-function addToDialog(s) {
+// Every computer, each with the agents it shows, as ticks. Returns the fieldset and a way to save it.
+function placementPicker(s, legend = 'Computers and coding agents') {
   const boxes = targets().map(t => ({ t, box: el('input', { type: 'checkbox', checked: isPlaced(s, t) }) }));
+  const picker = el('fieldset', { class: 'picker' }, el('legend', null, legend),
+    state.machines.map(m => el('div', { class: 'target-group' },
+      el('div', { class: 'head', 'aria-hidden': 'true' }, icon(osIcon(m), 14), el('span', null, m.name)),
+      boxes.filter(b => b.t.m === m).map(b => el('label', { class: 'picker-opt' }, b.box,
+        el('span', null, el('span', { class: 'sr-only' }, m.name + ' / '), AGENTS[b.t.agent].name),
+        el('span', { class: 't2 mono', style: 'margin-left:auto', 'aria-hidden': 'true' }, AGENTS[b.t.agent].folder))))));
+  const save = async () => {
+    const changed = boxes.filter(b => b.box.checked !== isPlaced(s, b.t));
+    await placeAll(changed.map(b => [s, b.t, b.box.checked]));
+    return changed.length ? `Saved where ${s.name} is. Each computer picks up the change at its next ${SYNC}.` : null;
+  };
+  return { picker, save };
+}
+
+function addToDialog(s) {
+  const { picker, save } = placementPicker(s);
+  openDialog({ title: `Add ${s.name} to computers`, submitLabel: 'Save', body: picker, onSubmit: save });
+}
+
+// Everything about one skill, and everything you can do with it, in a panel from the side.
+function skillSheet(s) {
+  const src = s.source;
+  const { picker, save } = placementPicker(s, 'Where it is');
+  const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
+  const after = then => () => { document.querySelector('dialog[open]').close(); then(s); };
   openDialog({
-    title: `Add ${s.name} to…`,
+    title: s.name,
+    sheet: true,
     submitLabel: 'Save',
-    body: el('fieldset', { class: 'picker' }, el('legend', null, 'Coding agents'),
-      state.machines.map(m => el('div', { class: 'target-group' },
-        el('div', { class: 'head', 'aria-hidden': 'true' }, icon(m.os === 'MACOS' ? 'laptop' : 'monitor', 14), el('span', { class: 'mono' }, m.name)),
-        boxes.filter(b => b.t.m === m).map(b => el('label', { class: 'picker-opt' }, b.box,
-          el('span', null, el('span', { class: 'sr-only' }, m.name + ' / '), AGENTS[b.t.agent].name),
-          el('span', { class: 't2 mono', style: 'margin-left:auto', 'aria-hidden': 'true' }, AGENTS[b.t.agent].folder)))))),
-    onSubmit: async () => {
-      const changed = boxes.filter(b => b.box.checked !== isPlaced(s, b.t));
-      await placeAll(changed.map(b => [s, b.t, b.box.checked]));
-      return changed.length ? `Saved. Each computer picks up the change at its next ${SYNC}.` : null;
-    },
+    returnFk: 'open:' + s.name,
+    body: [
+      s.description && el('p', { class: 'lead' }, s.description),
+      src && src.update_available && el('div', { class: 'update' },
+        el('span', { class: 'dot accent' }), el('strong', null, 'Update available'),
+        el('span', { class: 'grow' }, `r${src.revision} → r${src.latest_revision}, pushed by ${src.latest_pushed_by}`)),
+      el('section', { class: 'sheet-sec', 'aria-label': 'About' },
+        el('dl', { class: 'facts' },
+          fact('Source', src ? el('a', { class: 'mono link', href: teamHash(src.team) }, teamLabel(src.team, src.group)) : 'Your own'),
+          fact('Revision', `r${s.revision}, ${plural(s.files, 'file')}`),
+          fact('Last pushed by', s.pushed_by),
+          fact('Last changed', when(s.updated_on)))),
+      el('section', { class: 'sheet-sec', 'aria-label': 'Where it is' },
+        state.machines.length ? picker : el('p', null, 'No computer is connected yet.')),
+      el('section', { class: 'sheet-sec actions', 'aria-label': 'More' },
+        state.server !== false && btn('Share with a team…', { on: { click: after(shareDialog) } }, 'share'),
+        btn('Remove from library…', { class: 'btn danger', on: { click: after(removeMineDialog) } }, 'trash')),
+    ],
+    onSubmit: save,
   });
 }
 
@@ -1375,12 +1685,12 @@ function folderView(m, agent) {
   return [
     el('div', { class: 'band' }, el('div', { class: 'wrap page-head' },
       el('div', { class: 'team-head', style: 'flex:1;min-width:260px' },
-        el('span', { class: 'avatar lg', style: 'font:600 16px var(--mono)', 'aria-hidden': 'true' }, AGENTS[agent].glyph),
+        el('span', { class: 'avatar lg', 'aria-hidden': 'true' }, icon('terminal', 20)),
         el('div', { class: 'titles' },
-          el('h1', null, AGENTS[agent].name, el('span', { class: 'muted', style: 'font-weight:400' }, ' on '), el('span', { class: 'mono' }, m.name)),
-          el('div', { class: 'folder-path' }, el('code', null, AGENTS[agent].folder),
+          el('h1', null, AGENTS[agent].name, el('span', { class: 'muted', style: 'font-weight:400' }, ' on '), m.name),
+          el('div', { class: 'folder-path' }, el('span', { class: 't2' }, 'Global folder'), el('code', null, AGENTS[agent].folder),
             el('span', { class: 't2' }, 'Read by ' + AGENTS[agent].readers)))),
-      el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
+      el('div', { class: 'head-actions' },
         others.length ? btn('Copy from…', { fk: 'copy-from', on: { click: () => copyFromDialog(t, others) } }, 'copy') : null,
         btn('Add skills', { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(t) } }, 'plus')))),
     el('div', { class: 'wrap body' },
@@ -1397,7 +1707,7 @@ function folderView(m, agent) {
               return `${s.name} leaves ${where} at its next sync. It stays in your library.`;
             }) },
           }, 'x')))))
-        : empty('layers', `Nothing in ${where} yet`, el('p', null, 'Add skills from your library, or copy what another computer has.'),
+        : empty('folder', `Nothing in ${where} yet`, el('p', null, 'Add skills from your library, or copy what another agent has.'),
             btn('Add skills', { on: { click: () => addSkillsDialog(t) } }, 'plus')),
       el('div', { class: 'tbl-foot' }, el('span', null, 'Removing a skill here keeps it in your library and on your other computers. ',
         'The folder is asked about at the next ', el('code', null, SYNC), ', never deleted unasked.'))),
@@ -1550,7 +1860,7 @@ function teamView(team, tab, group) {
             el('div', { class: 'line' },
               el('h1', null, team.name),
               el('span', { class: 'badge' + (admin ? ' solid' : '') }, admin ? 'Admin' : 'Member')),
-            el('p', { class: 'subtitle' }, plural(members(team).length, 'member'), ' · ', plural(team.skills.length, 'skill'), ' · ', plural(team.groups.length, 'group')))),
+            el('p', { class: 'subtitle' }, plural(members(team).length, 'member'), ', ', plural(team.skills.length, 'skill'), ', ', plural(team.groups.length, 'group')))),
         tablist)),
     el('div', { class: 'wrap body', id: 'tabpanel', role: 'tabpanel', 'aria-labelledby': 'tab-' + tab }, panels[tab](team, admin, group)),
   ];
@@ -1657,7 +1967,7 @@ function teamSkillRow(team, s, admin, depth) {
     td('c-main',
       el('div', { class: 'name-line' },
         el('span', { class: 'name' }, s.name),
-        update && el('span', { class: 'badge info' }, el('span', { class: 'dot blue' }), 'Update available')),
+        update && el('span', { class: 'badge info' }, el('span', { class: 'dot accent' }), 'Update available')),
       s.description && el('span', { class: 't2' }, s.description)),
     td('meta nowrap', el('span', { class: 't1 mono', title: 'Revision ' + s.revision }, 'r' + s.revision)),
     td('meta nowrap',
@@ -1665,7 +1975,7 @@ function teamSkillRow(team, s, admin, depth) {
       el('span', { class: 't2' }, when(s.updated_on))),
     td('row end',
       action,
-      admin && menu(`More actions for ${s.name}`, 'tsm:' + fk, [
+      admin && menu(`Manage ${s.name}`, 'tsm:' + fk, [
         { label: 'Move to group…', icon: 'move', run: () => moveDialog(team, s) },
         { label: 'Remove from team', icon: 'trash', danger: true, run: () => removeTeamSkillDialog(team, s) },
       ])));
@@ -1874,43 +2184,121 @@ function groupPeopleDialog(team, g) {
 
 /* ---------- where the Library lives (ADR-0020) ---------- */
 
-// The three answers to "Where should your Library live?", each with what it costs.
+// The answers to "Where should your Library live?", each with what it costs, and what to tell
+// the coding agent to move there.
 const STORAGE = {
-  this_computer: { title: 'Only this computer', cost: 'Free and nothing to keep switched on. No other computer reaches it.' },
-  github: { title: 'A private GitHub repository', cost: 'Every computer of yours shares it through your own GitHub login, nothing has to stay on, and every change is in the repository\'s history.' },
-  postgresql: { title: 'A free PostgreSQL database', cost: 'Every computer of yours uses it, and nothing has to stay on. Each computer keeps its address; if a laptop is lost, reset the database password and paste the new address on the others.' },
-  server: { title: 'An AIStack server', cost: 'Your computers reach it over the network, so it must stay on. The only choice that works for a team.' },
+  this_computer: { title: 'Only this computer', icon: 'laptop', cost: 'Free and nothing to keep switched on. No other computer reaches it.',
+                   say: 'move my AIStack Library to this computer only' },
+  github: { title: 'A private GitHub repository', icon: 'folder', cost: 'Every computer of yours shares it through your own GitHub sign-in, nothing has to stay on, and every change is in the repository\'s history.',
+            say: 'move my AIStack Library to a private GitHub repository' },
+  postgresql: { title: 'A free PostgreSQL database', icon: 'layers', cost: 'Every computer of yours uses it, and nothing has to stay on. Each computer keeps its address; if a laptop is lost, reset the database password and paste the new address on the others.',
+                say: 'move my AIStack Library to a PostgreSQL database' },
+  server: { title: 'An AIStack server', icon: 'globe', cost: 'Your computers reach it over the network, so it must stay on. The only choice that works for a team.' },
 };
 
+const lowerFirst = text => text[0].toLowerCase() + text.slice(1);
+
+function moveLibraryDialog(key) {
+  openDialog({
+    title: 'Move to ' + lowerFirst(STORAGE[key].title),
+    submitLabel: 'Done',
+    cancelLabel: null,
+    body: [
+      el('p', null, 'Say this to your coding agent on this computer. It writes every skill to a folder, connects this computer to the new place, and copies the skills back, so the next sync backs them up there.'),
+      copyField(STORAGE[key].say, 'What to say'),
+      el('p', { class: 'help' }, 'Your other computers then need the same setup, pointed at the new place.'),
+    ],
+  });
+}
+
 function storageView() {
-  const lib = state.library || { kind: 'server' };
+  const lib = library();
   const here = STORAGE[lib.kind];
   const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
   const facts = lib.kind === 'postgresql'
     ? [fact('Database', lib.provider), fact('Host', el('span', { class: 'mono' }, lib.host))]
     : lib.kind === 'github'
-    ? [fact('Repository', el('a', { class: 'mono', href: `https://github.com/${lib.repository}`, target: '_blank', rel: 'noopener noreferrer' }, lib.repository))]
+    ? [fact('Repository', el('span', { class: 'mono' }, lib.repository))]
     : lib.kind === 'server' ? [fact('Server', el('span', { class: 'mono' }, location.host))]
     : [fact('Computer', 'The one showing this page')];
-  const choice = key => el('li', null, el('strong', null, STORAGE[key].title, key === lib.kind ? ' (now)' : ''), el('p', null, STORAGE[key].cost));
-  const move = lib.kind === 'server'
-    ? 'Everyone on this server shares it, and the operator backs it up. To keep a Library of your own instead, set AIStack up again on your computer and choose where it lives there.'
-    : 'To move it, tell your coding agent "move my AIStack Library to …" with the new place. It writes every skill to a folder, connects this computer to the new place, and copies the skills back, so the next sync backs them up there.';
+  facts.push(fact('Computers using it', String(state.machines.length)));
+  const actions = [
+    lib.kind === 'github' && el('a', { class: 'btn', href: `https://github.com/${lib.repository}`, target: '_blank', rel: 'noopener noreferrer' },
+      icon('external'), el('span', null, 'Open on GitHub')),
+    lib.kind !== 'this_computer' && btn('Add a computer', { fk: 'storage-add-computer', on: { click: addComputerDialog } }, 'plus'),
+  ];
+  // Local mode moves between the three places a person can keep alone; a server's Library stays on the server.
+  const elsewhere = lib.kind === 'server' ? [] : ['github', 'postgresql', 'this_computer'].filter(k => k !== lib.kind);
   return [
     el('div', { class: 'band' }, el('div', { class: 'wrap page-head' }, el('div', { class: 'titles' },
       el('h1', null, 'Where your Library lives'),
       el('p', { class: 'subtitle' }, 'The one place every computer of yours reads your skills from.')))),
-    el('div', { class: 'wrap body' }, el('div', { class: 'settings' }, el('div', null,
-      el('section', { class: 'card', 'aria-label': 'Now' }, el('div', { class: 'card-body' },
-        el('h2', null, here.title), el('p', null, here.cost), el('dl', { class: 'facts' }, facts))),
-      el('section', { class: 'card', 'aria-label': 'The choices' }, el('div', { class: 'card-body' },
-        el('h2', null, 'The choices'),
-        el('ul', { class: 'choices' }, Object.keys(STORAGE).map(choice)),
-        el('p', null, move)))))),
+    el('div', { class: 'wrap body narrow' },
+      el('section', { class: 'card place-now', 'aria-label': 'Where it lives now' },
+        el('div', { class: 'card-body' },
+          el('div', { class: 'place-title' },
+            el('span', { class: 'avatar lg', 'aria-hidden': 'true' }, icon(here.icon, 20)),
+            el('div', null,
+              el('h2', null, here.title),
+              el('p', { class: 'status' }, el('span', { class: 'dot ok' }), 'Connected: this page just read your Library from it.'))),
+          el('p', null, here.cost),
+          el('dl', { class: 'facts' }, facts)),
+        actions.some(Boolean) && el('div', { class: 'card-foot' }, el('span', null, lib.kind === 'server' ? 'The operator of this server backs it up.' : 'Each computer reaches it on its own.'),
+          el('div', { class: 'head-actions' }, actions))),
+      elsewhere.length ? [
+        el('h2', { class: 'section-title' }, 'Move it somewhere else'),
+        el('div', { class: 'choice-grid' }, elsewhere.map(k => el('section', { class: 'card choice-card', 'aria-label': STORAGE[k].title },
+          el('div', { class: 'card-body' },
+            el('h3', null, icon(STORAGE[k].icon, 16), STORAGE[k].title),
+            el('p', null, STORAGE[k].cost)),
+          el('div', { class: 'card-foot' }, btn('Move here…', { fk: 'move:' + k, 'aria-label': 'Move to ' + lowerFirst(STORAGE[k].title), on: { click: () => moveLibraryDialog(k) } }, 'move'))))),
+        el('p', { class: 'note' }, icon('info', 14), el('span', null, 'Want a team? Teams need ', el('strong', null, STORAGE.server.title.toLowerCase()), ' that everyone reaches. ', STORAGE.server.cost)),
+      ] : el('p', { class: 'note' }, icon('info', 14), el('span', null, 'Everyone on this server shares it. To keep a Library of your own instead, set AIStack up again on your computer and choose where it lives there.'))),
   ];
 }
 
-/* ---------- settings ---------- */
+/* ---------- settings: choices kept in this browser ---------- */
+
+const THEME_CHOICES = { system: ['Match the system', 'auto'], light: ['Light', 'sun'], dark: ['Dark', 'moon'] };
+const ACCENT_NAMES = { blue: 'Blue', teal: 'Teal', green: 'Green', amber: 'Amber', rose: 'Rose', graphite: 'Graphite' };
+
+function settingsView() {
+  const now = window.appearance.get();
+  const choose = change => { window.appearance.set(change); render(); };
+  const themes = el('fieldset', { class: 'seg-choice' }, el('legend', null, 'Theme'),
+    Object.entries(THEME_CHOICES).map(([key, [label, ic]]) => el('label', { class: 'theme-opt' },
+      el('input', { type: 'radio', name: 'theme', value: key, checked: now.theme === key, fk: 'theme:' + key, on: { change: () => choose({ theme: key }) } }),
+      el('span', { class: 'preview ' + key, 'aria-hidden': 'true' }, el('i'), el('i'), el('i')),
+      el('span', { class: 'opt-label' }, icon(ic, 14), label))));
+  const accents = el('fieldset', { class: 'swatches' }, el('legend', null, 'Accent'),
+    window.appearance.ACCENTS.map(key => el('label', { class: 'swatch', 'data-accent': key, title: ACCENT_NAMES[key] },
+      el('input', { type: 'radio', name: 'accent', value: key, checked: now.accent === key, fk: 'accent:' + key, on: { change: () => choose({ accent: key }) } }),
+      el('span', { class: 'chip', 'aria-hidden': 'true' }),
+      el('span', { class: 'opt-label' }, ACCENT_NAMES[key]))));
+  const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
+  return [
+    el('div', { class: 'band' }, el('div', { class: 'wrap page-head' }, el('div', { class: 'titles' },
+      el('h1', null, 'Settings'),
+      el('p', { class: 'subtitle' }, 'How the dashboard looks, and who you are signed in as.')))),
+    el('div', { class: 'wrap body narrow' },
+      el('section', { class: 'card', 'aria-label': 'Appearance' },
+        el('div', { class: 'card-body stack' },
+          el('h2', null, 'Appearance'),
+          themes,
+          accents),
+        el('div', { class: 'card-foot' }, el('span', null, 'Kept in this browser only. Each browser you open the dashboard in remembers its own.'))),
+      el('section', { class: 'card', 'aria-label': 'Account' },
+        el('div', { class: 'card-body' },
+          el('h2', null, 'Account'),
+          el('dl', { class: 'facts' },
+            fact('Signed in as', el('strong', null, state.user.username)),
+            fact('Computers', String(state.machines.length)),
+            fact('Library', el('a', { class: 'link', href: '#/storage' }, STORAGE[library().kind].title)),
+            state.server !== false && fact('Teams', String(state.teams.length)))))),
+  ];
+}
+
+/* ---------- team settings ---------- */
 
 function settingsTab(team, admin) {
   const card = (cls, title, text, hint, action) => el('section', { class: 'card' + cls },

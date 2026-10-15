@@ -5,6 +5,7 @@ AIStack: a self-hosted, open-source control plane for AI dev configuration (skil
 ## Read before designing or implementing anything
 
 - `docs/DESIGN.md` — the plan: scope, the thirteen MCP tools, flows, the sync contract, push validation, teams and groups, the dashboard, DB schema, project structure, roadmap. Where anything conflicts with it, this document wins.
+- `docs/design-system.md` — read first for any work on the dashboard page: tokens, components, patterns, and what to avoid.
 - `CONTEXT.md` — domain glossary. Use these terms exactly; respect the `_Avoid_` lists.
 - `docs/adr/` — decisions already made (full sync not proxy, SQLite default, token auth, server-side desired state, signed transfer URLs, server-side hashing, personal space and teams, migrations, the dashboard). Do not relitigate them; write a new ADR to reverse one.
 

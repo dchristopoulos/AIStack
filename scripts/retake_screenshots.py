@@ -23,21 +23,25 @@ async def main() -> None:
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch()
         # A computer's page is addressed by its id, so it is opened from the sidebar instead.
-        shots = [("dimitris", "light", "#/library", "library"), ("dimitris", "light", "macbook", "computer"),
+        shots = [("dimitris", "light", "#/library", "library"), ("dimitris", "light", "macbook / Claude Code", "computer"),
                  ("dimitris", "light", "#/t/aistack/skills", "team"),
                  ("dimitris", "light", "#/t/aistack/groups", "groups"), ("maria", "dark", "#/library", "update-dark")]
+        # A sign-in link works once, so each person signs in once and keeps the tab.
+        pages = {}
         for username, scheme, route, name in shots:
-            context = await browser.new_context(viewport=WIDE, device_scale_factor=2, color_scheme=scheme)
-            page = await context.new_page()
-            await page.goto(links[username])
-            await page.get_by_role("heading", name="Library", level=1).wait_for()
+            if username not in pages:
+                context = await browser.new_context(viewport=WIDE, device_scale_factor=2)
+                pages[username] = await context.new_page()
+                await pages[username].goto(links[username])
+                await pages[username].get_by_role("heading", name="Library", level=1).wait_for()
+            page = pages[username]
+            await page.emulate_media(color_scheme=scheme)
             if route.startswith("#"):
                 await page.goto(f"{base_url}/app{route}")
             else:
                 await page.get_by_role("navigation", name="Main").get_by_role("link", name=route).click()
             await page.wait_for_timeout(400)
             await page.screenshot(path=str(IMAGES / f"dashboard-{name}.png"))
-            await context.close()
         await browser.close()
     print(f"Retook {len(shots)} screenshots in {IMAGES}.")
 

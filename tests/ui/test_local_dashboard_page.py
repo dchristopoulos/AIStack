@@ -19,11 +19,12 @@ async def test_the_local_dashboard_shows_the_library_and_nothing_a_team_needs(br
         await page.get_by_role("heading", name="Library", level=1).wait_for()
         await expect(page.get_by_role("row").filter(has_text="wizard")).to_be_visible()
         await expect(page.get_by_role("button", name="Add a team")).to_have_count(0)
-        await expect(page.get_by_role("navigation", name="Spaces")).not_to_contain_text("null")
+        await expect(page.get_by_role("navigation", name="Spaces")).to_be_hidden()
 
-        await page.get_by_role("button", name="More actions for wizard").click()
-        await expect(page.get_by_role("menuitem", name="Remove from library")).to_be_visible()
-        await expect(page.get_by_role("menuitem", name="Share with a team…")).to_have_count(0)
+        await page.get_by_role("button", name="Details of wizard").click()
+        details = page.get_by_role("dialog", name="wizard")
+        await expect(details.get_by_role("button", name="Remove from library…")).to_be_visible()
+        await expect(details.get_by_role("button", name="Share with a team…")).to_have_count(0)
 
         state = await (await page.request.get(f"{base}/api/state")).json()
         await context.close()
@@ -44,5 +45,55 @@ async def test_the_page_says_where_the_library_lives(browser, tmp_path, sqlite_u
                      ).to_be_visible()
         await expect(page.get_by_role("heading", name="Only this computer", level=2)
                      ).to_be_visible()
-        await expect(page.get_by_text("Only this computer (now)")).to_be_visible()
+        await expect(page.get_by_text("Connected: this page just read")).to_be_visible()
+
+        await page.get_by_role("button", name="Move to a private GitHub repository").click()
+        await expect(page.get_by_role("dialog").get_by_role("textbox", name="What to say")
+                     ).to_have_value("move my AIStack Library to a private GitHub repository")
+        await context.close()
+
+
+async def test_adding_a_computer_says_this_computer_cannot_be_reached(browser, tmp_path,
+                                                                     sqlite_url):
+    async with local_dashboard(tmp_path, sqlite_url) as (_, link):
+        context = await browser.new_context()
+        page = await context.new_page()
+        await page.goto(link)
+
+        await page.get_by_role("button", name="Add a computer").click()
+
+        dialog = page.get_by_role("dialog", name="Add a computer")
+        await expect(dialog.get_by_text("another computer cannot reach it")).to_be_visible()
+        await expect(dialog.get_by_text("add my Windows PC")).to_have_count(0)
+        await dialog.get_by_role("link", name="See where it can move").click()
+        await expect(page.get_by_role("heading", name="Where your Library lives", level=1)
+                     ).to_be_visible()
+        await context.close()
+
+
+@pytest.mark.parametrize(("library", "sentence"), [
+    ({"kind": "github", "repository": "maria/aistack-library"},
+     "My Library is in the private GitHub repository maria/aistack-library."),
+    ({"kind": "postgresql", "provider": "Neon", "host": "ep-calm.neon.tech"},
+     "My Library is in my Neon database at ep-calm.neon.tech."),
+])
+async def test_adding_a_computer_names_the_shared_library(browser, tmp_path, sqlite_url,
+                                                          library, sentence):
+    """What the other computer is told depends on where the Library lives, which the page reads
+    from /api/state; the answer is rewritten here because the test Library is a SQLite file."""
+    async with local_dashboard(tmp_path, sqlite_url) as (base, link):
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        async def elsewhere(route):
+            response = await route.fetch()
+            await route.fulfill(response=response, json=await response.json() | {"library": library})
+
+        await page.route(f"{base}/api/state", elsewhere)
+        await page.goto(link)
+        await page.get_by_role("button", name="Add a computer").click()
+
+        pasted = page.get_by_role("dialog").get_by_role("textbox", name="What to paste")
+        await expect(pasted).to_have_value(
+            f"Set up AIStack: run `uvx aistack-mcp setup` and follow what it prints. {sentence}")
         await context.close()
