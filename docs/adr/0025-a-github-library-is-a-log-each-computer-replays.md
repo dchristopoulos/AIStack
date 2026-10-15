@@ -22,5 +22,6 @@ ADR-0020 offers one person a private GitHub repository as the place their Librar
 
 - The copy can be deleted at any time and rebuilt from the repository, which is the backup.
 - A rebuilt copy dates every revision from the rebuild, not from its push. The log keeps each event's time, so this can be corrected later without changing the format.
+- Whoever can write to the repository can put instructions on every computer. Replay accepts an event only under its own computer's folder, named by its own time and id, dated no more than a day ahead, and it checks a revision as a push would; but a forged file in the right place is still a change. The repository stays private with no collaborators, deploy keys, or workflows that can write to it.
 - History is git's: nothing is ever removed from the repository, including a skill that was removed from the Library.
 - The same log works for local SQLite and PostgreSQL Libraries, which record it too, so a Library can later move to GitHub by publishing what it already has.

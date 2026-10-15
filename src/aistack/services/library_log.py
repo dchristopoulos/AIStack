@@ -10,13 +10,13 @@ import base64
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from aistack.commons.exceptions import ValidationError
+from aistack.commons.exceptions import AIStackError, ValidationError
 from aistack.db.models import Base
 from aistack.db.models.library_event import LibraryEvent
 from aistack.db.models.machine import MACHINE_NAME_MAX_LENGTH, Machine
@@ -30,6 +30,10 @@ SKILL_PLACED = "skill_placed"
 SKILL_REMOVED = "skill_removed"
 FOLDER_SYNCED = "folder_synced"
 _KINDS = {MACHINE_ADDED, SKILL_PUSHED, SKILL_PLACED, SKILL_REMOVED, FOLDER_SYNCED}
+_AT_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+# Clocks disagree, but not by this much. A later time would sort every new event before it,
+# and each would rebuild the copy.
+_FUTURE_ALLOWED = timedelta(days=1)
 
 
 @dataclass(frozen=True)
@@ -45,24 +49,38 @@ class Event:
     def sort_key(self) -> str:
         return f"{self.at}|{self.machine_id}|{self.event_id}"
 
+    @property
+    def path(self) -> str:
+        """Where the event lives in the log: under its computer's folder, named by its time
+        and id. No ':' in the name, which Windows refuses; the order is still the time's."""
+        compact = self.at.replace("-", "").replace(":", "")
+        return f"{self.machine_id}/{compact}-{self.event_id}.json"
+
     def to_json(self) -> str:
         return json.dumps({"event_id": str(self.event_id), "at": self.at,
                            "machine_id": str(self.machine_id), "kind": self.kind,
                            "data": self.data}, sort_keys=True, separators=(",", ":"))
 
     @classmethod
-    def from_json(cls, text: str) -> "Event":
+    def from_json(cls, text: str | bytes) -> "Event":
+        # Anything can be in a repository, so any failure here is the one refusal: invalid
+        # UTF-8, nesting deep enough to exhaust the parser, a field of the wrong type.
         try:
             raw = json.loads(text)
-            return cls(uuid.UUID(raw["event_id"]), str(raw["at"]),
-                       uuid.UUID(raw["machine_id"]), str(raw["kind"]), dict(raw["data"]))
-        except (ValueError, KeyError, TypeError) as error:
+            event = cls(uuid.UUID(raw["event_id"]), str(raw["at"]),
+                        uuid.UUID(raw["machine_id"]), str(raw["kind"]), dict(raw["data"]))
+            at = datetime.strptime(event.at, _AT_FORMAT).replace(tzinfo=UTC)
+        except Exception as error:
             raise ValidationError("A file in the Library's log is not an AIStack event. "
                                   "Remove what was added to the repository by hand.") from error
+        if at > datetime.now(UTC) + _FUTURE_ALLOWED:
+            raise ValidationError(f"A change in the Library's log is dated {event.at}, in the "
+                                  f"future. Remove what was added to the repository by hand.")
+        return event
 
 
 def new_event(machine_id: uuid.UUID, kind: str, **data: Any) -> Event:
-    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    now = datetime.now(UTC).strftime(_AT_FORMAT)
     return Event(uuid.uuid4(), now, machine_id, kind, data)
 
 
@@ -114,6 +132,18 @@ def apply(session: Session, event: Event) -> Any:
     raise AssertionError(f"Unhandled event kind '{event.kind}'.")
 
 
+def _replay(session: Session, event: Event) -> None:
+    """`apply`, for an event read from the repository: a failure names its file, which
+    anyone who can write to the repository could have put there."""
+    try:
+        apply(session, event)
+    except Exception as error:
+        reason = (error.message if isinstance(error, AIStackError)
+                  else "It is not a change AIStack makes; remove it from the repository.")
+        raise ValidationError(f"The change in log/{event.path} of the Library's repository "
+                              f"cannot be applied. {reason}") from error
+
+
 def applied_through(session: Session) -> str | None:
     """The sort key of the last event this copy holds, or None for an empty log."""
     return session.scalar(select(LibraryEvent.sort_key)
@@ -136,7 +166,7 @@ def catch_up(session: Session, arrived: list[Event]) -> bool:
     last = applied_through(session)
     if last is None or new[0].sort_key > last:
         for event in new:
-            apply(session, event)
+            _replay(session, event)
             record(session, event, published=True)
         return False
     rebuild(session, arrived)
@@ -157,7 +187,7 @@ def rebuild(session: Session, events: list[Event]) -> None:
     # The deleted rows may still be loaded; replay must not find them.
     session.expunge_all()
     for event in sorted(everything.values(), key=lambda event: event.sort_key):
-        apply(session, event)
+        _replay(session, event)
         record(session, event, published=event.event_id in published_ids)
 
 
