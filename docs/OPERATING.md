@@ -13,8 +13,11 @@ docker run -d --name aistack \
   -e AISTACK_INVITE_CODE="$(cat invite-code.txt)" \
   -v aistack-data:/data \
   --restart unless-stopped \
+  --stop-timeout 25 \
   ghcr.io/dchristopoulos/aistack:0.1
 ```
+
+`--stop-timeout 25` gives the server time to finish its requests and close the database when the container stops. Docker's default of 10 seconds is shorter than the server's own 20.
 
 The image is published by CI, for `linux/amd64` and `linux/arm64`, only from commits that passed the tests. Its tags:
 
@@ -293,20 +296,50 @@ Everyone who already joined is unaffected: they authenticate with machine tokens
 
 ## Backups
 
-The database is one file in the volume. Copy it while the server runs with SQLite's own backup, which is safe under concurrent writes:
+The SQLite database is `aistack.db` in the volume. While the server runs, SQLite keeps the latest writes in `aistack.db-wal` beside it, with `aistack.db-shm` as its index: the three files together are the database, and a copy of `aistack.db` alone can be missing anything. A server that stopped cleanly folds everything back into `aistack.db` and leaves it alone.
+
+Take a backup with the server running. It is one file that holds everything, made from a consistent read, so writes during it are safe:
 
 ```bash
-docker exec aistack python -c "
-import sqlite3
-source = sqlite3.connect('/data/aistack.db')
-target = sqlite3.connect('/data/backup.db')
-source.backup(target)
-target.close()
-"
-docker cp aistack:/data/backup.db ./aistack-backup.db
+docker exec aistack aistack backup /data/aistack-backup.db
+docker cp aistack:/data/aistack-backup.db ./aistack-backup-$(date +%F).db
+docker exec aistack rm /data/aistack-backup.db
 ```
 
-A plain `cp` of the file can catch it mid-write. On PostgreSQL, use `pg_dump`.
+`aistack backup` never replaces a file; name a new one each time. Keep the copies somewhere other than the server. For continuous backup to object storage, [Litestream](https://litestream.io) works with the same file.
+
+On PostgreSQL, `aistack backup` says what to run instead: `pg_dump --format=custom`, and `pg_restore --clean` to restore.
+
+Every upgrade that changes the schema also keeps a copy of its own, before it changes anything: `aistack-before-<schema>-<time>.db` in the volume, the newest three of them. That is the copy to go back to after an upgrade you regret, if you did not take one.
+
+## Restore
+
+Stop the server, restore with a container of the same image that shares the volume, then start the release that made the backup, or a newer one:
+
+```bash
+docker stop aistack
+docker run --rm -v aistack-data:/data -v "$PWD":/backup:ro \
+  ghcr.io/dchristopoulos/aistack:0.1 aistack restore /backup/aistack-backup-2026-10-15.db
+docker start aistack
+```
+
+`aistack restore` checks that the file is an intact AIStack database, refuses while anything still has the database open, removes the `-wal` and `-shm` files that would otherwise be replayed over the restored data, and keeps the database it replaced beside it as `aistack.db.replaced-<time>`. Delete that once the restored server looks right.
+
+Never restore by copying a file over `aistack.db`: the old `-wal` next to it brings back exactly what the restore was meant to undo.
+
+### Upgrade rollback
+
+An older release refuses to start on a database that a newer one changed in a way it cannot use, and says which release made the change (ADR-0024). To go back to the older release, restore the copy from before the upgrade with the newer image, which has `aistack restore`, then start the older image by its version tag:
+
+```bash
+docker stop aistack && docker rm aistack
+docker run --rm -v aistack-data:/data ghcr.io/dchristopoulos/aistack:0.1 \
+  sh -c 'ls -t /data/aistack-before-*.db'
+docker run --rm -v aistack-data:/data ghcr.io/dchristopoulos/aistack:0.1 \
+  aistack restore /data/aistack-before-<schema>-<time>.db
+```
+
+Then start the older release with the `docker run` from the top of this page, naming its version, such as `0.1.0`, instead of `0.1`. Anything written after the upgrade is lost, which is why the newer release's data is kept beside it as `aistack.db.replaced-<time>`.
 
 ## PostgreSQL
 
@@ -327,7 +360,7 @@ SQLite is the default because one container is easier to run than two, and the w
 
 ## Upgrading
 
-Back up, then pull the new image (`docker pull ghcr.io/dchristopoulos/aistack:0.1`, or rebuild a checkout) and recreate the container. At startup the server brings the database to the schema its release expects, before it accepts a request. Every pending change is applied in one transaction: either all of it lands or the database is exactly as it was.
+Back up, then pull the new image (`docker pull ghcr.io/dchristopoulos/aistack:0.1`, or rebuild a checkout) and recreate the container. With Compose, which keeps every flag in a file, that is `docker compose pull && docker compose up -d`. At startup the server brings the database to the schema its release expects, before it accepts a request. On SQLite it first keeps a copy of the database as it was (see [Backups](#backups)). Every pending change is applied in one transaction: either all of it lands or the database is exactly as it was.
 
 A server still on an older release keeps working after another process upgraded the database, as long as every change since only added something; after a change that removed or reshaped something, it refuses to start and says which release to run (ADR-0024). A server that was already running when another process made such a change refuses each call from then on with the same sentence, and changes nothing, until it is restarted on the new release (ADR-0031). With several replicas, upgrade them all.
 
@@ -354,7 +387,7 @@ What changes for your users, and is worth telling them before you upgrade:
 
 New accounts no longer join a server-wide team. If your server's `everyone` has members or skills, it becomes an ordinary team: you are its admin, everything in it stays where people see it, and anyone may now leave it. If it is empty, it is removed.
 
-There is no downgrade. The way back from an upgrade you regret is the backup you took before it.
+There is no downgrade. The way back from an upgrade you regret is the backup you took before it, or the copy the upgrade kept: see [Upgrade rollback](#upgrade-rollback).
 
 ## What is in the logs
 

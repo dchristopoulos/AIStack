@@ -3,6 +3,7 @@ import asyncio
 import logging
 import os
 import shutil
+import signal
 import socket
 import sys
 import time
@@ -15,6 +16,7 @@ from sqlalchemy.exc import OperationalError
 
 from aistack.bootstrap import agent_config, github_setup, self_update
 from aistack.bootstrap.configuration.settings.settings_config import (
+    DatabaseSettings,
     LIBRARY_FILE,
     LocalSettings,
     Settings,
@@ -24,12 +26,14 @@ from aistack.bootstrap.configuration.settings.settings_config import (
 from aistack.bootstrap.context.application_context import (
     build_application_context,
     build_local_context,
+    dispose_application_context,
     needs_newer_release,
 )
 from aistack.bundled import local_setup_instructions, local_sync_skill_document
 from aistack.commons.exceptions import AIStackError
 from aistack.commons.release import release
 from aistack.commons.text import loggable
+from aistack.db import backup
 from aistack.db.engine import build_engine
 from aistack.mcp.argument_errors import argument_problems
 from aistack.db.schema import ForeignDatabase, NewerSchema
@@ -383,8 +387,39 @@ def move_library(destination: str, repository: str | None) -> None:
           "and restart it once.")
 
 
+def back_up_database(target: Path) -> None:
+    """`aistack backup <file>`: a copy of the server's database that restores, safe to take
+    while the server runs. On PostgreSQL it says how to use pg_dump instead."""
+    engine = build_engine(DatabaseSettings().database_url)
+    try:
+        print(f"Backed up the database to {backup.back_up(engine, target)}.")
+    finally:
+        engine.dispose()
+
+
+def restore_database(source: Path) -> None:
+    """`aistack restore <file>`: replace the server's database with a backup, with the server
+    stopped. The database it replaces is kept beside it."""
+    engine = build_engine(DatabaseSettings().database_url)
+    try:
+        kept = backup.restore(engine, source)
+    finally:
+        engine.dispose()
+    print(f"Restored the database from {source}."
+          + (f" The one it replaced is kept at {kept}." if kept else "")
+          + " Start the release that made the backup, or a newer one.")
+
+
+def _exit_on_terminate(signal_number, _frame) -> None:
+    raise SystemExit(128 + signal_number)
+
+
 def run() -> None:
     """The `aistack` command: `aistack` is local mode, `aistack serve` the server."""
+    # uvicorn hands a SIGTERM (`docker stop`) back to the handler it found once it has shut
+    # down. The default one ends the process on the spot, past the `finally` below that
+    # closes the database; this one exits through it.
+    signal.signal(signal.SIGTERM, _exit_on_terminate)
     parser = argparse.ArgumentParser(
         prog="aistack",
         description="With no command, serve your own Library to the coding agent that started "
@@ -394,16 +429,19 @@ def run() -> None:
                     "GitHub and finds or creates the private repository a Library lives in; "
                     "'export' writes every skill in the Library to a folder; 'move github', "
                     "'move postgresql' or 'move here' moves it with its history; 'connect' "
-                    "connects Claude Code or Codex to it; 'serve' runs the AIStack server.")
+                    "connects Claude Code or Codex to it; 'serve' runs the AIStack server, and "
+                    "'backup' and 'restore' copy its database.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
                                                        "sync-skill", "check", "export",
-                                                       "github", "move", "connect"])
+                                                       "github", "move", "connect", "backup",
+                                                       "restore"])
     parser.add_argument("folder", nargs="?",
                         help="Where 'export' writes the skills, ./aistack-library by default; "
                              "the skills folder 'sync-skill' writes its skill into, instead of "
                              "printing it; where 'move' takes the Library: github, postgresql "
                              f"(the address in {MOVE_TO_URL}) or here; the agent 'connect' "
-                             "connects, claude-code or codex")
+                             "connects, claude-code or codex; the file 'backup' writes or "
+                             "'restore' reads")
     parser.add_argument("repository", nargs="?",
                         help="For 'move github': the private repository, as owner/name. "
                              "Without it, your own aistack-library, made if needed")
@@ -431,6 +469,8 @@ def run() -> None:
 
     if command == "github":
         sys.exit(github_setup.connect(LocalSettings().home))
+    if command in ("backup", "restore") and arguments.folder is None:
+        parser.error(f"{command} takes the backup file: aistack {command} <file>")
 
     try:
         if arguments.agent:
@@ -452,6 +492,10 @@ def run() -> None:
                 sys.exit(refusal.message)
         elif command == "connect":
             connect_agent(arguments.folder, arguments.hook)
+        elif command == "backup":
+            back_up_database(Path(arguments.folder).expanduser())
+        elif command == "restore":
+            restore_database(Path(arguments.folder).expanduser())
         else:
             serve_local()
     except ValueError as error:
@@ -479,10 +523,13 @@ def run() -> None:
         logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
         logger.error(f"AIStack cannot start. {error}")
         sys.exit(1)
-    except agent_config.NotConnected as refusal:
+    except (agent_config.NotConnected, backup.BackupRefused) as refusal:
         sys.exit(str(refusal))
     except KeyboardInterrupt:
         logger.info("Received interrupt signal, shutting down...")
+    finally:
+        # A stopped server leaves its data in one file, not half of it in `-wal`.
+        dispose_application_context()
 
 
 if __name__ == "__main__":

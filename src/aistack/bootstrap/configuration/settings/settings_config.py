@@ -27,7 +27,10 @@ MINIMUM_DISTINCT_CHARACTERS = 10
 LIBRARY_FILE = "library.toml"
 
 
-class Settings(BaseSettings):
+class DatabaseSettings(BaseSettings):
+    """Where the server's database is, and nothing else: `aistack backup` and `aistack
+    restore` read this, so they run without the invite code."""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -43,6 +46,10 @@ class Settings(BaseSettings):
         description="SQLAlchemy URL. SQLite by default (ADR-0002); a postgresql+psycopg:// "
                     "URL switches to Postgres. Synchronous drivers only (ADR-0005)."
     )
+
+
+
+class Settings(DatabaseSettings):
 
     # Mask the invite code in object representations as well as validation output. Optional
     # here because it may come from a file instead; `resolved_invite_code` requires one.
