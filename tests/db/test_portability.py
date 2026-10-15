@@ -85,13 +85,17 @@ def test_stored_times_read_as_utc_whatever_the_databases_time_zone(portable_engi
 def test_the_upgrade_refuses_a_database_with_two_libraries_for_one_user(tmp_path):
     engine = build_engine(f"sqlite:///{tmp_path / 'aistack.db'}")
     migrate_schema(engine, script_location=_migrations_up_to(tmp_path, "0011"))
-    with build_session_factory(engine).begin() as session:
-        dimitris = onboarding_service.join(session, "dimitris", "laptop", "LINUX").user.user_id
+    # Written as SQL: the models describe the newest schema, which this database is not.
+    dimitris = uuid.uuid4()
     with engine.begin() as connection:
         connection.execute(text(
-            "INSERT INTO team (team_id, name, kind, created_by, created_on) "
-            "VALUES (:id, 'second', 'PERSONAL', :user, CURRENT_TIMESTAMP)"),
-            {"id": uuid.uuid4().hex, "user": dimitris.hex})
+            "INSERT INTO user (user_id, username, is_admin, created_on) "
+            "VALUES (:id, 'dimitris', 1, CURRENT_TIMESTAMP)"), {"id": dimitris.hex})
+        for name in ("dimitris", "second"):
+            connection.execute(text(
+                "INSERT INTO team (team_id, name, kind, created_by, created_on) "
+                "VALUES (:id, :name, 'PERSONAL', :user, CURRENT_TIMESTAMP)"),
+                {"id": uuid.uuid4().hex, "name": name, "user": dimitris.hex})
 
     with pytest.raises(RuntimeError, match="more than one personal team"):
         migrate_schema(engine)

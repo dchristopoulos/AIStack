@@ -17,6 +17,11 @@ def _skill(state: dict, name: str) -> dict:
     return next(skill for skill in state["skills"] if skill["name"] == name)
 
 
+def _placed(placements: list[dict], machine: str, harness: str) -> bool:
+    return any(placement["machine"] == machine and placement["harness"] == harness
+               for placement in placements)
+
+
 def _on(state: dict, name: str) -> list[str]:
     """The computers a skill in the user's library is placed on in Claude Code, by name."""
     names = {machine["id"]: machine["name"] for machine in state["machines"]}
@@ -169,9 +174,9 @@ async def test_the_agents_folder_has_its_own_page_and_says_who_reads_it(sign_in)
     state = await dimitris.state()
     macbook = state["machines"][0]["id"]
     in_agents = sorted(skill["name"] for skill in state["skills"]
-                       if {"machine": macbook, "harness": "agents"} in skill["placements"])
+                       if _placed(skill["placements"], macbook, "agents"))
     in_claude = sorted(skill["name"] for skill in state["skills"]
-                       if {"machine": macbook, "harness": "claude_code"} in skill["placements"])
+                       if _placed(skill["placements"], macbook, "claude_code"))
     assert in_agents == in_claude
     assert dimitris.console_errors == []
 
@@ -189,8 +194,8 @@ async def test_a_skill_is_added_to_the_agents_folder_from_the_library(sign_in):
 
     await expect(row.get_by_role("link", name="macbook / Agents folder")).to_be_visible()
     macbook = (await dimitris.state())["machines"][0]["id"]
-    assert {"machine": macbook, "harness": "agents"} in _skill(await dimitris.state(),
-                                                                "sql-style")["placements"]
+    assert _placed(_skill(await dimitris.state(),
+                                                                "sql-style")["placements"], macbook, "agents")
 
 
 async def test_adding_a_computer_says_what_to_ask_the_agent(sign_in):
@@ -225,7 +230,7 @@ async def test_an_agent_is_added_to_a_computer_and_given_a_skill(sign_in):
                  .get_by_text("meeting-notes", exact=True)).to_be_visible()
     state = await dimitris.state()
     desktop = next(m["id"] for m in state["machines"] if m["name"] == "desktop")
-    assert {"machine": desktop, "harness": "agents"} in _skill(state, "meeting-notes")["placements"]
+    assert _placed(_skill(state, "meeting-notes")["placements"], desktop, "agents")
     assert dimitris.console_errors == []
 
 
@@ -668,3 +673,41 @@ async def test_the_pages_before_sign_in_ask_for_nothing_that_fails(browser, serv
     # The page itself answers 401 or 404 on purpose, and the browser logs that too.
     assert [url for url in errors if url != address] == []
     await page.close()
+
+
+async def test_a_computer_says_where_it_came_from_and_is_renamed(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    await _open_computer(dimitris, "desktop")
+    await expect(page.get_by_text('Not synced yet: say "sync aistack" there')).to_be_visible()
+
+    await page.get_by_role("button", name="Computer settings").click()
+    dialog = page.get_by_role("dialog", name="desktop")
+    await expect(dialog.get_by_text("macbook", exact=True)).to_be_visible()
+    await dialog.get_by_label("Name").fill("old desktop")
+    await dialog.get_by_role("button", name="Rename").click()
+
+    await expect(dialog).to_have_count(0)
+    await expect(page.get_by_text("Renamed desktop to old desktop.")).to_be_visible()
+    names = [machine["name"] for machine in (await dimitris.state())["machines"]]
+    assert names == ["macbook", "old desktop"]
+    assert dimitris.console_errors == []
+
+
+async def test_a_lost_computer_is_removed_from_its_page(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    await _open_computer(dimitris, "desktop")
+
+    await page.get_by_role("button", name="Computer settings").click()
+    await page.get_by_role("dialog", name="desktop").get_by_role(
+        "button", name="Remove this computer…").click()
+    confirm = page.get_by_role("dialog", name="Remove desktop?")
+    await expect(confirm.get_by_text("Its connection to AIStack stops at once")).to_be_visible()
+    await confirm.get_by_role("button", name="Remove", exact=True).click()
+
+    await expect(page.get_by_role("heading", name="Library", level=1)).to_be_visible()
+    await expect(page.get_by_role("navigation", name="Main").get_by_role(
+        "link", name="desktop / Claude Code")).to_have_count(0)
+    assert [machine["name"] for machine in (await dimitris.state())["machines"]] == ["macbook"]
+    assert dimitris.console_errors == []

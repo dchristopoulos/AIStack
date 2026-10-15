@@ -124,7 +124,11 @@ with build_engine(Settings().database_url).begin() as connection:
         print(*row)
 ```
 
-### A laptop was lost or stolen: rotate its token
+### A laptop was lost or stolen
+
+The person can do this themselves while they still have another computer: on the dashboard, open the lost computer and choose Remove this computer. Its token, sessions and transfer URLs end at once, and the computers it added say "added from a computer since removed". The rest of this section is for when you act for them, or when the lost laptop was their only computer.
+
+### Rotate a lost laptop's token
 
 This is the answer to both "revoke the old one" and "let the user back in". The old token stops working on its next request, the machine keeps its name and its enabled skills, and you hand the user the new token. Every dashboard session that laptop opened, and every transfer URL it was given, ends with the old token (ADR-0027).
 

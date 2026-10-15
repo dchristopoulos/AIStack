@@ -1,6 +1,6 @@
 # The dashboard is served by the server, and a link from chat signs you in
 
-Status: accepted, 2026-10-14 (replaces "FastAPI joins the stack with the dashboard" in `docs/DESIGN.md` §5)
+Status: accepted, 2026-10-14 (replaces "FastAPI joins the stack with the dashboard" in `docs/DESIGN.md` §5). Amended by ADR-0027: a session ends with the computer that opened it, and signing out ends it on the server.
 
 The web application is where a person sees and manages their skills and teams. MCP stays what connects a coding agent to their account. Both are the same server process, the same database session rules, and the same services.
 
