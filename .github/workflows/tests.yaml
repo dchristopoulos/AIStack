@@ -211,6 +211,21 @@ jobs:
           for _ in $(seq 1 60); do curl -sf http://127.0.0.1:8002/health && break; sleep 1; done
           poetry run python scripts/container_smoke.py fresh http://127.0.0.1:8002 "$INVITE_CODE" state-wheel.json
 
+      # The sentence a newcomer pastes (RUN_COMMAND in aistack.bundled), run as they run it:
+      # from PyPI, on a home folder with nothing in it. A yanked or renamed release fails here.
+      - name: Setup runs from PyPI
+        run: |
+          pipx install uv==0.11.32
+          HOME="$(mktemp -d)" uvx --no-cache aistack-mcp setup > setup.txt
+          head -n 1 setup.txt | grep -Fx "# Set up AIStack on this computer"
+
+      # Every setup sentence runs whatever PyPI serves as `aistack-mcp`, so it must still be
+      # this project's.
+      - name: aistack-mcp on PyPI is this project
+        run: |
+          curl -sf -o pypi.json https://pypi.org/pypi/aistack-mcp/json
+          python3 -c "import json; home = json.load(open('pypi.json'))['info']['project_urls']['Homepage']; assert home == 'https://github.com/$GITHUB_REPOSITORY', home"
+
       - name: Container logs, if anything failed
         if: failure()
         run: docker logs aistack 2>&1 || true; docker logs aistack-postgres 2>&1 || true; cat wheel.log 2>/dev/null || true
@@ -219,7 +234,7 @@ jobs:
   # main, or a version tag. A pull request never publishes, whatever its branch holds.
   publish:
     if: github.event_name == 'push'
-    needs: [pytest, browsers, container]
+    needs: [pytest, browsers, windows, container]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -266,7 +281,7 @@ jobs:
   # commit `v<version>` and push the tag. The image gets the same version from the same tag.
   pypi:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [pytest, browsers, container]
+    needs: [pytest, browsers, windows, container]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Named on pypi.org's trusted publisher, so only this job, in this environment, can upload.
@@ -292,3 +307,16 @@ jobs:
       - run: poetry build
 
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+      # A release is done when a computer with nothing on it can run the sentence setup hands
+      # out. PyPI takes a minute or two to serve a new upload, so this asks for up to five.
+      - name: A clean computer runs setup from PyPI
+        run: |
+          pipx install uv==0.11.32
+          version="$(poetry version -s)"
+          for _ in $(seq 1 30); do
+            HOME="$(mktemp -d)" uvx --no-cache "aistack-mcp@$version" setup > setup.txt 2> uvx.log && break
+            sleep 10
+          done
+          cat uvx.log
+          head -n 1 setup.txt | grep -Fx "# Set up AIStack on this computer"

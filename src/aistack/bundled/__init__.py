@@ -19,6 +19,12 @@ ICON_LINK = (
     "transform='translate(5 5) scale(.92)' fill='none' stroke='white' stroke-width='2.2' "
     "stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\">")
 
+# Every sentence that runs or installs AIStack, in the README, the operator's guide, setup,
+# the sync skill and the page, starts with one of these, and a test holds them to it, so a
+# change to where AIStack is installed from is made once and cannot miss a sentence.
+RUN_COMMAND = "uvx aistack-mcp"
+INSTALL_COMMAND = "uv tool install aistack-mcp"
+
 
 def setup_instructions() -> str:
     """The instructions template, with `{server_url}` and `{mcp_url}` still to fill in."""

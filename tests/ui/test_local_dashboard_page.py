@@ -1,6 +1,7 @@
 import pytest
 from playwright.async_api import expect
 
+from aistack.bundled import RUN_COMMAND
 from tests.local_dashboard import local_dashboard
 
 pytestmark = pytest.mark.anyio
@@ -100,5 +101,5 @@ async def test_adding_a_computer_names_the_shared_library(browser, tmp_path, sql
 
         pasted = page.get_by_role("dialog").get_by_role("textbox", name="What to paste")
         await expect(pasted).to_have_value(
-            f"Set up AIStack: run `uvx aistack-mcp setup` and follow what it prints. {sentence}")
+            f"Set up AIStack: run `{RUN_COMMAND} setup` and follow what it prints. {sentence}")
         await context.close()

@@ -27,7 +27,7 @@ How to work through it:
 
 ### Progress
 
-- [ ] 1. Claim and publish `aistack-mcp`, and make every install sentence resolve
+- [x] 1. Claim and publish `aistack-mcp`, and make every install sentence resolve (#129)
 - [ ] 2. Bump PyJWT and pin the build
 - [ ] 3. Make local setup's agent commands work and stop printing secrets
 - [x] 4. An invite dies with its maker's right to invite (#126)
@@ -89,6 +89,8 @@ Files: .github/workflows/tests.yaml (add `windows` to the `needs:` of `publish` 
 ADR: none needed.
 
 Tests: A test that collects every `uvx …`/`uv tool install …` sentence in `bundled/**` and the page and asserts they use one constant; a CI job that runs that command in a clean container after publishing. The owner pushes the `v0.1.0` tag: that is the one step a session cannot do. If PyPI already answers for `aistack-mcp`, drop the `git+` fallback below.
+
+Outcome: the owner tagged `v0.1.0` and `aistack-mcp` 0.1.0 is on PyPI with this repository as its homepage, so the `git+` fallback was never needed. The sentences come from `RUN_COMMAND` and `INSTALL_COMMAND` in `aistack.bundled`. The container job runs `uvx aistack-mcp setup` from PyPI on an empty home folder and checks that the PyPI project still names this repository, and the `pypi` job runs setup from the index after each upload. Left to the owner: make `windows` a required check on `main`, then add it to the ship-a-change skill's list. Moved: IMP-01's macOS job to step 42.
 
 ### 2. Bump PyJWT and pin the build
 
@@ -695,7 +697,7 @@ Tests: Every dashboard action writes one line naming the action, team and user i
 
 ### 42. Tests and checks the code is missing
 
-Closes: [IMP-03](improvements.md#imp-03-the-log-replay-test-cannot-catch-a-localhost-dashboard-write-that-forgets-its-log-event), [IMP-04](improvements.md#imp-04-admin-and-destructive-dashboard-paths-never-run-in-any-test-privacy-of-an-existing-group-moving-or-removing-a-team-skill-subscribing-and-console-errors-are-mostly-unchecked), [IMP-17](improvements.md#imp-17-no-static-check-guards-the-python-or-the-pages-1876-line-script-and-the-page-ships-an-untested-200-line-fake-backend).
+Closes: [IMP-03](improvements.md#imp-03-the-log-replay-test-cannot-catch-a-localhost-dashboard-write-that-forgets-its-log-event), [IMP-04](improvements.md#imp-04-admin-and-destructive-dashboard-paths-never-run-in-any-test-privacy-of-an-existing-group-moving-or-removing-a-team-skill-subscribing-and-console-errors-are-mostly-unchecked), [IMP-17](improvements.md#imp-17-no-static-check-guards-the-python-or-the-pages-1876-line-script-and-the-page-ships-an-untested-200-line-fake-backend), and the macOS job from [IMP-01](improvements.md#imp-01-the-windows-job-gates-neither-merging-nor-publishing-and-local-mode-then-updates-itself-from-pypi) (a `macos-latest` job running the Windows job's tests, in the publishing jobs' `needs`).
 Largest effort among them: S.
 
 Files: tests/mcp/test_library_log.py; tests/api/test_dashboard_over_http.py; pyproject.toml (ruff); .github/workflows/tests.yaml (ruff, `node --check` on the page's scripts).
