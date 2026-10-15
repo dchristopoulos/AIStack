@@ -203,6 +203,19 @@ jobs:
           ! grep -E "eyJ[A-Za-z0-9_-]{10,}\." container.log
           grep -F "Invite code: 'configured'" container.log
 
+      # A backup taken while it runs restores, and a stopped server leaves one file.
+      - name: Back up, change, stop, restore
+        run: |
+          docker exec aistack aistack backup /data/before.db
+          poetry run python scripts/container_smoke.py changed http://127.0.0.1:8000 "$INVITE_CODE" state.json
+          docker stop aistack
+          docker run --rm -v aistack-ci:/data aistack:ci \
+            sh -c 'test -s /data/aistack.db && test ! -e /data/aistack.db-wal'
+          docker run --rm -v aistack-ci:/data aistack:ci aistack restore /data/before.db
+          docker start aistack
+          scripts/wait_until_healthy.sh aistack
+          poetry run python scripts/container_smoke.py restored http://127.0.0.1:8000 "$INVITE_CODE" state.json
+
       - name: The same image runs against PostgreSQL
         run: |
           docker rm -f aistack

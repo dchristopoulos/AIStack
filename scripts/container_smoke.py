@@ -5,6 +5,9 @@ has been restarted, to prove the volume is where the state lives.
 
     python scripts/container_smoke.py fresh     http://127.0.0.1:8000 <invite code> <state file>
     python scripts/container_smoke.py restarted http://127.0.0.1:8000 <invite code> <state file>
+
+Around a backup and a restore, `changed` adds a user after the backup, and `restored` finds
+what was there before it and not that user.
 """
 
 import asyncio
@@ -98,7 +101,26 @@ async def restarted(base_url: str, invite_code: str, state_file: pathlib.Path) -
     print("restarted: the machine token, the user, and the skill all survived")
 
 
+LATE_USER = "ci-after-backup"
+
+
+async def changed(base_url: str, invite_code: str, state_file: pathlib.Path) -> None:
+    await call(base_url, invite_code, "join", username=LATE_USER, machine_name="late",
+               os="LINUX")
+    print("changed: joined a user after the backup")
+
+
+async def restored(base_url: str, invite_code: str, state_file: pathlib.Path) -> None:
+    """After the restore: what the backup held is there, and the later user is not."""
+    await restarted(base_url, invite_code, state_file)
+    again = await call(base_url, invite_code, "join", username=LATE_USER, machine_name="late",
+                       os="LINUX")
+    assert again["token"], again
+    print("restored: the backup's state is back, and nothing written after it")
+
+
 if __name__ == "__main__":
     phase, base_url, invite_code, state_path = sys.argv[1:5]
-    asyncio.run({"fresh": fresh, "restarted": restarted}[phase](
+    phases = {"fresh": fresh, "restarted": restarted, "changed": changed, "restored": restored}
+    asyncio.run(phases[phase](
         base_url.rstrip("/"), invite_code, pathlib.Path(state_path)))

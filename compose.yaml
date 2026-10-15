@@ -12,6 +12,8 @@ services:
     image: ghcr.io/dchristopoulos/aistack:0.1
     build: .
     restart: unless-stopped
+    # Time to finish requests and close the database; Docker's default 10s is shorter.
+    stop_grace_period: 25s
     ports:
       - "8000:8000"
     environment:
