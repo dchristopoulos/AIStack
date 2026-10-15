@@ -230,7 +230,7 @@ def _gunzipped(body: bytes) -> bytes:
     """Decompress with a ceiling, so a small upload cannot become a large allocation.
 
     tarfile's own gzip mode has no such ceiling, and it reads a pax header into memory at
-    whatever size the header claims — one megabyte of gzip can claim a gigabyte.
+    whatever size the header claims: one megabyte of gzip can claim a gigabyte.
     """
     output = bytearray()
     remaining = body

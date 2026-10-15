@@ -19,7 +19,7 @@ ONBOARDING_TAG = "onboarding"
 def authorize(ctx: AuthContext) -> bool:
     """Onboarding tools take the invite code; every other tool takes a machine token."""
     # Keyed on a tag rather than a tool name: a rename carries its tag along, and a new tool
-    # that declares nothing falls to MACHINE_SCOPE — the scope that denies the invite code.
+    # that declares nothing falls to MACHINE_SCOPE: the scope that denies the invite code.
     required = BOOTSTRAP_SCOPE if ONBOARDING_TAG in ctx.component.tags else MACHINE_SCOPE
     if ctx.token is not None and required in ctx.token.scopes:
         return True
@@ -30,7 +30,7 @@ def authorize(ctx: AuthContext) -> bool:
 
 
 def _denial(required: str, tool_name: str, token) -> str:
-    """Name the bearer the tool wants and the caller's next move — never a bearer itself.
+    """Name the bearer the tool wants and the caller's next move, never a bearer itself.
 
     The caller's own scope is safe to state back: it describes the credential they just
     presented, not its value. `tool_name` is a registered component's name, not a caller
@@ -43,7 +43,7 @@ def _denial(required: str, tool_name: str, token) -> str:
         return (
             f"'{tool_name}' is an onboarding tool and takes an invite code as its "
             f"bearer. This connection is authenticated as a registered machine, which has "
-            f"already joined — registering another computer is add_machine."
+            f"already joined. To register another computer, call add_machine."
         )
 
     return (

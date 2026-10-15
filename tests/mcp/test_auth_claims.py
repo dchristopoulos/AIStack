@@ -19,7 +19,7 @@ from tests.conftest import INVITE_CODE
 from tests.mcp.conftest import client_for
 
 # The verifier resolves a bearer to machine_id and user_id so that no tool ever re-queries
-# identity. join is the one tool that needs neither — it runs as the bootstrap principal — so
+# identity. join is the one tool that needs neither, it runs as the bootstrap principal, so
 # without these tests the claims path ships written, populated, and read by nothing until the
 # first machine-scope tool in a later ticket.
 pytestmark = pytest.mark.anyio

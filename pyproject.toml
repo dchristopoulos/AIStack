@@ -14,7 +14,7 @@ authors = [
 # itself at <4.0, and Poetry cannot resolve an open-ended floor against it.
 requires-python = ">=3.13,<4.0"
 # PEP 508 ranges, not Poetry carets: [project].dependencies is standard metadata.
-# fastmcp alone is pinned exactly — ticket #1's spike results are statements about
+# fastmcp alone is pinned exactly: ticket #1's spike results are statements about
 # one release, and a silent minor bump would invalidate them.
 dependencies = [
     "fastmcp==3.4.7",

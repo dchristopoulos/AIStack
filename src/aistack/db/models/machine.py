@@ -20,7 +20,7 @@ class Machine(Base):
     machine_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user.user_id"), nullable=False)
     name: Mapped[str] = mapped_column(String(MACHINE_NAME_MAX_LENGTH), nullable=False)
-    # native_enum=False keeps this a VARCHAR on both dialects — a native Postgres enum would
+    # native_enum=False keeps this a VARCHAR on both dialects: a native Postgres enum would
     # need a migration to add a value, which SQLite would not, breaking "runs identically".
     # create_constraint is what emits the CHECK, and it has defaulted to False since SQLAlchemy
     # 1.4: without it the column is a bare VARCHAR and the database enforces nothing.
@@ -30,7 +30,7 @@ class Machine(Base):
         nullable=False
     )
     # Only the sha256 of the bearer token is ever stored. Unique so that authentication is one
-    # indexed lookup with nothing compared in Python — see the token service.
+    # indexed lookup with nothing compared in Python: see the token service.
     token_hash: Mapped[str] = mapped_column(String(TOKEN_HASH_LENGTH), nullable=False, unique=True)
     created_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                  default=utc_now)

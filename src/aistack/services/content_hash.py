@@ -1,4 +1,4 @@
-"""The canonical content hash of a skill revision — the only implementation (ADR-0011).
+"""The canonical content hash of a skill revision: the only implementation (ADR-0011).
 
 Push feeds it the digests of the bytes it received; sync feeds it the digests the agent sent.
 Both must land on the same value for the same files, so everything that could differ between

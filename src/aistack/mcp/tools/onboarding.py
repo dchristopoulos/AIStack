@@ -40,7 +40,7 @@ class JoinResult(TypedDict):
                  handle beats a display name.
         machine_name: What this computer is called, up to 64 characters, unique among that
                      user's machines (e.g. "macbook", "work-laptop", "desktop").
-        os: This machine's operating system: MACOS, WINDOWS, or LINUX. Required — the server
+        os: This machine's operating system: MACOS, WINDOWS, or LINUX. Required: the server
            cannot observe the client's platform, so state it.
 
     Returns:
@@ -49,7 +49,7 @@ class JoinResult(TypedDict):
             - machine_name: the registered machine name
             - token: this machine's permanent token. Write it into the MCP configuration and
                     tell the user to restart their harness once. It is shown exactly here and
-                    never again — the server stores only a hash of it.
+                    never again: the server stores only a hash of it.
             - team: the team they joined with its invite code, or null for the server's code.
     """)
 @handle_mcp_errors
@@ -103,7 +103,7 @@ class AddMachineResult(TypedDict):
         name: What the new computer is called, up to 64 characters, unique among this user's
              machines (e.g. "windows-pc", "work-laptop").
         os: The new computer's operating system: MACOS, WINDOWS, or LINUX. Ask the user if it
-           is not obvious from what they said — it is the other computer's, not this one's.
+           is not obvious from what they said: it is the other computer's, not this one's.
 
     Returns:
         AddMachineResult containing:

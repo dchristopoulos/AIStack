@@ -114,7 +114,7 @@ def test_the_policy_denies_every_other_pairing(tags, scopes):
     """The crossed pairs, the empty scope list, and the unauthenticated caller.
 
     `scopes=None` stands for no token at all: `required in None.scopes` would raise, and
-    `run_auth_checks` masks an unexpected exception into a plain denial — so a regression
+    `run_auth_checks` masks an unexpected exception into a plain denial, so a regression
     there would deny correctly and silently, and no other assertion would notice.
     """
     with pytest.raises(AuthorizationError):

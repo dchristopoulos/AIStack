@@ -15,7 +15,7 @@ def sqlite_url_fixture(tmp_path) -> str:
     """A SQLite URL backed by a real file, never ':memory:'.
 
     An in-memory database is per-connection, so WAL means nothing and any test that needs two
-    connections — the admin race, the auth verifier's own session — silently gets two empty
+    connections, the admin race, the auth verifier's own session, silently gets two empty
     databases instead of one shared one.
     """
     return f"sqlite:///{tmp_path / 'aistack.db'}"

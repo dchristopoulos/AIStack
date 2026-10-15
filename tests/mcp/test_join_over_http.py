@@ -138,7 +138,7 @@ async def test_the_join_result_carries_the_token_and_no_aistack_log_line_does(se
 async def test_a_missing_or_malformed_authorization_header_is_rejected(server_url,
                                                                        session_factory,
                                                                        label, headers):
-    """Absent and malformed, not merely wrong — those take a different path through the stack.
+    """Absent and malformed, not merely wrong, those take a different path through the stack.
 
     The parametrized test above covers bearers that are well-formed and unrecognized. A request
     carrying no Authorization header at all never reaches the verifier, so it is the transport

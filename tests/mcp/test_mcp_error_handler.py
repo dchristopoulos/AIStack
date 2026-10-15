@@ -66,7 +66,7 @@ def test_the_masked_failure_still_logs_the_real_cause_for_the_operator(caplog):
         with pytest.raises(ToolError):
             sample_tool("explode", "LINUX")
 
-    # Masked for the caller, fully visible in the server log — otherwise a bug is unreportable.
+    # Masked for the caller, fully visible in the server log, otherwise a bug is unreportable.
     assert "db-host:5432" in caplog.text
     assert "Traceback" in caplog.text
 
