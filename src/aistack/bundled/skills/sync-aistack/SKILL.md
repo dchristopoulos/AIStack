@@ -125,12 +125,14 @@ When several skills need the same kind of answer, ask about them together and ac
 
 ### Team updates
 
-Each `team_updates` entry has `name`, `team`, `from_revision`, `to_revision`, and `pushed_by`. Tell the user which team changed the skill, between which revisions, and who pushed the new one. Then ask whether they want it.
+Each `team_updates` entry has `name`, `team`, `from_revision`, `to_revision`, `pushed_by`, and `own_changes`. Tell the user which team changed the skill, between which revisions, and who pushed the new one. When `own_changes` is true, the user changed the skill since taking it, so say that too: "You changed wizard since you took revision 1 from backend. Taking ana's revision 2 replaces your changes on every computer that has it." Then ask whether they want it.
 
 - **Yes**: call `get_skill` with `name` and `team`, then install. This copies the team's latest revision into the Library and replaces the local folder.
 - **No**: do nothing. The offer comes back on the next sync.
 
 If the same skill is also in `ask` with `local` `unknown`, settle that entry first: accepting the team's version replaces the local folder, edits included.
+
+If `get_skill` with a team is refused because the user already has their own skill of that name that was not taken from that team, tell them what its sentence says and ask. Only if they agree, call it again with `replace` true.
 
 To share a change the other way, the user asks for it ("share wizard with backend"), which is `share_skill`. Sync never shares.
 

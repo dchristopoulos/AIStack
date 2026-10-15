@@ -1651,9 +1651,9 @@ function libraryRow(s) {
       el('div', { class: 'update' },
         el('span', { class: 'dot accent' }),
         el('strong', null, 'Update available'),
-        el('span', { class: 'mono' }, `r${src.revision} → r${src.latest_revision}`),
-        el('span', { class: 'grow' }, `pushed by ${src.latest_pushed_by}`),
-        btn('Take update', { class: 'btn primary sm', fk: 'take:' + s.name, on: { click: ev => takeSkill(ev.currentTarget, src.team, s.name, true) } }, 'up'))));
+        el('span', { class: 'mono' }, `${src.team} r${src.revision} → r${src.latest_revision}`),
+        el('span', { class: 'grow' }, `pushed by ${src.latest_pushed_by}${src.own_changes ? `, over your changes in r${s.revision}` : ''}`),
+        btn('Take update', { class: 'btn primary sm', fk: 'take:' + s.name, on: { click: ev => takeSkill(ev.currentTarget, src.team, s.name) } }, 'up'))));
 }
 
 // Placements change one call at a time; each is recorded as it lands, so a failure part way keeps what went before.
@@ -1704,7 +1704,7 @@ function skillSheet(s) {
       s.description && el('p', { class: 'lead' }, s.description),
       src && src.update_available && el('div', { class: 'update' },
         el('span', { class: 'dot accent' }), el('strong', null, 'Update available'),
-        el('span', { class: 'grow' }, `r${src.revision} → r${src.latest_revision}, pushed by ${src.latest_pushed_by}`)),
+        el('span', { class: 'grow' }, `${src.team} r${src.revision} → r${src.latest_revision}, pushed by ${src.latest_pushed_by}${src.own_changes ? `. Taking it replaces your changes in r${s.revision}.` : ''}`)),
       el('section', { class: 'sheet-sec', 'aria-label': 'About' },
         el('dl', { class: 'facts' },
           fact('Source', src ? el('a', { class: 'mono link', href: teamHash(src.team) }, teamLabel(src.team, src.group)) : 'Your own'),
@@ -1859,13 +1859,42 @@ function copyFromDialog(t, others) {
   });
 }
 
-function takeSkill(control, team, name, isUpdate) {
-  return run(control, async () => {
-    await api(`/api/teams/${enc(team)}/take`, { name });
-    return isUpdate
-      ? `Took the update to ${name}. Applies on each computer at its next sync.`
-      : `Added ${name} to your library. Add it to a computer to use it there.`;
+// Taking replaces the skill of that name in the library. When that would lose something of
+// the person's, they are asked first, naming what goes and where; the server refuses an
+// unrelated one without replace.
+function takeSkill(control, team, name) {
+  const mine = state.skills.find(x => x.name === name);
+  const take = replace => api(`/api/teams/${enc(team)}/take`, replace ? { name, replace } : { name });
+  const where = mine && computersOf(mine);
+  const applies = where ? `Applies on ${where} at the next sync.` : 'Add it to a computer to use it there.';
+  if (!mine) {
+    return run(control, async () => { await take(false); return `Added ${name} to your library. ${applies}`; });
+  }
+  const linked = mine.source && mine.source.team === team;
+  if (linked && !mine.source.own_changes) {
+    return run(control, async () => { await take(false); return `Took the update to ${name}. ${applies}`; });
+  }
+  confirmDialog({
+    title: linked ? `Take the update to ${name}?` : `Replace your ${name}?`,
+    submitLabel: linked ? 'Take update' : 'Replace yours',
+    danger: false,
+    lines: [
+      linked
+        ? `You changed ${name} since you took r${mine.source.revision} from ${team}. Taking ${mine.source.latest_pushed_by}'s r${mine.source.latest_revision} replaces your r${mine.revision}.`
+        : `You already have your own ${name}, r${mine.revision}, last pushed by ${mine.pushed_by}. It was not taken from ${team}, so it may be a different skill with the same name.`,
+      where ? `It is replaced on ${where} at the next sync.` : null,
+      'Yours stays in your history.',
+    ],
+    onSubmit: async () => {
+      await take(!linked);
+      return linked ? `Took the update to ${name}. ${applies}` : `Replaced your ${name} with ${team}'s. ${applies}`;
+    },
   });
+}
+
+function computersOf(s) {
+  const names = [...new Set(s.placements.map(p => (state.machines.find(m => m.id === p.machine) || {}).name).filter(Boolean))];
+  return names.length ? names.join(', ') : null;
 }
 
 function groupPicker(team, { name, value = '', legend, noneLabel, allow = () => true }) {
@@ -1885,21 +1914,41 @@ const picked = root => { const c = root.querySelector('input[type=radio]:checked
 
 function shareDialog(s) {
   let team = (s.source && teamBy(s.source.team)) || state.teams[0];
-  const holder = el('div');
-  const fill = () => holder.replaceChildren(groupPicker(team, {
-    name: 'share-group', legend: 'Group (optional)', noneLabel: 'Team level (no group)',
-    value: s.source && s.source.team === team.name ? s.source.group || '' : '',
-    allow: g => mayShareInto(team, g.path),
-  }));
+  const holder = el('div'), warning = el('p', { hidden: true });
+  // What sharing would put on top of, said before anything is stored.
+  const risk = () => {
+    const had = team.skills.find(x => x.name === s.name);
+    if (!had) return null;
+    if (!s.source || s.source.team !== team.name) {
+      return `${team.name} already has a different ${s.name}, last pushed by ${had.pushed_by}. Sharing puts yours on top for everyone who took it.`;
+    }
+    if (s.source.update_available) {
+      return `${team.name} has r${s.source.latest_revision} of ${s.name} from ${s.source.latest_pushed_by}, which you never took. Sharing yours replaces it, and its changes are no longer in the team's latest.`;
+    }
+    return null;
+  };
+  const fill = () => {
+    holder.replaceChildren(groupPicker(team, {
+      name: 'share-group', legend: 'Group (optional)', noneLabel: 'Team level (no group)',
+      value: s.source && s.source.team === team.name ? s.source.group || '' : '',
+      allow: g => mayShareInto(team, g.path),
+    }));
+    const text = risk();
+    warning.textContent = text || '';
+    warning.hidden = !text;
+    if (dlg) dlg.querySelector('button[type=submit]').textContent = text ? 'Share anyway' : 'Share';
+  };
+  let dlg = null;
   const select = el('select', { class: 'input', on: { change: () => { team = teamBy(select.value); fill(); } } },
     state.teams.map(t => el('option', { value: t.name, selected: t === team }, t.name)));
   fill();
-  openDialog({
+  dlg = openDialog({
     title: `Share ${s.name}`,
-    submitLabel: 'Share',
+    submitLabel: risk() ? 'Share anyway' : 'Share',
     body: [
       el('p', null, 'The team gets its own copy of this skill. Everyone who can see it there sees that you pushed it. Your copy in your library stays yours.'),
       field('Team', select),
+      warning,
       holder,
     ],
     onSubmit: async () => {
@@ -1909,6 +1958,10 @@ function shareDialog(s) {
         return { kind: 'warn', text: `Shared, but check it: ${res.team} already had a different skill named ${s.name}, last pushed by ${res.previous_pushed_by}. Yours is now revision ${res.revision} there.` };
       }
       if (res.unchanged) return `${where} already had exactly this version of ${s.name}. Nothing changed.`;
+      if (res.overwrote_revision) {
+        return { kind: 'warn', text: `Shared ${s.name} with ${where} as revision ${res.revision}, in place of revision ${res.overwrote_revision} from ${res.previous_pushed_by}, which you never took.` };
+      }
+      if (res.updates_from) return `Shared ${s.name} with ${where} as revision ${res.revision}. Your copy still takes updates from ${res.updates_from}.`;
       return `Shared ${s.name} with ${where} as revision ${res.revision}.`;
     },
   });
@@ -2062,10 +2115,12 @@ function teamSkillRow(team, s, admin, depth) {
   const update = s.in_library && mine && mine.source && mine.source.team === team.name && mine.source.update_available;
   const fk = `ts:${team.name}:${s.name}`;
   const action = update
-    ? btn('Take update', { class: 'btn primary', fk, title: `r${mine.source.revision} → r${mine.source.latest_revision}`, on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name, true) } }, 'up')
+    ? btn('Take update', { class: 'btn primary', fk, title: `r${mine.source.revision} → r${mine.source.latest_revision}`, on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name) } }, 'up')
     : s.in_library
       ? el('span', { class: 'in-mine' }, icon('check', 14), 'In your library')
-      : btn('Add to library', { fk, on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name, false) } }, 'plus');
+      : mine
+        ? btn('Replace yours…', { fk, title: `You have your own ${s.name}`, on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name) } }, 'up')
+        : btn('Add to library', { fk, on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name) } }, 'plus');
   return el('div', { class: 'tr', role: 'row', style: `--d:${depth}` },
     td('c-main',
       el('div', { class: 'name-line' },
@@ -2670,17 +2725,17 @@ const DB = (() => {
     ],
     skills: [
       { name: 'code-review', description: 'Reviews a diff against team standards and flags risky changes.', revision: 2, pushed_by: 'maria', updated_on: ago(30), files: 4, placements: [P(MAC)],
-        source: { team: 'aistack', group: 'developers', revision: 2, latest_revision: 3, latest_pushed_by: 'maria', update_available: true } },
+        source: { team: 'aistack', group: 'developers', revision: 2, latest_revision: 3, latest_pushed_by: 'maria', update_available: true, own_changes: false } },
       { name: 'commit-messages', description: 'Writes commit messages in the house style: imperative subject, why before what.', revision: 2, pushed_by: 'dimitris', updated_on: ago(96), files: 1, placements: [P(MAC), P(DESK), { machine: MAC, harness: 'agents' }],
-        source: { team: 'aistack', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'dimitris', update_available: false } },
+        source: { team: 'aistack', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'dimitris', update_available: false, own_changes: false } },
       { name: 'pr-description', description: 'Drafts a pull request description from the branch diff and linked issue.', revision: 1, pushed_by: 'eve', updated_on: ago(200), files: 2, placements: [P(MAC), P(DESK)],
-        source: { team: 'friends', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'eve', update_available: false } },
+        source: { team: 'friends', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'eve', update_available: false, own_changes: false } },
       { name: 'sqlalchemy-migrations', description: 'Plans and writes Alembic migrations that run identically on SQLite and Postgres.', revision: 4, pushed_by: 'maria', updated_on: ago(52), files: 6, placements: [P(DESK)],
-        source: { team: 'aistack', group: 'developers/backend', revision: 4, latest_revision: 4, latest_pushed_by: 'maria', update_available: false } },
+        source: { team: 'aistack', group: 'developers/backend', revision: 4, latest_revision: 4, latest_pushed_by: 'maria', update_available: false, own_changes: false } },
       { name: 'wizard', description: 'Generates an interactive bash wizard for steps only a human can perform.', revision: 1, pushed_by: 'dimitris', updated_on: ago(5), files: 3, placements: [P(MAC)], source: null },
       { name: 'meeting-notes', description: 'Turns a rough transcript into decisions and actions.', revision: 1, pushed_by: 'dimitris', updated_on: ago(300), files: 1, placements: [], source: null },
       { name: 'release-notes', description: 'Builds release notes from merged pull requests since the last tag.', revision: 1, pushed_by: 'dimitris', updated_on: ago(300), files: 2, placements: [],
-        source: { team: 'aistack', group: null, revision: 1, latest_revision: 1, latest_pushed_by: 'dimitris', update_available: false } },
+        source: { team: 'aistack', group: null, revision: 1, latest_revision: 1, latest_pushed_by: 'dimitris', update_available: false, own_changes: false } },
     ],
     teams: [
       { name: 'friends', kind: 'SHARED', role: 'MEMBER', sees_all_groups: false,
@@ -2735,13 +2790,16 @@ const DEMO_ROUTES = [
     const had = t.skills.find(x => x.name === name);
     const fromHere = !!s.source && s.source.team === t.name;
     if (had && fromHere && s.source.revision === had.revision && (had.group || null) === group) {
-      return { team: t.name, group, revision: had.revision, created: false, unchanged: true, previous_pushed_by: had.pushed_by, possibly_unrelated: false };
+      return { team: t.name, group, revision: had.revision, created: false, unchanged: true, previous_pushed_by: had.pushed_by, possibly_unrelated: false, overwrote_revision: null, updates_from: null };
     }
     const revision = had ? had.revision + 1 : 1, previous = had ? had.pushed_by : null;
     const copy = { name, description: s.description, group, revision, pushed_by: dMe(), updated_on: dNow(), in_library: true };
     if (had) Object.assign(had, copy); else t.skills.push(copy);
-    s.source = { team: t.name, group, revision, latest_revision: revision, latest_pushed_by: dMe(), update_available: false };
-    return { team: t.name, group, revision, created: !had, unchanged: false, previous_pushed_by: previous, possibly_unrelated: !!had && !fromHere };
+    const overwrote = had && fromHere && s.source.revision < had.revision ? had.revision : null;
+    const follows = s.source && !fromHere ? s.source.team : null;
+    if (!follows) s.source = { team: t.name, group, revision, latest_revision: revision, latest_pushed_by: dMe(), update_available: false, own_changes: false };
+    return { team: t.name, group, revision, created: !had, unchanged: false, previous_pushed_by: previous, possibly_unrelated: !!had && !fromHere && !follows,
+      overwrote_revision: overwrote, updates_from: follows };
   }],
   [/^\/api\/skills\/([^/]+)\/remove$/, (b, name) => {
     dMine(name);
@@ -2787,8 +2845,11 @@ const DEMO_ROUTES = [
   }],
   [/^\/api\/teams\/([^/]+)\/take$/, (b, team) => {
     const t = dTeam(team), ts = dTeamSkill(t, b.name);
-    const source = { team: t.name, group: ts.group, revision: ts.revision, latest_revision: ts.revision, latest_pushed_by: ts.pushed_by, update_available: false };
+    const source = { team: t.name, group: ts.group, revision: ts.revision, latest_revision: ts.revision, latest_pushed_by: ts.pushed_by, update_available: false, own_changes: false };
     const mine = DB.skills.find(s => s.name === b.name);
+    if (mine && !b.replace && !(mine.source && mine.source.team === t.name)) {
+      fail(`You already have your own ${b.name} (revision ${mine.revision}, last pushed by ${mine.pushed_by}) that was not taken from team ${t.name}.`);
+    }
     if (mine) Object.assign(mine, { description: ts.description, revision: mine.revision + 1, pushed_by: ts.pushed_by, updated_on: dNow(), source });
     else DB.skills.push({ name: ts.name, description: ts.description, revision: 1, pushed_by: ts.pushed_by, updated_on: dNow(), files: 3, placements: [], source });
     DB.skills.sort((a, c) => a.name.localeCompare(c.name));
