@@ -20,6 +20,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Route
 
 from aistack.bootstrap.context.application_context import (
+    get_failure_limiter,
     get_local_principal,
     get_public_url,
     get_read_session_factory,
@@ -31,8 +32,10 @@ from aistack.bootstrap.context.application_context import (
     library_description,
 )
 from aistack.bundled import ICON_LINK, dashboard_page
-from aistack.commons.exceptions import InvalidTicket, SignedOut, ValidationError
+from aistack.commons.exceptions import InvalidTicket, NotFound, SignedOut, ValidationError
+from aistack.mcp.auth.failure_limiter import client_address, note_failure
 from aistack.mcp.mcp import mcp
+from aistack.mcp.routes.request_body import bounded_body
 from aistack.mcp.routes.route_error_handler import handle_route_errors
 from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH, server_base_url
 from aistack.services import (
@@ -54,6 +57,7 @@ SESSION_COOKIE = "aistack_session"
 REQUEST_HEADER = "x-aistack-request"
 
 _MAX_BODY_BYTES = 16 * 1024
+_BODY_READ_TIMEOUT_SECONDS = 10
 
 _SIGNED_OUT = ("You are not signed in to this dashboard. Ask your coding agent to \"open my "
                "aistack dashboard\" for a new link.")
@@ -99,7 +103,8 @@ async def sign_in(request: Request) -> Response:
         holder = get_ticket_signer().verified_dashboard_link(request.path_params["ticket"])
         joining = await asyncio.to_thread(_in_transaction, _username, holder)
     except (InvalidTicket, SignedOut):
-        logger.info("Dashboard sign-in refused: the link was not valid or had expired.")
+        _refused(request, "Dashboard sign-in refused: the link was not valid or had expired.",
+                 "dashboard link")
         return _signed_out_page(request)
 
     current = await _current_user(request)
@@ -117,9 +122,18 @@ async def switch_account(request: Request) -> Response:
     try:
         holder = get_ticket_signer().verified_dashboard_link(request.path_params["ticket"])
     except InvalidTicket as error:
+        _refused(request, "Dashboard switch refused: the link was not valid or had expired.",
+                 "dashboard link")
         raise SignedOut(_SIGNED_OUT) from error
     await asyncio.to_thread(_in_transaction, _username, holder)
     return _start_session(request, holder, _json({"ok": True}))
+
+
+def _refused(request: Request, line: str, what: str) -> None:
+    """Log a refused credential with its address and count it toward the throttle."""
+    address = client_address(request)
+    logger.info(f"{line} Client: '{address}'.")
+    note_failure(get_failure_limiter(), address, what)
 
 
 def _start_session(request: Request, holder: DashboardHolder,
@@ -217,12 +231,14 @@ async def sign_out(request: Request) -> Response:
 Action = Callable[[Session, uuid.UUID, dict[str, str], dict[str, Any]], dict[str, Any] | None]
 
 
-def _action(path: str, local: bool = True) -> Callable[[Action], Action]:
+def _action(path: str, local: bool = True,
+            credential: str | None = None) -> Callable[[Action], Action]:
     """Register a POST route that runs `function` for the signed-in user in one transaction.
 
     The function takes the session, the caller's user id, the path parameters, and the JSON
     body. The user id comes from the session cookie and from nowhere else. `local` false keeps
-    a team action off the localhost dashboard.
+    a team action off the localhost dashboard. `credential` names what the body carries when
+    it is one, such as an invite code: a NotFound then counts toward the throttle.
     """
     def register(function: Action) -> Action:
         @wraps(function)
@@ -230,8 +246,14 @@ def _action(path: str, local: bool = True) -> Callable[[Action], Action]:
             holder = _signed_in(request)
             _require_request_header(request)
             body = await _json_body(request)
-            result = await asyncio.to_thread(_in_transaction, _as_user(function), holder,
-                                             dict(request.path_params), body)
+            try:
+                result = await asyncio.to_thread(_in_transaction, _as_user(function), holder,
+                                                 dict(request.path_params), body)
+            except NotFound:
+                if credential is not None:
+                    _refused(request, f"Dashboard {function.__name__} refused: the "
+                                      f"{credential} did not work.", credential)
+                raise
             result = result or {"ok": True}
             if is_local_mode():
                 # False when a GitHub Library could not be reached: the change waits here.
@@ -302,7 +324,7 @@ def create_team(session, user_id, path, body):
     return {"name": team_service.create_team(session, user_id, _text(body, "name"))}
 
 
-@_action("/teams/join", local=False)
+@_action("/teams/join", local=False, credential="team invite code")
 def join_team(session, user_id, path, body):
     return {"team": team_service.join_team(session, user_id, _text(body, "code"))}
 
@@ -418,9 +440,9 @@ def _require_request_header(request: Request) -> None:
 
 
 async def _json_body(request: Request) -> dict[str, Any]:
-    raw = await request.body()
-    if len(raw) > _MAX_BODY_BYTES:
-        raise ValidationError(f"The request is larger than {_MAX_BODY_BYTES} bytes.")
+    raw = await bounded_body(request, _MAX_BODY_BYTES,
+                             f"The request is larger than {_MAX_BODY_BYTES} bytes.",
+                             _BODY_READ_TIMEOUT_SECONDS)
     try:
         body = json.loads(raw or b"{}")
     except (ValueError, UnicodeDecodeError) as error:

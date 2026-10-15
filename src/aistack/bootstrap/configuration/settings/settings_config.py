@@ -13,7 +13,14 @@ from aistack.commons.urls import is_plain_http_url
 # Reject the public placeholder shipped in .env.example.
 PLACEHOLDER_INVITE_CODE = "change-me"
 
-MINIMUM_INVITE_CODE_LENGTH = 16
+# Codes that are public because a document printed them: anyone may try them first.
+PUBLISHED_INVITE_CODES = frozenset({PLACEHOLDER_INVITE_CODE, "try-it-out-locally-1234"})
+
+# `openssl rand -base64 24` gives 32 characters. These floors refuse what a person would type
+# from memory, a word repeated, or a keyboard run (SEC-02); nothing short of a generated code
+# was ever the intent.
+MINIMUM_INVITE_CODE_LENGTH = 24
+MINIMUM_DISTINCT_CHARACTERS = 10
 
 # Where this computer's Library lives, in AISTACK_HOME: what the agent's settings say, for the
 # commands a person runs in a terminal without them.
@@ -37,11 +44,21 @@ class Settings(BaseSettings):
                     "URL switches to Postgres. Synchronous drivers only (ADR-0005)."
     )
 
-    # Mask the invite code in object representations as well as validation output.
-    invite_code: SecretStr = Field(
+    # Mask the invite code in object representations as well as validation output. Optional
+    # here because it may come from a file instead; `resolved_invite_code` requires one.
+    invite_code: SecretStr | None = Field(
+        default=None,
         validation_alias="aistack_invite_code",
         description="Team invite code, presented by new users as a bootstrap bearer token "
                     "(ADR-0003). Operator-supplied; never generated, printed, or logged."
+    )
+
+    invite_code_file: Path | None = Field(
+        default=None,
+        validation_alias="aistack_invite_code_file",
+        description="A file holding the invite code, instead of AISTACK_INVITE_CODE. A "
+                    "container reads it each time it starts, so writing a new code and "
+                    "restarting rotates it."
     )
 
     host: str = Field(
@@ -213,7 +230,36 @@ class LocalSettings(BaseSettings):
         return self.database_url or f"sqlite:///{(self.home / 'aistack.db').as_posix()}"
 
 
-def validate_invite_code(invite_code: SecretStr) -> None:
+def resolved_invite_code(settings: Settings) -> SecretStr:
+    """The server's invite code, from the variable or the file, checked as `validate_invite_code`
+    checks it. Neither, or both, stops startup.
+
+    A plain function for the reason `validate_invite_code` is one: a pydantic validator would
+    put the file's contents into its error.
+    """
+    if settings.invite_code is not None and settings.invite_code_file is not None:
+        raise ValueError("Both AISTACK_INVITE_CODE and AISTACK_INVITE_CODE_FILE are set. Keep "
+                         "one, so there is no doubt which code is in force.")
+    if settings.invite_code_file is not None:
+        try:
+            # One trailing newline is what `openssl rand -base64 24 > file` writes.
+            value = settings.invite_code_file.read_text(encoding="utf-8").removesuffix(
+                "\n").removesuffix("\r")
+        except (OSError, UnicodeDecodeError) as error:
+            raise ValueError(f"AISTACK_INVITE_CODE_FILE names '{settings.invite_code_file}', "
+                             f"which could not be read as text: {error.strerror or 'not UTF-8'}."
+                             ) from None
+        code = SecretStr(value)
+        validate_invite_code(code, "The invite code in AISTACK_INVITE_CODE_FILE")
+        return code
+    if settings.invite_code is None:
+        raise ValueError("Set AISTACK_INVITE_CODE, or AISTACK_INVITE_CODE_FILE naming a file "
+                         "that holds the code. Generate one with `openssl rand -base64 24`.")
+    validate_invite_code(settings.invite_code)
+    return settings.invite_code
+
+
+def validate_invite_code(invite_code: SecretStr, source: str = "AISTACK_INVITE_CODE") -> None:
     """Reject an unusable invite code during context assembly, without echoing it.
 
     Keep this outside Pydantic validators so rejected secrets never enter their errors.
@@ -221,15 +267,18 @@ def validate_invite_code(invite_code: SecretStr) -> None:
     value = invite_code.get_secret_value()
 
     if value.strip() != value:
-        raise ValueError("AISTACK_INVITE_CODE has leading or trailing whitespace. Bearer "
-                         "tokens are compared verbatim, so trim it.")
-    if value == PLACEHOLDER_INVITE_CODE:
-        raise ValueError("AISTACK_INVITE_CODE is still the placeholder from .env.example. Set "
-                         "a secret of your own before starting the server.")
-    if len(value) < MINIMUM_INVITE_CODE_LENGTH:
-        raise ValueError(f"AISTACK_INVITE_CODE is shorter than {MINIMUM_INVITE_CODE_LENGTH} "
-                         f"characters. It is a long-lived shared secret on a reachable server, "
-                         f"so make it unguessable.")
+        raise ValueError(f"{source} has leading or trailing whitespace. Bearer tokens are "
+                         "compared verbatim, so trim it.")
+    if value in PUBLISHED_INVITE_CODES:
+        raise ValueError(f"{source} is an example printed in AIStack's own documents, so "
+                         "anyone may try it. Generate one with `openssl rand -base64 24`.")
+    if (len(value) < MINIMUM_INVITE_CODE_LENGTH
+            or len(set(value)) < MINIMUM_DISTINCT_CHARACTERS):
+        raise ValueError(f"{source} is too easy to guess: it needs at least "
+                         f"{MINIMUM_INVITE_CODE_LENGTH} characters, at least "
+                         f"{MINIMUM_DISTINCT_CHARACTERS} of them different. It is a long-lived "
+                         "shared secret on a reachable server. Generate one with "
+                         "`openssl rand -base64 24`.")
 
 
 def _read_place(file: Path) -> dict[str, str] | None:

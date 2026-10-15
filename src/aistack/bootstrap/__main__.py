@@ -9,6 +9,7 @@ import time
 import webbrowser
 from pathlib import Path
 
+import fastmcp
 import uvicorn
 from sqlalchemy.exc import OperationalError
 
@@ -29,7 +30,9 @@ from aistack.bundled import (
     local_sync_skill_document,
 )
 from aistack.commons.exceptions import AIStackError
+from aistack.commons.text import loggable
 from aistack.db.engine import build_engine
+from aistack.mcp.argument_errors import argument_problems
 from aistack.db.schema import NewerSchema
 
 logger = logging.getLogger(__name__)
@@ -40,14 +43,61 @@ LOG_FORMAT = "%(asctime)s %(levelname)-8s [%(name)s.%(funcName)s] %(message)s"
 # goes over the wire in plaintext by definition, so at DEBUG these write the token to the log
 # file: the one place the secrets rule says it must never appear. They are floored at INFO
 # regardless of AISTACK_LOG_LEVEL rather than trusted to the operator's choice of level.
-WIRE_LOGGERS = ("mcp.client", "mcp.server.streamable_http", "sse_starlette", "httpcore", "httpx")
+# FastMCP joins them once its records reach the root logger: at DEBUG it writes every tool
+# call's arguments, a team's invite code among them.
+WIRE_LOGGERS = ("mcp.client", "mcp.server.streamable_http", "sse_starlette", "httpcore", "httpx",
+                "fastmcp")
+
+# FastMCP's own line for a rejected bearer. AIStack logs the rejection, with the address, so
+# at INFO this second line would only double what a flood costs the log.
+QUIET_LOGGERS = ("fastmcp.server.auth.middleware",)
+
+# Where FastMCP 3.4.7 logs a call's arguments when they fail validation.
+ARGUMENT_ECHO_LOGGER = "fastmcp.server.server"
 
 
 def configure_logging(log_level: str) -> None:
     logging.basicConfig(level=log_level, format=LOG_FORMAT, force=True)
+    _route_fastmcp_through_root()
     for wire_logger in WIRE_LOGGERS:
         logging.getLogger(wire_logger).setLevel(max(logging.INFO,
                                                     logging.getLevelName(log_level)))
+    for quiet_logger in QUIET_LOGGERS:
+        logging.getLogger(quiet_logger).setLevel(logging.WARNING)
+
+
+def _route_fastmcp_through_root() -> None:
+    """Send FastMCP's records through the root handler, its argument echo removed (SEC-03).
+
+    FastMCP gives its logger two Rich handlers and stops propagation, so its lines skip
+    LOG_FORMAT, AISTACK_LOG_LEVEL, and every filter here. Turning its own setup off keeps a
+    later `run(log_level=...)` from putting them back.
+    """
+    fastmcp.settings.log_enabled = False
+    fastmcp_logger = logging.getLogger("fastmcp")
+    for handler in fastmcp_logger.handlers[:]:
+        fastmcp_logger.removeHandler(handler)
+    fastmcp_logger.propagate = True
+    # On the logger that writes the line, so it runs before any handler sees the record.
+    echoing = logging.getLogger(ARGUMENT_ECHO_LOGGER)
+    if not any(isinstance(existing, WithoutArgumentValues) for existing in echoing.filters):
+        echoing.addFilter(WithoutArgumentValues())
+
+
+class WithoutArgumentValues(logging.Filter):
+    """Keep the tool name and which fields failed from FastMCP's 'Invalid arguments' line.
+
+    The values are what the caller sent, and for `join_team` that is a team's invite code
+    under whatever name or shape the agent put it.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str) and record.msg.startswith("Invalid arguments for tool"):
+            tool, detail = (record.args + (None, None))[:2] if isinstance(record.args, tuple) \
+                else (None, None)
+            record.msg = "Invalid arguments for tool '%s'. Fields: '%s'."
+            record.args = (loggable(tool), loggable(argument_problems(detail)))
+        return True
 
 
 async def main() -> None:

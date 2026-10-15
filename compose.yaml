@@ -1,8 +1,10 @@
 # AIStack, one container. Start it with:
 #
-#   AISTACK_INVITE_CODE="$(openssl rand -base64 24)" docker compose up -d
+#   echo "AISTACK_INVITE_CODE=$(openssl rand -base64 24)" > .env && chmod 600 .env
+#   docker compose up -d
 #
-# or put AISTACK_INVITE_CODE in a .env file next to this one. See docs/OPERATING.md.
+# The .env file keeps the code; change it and run `up -d` again to rotate it. See
+# docs/OPERATING.md.
 services:
   aistack:
     # The published image. `docker compose up --build` builds this checkout instead.

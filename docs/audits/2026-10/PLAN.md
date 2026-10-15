@@ -38,7 +38,7 @@ How to work through it:
 - [x] 9. A person can remove and rename their own computers, and see when each last synced (#140)
 - [ ] 9b. Remove and rename a computer in local mode
 - [ ] 10. Taking a team skill never silently replaces an unrelated skill of yours
-- [ ] 11. Throttle failed credentials and keep caller text out of the log
+- [x] 11. Throttle failed credentials and keep caller text out of the log (#142)
 - [ ] 12. Backups that restore, and a snapshot before every upgrade
 - [ ] 13. Scope the 'latest revision' queries and batch the dashboard's team queries
 - [x] 14. Reads that change nothing stop taking SQLite's write lock (#143)
