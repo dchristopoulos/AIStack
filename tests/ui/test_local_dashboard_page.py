@@ -103,3 +103,32 @@ async def test_adding_a_computer_names_the_shared_library(browser, tmp_path, sql
         await expect(pasted).to_have_value(
             f"Set up AIStack: run `{RUN_COMMAND} setup` and follow what it prints. {sentence}")
         await context.close()
+
+
+@pytest.mark.parametrize(("destination", "after"), [
+    ("Move to only this computer", "Your other computers can no longer reach it."),
+    ("Move to a free PostgreSQL database", "give it the same database address"),
+])
+async def test_each_move_says_what_it_means_for_the_other_computers(browser, tmp_path,
+                                                                    sqlite_url, destination,
+                                                                    after):
+    async with local_dashboard(tmp_path, sqlite_url) as (base, link):
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        async def on_github(route):
+            response = await route.fetch()
+            await route.fulfill(response=response, json=await response.json() | {
+                "library": {"kind": "github", "repository": "maria/aistack-library"}})
+
+        await page.route(f"{base}/api/state", on_github)
+        await page.goto(link)
+        await page.get_by_role("navigation", name="Main").get_by_role(
+            "link", name="Where it lives").click()
+        await page.get_by_role("button", name=destination).click()
+
+        dialog = page.get_by_role("dialog")
+        await expect(dialog.get_by_text("moves the Library with its history")).to_be_visible()
+        await expect(dialog.get_by_text(after)).to_be_visible()
+        await expect(dialog.get_by_text("other computers then need")).to_have_count(0)
+        await context.close()

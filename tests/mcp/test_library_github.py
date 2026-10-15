@@ -18,6 +18,7 @@ from sqlalchemy import select
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings
 from aistack.bootstrap.context import application_context
 from aistack.commons.exceptions import ValidationError
+from aistack.db.engine import build_engine, build_session_factory
 from aistack.db.models.machine import Machine
 from aistack.db.models.skill_version import SkillVersion
 from aistack.mcp import local_dashboard
@@ -503,3 +504,141 @@ def test_export_with_no_library_anywhere_creates_none(tmp_path):
     assert refused.returncode == 1
     assert "There is no Library on this computer to export" in refused.stderr
     assert not (home / ".aistack").exists() and not (tmp_path / "exported").exists()
+
+
+def _aistack(home, *arguments, **environment_extra):
+    import os
+    import sys
+    environment = {**os.environ, "HOME": str(home), "USERPROFILE": str(home),
+                   "AISTACK_HOME": str(home / ".aistack"), **environment_extra}
+    for variable in ("AISTACK_DATABASE_URL", "AISTACK_LIBRARY_REPO"):
+        if variable not in environment_extra:
+            environment.pop(variable, None)
+    return subprocess.run([sys.executable, "-m", "aistack.bootstrap", *arguments],
+                          env=environment, capture_output=True, text=True)
+
+
+async def _shared_database_library(tmp_path, monkeypatch) -> str:
+    """A Library in one database two computers use, with a removed skill and each computer's
+    own placements. Returns the database's address."""
+    from aistack.services import skill_service
+
+    url = f"sqlite:///{tmp_path / 'shared.db'}"
+    for name in ("laptop", "desktop"):
+        home = tmp_path / name
+        home.mkdir(exist_ok=True)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        application_context.build_local_context(LocalSettings(
+            aistack_home=home / ".aistack", aistack_database_url=url, aistack_username="maria"))
+        try:
+            async with Client(local_mcp) as client:
+                if name == "desktop":
+                    await _call(client, "get_skill", name="wizard", harness="agents")
+                    continue
+                for skill in ("wizard", "retired"):
+                    _write(home, skill, f"{skill} things.")
+                    await _call(client, "push_skill", name=skill)
+                caller = application_context.get_local_principal()
+                # As the dashboard's Remove from Library does it.
+                with application_context.get_session_factory().begin() as session:
+                    removed = skill_service.remove_from_my_skills(session, caller.user_id,
+                                                                  "retired")
+                    library_log.record(session, library_log.new_event(
+                        session, caller.machine_id, library_log.SKILL_REMOVED, name=removed))
+        finally:
+            application_context.dispose_application_context()
+    return url
+
+
+async def test_moving_a_library_to_github_keeps_its_history_placements_and_removals(
+        tmp_path, repository, monkeypatch):
+    from aistack.services import library_move
+
+    url = await _shared_database_library(tmp_path, monkeypatch)
+    engine = build_engine(url)
+    with build_session_factory(engine).begin() as session:
+        before = library_move.contents(session)
+    engine.dispose()
+
+    moved = _aistack(tmp_path / "laptop", "move", "github", str(repository),
+                     AISTACK_DATABASE_URL=url)
+    assert moved.returncode == 0, moved.stderr
+    assert f"now lives in the GitHub repository {repository}" in moved.stdout
+
+    # The laptop's terminal commands follow the move at once.
+    checked = _aistack(tmp_path / "laptop", "check")
+    assert f"in the GitHub repository {repository}" in checked.stdout, checked.stderr
+
+    home = tmp_path / "laptop"
+    monkeypatch.setenv("HOME", str(home))
+    application_context.build_local_context(LocalSettings(
+        aistack_home=home / ".aistack", aistack_library_repo=str(repository),
+        aistack_username="maria"))
+    try:
+        with application_context.get_session_factory().begin() as session:
+            assert library_move.contents(session) == before
+        # The removed skill's folder is still on the laptop: it stays removed, not backed up.
+        async with Client(local_mcp) as client:
+            report = await _call(client, "sync")
+        assert "retired" not in report["backup"]
+    finally:
+        application_context.dispose_application_context()
+
+
+async def test_a_move_never_lands_in_a_repository_holding_another_library(
+        computer, tmp_path, repository, monkeypatch):
+    async with computer("someone"):
+        pass  # Their Library is now in the repository.
+    url = await _shared_database_library(tmp_path, monkeypatch)
+
+    refused = _aistack(tmp_path / "laptop", "move", "github", str(repository),
+                       AISTACK_DATABASE_URL=url)
+    assert refused.returncode == 1
+    assert "already holds another Library's log" in refused.stderr
+    assert not (tmp_path / "laptop" / ".aistack" / "library.toml").exists()
+
+
+async def test_a_library_its_log_cannot_rebuild_is_not_moved(tmp_path, repository,
+                                                              monkeypatch):
+    """A Library from before the log: its changes would not survive a move by log."""
+    from sqlalchemy import delete
+
+    from aistack.db.models.library_event import LibraryEvent
+
+    url = await _shared_database_library(tmp_path, monkeypatch)
+    engine = build_engine(url)
+    with build_session_factory(engine).begin() as session:
+        session.execute(delete(LibraryEvent).where(
+            LibraryEvent.kind == library_log.SKILL_PUSHED))
+    engine.dispose()
+
+    refused = _aistack(tmp_path / "laptop", "move", "github", str(repository),
+                       AISTACK_DATABASE_URL=url)
+    assert refused.returncode == 1
+    assert "changes from before AIStack kept a log" in refused.stderr
+    log = subprocess.run(["git", "--git-dir", str(repository), "log", "--oneline"],
+                         capture_output=True, text=True)
+    assert log.stdout == ""
+
+
+async def test_moving_here_from_github_keeps_the_library(computer, tmp_path, repository,
+                                                         monkeypatch):
+    from aistack.services import library_move
+
+    async with computer("laptop") as (laptop, home):
+        _write(home, "wizard", "Cast.")
+        await _call(laptop, "push_skill", name="wizard")
+        with application_context.get_session_factory().begin() as session:
+            before = library_move.contents(session)
+
+    moved = _aistack(tmp_path / "laptop", "move", "here",
+                     AISTACK_LIBRARY_REPO=str(repository))
+    assert moved.returncode == 0, moved.stderr
+    engine = build_engine(f"sqlite:///{tmp_path / 'laptop' / '.aistack' / 'aistack.db'}")
+    with build_session_factory(engine).begin() as session:
+        assert library_move.contents(session) == before
+    engine.dispose()
+
+    again = _aistack(tmp_path / "laptop", "move", "here")
+    assert again.returncode == 1 and "already lives on this computer only" in again.stderr
