@@ -20,7 +20,7 @@ from aistack.db.models.team import Team, TeamGroup
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
 from aistack.db.ordering import bytewise
-from aistack.services import team_service, transfer_ticket, visibility
+from aistack.services import revisions, team_service, transfer_ticket, visibility
 from aistack.services.harnesses import folder, validated_harness
 from aistack.services.skill_archive import build_archive, read_archive
 from aistack.services.skill_validation import ValidatedFile, ValidatedSkill, validated_skill
@@ -152,13 +152,10 @@ class InstallableSkill:
 
 def list_skills(session: Session, user_id: uuid.UUID) -> list[SkillSummary]:
     """The caller's own skills, then every team skill they may see. The listing is the search."""
-    newest = (
-        select(SkillVersion.skill_id, func.max(SkillVersion.revision).label("revision"))
-        .group_by(SkillVersion.skill_id).subquery()
-    )
 
     def described(skills) -> list:
         chosen = skills.subquery()
+        newest = revisions.latest(select(chosen.c.skill_id))
         in_a_team = "team" in chosen.c
         team = chosen.c.team if in_a_team else null()
         group = chosen.c.group if in_a_team else null()
@@ -169,9 +166,7 @@ def list_skills(session: Session, user_id: uuid.UUID) -> list[SkillSummary]:
             select(chosen.c.name, team, group, chosen.c.description, newest.c.revision,
                    User.username)
             .join(newest, newest.c.skill_id == chosen.c.skill_id)
-            .join(SkillVersion, (SkillVersion.skill_id == newest.c.skill_id)
-                  & (SkillVersion.revision == newest.c.revision))
-            .join(User, User.user_id == SkillVersion.pushed_by)
+            .join(User, User.user_id == newest.c.pushed_by)
             .order_by(*order)
         ).all()
 
@@ -499,23 +494,38 @@ def archive_of(session: Session, machine_id: uuid.UUID, skill_version_id: uuid.U
 class ExportedSkill:
     name: str
     content_hash: str
-    archive: bytes
+    files: tuple[tuple[str, bytes, bool], ...]
+    # When the revision was pushed, which its files are dated by, as an install dates them.
+    modified_at: int
+
+    def archive(self) -> bytes:
+        """Packed as an install gets it. Built by the caller once its transaction is over."""
+        return build_archive(self.files, modified_at=self.modified_at)
 
 
-def export_library(session: Session, machine_id: uuid.UUID,
-                   user_id: uuid.UUID) -> list[ExportedSkill]:
-    """The latest revision of every skill in the user's Library, packed as an install gets it.
+def export_library(session: Session, user_id: uuid.UUID) -> list[ExportedSkill]:
+    """The latest revision of every skill in the user's Library, read in two statements.
 
     Removed skills stay out, and so does the history: what moves to another Library is what
-    this one would install today.
+    this one would install today. Nothing is packed here, because on SQLite this holds the
+    write lock: the caller builds each archive after the transaction.
     """
-    exported = []
-    for skill in session.scalars(visibility.my_skills(user_id)
-                                 .where(Skill.archived.is_(False)).order_by(bytewise(Skill.name))):
-        version = _latest_version(session, skill.skill_id)
-        _, archive = archive_of(session, machine_id, version.skill_version_id)
-        exported.append(ExportedSkill(skill.name, version.content_hash, archive))
-    return exported
+    mine = visibility.my_skills(user_id).where(Skill.archived.is_(False)).subquery()
+    latest = revisions.latest(select(mine.c.skill_id))
+    rows = session.execute(
+        select(mine.c.name, latest.c.skill_version_id, latest.c.content_hash,
+               latest.c.created_on)
+        .join(latest, latest.c.skill_id == mine.c.skill_id)
+        .order_by(bytewise(mine.c.name))).all()
+    files: dict[uuid.UUID, list[tuple[str, bytes, bool]]] = {}
+    for version_id, path, content, executable in session.execute(
+            select(SkillFile.skill_version_id, SkillFile.path, SkillFile.content,
+                   SkillFile.executable)
+            .where(SkillFile.skill_version_id.in_(select(latest.c.skill_version_id)))).all():
+        files.setdefault(version_id, []).append((path, content.encode("utf-8"), executable))
+    return [ExportedSkill(name, content_hash, tuple(files.get(version_id, ())),
+                          int(as_utc(pushed_on).timestamp()))
+            for name, version_id, content_hash, pushed_on in rows]
 
 
 def set_enabled(session: Session, machine_id: uuid.UUID, harness: Harness,

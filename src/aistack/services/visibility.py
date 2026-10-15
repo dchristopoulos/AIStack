@@ -29,6 +29,8 @@ from aistack.db.models.team import (
     TeamMember,
     TeamRole,
 )
+from aistack.db.models.value_set import known
+from aistack.db.ordering import bytewise
 from aistack.services.skill_validation import validated_skill_name
 
 
@@ -147,8 +149,14 @@ def shows_membership(access: GroupAccess, viewer: TeamMember, group_id: uuid.UUI
     return group_id in access.visible and (not private or group_id in access.member)
 
 
-def team_skills(session: Session, user_id: uuid.UUID) -> Select[tuple[Skill, str, str | None]]:
-    """Every team skill `user_id` may see, with its team's name and its group's path, if any."""
+def team_skills(session: Session, user_id: uuid.UUID,
+                access: GroupAccess | None = None) -> Select[tuple[Skill, str, str | None]]:
+    """Every team skill `user_id` may see, with its team's name and its group's path, if any.
+
+    `access` is `group_access` for the same user, for a caller that already worked it out.
+    """
+    if access is None:
+        access = group_access(session, user_id)
     return (
         select(Skill, Team.name.label("team"), TeamGroup.path.label("group"))
         .join(Team, Team.team_id == Skill.team_id)
@@ -158,7 +166,7 @@ def team_skills(session: Session, user_id: uuid.UUID) -> Select[tuple[Skill, str
             TeamMember.user_id == user_id,
             Team.kind != TeamKind.PERSONAL,
             or_(Skill.group_id.is_(None),
-                Skill.group_id.in_(group_access(session, user_id).visible)),
+                Skill.group_id.in_(access.visible)),
         )
     )
 
@@ -198,6 +206,18 @@ def membership(session: Session, user_id: uuid.UUID, team: str) -> tuple[Team, T
         raise NotFound(f"You are not in a team named '{loggable(team)}'. Call list_teams to "
                        "see the teams you are in.")
     return found[0], found[1]
+
+
+def memberships(session: Session, user_id: uuid.UUID) -> list[tuple[Team, TeamMember]]:
+    """Every team the caller is in, by name, with their place in each: `membership` for all
+    of their teams at once. Their personal team is left out, as it is from `membership`."""
+    return [(team, member) for team, member in session.execute(
+        select(Team, TeamMember)
+        .join(TeamMember, TeamMember.team_id == Team.team_id)
+        .where(Team.kind != TeamKind.PERSONAL, TeamMember.user_id == user_id, known(Team.kind),
+               known(TeamMember.role))
+        .order_by(bytewise(Team.name))
+    ).all()]
 
 
 def is_my_skill(session: Session, user_id: uuid.UUID, skill_id: uuid.UUID) -> bool:

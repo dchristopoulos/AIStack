@@ -17,7 +17,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
@@ -55,6 +55,8 @@ _NAME = re.compile(r"[a-z0-9]+([._-][a-z0-9]+)*")
 
 # How long a used invite still stands as a bearer, for the requests that follow its `join`.
 _BEARER_AFTER_USE = timedelta(minutes=5)
+# How far back the invite lists go. Every pending invite is younger: they last a week.
+_INVITES_SHOWN = timedelta(days=30)
 
 _NOT_AN_INVITE = ("That is not a team invite code that works. An invite admits one person and "
                   "lasts seven days; ask someone in the team for a new one.")
@@ -228,21 +230,40 @@ def admit(session: Session, invite: Invite, user_id: uuid.UUID) -> str:
 
 
 def invites(session: Session, user_id: uuid.UUID, team: str) -> list[InviteSummary]:
-    """The team's invites, newest first: every one to an admin, their own to an inviter."""
+    """The team's recent invites, newest first: every one to an admin, their own to an
+    inviter."""
     found, me = _as_inviter(session, user_id, team, locked=False)
+    return _invites_to(session, user_id, {found.team_id: me}).get(found.team_id, [])
+
+
+def _invites_to(session: Session, user_id: uuid.UUID,
+                places: dict[uuid.UUID, TeamMember]) -> dict[uuid.UUID, list[InviteSummary]]:
+    """The invites of each team the caller may see invites of, newest first.
+
+    Only those made in the last `_INVITES_SHOWN`: every pending one is younger than that, and
+    the rest are history that would otherwise grow without end.
+    """
+    every = [team_id for team_id, me in places.items() if me.role is TeamRole.ADMIN]
+    own = [team_id for team_id, me in places.items()
+           if me.role is not TeamRole.ADMIN and me.can_invite]
+    if not every and not own:
+        return {}
     creator, user = aliased(User), aliased(User)
-    query = (select(Invite, creator.username, user.username)
-             .join(creator, creator.user_id == Invite.created_by)
-             .outerjoin(user, user.user_id == Invite.used_by)
-             .where(Invite.team_id == found.team_id)
-             .order_by(Invite.created_on.desc()))
-    if me.role is not TeamRole.ADMIN:
-        query = query.where(Invite.created_by == user_id)
-    return [InviteSummary(invite_id=str(invite.invite_id), created_by=made_by,
-                          created_on=as_utc(invite.created_on),
-                          expires_on=as_utc(invite.expires_on), status=_status(invite),
-                          used_by=used_by)
-            for invite, made_by, used_by in session.execute(query).all()]
+    rows = session.execute(
+        select(Invite, creator.username, user.username)
+        .join(creator, creator.user_id == Invite.created_by)
+        .outerjoin(user, user.user_id == Invite.used_by)
+        .where(or_(Invite.team_id.in_(every),
+                   and_(Invite.team_id.in_(own), Invite.created_by == user_id)),
+               Invite.created_on >= utc_now() - _INVITES_SHOWN)
+        .order_by(Invite.created_on.desc())).all()
+    result: dict[uuid.UUID, list[InviteSummary]] = {}
+    for invite, made_by, used_by in rows:
+        result.setdefault(invite.team_id, []).append(InviteSummary(
+            invite_id=str(invite.invite_id), created_by=made_by,
+            created_on=as_utc(invite.created_on), expires_on=as_utc(invite.expires_on),
+            status=_status(invite), used_by=used_by))
+    return result
 
 
 def cancel_invite(session: Session, user_id: uuid.UUID, team: str, invite_id: str) -> None:
@@ -289,19 +310,53 @@ def _status(invite: Invite) -> str:
 
 def list_teams(session: Session, user_id: uuid.UUID) -> list[TeamSummary]:
     """The teams the caller is in, their own personal team left out."""
-    sizes = (
-        select(TeamMember.team_id, func.count().label("members"))
-        .group_by(TeamMember.team_id).subquery()
-    )
-    rows = session.execute(
-        select(Team.name, Team.kind, TeamMember.role, sizes.c.members)
-        .join(TeamMember, TeamMember.team_id == Team.team_id)
-        .join(sizes, sizes.c.team_id == Team.team_id)
-        .where(TeamMember.user_id == user_id, Team.kind != TeamKind.PERSONAL, known(Team.kind),
-               known(TeamMember.role))
-        .order_by(bytewise(Team.name))
-    ).all()
-    return [TeamSummary(*row) for row in rows]
+    places = visibility.memberships(session, user_id)
+    sizes = dict(session.execute(
+        select(TeamMember.team_id, func.count())
+        .where(TeamMember.team_id.in_([team.team_id for team, _ in places]))
+        .group_by(TeamMember.team_id)).all())
+    return [TeamSummary(team.name, team.kind, me.role, sizes[team.team_id])
+            for team, me in places]
+
+
+@dataclass(frozen=True)
+class TeamOverview:
+    """One of the caller's teams, as the dashboard shows it."""
+
+    summary: TeamSummary
+    sees_all_groups: bool
+    can_invite: bool
+    members: list[MemberSummary]
+    groups: list[GroupSummary]
+    # Every recent invite to an admin, their own to an inviter, none to anyone else.
+    invites: list[InviteSummary]
+
+
+def overview(session: Session, user_id: uuid.UUID,
+             access: visibility.GroupAccess | None = None) -> list[TeamOverview]:
+    """Every team the caller is in, with what `members`, `groups` and `invites` say of each.
+
+    Read in the same few statements however many teams, members and groups there are:
+    the dashboard asks on every page load, and on SQLite it holds the write lock meanwhile.
+    `access` is `visibility.group_access` for the caller, for one who already has it.
+    """
+    places = visibility.memberships(session, user_id)
+    if not places:
+        return []
+    if access is None:
+        access = visibility.group_access(session, user_id)
+    by_team = {team.team_id: me for team, me in places}
+    members_of = _members_of(session, access, by_team)
+    groups_of = _groups_in(access, by_team, _team_groups(session, list(by_team)))
+    invites_of = _invites_to(session, user_id, by_team)
+    return [TeamOverview(
+        summary=TeamSummary(team.name, team.kind, me.role, len(members_of[team.team_id])),
+        sees_all_groups=me.sees_all_groups,
+        can_invite=me.can_invite,
+        members=members_of[team.team_id],
+        groups=groups_of[team.team_id],
+        invites=invites_of.get(team.team_id, []),
+    ) for team, me in places]
 
 
 def members(session: Session, user_id: uuid.UUID, team: str) -> list[MemberSummary]:
@@ -312,19 +367,33 @@ def members(session: Session, user_id: uuid.UUID, team: str) -> list[MemberSumma
     """
     found, me = visibility.membership(session, user_id, team)
     access = visibility.group_access(session, user_id)
-    rows = session.execute(
-        select(User.user_id, User.username, TeamMember.role, TeamMember.sees_all_groups,
-               TeamMember.can_invite, User.full_name)
-        .join(TeamMember, TeamMember.user_id == User.user_id)
-        .where(TeamMember.team_id == found.team_id, known(TeamMember.role))
-        .order_by(bytewise(User.username))
-    ).all()
-    result = []
-    for member_id, username, role, sees_all, can_invite, full_name in rows:
-        shown = tuple(sorted(
-            path for group_id, path, private in _groups_of(session, found.team_id, member_id)
-            if visibility.shows_membership(access, me, group_id, private)))
-        result.append(MemberSummary(username, role, sees_all, can_invite, shown, full_name))
+    return _members_of(session, access, {found.team_id: me})[found.team_id]
+
+
+def _members_of(session: Session, access: visibility.GroupAccess,
+                places: dict[uuid.UUID, TeamMember]) -> dict[uuid.UUID, list[MemberSummary]]:
+    """The members of each team the caller is in, with the groups the caller may see them in.
+
+    `places` is the caller's own membership of each, from `visibility`.
+    """
+    shown: dict[tuple[uuid.UUID, uuid.UUID], list[str]] = {}
+    for team_id, member_id, group_id, path, private in session.execute(
+            select(TeamGroup.team_id, GroupMember.user_id, TeamGroup.group_id, TeamGroup.path,
+                   TeamGroup.private)
+            .join(GroupMember, GroupMember.group_id == TeamGroup.group_id)
+            .where(TeamGroup.team_id.in_(list(places)))).all():
+        if visibility.shows_membership(access, places[team_id], group_id, private):
+            shown.setdefault((team_id, member_id), []).append(path)
+    result: dict[uuid.UUID, list[MemberSummary]] = {team_id: [] for team_id in places}
+    for team_id, member_id, username, role, sees_all, can_invite, full_name in session.execute(
+            select(TeamMember.team_id, User.user_id, User.username, TeamMember.role,
+                   TeamMember.sees_all_groups, TeamMember.can_invite, User.full_name)
+            .join(TeamMember, TeamMember.user_id == User.user_id)
+            .where(TeamMember.team_id.in_(list(places)), known(TeamMember.role))
+            .order_by(bytewise(User.username))).all():
+        result[team_id].append(MemberSummary(
+            username, role, sees_all, can_invite,
+            tuple(sorted(shown.get((team_id, member_id), ()))), full_name))
     return result
 
 
@@ -335,13 +404,26 @@ def groups(session: Session, user_id: uuid.UUID, team: str) -> list[GroupSummary
     """
     found, me = visibility.membership(session, user_id, team)
     access = visibility.group_access(session, user_id)
-    rows = session.execute(
-        select(TeamGroup.group_id, TeamGroup.path, TeamGroup.private)
-        .where(TeamGroup.team_id == found.team_id).order_by(bytewise(TeamGroup.path))).all()
-    return [GroupSummary(path, private, group_id in access.member,
-                         group_id not in access.unsubscribed)
-            for group_id, path, private in rows
-            if me.role is TeamRole.ADMIN or group_id in access.visible]
+    return _groups_in(access, {found.team_id: me},
+                      _team_groups(session, [found.team_id]))[found.team_id]
+
+
+def _team_groups(session: Session,
+                 team_ids: list[uuid.UUID]) -> list[tuple[uuid.UUID, uuid.UUID, str, bool]]:
+    return list(session.execute(
+        select(TeamGroup.team_id, TeamGroup.group_id, TeamGroup.path, TeamGroup.private)
+        .where(TeamGroup.team_id.in_(team_ids)).order_by(bytewise(TeamGroup.path))).all())
+
+
+def _groups_in(access: visibility.GroupAccess, places: dict[uuid.UUID, TeamMember],
+               rows: list[tuple[uuid.UUID, uuid.UUID, str, bool]]
+               ) -> dict[uuid.UUID, list[GroupSummary]]:
+    result: dict[uuid.UUID, list[GroupSummary]] = {team_id: [] for team_id in places}
+    for team_id, group_id, path, private in rows:
+        if places[team_id].role is TeamRole.ADMIN or group_id in access.visible:
+            result[team_id].append(GroupSummary(path, private, group_id in access.member,
+                                                group_id not in access.unsubscribed))
+    return result
 
 
 def set_subscribed(session: Session, user_id: uuid.UUID, team: str, group: str,
@@ -569,15 +651,6 @@ def _skill(session: Session, team: Team, name: str, user_id: uuid.UUID) -> Skill
     if found is None or not visibility.can_see_team_skill(session, user_id, found.skill_id):
         raise NotFound(f"Team '{team.name}' has no skill named '{loggable(name)}'.")
     return found
-
-
-def _groups_of(session: Session, team_id: uuid.UUID,
-               user_id: uuid.UUID) -> list[tuple[uuid.UUID, str, bool]]:
-    """The groups of this team that a user was added to, as (id, path, private)."""
-    return list(session.execute(
-        select(TeamGroup.group_id, TeamGroup.path, TeamGroup.private)
-        .join(GroupMember, GroupMember.group_id == TeamGroup.group_id)
-        .where(TeamGroup.team_id == team_id, GroupMember.user_id == user_id)).all())
 
 
 def _keep_an_admin(session: Session, team: Team, member: TeamMember, leaving: bool) -> None:
