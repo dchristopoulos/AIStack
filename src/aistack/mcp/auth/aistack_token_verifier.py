@@ -11,6 +11,7 @@ from aistack.db.models.machine import Machine
 from aistack.mcp.auth.scopes import BOOTSTRAP_SCOPE, MACHINE_SCOPE
 from aistack.services import team_service
 from aistack.services.token_service import TEAM_INVITE_PREFIX, hash_token, matches_invite_code
+from aistack.services.transfer_ticket import token_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,8 @@ class AIStackAccessToken(AccessToken):
 class AIStackTokenVerifier(TokenVerifier):
     """Resolve the bearer before tool dispatch.
 
-    Machine claims carry machine_id and user_id so tools need no identity lookup.
+    Machine claims carry machine_id, user_id, and the token's prefix so tools need no
+    identity lookup, and the tickets they mint die with the token.
     """
 
     def __init__(self, invite_code: SecretStr, session_factory: sessionmaker[Session]):
@@ -75,7 +77,8 @@ class AIStackTokenVerifier(TokenVerifier):
             token=token,
             client_id=str(machine.machine_id),
             scopes=[MACHINE_SCOPE],
-            claims={"machine_id": str(machine.machine_id), "user_id": str(machine.user_id)},
+            claims={"machine_id": str(machine.machine_id), "user_id": str(machine.user_id),
+                    "token_prefix": token_prefix(machine.token_hash)},
         )
 
     def _is_team_invite(self, code: str) -> bool:

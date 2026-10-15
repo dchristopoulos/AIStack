@@ -91,7 +91,7 @@ async def serve_dashboard() -> None:
     # fixed port never stops this one starting. The link names whichever it picked.
     listener = socket.create_server(("127.0.0.1", 0))
     port = listener.getsockname()[1]
-    ticket = get_ticket_signer().sign_dashboard_link(get_local_principal().user_id)
+    ticket = get_ticket_signer().sign_dashboard_link(get_local_principal().dashboard_holder())
     link = f"http://127.0.0.1:{port}{DASHBOARD_LOGIN_PATH}/{ticket}"
 
     # The link is a credential, so it goes to this terminal and the browser, never a log.

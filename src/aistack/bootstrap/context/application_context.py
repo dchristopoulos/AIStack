@@ -26,7 +26,7 @@ from aistack.mcp.auth.principal import MachinePrincipal
 from aistack.services.library_repo import LibraryRepo, validate_repository
 from aistack.services.library_sharing import LibrarySharing
 from aistack.services.local_identity import local_machine
-from aistack.services.transfer_ticket import SIGNING_KEY_BYTES, TicketSigner
+from aistack.services.transfer_ticket import SIGNING_KEY_BYTES, TicketSigner, token_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,8 @@ def build_local_context(settings: LocalSettings) -> None:
                     machine_name=machine_name,
                     os=_OPERATING_SYSTEMS.get(platform.system(), "LINUX"))
                 principal = MachinePrincipal(machine_id=machine.machine_id,
-                                             user_id=machine.user_id)
+                                             user_id=machine.user_id,
+                                             token_prefix=token_prefix(machine.token_hash))
             break
         except (IntegrityError, Conflict):
             # Another process on this computer registered the same id first, in a database
@@ -177,11 +178,15 @@ def library_before_read(force: bool = False) -> None:
     if _sharing is None or _local_principal is None:
         return
     _sharing.catch_up(force)
-    # A rebuild can fold this computer under the person's first user (library_log).
+    # A rebuild can fold this computer under the person's first user (library_log), and
+    # gives its row a new token, which the dashboard's links are bound to.
     with _session_factory.begin() as session:
         machine = session.get(Machine, _local_principal.machine_id)
-        if machine is not None and machine.user_id != _local_principal.user_id:
-            _local_principal = MachinePrincipal(machine.machine_id, machine.user_id)
+        if machine is not None and (
+                machine.user_id != _local_principal.user_id
+                or token_prefix(machine.token_hash) != _local_principal.token_prefix):
+            _local_principal = MachinePrincipal(machine.machine_id, machine.user_id,
+                                                token_prefix(machine.token_hash))
 
 
 def library_after_write() -> bool:

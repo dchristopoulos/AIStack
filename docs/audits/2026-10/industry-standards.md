@@ -77,6 +77,8 @@ Related: [AUTO-19](automation.md#auto-19-every-way-to-set-up-another-computer-in
 
 **Done when.** Rerunning logout_replay.py and revoked_machine_session.py prints 401 for the replayed cookie and for the thief after the machine is deleted, and the new tests pass.
 
+**Resolution (step 8).** Items (1) to (3) shipped: sessions name their computer and its token, and signing out ends the session on the server. Item (4), "Sign out everywhere", was not built: removing a computer (step 9) ends every session it opened, which covers the lost-laptop case it was for.
+
 Related: [SEC-01](security.md#sec-01-a-stolen-machine-token-outlives-the-documented-revocation-sibling-tokens-dashboard-sessions-and-upload-urls-keep-working), [SEC-05](security.md#sec-05-signing-out-does-not-end-the-session-a-copied-cookie-keeps-working-for-the-rest-of-its-8-hours), [SEC-10](security.md#sec-10-a-sign-in-link-silently-replaces-the-browsers-existing-session-login-csrf).
 
 ### STD-04: A person cannot see when each computer last connected or remove a lost one, and a stolen token's push lands silently on their other computers

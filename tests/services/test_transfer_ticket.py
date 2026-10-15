@@ -8,6 +8,7 @@ from aistack.commons.exceptions import InvalidTicket
 from aistack.db.models.harness import Harness
 from aistack.services.transfer_ticket import (
     SIGNING_KEY_BYTES,
+    DashboardHolder,
     DownloadTicket,
     TicketSigner,
     UploadTicket,
@@ -15,9 +16,14 @@ from aistack.services.transfer_ticket import (
 
 KEY = secrets.token_bytes(SIGNING_KEY_BYTES)
 
-UPLOAD = UploadTicket(machine_id=uuid.uuid4(), user_id=uuid.uuid4(), skill_name="wizard",
-                      origin="https://github.com/mattpocock/skills", harness=Harness.AGENTS)
-DOWNLOAD = DownloadTicket(machine_id=uuid.uuid4(), skill_version_id=uuid.uuid4())
+TOKEN_PREFIX = "0123456789abcdef"
+UPLOAD = UploadTicket(machine_id=uuid.uuid4(), user_id=uuid.uuid4(), token_prefix=TOKEN_PREFIX,
+                      skill_name="wizard", origin="https://github.com/mattpocock/skills",
+                      harness=Harness.AGENTS)
+DOWNLOAD = DownloadTicket(machine_id=uuid.uuid4(), token_prefix=TOKEN_PREFIX,
+                          skill_version_id=uuid.uuid4())
+HOLDER = DashboardHolder(user_id=uuid.uuid4(), machine_id=uuid.uuid4(),
+                         token_prefix=TOKEN_PREFIX)
 
 
 @pytest.fixture(name="signer")
@@ -30,7 +36,7 @@ def test_an_upload_ticket_round_trips(signer):
 
 
 def test_an_upload_ticket_without_an_origin_round_trips(signer):
-    ticket = UploadTicket(UPLOAD.machine_id, UPLOAD.user_id, "wizard", None,
+    ticket = UploadTicket(UPLOAD.machine_id, UPLOAD.user_id, TOKEN_PREFIX, "wizard", None,
                           Harness.CLAUDE_CODE)
 
     assert signer.verified_upload(signer.sign_upload(ticket)) == ticket
@@ -77,8 +83,8 @@ def test_a_ticket_whose_payload_was_edited_is_refused(signer):
     """Change the skill name, keep the signature: the classic attempt."""
     header, _, signature = signer.sign_upload(UPLOAD).split(".")
     _, forged_payload, _ = signer.sign_upload(
-        UploadTicket(UPLOAD.machine_id, UPLOAD.user_id, "someone-elses-skill", None,
-                     Harness.CLAUDE_CODE)).split(".")
+        UploadTicket(UPLOAD.machine_id, UPLOAD.user_id, TOKEN_PREFIX, "someone-elses-skill",
+                     None, Harness.CLAUDE_CODE)).split(".")
 
     with pytest.raises(InvalidTicket):
         signer.verified_upload(f"{header}.{forged_payload}.{signature}")
@@ -145,3 +151,41 @@ def test_a_correctly_signed_ticket_with_malformed_claims_is_still_just_not_valid
 
     with pytest.raises(InvalidTicket, match="not valid"):
         (signer.verified_upload if purpose == "upload" else signer.verified_download)(resigned)
+
+
+# --- dashboard links and sessions --------------------------------------------------------------
+
+def test_a_dashboard_link_names_the_computer_that_asked_for_it_and_works_once(signer):
+    link = signer.sign_dashboard_link(HOLDER)
+
+    assert signer.verified_dashboard_link(link) == HOLDER
+    with pytest.raises(InvalidTicket):
+        signer.verified_dashboard_link(link)
+
+
+def test_an_ended_session_is_refused_and_others_are_not(signer):
+    ended, kept = signer.sign_dashboard_session(HOLDER), signer.sign_dashboard_session(HOLDER)
+
+    signer.end_dashboard_session(ended)
+
+    with pytest.raises(InvalidTicket):
+        signer.verified_dashboard_session(ended)
+    assert signer.verified_dashboard_session(kept) == HOLDER
+
+
+def test_ending_something_that_is_not_a_session_ends_nothing(signer):
+    link = signer.sign_dashboard_link(HOLDER)
+
+    signer.end_dashboard_session(link)
+    signer.end_dashboard_session("nonsense")
+
+    assert signer.verified_dashboard_link(link) == HOLDER
+
+
+def test_a_session_from_before_tickets_named_their_computer_is_refused(signer):
+    """One that names only its user cannot be held to a computer, so it is not a session."""
+    claims = jwt.decode(signer.sign_dashboard_session(HOLDER), options={"verify_signature": False})
+    del claims["mid"], claims["tkh"]
+
+    with pytest.raises(InvalidTicket):
+        signer.verified_dashboard_session(jwt.encode(claims, KEY, algorithm="HS256"))

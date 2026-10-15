@@ -45,8 +45,10 @@ async def test_a_machine_token_resolves_to_its_machine_and_user(verifier, joined
     assert access_token.token == joined.token
     assert joined.token not in repr(access_token)
     assert joined.token not in str(access_token)
+    # The token's prefix, not the token: what tickets minted on this call are bound to.
     assert access_token.claims == {"machine_id": str(joined.machine.machine_id),
-                                   "user_id": str(joined.user.user_id)}
+                                   "user_id": str(joined.user.user_id),
+                                   "token_prefix": joined.machine.token_hash[:16]}
 
 
 async def test_the_bootstrap_principal_carries_no_identity(verifier):
@@ -115,7 +117,8 @@ async def test_a_machine_scope_tool_reads_its_caller_from_the_claims(server_url,
         with session_factory() as session:
             machine = session.scalar(select(Machine).where(
                 Machine.token_hash == hash_token(result["token"])))
-            expected = {"machine_id": str(machine.machine_id), "user_id": str(machine.user_id)}
+            expected = {"machine_id": str(machine.machine_id), "user_id": str(machine.user_id),
+                        "token_prefix": machine.token_hash[:16]}
         async with client_for(server_url, result["token"]) as client:
             claims = (await client.call_tool(PROBE_TOOL_NAME, {})).structured_content
         assert claims == expected

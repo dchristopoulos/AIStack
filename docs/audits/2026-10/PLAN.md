@@ -34,7 +34,7 @@ How to work through it:
 - [ ] 5. Lock the team while its admins and members change
 - [ ] 6. A team can always be managed: delete a team, let a lone admin leave, repair an orphaned one
 - [ ] 7. Sharing over a group's skill takes being able to share into that group
-- [ ] 8. A session belongs to the computer that opened it; signing out ends it
+- [x] 8. A session belongs to the computer that opened it; signing out ends it (#127)
 - [ ] 9. A person can remove and rename their own computers, and see when each last synced
 - [ ] 10. Taking a team skill never silently replaces an unrelated skill of yours
 - [ ] 11. Throttle failed credentials and keep caller text out of the log

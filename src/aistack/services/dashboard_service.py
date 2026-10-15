@@ -4,6 +4,7 @@ Everything here is read through `visibility` and `team_service`, so the page is 
 what its user may see and never has to hide anything itself.
 """
 
+import hmac
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -26,6 +27,7 @@ from aistack.db.models.user import User
 from aistack.db.ordering import bytewise
 from aistack.services import skill_service, team_service, visibility
 from aistack.services.harnesses import DEFAULT_HARNESS, validated_harness
+from aistack.services.transfer_ticket import DashboardHolder, token_prefix
 
 
 def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
@@ -84,16 +86,24 @@ def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
     }
 
 
-def require_a_machine(session: Session, user_id: uuid.UUID) -> None:
-    """A session is only as good as its user's connection to the server.
+def username(session: Session, user_id: uuid.UUID) -> str:
+    return session.scalar(select(User.username).where(User.user_id == user_id))
 
-    An operator takes someone off a server by deleting their machines (docs/OPERATING.md).
-    The session cookie would otherwise keep working until it expired.
+
+def require_its_machine(session: Session, holder: DashboardHolder) -> None:
+    """A session is only as good as the computer that opened it (ADR-0027).
+
+    Removing that computer, or giving it a new token after it was lost, ends every session it
+    opened, while the person's other computers keep theirs. An operator takes someone off a
+    server by deleting their machines (docs/OPERATING.md), which ends all of them.
     """
-    if session.scalar(select(Machine.machine_id).where(Machine.user_id == user_id)
-                      .limit(1)) is None:
-        raise SignedOut("This account no longer has a computer connected to this server, so "
-                        "the dashboard is closed to it.")
+    token_hash = session.scalar(select(Machine.token_hash).where(
+        Machine.machine_id == holder.machine_id, Machine.user_id == holder.user_id))
+    if token_hash is None or not hmac.compare_digest(token_prefix(token_hash),
+                                                     holder.token_prefix):
+        raise SignedOut("The computer that opened this dashboard is no longer connected to "
+                        "this server, so the dashboard is closed to it. Ask your coding agent "
+                        "on a computer that is connected to \"open my aistack dashboard\".")
 
 
 @dataclass(frozen=True)
