@@ -15,6 +15,7 @@ In local mode several computers share one database and update AIStack at differe
 **A refusal says what to do, where the person will see it.**
 - The server stops with one sentence: the schema, the release that wrote it, and "run that release or newer, or restore the backup from before the upgrade".
 - Local mode still starts, and every tool answers with the same sentence, so the agent tells the user in chat: another computer updated the Library, and restarting the agent fetches the update. Setup already runs `uvx aistack-mcp@latest`, so a restart is the fix in nearly every case.
+  - Amended (2026-10 audit, AUTO-07): setup now installs with `uv tool install`, so a restart alone no longer updates. Local mode starts `uv tool upgrade` at once when the Library needs a newer release, skipping the daily wait and the same-minor rule, and the sentence asks for a restart a minute later, with `uv tool upgrade aistack-mcp` by hand if the message comes back or updates are turned off (`AISTACK_AUTO_UPDATE=off`).
 
 ## Consequences
 

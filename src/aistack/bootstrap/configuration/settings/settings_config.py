@@ -162,6 +162,13 @@ class LocalSettings(BaseSettings):
                     "Unset, this computer's login name."
     )
 
+    auto_update: bool = Field(
+        default=True,
+        validation_alias="aistack_auto_update",
+        description="Install a newer release of the same minor version once a day, and any "
+                    "newer release the Library needs at once. `off` leaves updates to you."
+    )
+
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="WARNING",
         validation_alias="aistack_log_level",

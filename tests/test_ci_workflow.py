@@ -5,15 +5,18 @@ import yaml
 
 WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "tests.yaml"
 PUBLISHING = {"publish", "pypi"}
+# Writes the GitHub Release once the package is out; it publishes nothing that runs.
+RELEASE_NOTES = "release"
 
 
 def test_publishing_waits_for_every_test_job():
     """An image or a package reaches people only from a commit every test job passed on, so a
     test job added later and left out of `needs` cannot publish a break it caught."""
     jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
-    tests = set(jobs) - PUBLISHING
+    tests = set(jobs) - PUBLISHING - {RELEASE_NOTES}
     for name in PUBLISHING:
         assert set(jobs[name]["needs"]) == tests, name
+    assert jobs[RELEASE_NOTES]["needs"] == ["pypi"]
 
 
 def test_every_action_is_pinned_by_commit():

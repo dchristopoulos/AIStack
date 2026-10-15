@@ -48,3 +48,7 @@ class Busy(AIStackError):
 
 class TooManyAttempts(AIStackError):
     """A client past the limit for refused credentials or refused joins (SEC-02, SEC-08)."""
+
+
+class NeedsNewerRelease(ValidationError):
+    """The Library holds something only a newer AIStack can read (ADR-0024)."""

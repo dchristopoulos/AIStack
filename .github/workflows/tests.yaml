@@ -274,17 +274,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # latest follows main, which only ever moves to a commit that passed. A vX.Y.Z tag
-      # adds X.Y.Z and X.Y for whoever wants to stay on a release.
+      # A vX.Y.Z tag publishes X.Y.Z, X.Y (the channel the docs name, which only moves to a
+      # release that works beside the one before it) and latest, the newest release. main
+      # publishes edge and sha-<commit>, for trying what is coming: never latest.
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/aistack
+          flavor: latest=false
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-
+            type=raw,value=edge,enable={{is_default_branch}}
+            type=sha,prefix=sha-,enable=${{ !startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -294,6 +297,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # A build of main names its commit (0.1.0+g1a2b3c4); a release's names its version.
+          build-args: |
+            AISTACK_BUILD_COMMIT=${{ !startsWith(github.ref, 'refs/tags/v') && github.sha || '' }}
           # What the image holds and how it was built, attached to it for whoever checks.
           sbom: true
           provenance: mode=max
@@ -311,8 +317,8 @@ jobs:
 
   # The package behind `uvx aistack-mcp`, published only from a version tag every job above
   # passed on. PyPI trusts this job by its OIDC identity (trusted publishing), so no upload
-  # token exists to leak. To release: set `version` in pyproject.toml, merge it, then tag that
-  # commit `v<version>` and push the tag. The image gets the same version from the same tag.
+  # token exists to leak. To release: set `version` in pyproject.toml and write its section in
+  # CHANGELOG.md, merge that, then tag the commit `v<version>` and push the tag. The image gets the same version from the same tag.
   pypi:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [pytest, browsers, windows, container]
@@ -326,6 +332,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The previous release's tag, to see what changed since.
+          fetch-depth: 0
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -337,6 +346,11 @@ jobs:
       # publish a release that cannot be corrected under its own number.
       - name: The tag names the package's version
         run: test "$GITHUB_REF_NAME" = "v$(poetry version -s)"
+
+      # CHANGELOG.md has its notes, and a migration older releases cannot run beside comes
+      # with a new minor, so the X.Y image tag never moves onto it.
+      - name: The release may be published
+        run: python scripts/check_release.py check "$(poetry version -s)"
 
       - run: poetry build
 
@@ -354,3 +368,25 @@ jobs:
           done
           cat uvx.log
           head -n 1 setup.txt | grep -Fx "# Set up AIStack on this computer"
+
+  # The GitHub Release, with the version's section of CHANGELOG.md as its notes. Its own job,
+  # so the token that can write to the repository is never in the job that uploads to PyPI.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [pypi]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Publish the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          python3 scripts/check_release.py notes "$version" > notes.md
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "AIStack $version" \
+            --notes-file notes.md
