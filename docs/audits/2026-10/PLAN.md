@@ -49,7 +49,7 @@ How to work through it:
 - [x] 18c. Write down what 'compatible' means and enforce it (#135)
 - [x] 19. Order the local log so a fast clock cannot win, and rebuild without holding the lock (#128)
 - [x] 20. Every terminal command finds the agent's Library (#130)
-- [ ] 20b. Moving a Library is one command that keeps history
+- [x] 20b. Moving a Library is one command that keeps history (#137)
 - [ ] 20c. Say when GitHub cannot be reached, and nudge a Library kept on this computer only
 - [ ] 20d. A moved Library tells the computers still on the old place
 - [ ] 21. A restored home folder is a new computer
@@ -352,14 +352,14 @@ Tests: `check` with AISTACK_LIBRARY_REPO, then `check`, `export` and `dashboard`
 
 ### 20b. Moving a Library is one command that keeps history
 
-Closes: [AUTO-06](automation.md#auto-06-moving-a-library-is-a-hand-re-import-that-loses-history-placements-and-removals-though-publishing-the-existing-log-already-works), [UX-18](ux.md#ux-18-the-move-here-dialog-says-the-same-thing-for-every-destination-wrong-for-only-this-computer-silent-on-history-and-restart), and parts 1 and 3 of [AUTO-05](automation.md#auto-05-after-moving-a-library-the-other-computers-stop-at-setup-step-1-and-quietly-stay-on-the-old-one) (setup's step 1 notices a connection to a different place and replaces it).
+Closes: [AUTO-06](automation.md#auto-06-moving-a-library-is-a-hand-re-import-that-loses-history-placements-and-removals-though-publishing-the-existing-log-already-works), [UX-18](ux.md#ux-18-the-move-here-dialog-says-the-same-thing-for-every-destination-wrong-for-only-this-computer-silent-on-history-and-restart). Part 1 of [AUTO-05](automation.md#auto-05-after-moving-a-library-the-other-computers-stop-at-setup-step-1-and-quietly-stay-on-the-old-one), setup's step 1 noticing a connection to a different place, is step 23's: it is the same text as PH-09, and step 3 rewrites it first. Part 3 is gone: the README no longer describes the move.
 Largest effort among them: M.
 
 ADR-0025 already says a Library can move to GitHub by publishing the log it records, so no new ADR.
 
-Files: src/aistack/bootstrap/__main__.py (`aistack move github|postgresql|here`: publish the existing log, or replay it into the new database in one transaction, then record the new place); src/aistack/services/library_repo.py (refuse a repository whose log holds another Library); dashboard.html (each destination's own 'after' sentence; history moves with the Library; the agent restarts once); bundled/local/setup.md, bundled/setup-aistack.md and the local sync skill ('Moving the Library' becomes one command and a restart).
+Files: src/aistack/bootstrap/__main__.py (`aistack move github|postgresql|here`: publish the existing log, or replay it into the new database in one transaction, then record the new place); src/aistack/services/library_repo.py (refuse a repository whose log holds another Library); dashboard.html (each destination's own 'after' sentence; history moves with the Library; the agent restarts once); the local sync skill ('Moving the Library' becomes one command and a restart).
 
-Tests: `aistack move github` on a SQLite Library that holds a removed skill and two computers' placements produces the same `/api/state` on a second computer that replays the repository, and sync there does not list the removed skill's folder under backup; a UI test of 'Move to only this computer' does not find 'other computers then need'; a setup text test finds the 'different place' branch in step 1 of both setup files.
+Tests: `aistack move github` on a SQLite Library that holds a removed skill and two computers' placements produces the same `/api/state` on a second computer that replays the repository, and sync there does not list the removed skill's folder under backup; a log that cannot rebuild its Library, or a repository holding another Library, is refused and nothing is published; a UI test of 'Move to only this computer' does not find 'other computers then need'.
 
 ### 20c. Say when GitHub cannot be reached, and nudge a Library kept on this computer only
 
@@ -409,7 +409,7 @@ Tests: A Codex-only computer added with `add_machine` gets `sync_skill_url` and 
 
 ### 23. Setup can be run again, and a stopped setup can finish
 
-Closes: [PH-09](plot-holes.md#ph-09-setup-step-1-stops-at-already-connected-for-any-aistack-connection-a-pasted-team-invite-is-dropped-and-another-server-or-local-mode-dead-ends), [PH-10](plot-holes.md#ph-10-a-setup-that-stops-after-join-locks-the-newcomer-out-the-re-run-refuses-the-used-invite-then-the-username), [ENT-11](concurrency-and-reliability.md#ent-11-a-lost-join-response-locks-a-newcomer-out-of-their-username), [UX-11](ux.md#ux-11-joining-asks-for-the-name-you-want-to-go-by-but-join-needs-a-lowercase-username-and-has-no-place-for-the-full-name), [UX-12](ux.md#ux-12-an-existing-user-who-pastes-the-invite-pages-setup-sentence-may-never-be-put-in-the-team-setup-has-no-branch-for-a-team-code), [AUTO-21](automation.md#auto-21-joining-drops-the-name-the-person-gave-and-asks-questions-local-mode-answers-itself), [AUTO-25](automation.md#auto-25-join-first-alone-is-an-operator-step-that-protects-nothing-today), [PH-16](plot-holes.md#ph-16-a-username-is-permanent-shares-a-namespace-with-team-names-and-a-taken-one-is-always-explained-as-this-is-you-on-a-new-computer).
+Closes: [PH-09](plot-holes.md#ph-09-setup-step-1-stops-at-already-connected-for-any-aistack-connection-a-pasted-team-invite-is-dropped-and-another-server-or-local-mode-dead-ends), [PH-10](plot-holes.md#ph-10-a-setup-that-stops-after-join-locks-the-newcomer-out-the-re-run-refuses-the-used-invite-then-the-username), [ENT-11](concurrency-and-reliability.md#ent-11-a-lost-join-response-locks-a-newcomer-out-of-their-username), [UX-11](ux.md#ux-11-joining-asks-for-the-name-you-want-to-go-by-but-join-needs-a-lowercase-username-and-has-no-place-for-the-full-name), [UX-12](ux.md#ux-12-an-existing-user-who-pastes-the-invite-pages-setup-sentence-may-never-be-put-in-the-team-setup-has-no-branch-for-a-team-code), [AUTO-21](automation.md#auto-21-joining-drops-the-name-the-person-gave-and-asks-questions-local-mode-answers-itself), [AUTO-25](automation.md#auto-25-join-first-alone-is-an-operator-step-that-protects-nothing-today), [PH-16](plot-holes.md#ph-16-a-username-is-permanent-shares-a-namespace-with-team-names-and-a-taken-one-is-always-explained-as-this-is-you-on-a-new-computer). Also part 1 of [AUTO-05](automation.md#auto-05-after-moving-a-library-the-other-computers-stop-at-setup-step-1-and-quietly-stay-on-the-old-one): when `aistack` is connected to a different place than the one asked for, step 1 says so, removes the old connection, and goes on.
 Largest effort among them: M.
 
 Files: src/aistack/bundled/setup-aistack.md; src/aistack/services/onboarding_service.py (`join` takes a full name); src/aistack/mcp/tools/onboarding.py.

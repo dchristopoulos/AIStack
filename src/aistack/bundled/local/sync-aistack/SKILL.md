@@ -56,6 +56,9 @@ Say in a sentence or two what changed: what was installed or updated (between wh
 
 When the user wants their Library somewhere else, such as from this computer only to a private GitHub repository or a database their other computers share:
 
-1. Run `<aistack-mcp> export ~/aistack-library`, with the full path. It finds the Library this computer's agent uses by itself (one in a database also needs `AISTACK_DATABASE_URL`, which the user sets), writes every skill in it there, and refuses a folder that already has files.
-2. Run `<aistack-mcp> setup` and follow its steps 2 to 8 for the new place. In step 6, take the old connection out first: `claude mcp remove --scope user aistack`, or in Codex replace the `[mcp_servers.aistack]` block.
-3. After the restart, copy each folder in `~/aistack-library` that is not already in a skills folder here into `~/.claude/skills` (or `~/.agents/skills` without Claude Code), then sync: the new Library backs them up without asking. Revision history stays behind in the old place.
+1. Run `<aistack-mcp> move github`, `<aistack-mcp> move postgresql`, or `<aistack-mcp> move here`, with the full path. It moves the Library this computer's agent uses, with its history, placements and removals, and leaves the old place as it was.
+   - GitHub: it signs in as setup's choice 2 does; tell the user the code it prints, then run it again. Give `owner/name` after `github` to use a repository other than their own `aistack-library`.
+   - PostgreSQL: the user sets `AISTACK_MOVE_TO_URL` to the new database's address in their own terminal and runs the command there, since the address holds the password. The database must be empty.
+   - It refuses a place that already holds a Library, and a Library from before AIStack kept a log of its changes. For that one, use the old way: `<aistack-mcp> export ~/aistack-library`, set AIStack up in the new place, copy the exported folders into a skills folder, and sync.
+2. Replace this computer's connection with the variable the move printed: `claude mcp remove --scope user aistack`, then add it again as setup's step 6 says; in Codex, change the `env` line of the `[mcp_servers.aistack]` block. Restart once.
+3. Tell the user their other computers stay on the old place until each is set up again with the new one. A Library moved to this computer only is reached from no other computer.

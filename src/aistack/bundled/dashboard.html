@@ -2191,11 +2191,14 @@ function groupPeopleDialog(team, g) {
 // the coding agent to move there.
 const STORAGE = {
   this_computer: { title: 'Only this computer', icon: 'laptop', cost: 'Free and nothing to keep switched on. No other computer reaches it.',
-                   say: 'move my AIStack Library to this computer only' },
+                   say: 'move my AIStack Library to this computer only',
+                   after: 'Your other computers can no longer reach it.' },
   github: { title: 'A private GitHub repository', icon: 'folder', cost: 'Every computer of yours shares it through your own GitHub sign-in, nothing has to stay on, and every change is in the repository\'s history.',
-            say: 'move my AIStack Library to a private GitHub repository' },
+            say: 'move my AIStack Library to a private GitHub repository',
+            after: 'Then, on each other computer, paste the setup and choose the same repository.' },
   postgresql: { title: 'A free PostgreSQL database', icon: 'layers', cost: 'Every computer of yours uses it, and nothing has to stay on. Each computer keeps its address; if a laptop is lost, reset the database password and paste the new address on the others.',
-                say: 'move my AIStack Library to a PostgreSQL database' },
+                say: 'move my AIStack Library to a PostgreSQL database',
+                after: 'Then, on each other computer, paste the setup and give it the same database address.' },
   server: { title: 'An AIStack server', icon: 'globe', cost: 'Your computers reach it over the network, so it must stay on. The only choice that works for a team.' },
 };
 
@@ -2207,9 +2210,9 @@ function moveLibraryDialog(key) {
     submitLabel: 'Done',
     cancelLabel: null,
     body: [
-      el('p', null, 'Say this to your coding agent on this computer. It writes every skill to a folder, connects this computer to the new place, and copies the skills back, so the next sync backs them up there.'),
+      el('p', null, 'Say this to your coding agent on this computer. It moves the Library with its history, connects this computer to the new place, and restarts once. The old place is left as it was.'),
       copyField(STORAGE[key].say, 'What to say'),
-      el('p', { class: 'help' }, 'Your other computers then need the same setup, pointed at the new place.'),
+      el('p', { class: 'help' }, STORAGE[key].after),
     ],
   });
 }
