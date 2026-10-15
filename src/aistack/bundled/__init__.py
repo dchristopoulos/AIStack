@@ -10,6 +10,15 @@ from importlib import resources
 
 SYNC_SKILL_NAME = "sync-aistack"
 
+# The logo, for the browser tab of every page the server answers with. Inline, because those
+# pages load nothing from anywhere; without it a browser asks for /favicon.ico on each load.
+ICON_LINK = (
+    '<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' '
+    "viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232259d6'/%3E"
+    "%3Cpath d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5' "
+    "transform='translate(5 5) scale(.92)' fill='none' stroke='white' stroke-width='2.2' "
+    "stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\">")
+
 
 def setup_instructions() -> str:
     """The instructions template, with `{server_url}` and `{mcp_url}` still to fill in."""
