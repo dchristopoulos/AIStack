@@ -6,6 +6,7 @@ carries on from its copy: unpublished events stay recorded and go out with the n
 """
 
 import logging
+import subprocess
 import time
 import uuid
 from pathlib import Path
@@ -18,7 +19,7 @@ from aistack.db.schema import migrate_schema
 from aistack.db.swap import swap_in
 from aistack.services import library_log
 from aistack.services.library_log import Event
-from aistack.services.library_repo import LibraryRepo, RepoUnavailable
+from aistack.services.library_repo import LibraryRepo, RepoUnavailable, gh_command
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,9 @@ class LibrarySharing:
         self.engine = engine
         self.session_factory = session_factory
         self._pulled_at = float("-inf")
+        # Why the repository could not be reached the last time it was tried, for the agent
+        # and the page to say; None while it answers.
+        self.problem: str | None = None
 
     def catch_up(self, force: bool = False) -> None:
         """Pull, and apply what other computers added. Offline, keep the copy as it is."""
@@ -49,9 +53,9 @@ class LibrarySharing:
         try:
             self.repo.pull()
         except RepoUnavailable as error:
-            logger.warning(f"The Library's repository could not be reached, so this computer "
-                           f"works from its copy for now. {error}")
+            self._unreachable(error)
             return
+        self.problem = None
         self._pulled_at = time.monotonic()
         self.replay_clone()
         # Online again: what an earlier, failed push left behind goes out now.
@@ -112,10 +116,38 @@ class LibrarySharing:
         try:
             self.repo.publish(pending)
         except RepoUnavailable as error:
-            logger.warning(f"The Library's repository could not be reached; "
-                           f"{len(pending)} changes go out with the next push. {error}")
+            self._unreachable(error)
             return False
+        self.problem = None
         if pending:
             with self.session_factory.begin() as session:
                 library_log.mark_published(session, [event.event_id for event in pending])
         return True
+
+    def unpublished(self) -> int:
+        """How many changes made here have not reached the repository yet."""
+        with self.session_factory.begin() as session:
+            return len(library_log.unpublished(session))
+
+    def _unreachable(self, error: RepoUnavailable) -> None:
+        self.problem = unreachable_reason(self.repo.remote)
+        logger.warning(f"The Library's repository could not be reached, so this computer "
+                       f"works from its copy for now. {error}")
+
+
+def unreachable_reason(remote: str) -> str:
+    """Why a repository could not be reached, as one sentence for its person: signed out of
+    GitHub, which they fix, or the network, which they wait out."""
+    if remote.startswith("https://github.com/"):
+        try:
+            signed_in = subprocess.run([gh_command(), "auth", "status", "--hostname",
+                                        "github.com"], capture_output=True, timeout=30,
+                                       stdin=subprocess.DEVNULL).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            signed_in = False
+        if not signed_in:
+            return ("This computer is signed out of GitHub, so your Library here may be out "
+                    "of date. Run `aistack-mcp github` to sign in again; changes made here "
+                    "wait on this computer until then.")
+    return ("Your Library's repository could not be reached, so this shows this computer's "
+            "copy, which may be out of date. Changes made here go out once it can be reached.")

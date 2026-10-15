@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from playwright.async_api import expect
 
@@ -131,4 +133,56 @@ async def test_each_move_says_what_it_means_for_the_other_computers(browser, tmp
         await expect(dialog.get_by_text("moves the Library with its history")).to_be_visible()
         await expect(dialog.get_by_text(after)).to_be_visible()
         await expect(dialog.get_by_text("other computers then need")).to_have_count(0)
+        await context.close()
+
+
+async def test_a_library_on_this_computer_only_is_pointed_at_a_move_until_dismissed(
+        browser, tmp_path, sqlite_url):
+    async with local_dashboard(tmp_path, sqlite_url) as (_, link):
+        context = await browser.new_context()
+        page = await context.new_page()
+        await page.goto(link)
+
+        notice = page.get_by_role("region", name="Your Library lives only on this computer")
+        await expect(notice).to_be_visible()
+        await notice.get_by_role("link", name="See where it can move").click()
+        await expect(page.get_by_role("heading", name="Where your Library lives", level=1)
+                     ).to_be_visible()
+
+        await page.get_by_role("navigation", name="Main").get_by_role("link", name="Library"
+                                                                      ).click()
+        await notice.get_by_role("button", name="Dismiss").click()
+        await expect(notice).to_have_count(0)
+        await page.reload()
+        await page.get_by_role("heading", name="Library", level=1).wait_for()
+        await expect(notice).to_have_count(0)
+        await context.close()
+
+
+async def test_a_github_library_out_of_reach_says_so_and_shows_no_move_notice(
+        browser, tmp_path, sqlite_url):
+    """The test Library is a SQLite file, so /api/state is rewritten to a GitHub one that the
+    last pull could not reach."""
+    problem = "This computer is signed out of GitHub, so your Library here may be out of date."
+    async with local_dashboard(tmp_path, sqlite_url) as (base, link):
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        async def unreachable(route):
+            response = await route.fetch()
+            await route.fulfill(response=response, json=await response.json() | {"library": {
+                "kind": "github", "repository": "maria/aistack-library", "problem": problem,
+                "unpublished": 2}})
+
+        await page.route(f"{base}/api/state", unreachable)
+        await page.goto(link)
+        await page.get_by_role("heading", name="Library", level=1).wait_for()
+        await expect(page.get_by_role("region", name="Your Library lives only on this computer")
+                     ).to_have_count(0)
+
+        await page.get_by_role("link", name=re.compile(r"^Library: GitHub\s*, not reached$")).click()
+        await expect(page.get_by_text("Could not reach GitHub: showing this computer's copy. "
+                                      "2 changes made here go out when it is back.")
+                     ).to_be_visible()
+        await expect(page.get_by_text(problem)).to_be_visible()
         await context.close()

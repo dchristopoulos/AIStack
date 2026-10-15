@@ -340,6 +340,8 @@ h1 { font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -.04em
 .team-head .line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .team-head .subtitle { margin-top: 2px; font-size: 13px; }
 .note { display: flex; gap: 8px; align-items: flex-start; margin-top: 16px; color: var(--muted); font-size: 13px; }
+.only-here { margin-bottom: 16px; }
+.only-here .card-body p { margin: 0; }
 .note svg { margin-top: 3px; color: var(--faint); }
 
 /* ---------- controls ---------- */
@@ -1312,8 +1314,8 @@ function renderSidebar(r) {
   document.getElementById('top-right').replaceChildren(
     ...(DEMO ? [el('span', { class: 'badge' }, el('span', { class: 'dot amber' }), 'Demo data')] : []),
     el('a', { class: 'place-pill', href: '#/storage', title: 'Where your Library lives' },
-      el('span', { class: 'dot ok', 'aria-hidden': 'true' }), el('span', { class: 'label' }, 'Library: ' + PLACE_SHORT[lib.kind]),
-      el('span', { class: 'sr-only' }, ', connected')));
+      el('span', { class: 'dot ' + (lib.problem ? 'amber' : 'ok'), 'aria-hidden': 'true' }), el('span', { class: 'label' }, 'Library: ' + PLACE_SHORT[lib.kind]),
+      el('span', { class: 'sr-only' }, lib.problem ? ', not reached' : ', connected')));
 
   const link = (hash, current, ...kids) => el('a', { class: 'nav-item', href: hash, 'aria-current': current ? 'page' : null }, kids);
   const updates = state.skills.filter(s => s.source && s.source.update_available).length;
@@ -1587,6 +1589,7 @@ function libraryView() {
         el('div', { class: 'search' }, el('label', { class: 'sr-only', htmlFor: 'search' }, 'Search your library'), icon('search'), input,
           el('kbd', { 'aria-hidden': 'true', title: 'Press / to search' }, '/')))),
     el('div', { class: 'wrap body' },
+      onlyHereNotice(),
       state.skills.length ? el('div', { class: 'stats' },
         stat('In your library', state.skills.length, state.server === false ? 'Backed up from your computers' : plural(state.skills.filter(s => s.source).length, 'skill') + ' from a team'),
         stat('Not on any computer', unplaced.length, unplaced.map(s => s.name).join(', ') || 'Everything is in use'),
@@ -1594,6 +1597,25 @@ function libraryView() {
           updating.map(s => s.name).join(', ') || 'Everything is current', updating.length ? el('span', { class: 'dot accent' }) : null)) : null,
       list),
   ];
+}
+
+// A Library kept on this computer only is lost with it. Said once, with the way out, and quiet
+// for thirty days after it is dismissed.
+const ONLY_HERE_KEY = 'aistack.only-here-dismissed.v1';
+const ONLY_HERE_QUIET_MS = 30 * 24 * 60 * 60 * 1000;
+function onlyHereNotice() {
+  if (library().kind !== 'this_computer' || !state.skills.length) return null;
+  try { if (Date.now() - Number(localStorage.getItem(ONLY_HERE_KEY) || 0) < ONLY_HERE_QUIET_MS) return null; } catch (_) { /* shown */ }
+  const notice = el('section', { class: 'card only-here', 'aria-label': 'Your Library lives only on this computer' },
+    el('div', { class: 'card-body' },
+      el('p', null, el('strong', null, 'Your Library lives only on this computer.'), ' If it is lost, so are these skills. Move it to a private GitHub repository: about two minutes.')),
+    el('div', { class: 'card-foot' },
+      btn('Dismiss', { class: 'btn ghost sm', on: { click: () => {
+        try { localStorage.setItem(ONLY_HERE_KEY, String(Date.now())); } catch (_) { /* hidden for this visit only */ }
+        notice.remove();
+      } } }),
+      el('a', { class: 'btn sm', href: '#/storage' }, 'See where it can move')));
+  return notice;
 }
 
 const sourceCell = src => td(src ? 'meta src' : 'meta',
@@ -1635,9 +1657,15 @@ function libraryRow(s) {
 }
 
 // Placements change one call at a time; each is recorded as it lands, so a failure part way keeps what went before.
+// False when any change could not reach a GitHub Library and waits on this computer.
 async function placeAll(pairs) {
-  for (const [s, t, on] of pairs) await place(s, t, on);
+  let shared = true;
+  for (const [s, t, on] of pairs) if ((await place(s, t, on)).shared === false) shared = false;
+  return shared;
 }
+
+// When the other computers get a change: at their next sync, or once GitHub answers again.
+const arrives = (shared, normally) => shared ? normally : 'It reaches your other computers once GitHub can be reached again.';
 
 // Every computer, each with the agents it shows, as ticks. Returns the fieldset and a way to save it.
 function placementPicker(s, legend = 'Computers and coding agents') {
@@ -1650,8 +1678,8 @@ function placementPicker(s, legend = 'Computers and coding agents') {
         el('span', { class: 't2 mono', style: 'margin-left:auto', 'aria-hidden': 'true' }, AGENTS[b.t.agent].folder))))));
   const save = async () => {
     const changed = boxes.filter(b => b.box.checked !== isPlaced(s, b.t));
-    await placeAll(changed.map(b => [s, b.t, b.box.checked]));
-    return changed.length ? `Saved where ${s.name} is. Each computer picks up the change at its next ${SYNC}.` : null;
+    const shared = await placeAll(changed.map(b => [s, b.t, b.box.checked]));
+    return changed.length ? `Saved where ${s.name} is. ` + arrives(shared, `Each computer picks up the change at its next ${SYNC}.`) : null;
   };
   return { picker, save };
 }
@@ -1744,8 +1772,8 @@ function addSkillsDialog(t) {
       : [el('p', null, 'Everything in your library is here already.')],
     onSubmit: async () => {
       const picked = rows.filter(r => r.box.checked);
-      await placeAll(picked.map(r => [r.s, t, true]));
-      return picked.length ? `Added ${plural(picked.length, 'skill')} to ${where}. They arrive at its next ${SYNC}.` : null;
+      const shared = await placeAll(picked.map(r => [r.s, t, true]));
+      return picked.length ? `Added ${plural(picked.length, 'skill')} to ${where}. ` + arrives(shared, `They arrive at its next ${SYNC}.`) : null;
     },
   });
 }
@@ -1765,8 +1793,8 @@ function copyFromDialog(t, others) {
     onSubmit: async () => {
       const from = others[Number(document.querySelector(`input[name="${name}"]:checked`).value)];
       const missing = placedOn(from).filter(s => !isPlaced(s, t));
-      await placeAll(missing.map(s => [s, t, true]));
-      return missing.length ? `Added ${plural(missing.length, 'skill')} from ${targetName(from)}. They arrive at the next ${SYNC} on ${t.m.name}.`
+      const shared = await placeAll(missing.map(s => [s, t, true]));
+      return missing.length ? `Added ${plural(missing.length, 'skill')} from ${targetName(from)}. ` + arrives(shared, `They arrive at the next ${SYNC} on ${t.m.name}.`)
         : `Nothing to copy: ${where} already has every skill ${targetName(from)} has.`;
     },
   });
@@ -2260,7 +2288,11 @@ function storageView() {
             el('span', { class: 'avatar lg', 'aria-hidden': 'true' }, icon(here.icon, 20)),
             el('div', null,
               el('h2', null, here.title),
-              el('p', { class: 'status' }, el('span', { class: 'dot ok' }), 'Connected: this page just read your Library from it.'))),
+              lib.problem
+                ? el('p', { class: 'status' }, el('span', { class: 'dot amber' }), 'Could not reach GitHub: showing this computer\'s copy.'
+                    + (lib.unpublished ? ` ${plural(lib.unpublished, 'change')} made here ${lib.unpublished === 1 ? 'goes' : 'go'} out when it is back.` : ''))
+                : el('p', { class: 'status' }, el('span', { class: 'dot ok' }), 'Connected: this page just read your Library from it.'))),
+          lib.problem && el('p', { class: 'note' }, icon('info', 14), el('span', null, lib.problem)),
           el('p', null, here.cost),
           el('dl', { class: 'facts' }, facts)),
         actions.some(Boolean) && el('div', { class: 'card-foot' }, el('span', null, lib.kind === 'server' ? 'The operator of this server backs it up.' : 'Each computer reaches it on its own.'),
