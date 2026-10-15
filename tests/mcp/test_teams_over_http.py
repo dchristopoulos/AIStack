@@ -1,6 +1,7 @@
 """Teams over real HTTP (ADR-0015): what a second person can and cannot reach."""
 
 import io
+import json
 import logging
 import tarfile
 from datetime import timedelta
@@ -54,6 +55,38 @@ REFUSED_CALLS = {
     "invite_to_team": {},
 }
 
+# One call per tool that names no team, made by the outsider, who has a 'wizard' of their own.
+# Its answer must not mention the team, its skill, or its admin.
+UNTEAMED_CALLS = {
+    "add_machine": {"name": "desktop", "os": "LINUX"},
+    "push_skill": {"name": "wizard"},
+    "disable_skill": {"name": "wizard"},
+    "open_dashboard": {},
+    "list_skills": {},
+    "list_teams": {},
+    "sync": {"local": {"wizard": local_digests(), "team-only": local_digests()}},
+}
+
+# What a member who is inside the team but not inside a group may do with that group's skill.
+# The rows are the three ways to be in that position (ADR-0015, ADR-0029):
+#   open      - the group is open and they are not in it
+#   private   - the group is private and they are not in it
+#   sees-all  - the group is private, and an admin let them see every group
+# and the outcomes:
+#   listed / unlisted       - list_skills shows the skill, or leaves it out
+#   taken                   - get_skill with the team installs it
+#   missing                 - the same sentence as for a skill or group that does not exist
+#   read-only               - sharing over it is refused, naming the group they can read
+#   hidden-name             - sharing over it is refused without naming where it is
+INSIDER_VIEW = {
+    "open": {"list": "listed", "take": "taken", "share_over": "read-only",
+             "share_into": "missing"},
+    "private": {"list": "unlisted", "take": "missing", "share_over": "hidden-name",
+                "share_into": "missing"},
+    "sees-all": {"list": "listed", "take": "taken", "share_over": "read-only",
+                 "share_into": "missing"},
+}
+
 
 async def _team(server_url, admin, *members, name="acme") -> str:
     """A team created by `admin`, with `members` joined through its invite code."""
@@ -97,6 +130,8 @@ async def test_every_machine_tool_has_a_stated_view_for_an_outsider(server_url):
     assert not BOOTSTRAP_ONLY_TOOLS & set(OUTSIDER_VIEW)
     assert set(REFUSED_CALLS) == {tool for tool, view in OUTSIDER_VIEW.items()
                                   if view == "refused"}
+    assert set(UNTEAMED_CALLS) == {tool for tool, view in OUTSIDER_VIEW.items()
+                                   if view in ("own", "hidden")}
 
 
 async def test_a_pushed_skill_is_seen_by_nobody_else_until_it_is_shared(server_url):
@@ -345,22 +380,83 @@ async def test_a_team_you_are_not_in_reads_exactly_like_one_that_does_not_exist(
     assert real.replace("acme", "X") == imagined.replace("ghost", "X")
 
 
-async def test_a_team_you_are_not_in_is_left_out_of_every_listing(server_url):
+@pytest.mark.parametrize("tool", sorted(UNTEAMED_CALLS))
+async def test_a_tool_that_names_no_team_says_nothing_of_one_you_are_not_in(server_url, tool):
     dimitris = await join(server_url, "dimitris", "macbook")
     eve = await join(server_url, "eve", "laptop")
     await _team(server_url, dimitris)
-    await push(server_url, dimitris)
-    await call(server_url, dimitris, "share_skill", name="wizard", team="acme")
+    for name in ("wizard", "team-only"):
+        await push(server_url, dimitris, name)
+        await call(server_url, dimitris, "share_skill", name=name, team="acme")
+    await push(server_url, eve)
 
-    listed = await call(server_url, eve, "list_skills")
-    teams = await call(server_url, eve, "list_teams")
-    report = await call(server_url, eve, "sync", local={"wizard": local_digests()})
+    answer = json.dumps(await call(server_url, eve, tool, **UNTEAMED_CALLS[tool]))
 
-    assert listed == {"skills": []}
-    assert teams["teams"] == []
-    # A folder of the same name on her disk is hers to back up, and nothing else.
-    assert report["backup"] == ["wizard"]
-    assert report["team_updates"] == [] and report["ask"] == [] and report["install"] == []
+    for word in ("acme", "dimitris"):
+        assert word not in answer
+    # A folder of the team skill's name on her disk is hers to back up, and nothing else.
+    assert "team-only" not in answer or tool == "sync" and json.loads(answer)["backup"] == [
+        "team-only"]
+
+
+@pytest.fixture(name="insider")
+async def insider_fixture(server_url, session_factory, request):
+    """eve, in team acme, outside the group holding dimitris's 'grouped' skill."""
+    position = request.param
+    dimitris = await join(server_url, "dimitris", "macbook")
+    eve = await join(server_url, "eve", "laptop")
+    await _team(server_url, dimitris, eve)
+    with session_factory.begin() as session:
+        admin = session.scalar(select(User.user_id).where(User.username == "dimitris"))
+        team_service.create_group(session, admin, "acme", "squad",
+                                  private=position != "open")
+        if position == "sees-all":
+            team_service.set_member(session, admin, "acme", "eve", sees_all_groups=True)
+    await push(server_url, dimitris, "grouped")
+    await call(server_url, dimitris, "share_skill", name="grouped", team="acme", group="squad")
+    await push(server_url, eve, "grouped", files={"notes.md": "eve's own"})
+    await push(server_url, eve, "fresh")
+    return position, eve
+
+
+async def _insider_outcome(server_url, eve, action) -> str:
+    if action == "list":
+        listed = (await call(server_url, eve, "list_skills"))["skills"]
+        return "listed" if any(s["team"] == "acme" and s["name"] == "grouped"
+                               for s in listed) else "unlisted"
+    calls = {
+        "take": ("get_skill", {"name": "grouped", "team": "acme"}, "ghost-skill"),
+        "share_over": ("share_skill", {"name": "grouped", "team": "acme"}, None),
+        "share_into": ("share_skill", {"name": "fresh", "team": "acme", "group": "squad"},
+                       "ghost-group"),
+    }
+    tool, arguments, ghost = calls[action]
+    async with client_for(server_url, eve) as client:
+        result = await client.call_tool(tool, arguments, raise_on_error=False)
+    if not result.is_error:
+        return "taken" if action == "take" else "shared"
+    refusal = result.content[0].text
+    if "read but not share into" in refusal and "'squad'" in refusal:
+        return "read-only"
+    if "somewhere you cannot see" in refusal and "squad" not in refusal:
+        return "hidden-name"
+    if ghost is not None:
+        swapped = dict(arguments, **({"name": ghost} if action == "take" else {"group": ghost}))
+        async with client_for(server_url, eve) as client:
+            other = await client.call_tool(tool, swapped, raise_on_error=False)
+        real = "grouped" if action == "take" else "squad"
+        if refusal.replace(real, "X") == other.content[0].text.replace(ghost, "X"):
+            return "missing"
+    return f"unexpected: {refusal}"
+
+
+@pytest.mark.parametrize("insider", sorted(INSIDER_VIEW), indirect=True)
+@pytest.mark.parametrize("action", ["list", "take", "share_over", "share_into"])
+async def test_a_member_outside_a_group_reads_writes_and_is_refused_as_the_matrix_says(
+        server_url, insider, action):
+    position, eve = insider
+
+    assert await _insider_outcome(server_url, eve, action) == INSIDER_VIEW[position][action]
 
 
 async def test_creating_a_team_says_a_name_is_taken_and_nothing_else(server_url):

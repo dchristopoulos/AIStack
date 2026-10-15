@@ -4,7 +4,7 @@ import threading
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, event, func, select
 
 from aistack.commons.exceptions import Conflict, NotFound, ValidationError
 from aistack.db.engine import build_session_factory
@@ -811,6 +811,96 @@ def test_sharing_into_a_group_takes_belonging_to_it_or_to_one_above_it(session_f
     with pytest.raises(NotFound):
         _share(session_factory, eve, groups, "eves", "backend")
     assert _share(session_factory, eve, groups, "eves").group is None
+
+
+def _team_revision(session_factory, joined, name) -> tuple[int, str]:
+    found = next(skill for skill in _do(session_factory, skill_service.list_skills,
+                                        joined.user.user_id)
+                 if skill.team == "acme" and skill.name == name)
+    return found.revision, found.pushed_by
+
+
+@pytest.mark.parametrize("sees_all", [False, True], ids=["open-group", "sees-all-groups"])
+def test_sharing_over_a_groups_skill_takes_being_able_to_share_into_it(session_factory,
+                                                                      dimitris, eve, groups,
+                                                                      sees_all):
+    """ADR-0029: seeing a group is reading and taking, not writing, by any path."""
+    if sees_all:
+        _do(session_factory, team_service.set_member, dimitris.user.user_id, groups, "eve",
+            sees_all_groups=True)
+    name, group = ("pentest", "security") if sees_all else ("sql-style", "backend")
+    _push(session_factory, eve, name, files={"notes.md": "Eve's version."})
+
+    with pytest.raises(Conflict) as refusal:
+        _share(session_factory, eve, groups, name)
+
+    assert str(refusal.value) == (
+        f"'{name}' is in group '{group}' of team 'acme', which you can read but not share "
+        "into. Ask a team admin to add you to it, or share yours under a different name.")
+    assert _team_revision(session_factory, dimitris, name) == (1, "dimitris")
+
+
+def test_a_group_member_still_shares_over_its_skill_without_naming_the_group(session_factory,
+                                                                            maria, groups):
+    _push(session_factory, maria, "api-notes", files={"notes.md": "Maria's version."})
+
+    assert _share(session_factory, maria, groups, "api-notes").group == "backend/aistack"
+    assert _team_revision(session_factory, maria, "api-notes") == (2, "maria")
+    # Being in a group under 'backend' is not being in 'backend'.
+    _push(session_factory, maria, "sql-style", files={"notes.md": "Maria's version."})
+    with pytest.raises(Conflict, match="read but not share into"):
+        _share(session_factory, maria, groups, "sql-style")
+
+
+def test_the_member_list_shows_no_group_its_reader_cannot_see(session_factory, dimitris, eve,
+                                                              groups):
+    # Open, but under a private group: its path would name the private one.
+    _do(session_factory, team_service.create_group, dimitris.user.user_id, groups, "tools",
+        "security")
+
+    def groups_of(viewer, username):
+        return next(member.groups for member in
+                    _do(session_factory, team_service.members, viewer.user.user_id, groups)
+                    if member.username == username)
+
+    assert groups_of(eve, "dimitris") == ("backend",)
+    assert groups_of(dimitris, "dimitris") == (
+        "backend", "backend/aistack", "security", "security/tools")
+
+
+def _statements(session_factory, portable_engine, call) -> int:
+    count = [0]
+
+    def counted(*_):
+        count[0] += 1
+
+    event.listen(portable_engine, "before_cursor_execute", counted)
+    try:
+        with pytest.raises(NotFound) as refusal:
+            _do(session_factory, call)
+    finally:
+        event.remove(portable_engine, "before_cursor_execute", counted)
+    return count[0], str(refusal.value)
+
+
+@pytest.mark.parametrize("action", ["subscribe", "share"])
+def test_a_hidden_group_costs_the_same_work_as_a_missing_one(session_factory, portable_engine,
+                                                             eve, groups, action):
+    """The same sentence is not enough if a hidden group takes longer to answer."""
+    _push(session_factory, eve, "eves")
+
+    def asking_for(group):
+        if action == "subscribe":
+            return lambda session: team_service.set_subscribed(session, eve.user.user_id,
+                                                               groups, group, False)
+        return lambda session: skill_service.share(session, eve.user.user_id, "eves", groups,
+                                                   group)
+
+    hidden = _statements(session_factory, portable_engine, asking_for("security"))
+    missing = _statements(session_factory, portable_engine, asking_for("nowhere"))
+
+    assert hidden[0] == missing[0]
+    assert hidden[1].replace("security", "X") == missing[1].replace("nowhere", "X")
 
 
 def test_moving_a_skill_into_a_private_group_takes_it_out_of_others_sight(session_factory,
