@@ -7,7 +7,7 @@ from sqlalchemy import text
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from aistack.bootstrap.context.application_context import get_session_factory
+from aistack.bootstrap.context.application_context import get_read_session_factory
 from aistack.mcp.mcp import mcp
 
 logger = logging.getLogger(__name__)
@@ -31,5 +31,5 @@ async def health(request: Request) -> Response:
 
 
 def _ping_database() -> None:
-    with get_session_factory()() as session:
+    with get_read_session_factory()() as session:
         session.execute(text("SELECT 1"))

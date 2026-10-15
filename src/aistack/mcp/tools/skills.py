@@ -5,6 +5,7 @@ from typing import TypedDict
 from fastmcp.server.dependencies import get_http_request
 
 from aistack.bootstrap.context.application_context import (
+    get_read_session_factory,
     get_session_factory,
     get_ticket_signer,
 )
@@ -201,7 +202,7 @@ class ListSkillsResult(TypedDict):
 def list_skills() -> ListSkillsResult:
     started_at = perf_counter()
 
-    with get_session_factory().begin() as session:
+    with get_read_session_factory().begin() as session:
         skills = skill_service.list_skills(session, current_machine().user_id)
 
     logger.info(f"Skills listed. Count: '{len(skills)}'. "

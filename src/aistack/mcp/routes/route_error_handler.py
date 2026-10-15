@@ -9,6 +9,7 @@ from starlette.responses import JSONResponse, Response
 
 from aistack.commons.exceptions import (
     AIStackError,
+    Busy,
     Conflict,
     InvalidTicket,
     NotFound,
@@ -25,6 +26,7 @@ _STATUS_CODES: dict[type[AIStackError], int] = {
     InvalidTicket: 403,
     NotFound: 404,
     Conflict: 409,
+    Busy: 503,
 }
 
 RouteHandler = Callable[[Request], Awaitable[Response]]

@@ -12,7 +12,7 @@ from html import escape
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response
 
-from aistack.bootstrap.context.application_context import get_session_factory
+from aistack.bootstrap.context.application_context import get_read_session_factory
 from aistack.bundled import ICON_LINK
 from aistack.commons.exceptions import NotFound
 from aistack.mcp.mcp import mcp
@@ -71,7 +71,7 @@ async def invite(request: Request) -> Response:
 
 
 def _team_name(code: str) -> str:
-    with get_session_factory().begin() as session:
+    with get_read_session_factory().begin() as session:
         return team_service.invited_team(session, code)
 
 
