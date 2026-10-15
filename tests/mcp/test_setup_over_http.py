@@ -116,6 +116,16 @@ async def test_the_sync_skill_is_served_exactly_as_shipped(server_url):
     assert response.text.startswith("---\nname: sync-aistack\n")
 
 
+def test_the_sync_skill_stops_when_aistack_is_not_connected():
+    """Without the tools, an agent left to improvise reached the server with a token it read
+    from its own configuration. The skill stops it first and says what to check instead."""
+    document = sync_skill_document()
+
+    assert document.index("Check that AIStack is connected") < document.index("Call `sync`")
+    assert "never read a token out of a configuration file" in document
+    assert "claude mcp get aistack" in document and "codex mcp get aistack" in document
+
+
 async def test_the_documented_join_request_works_with_no_mcp_client(server_url):
     """One POST, no handshake, no session: what the stateless endpoint is for (ADR-0013)."""
     response = await _join_with_one_request(server_url, INVITE_CODE, username="maria",
