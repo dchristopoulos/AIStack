@@ -7,16 +7,20 @@ from starlette.middleware import Middleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastmcp.server.middleware import AuthMiddleware
 
+from aistack.bootstrap.context.application_context import get_failure_limiter
+from aistack.mcp.argument_errors import ArgumentErrors
+from aistack.mcp.auth.failure_limiter import CredentialGuard
 from aistack.mcp.auth.policy import authorize
 
 logger = logging.getLogger(__name__)
 
 # Only deliberate ToolError messages reach callers; unexpected details stay masked.
 # Authorization is attached once, here, so a tool is covered whether or not it says so.
+# ArgumentErrors keeps a malformed call's values out of the answer (SEC-03).
 mcp = FastMCP(
     "aistack",
     mask_error_details=True,
-    middleware=[AuthMiddleware(auth=authorize)],
+    middleware=[AuthMiddleware(auth=authorize), ArgumentErrors()],
 )
 
 # Register tools and routes before building the HTTP app.
@@ -45,7 +49,8 @@ def http_server_config(path: str, log_level: str, **bind) -> uvicorn.Config:
     # restart or a second replica never strands a client on a session that is gone, and
     # a new machine can call `join` with one HTTP request before it has an MCP client.
     app = mcp.http_app(path=path, transport="http", stateless_http=True, json_response=True)
-    return _uvicorn_config(app, log_level, **bind)
+    # Inside uvicorn's proxy-header handling, so the address it sees is the resolved client.
+    return _uvicorn_config(CredentialGuard(app, get_failure_limiter), log_level, **bind)
 
 
 def dashboard_server_config(log_level: str) -> uvicorn.Config:

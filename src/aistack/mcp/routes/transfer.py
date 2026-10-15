@@ -13,8 +13,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from aistack.bootstrap.context.application_context import get_session_factory, get_ticket_signer
-from aistack.commons.exceptions import ValidationError
 from aistack.mcp.mcp import mcp
+from aistack.mcp.routes.request_body import bounded_body
 from aistack.mcp.routes.route_error_handler import handle_route_errors
 from aistack.services import skill_service
 from aistack.services.skill_archive import MAX_ARCHIVE_BYTES
@@ -93,29 +93,10 @@ def _load_download(ticket: DownloadTicket) -> tuple[str, bytes]:
 
 
 async def _bounded_body(request: Request) -> bytes:
-    """Read the request body, giving up as soon as it passes the limit.
-
-    `request.body()` would buffer whatever arrives. Counting chunks means an oversized upload
-    is refused after one megabyte, however much the client meant to send.
-    """
-    chunks: list[bytes] = []
-    received = 0
-    try:
-        # One megabyte takes well under a second on any link worth pushing over. Without a
-        # deadline a ticket holder could open uploads and never finish them.
-        async with asyncio.timeout(UPLOAD_READ_TIMEOUT_SECONDS):
-            async for chunk in request.stream():
-                received += len(chunk)
-                if received > MAX_ARCHIVE_BYTES:
-                    raise ValidationError(
-                        f"The upload is larger than the {MAX_ARCHIVE_BYTES} byte limit for "
-                        "one skill. If a .git or node_modules folder is inside the skill, "
-                        "leave it out."
-                    )
-                chunks.append(chunk)
-    except TimeoutError:
-        raise ValidationError(
-            f"The upload did not finish within {UPLOAD_READ_TIMEOUT_SECONDS} seconds, so it "
-            "was dropped. Send the archive again."
-        ) from None
-    return b"".join(chunks)
+    """An upload, refused after one megabyte however much the client meant to send. One
+    megabyte takes well under a second on any link worth pushing over."""
+    return await bounded_body(
+        request, MAX_ARCHIVE_BYTES,
+        f"The upload is larger than the {MAX_ARCHIVE_BYTES} byte limit for one skill. If a "
+        ".git or node_modules folder is inside the skill, leave it out.",
+        UPLOAD_READ_TIMEOUT_SECONDS)

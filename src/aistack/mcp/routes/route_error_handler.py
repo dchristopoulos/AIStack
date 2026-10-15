@@ -14,6 +14,7 @@ from aistack.commons.exceptions import (
     InvalidTicket,
     NotFound,
     SignedOut,
+    TooManyAttempts,
     ValidationError,
 )
 from aistack.commons.text import bounded_failure
@@ -27,6 +28,7 @@ _STATUS_CODES: dict[type[AIStackError], int] = {
     NotFound: 404,
     Conflict: 409,
     Busy: 503,
+    TooManyAttempts: 429,
 }
 
 RouteHandler = Callable[[Request], Awaitable[Response]]

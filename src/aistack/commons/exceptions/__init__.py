@@ -44,3 +44,7 @@ class SignedOut(AIStackError):
 class Busy(AIStackError):
     """The database could not grant a lock in time. Nothing was changed; the call can be
     made again."""
+
+
+class TooManyAttempts(AIStackError):
+    """A client past the limit for refused credentials or refused joins (SEC-02, SEC-08)."""

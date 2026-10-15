@@ -4,14 +4,17 @@ from typing import Literal, TypedDict
 
 from fastmcp.server.dependencies import get_access_token, get_http_request
 
-from aistack.bootstrap.context.application_context import get_session_factory
+from aistack.bootstrap.context.application_context import get_join_limiter, get_session_factory
+from aistack.commons.exceptions import Conflict, TooManyAttempts
 from aistack.commons.text import loggable
+from aistack.mcp.auth.failure_limiter import client_address
 from aistack.mcp.auth.policy import ONBOARDING_TAG
 from aistack.mcp.auth.principal import current_machine
 from aistack.mcp.mcp import mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.mcp.server_url import mcp_endpoint_url
 from aistack.services import onboarding_service
+from aistack.services.token_service import hash_token
 
 logger = logging.getLogger(__name__)
 
@@ -64,15 +67,35 @@ def join(username: str, machine_name: str, os: Literal["MACOS", "WINDOWS", "LINU
     bearer = get_access_token()
     team_invite = bearer.token if bearer.claims.get("invite") == "team" else None
 
+    # A refused join says a username or team name exists, and leaves a team's code unused, so
+    # each address and each team code is good for a few (SEC-08). The server's code is shared
+    # by every newcomer, so it is counted by address only: one person's run must not lock out
+    # the next person to join.
+    limiter = get_join_limiter()
+    keys = [f"address:{client_address(get_http_request())}"]
+    if team_invite is not None:
+        keys.append(f"code:{hash_token(team_invite)}")
+    waits = [wait for key in keys if (wait := limiter.retry_after(key)) is not None]
+    if waits:
+        raise TooManyAttempts(
+            f"Too many joins were refused for a name already taken, so this is paused for "
+            f"{max(waits) // 60 + 1} minutes. Pick a name nobody on this server uses, then "
+            "try again after that.")
+
     # Commit the user, machine, admin claim, and membership together before returning the token.
-    with get_session_factory().begin() as session:
-        joined = onboarding_service.join(session, username, machine_name, os, team_invite)
-        result = JoinResult(
-            username=joined.user.username,
-            machine_name=joined.machine.name,
-            token=joined.token,
-            team=joined.team,
-        )
+    try:
+        with get_session_factory().begin() as session:
+            joined = onboarding_service.join(session, username, machine_name, os, team_invite)
+            result = JoinResult(
+                username=joined.user.username,
+                machine_name=joined.machine.name,
+                token=joined.token,
+                team=joined.team,
+            )
+    except Conflict:
+        for key in keys:
+            limiter.record(key)
+        raise
 
     # Log identities explicitly; result contains the plaintext token.
     logger.info(

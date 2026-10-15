@@ -10,6 +10,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from aistack.mcp.auth.aistack_token_verifier import AIStackTokenVerifier
+from aistack.mcp.auth.failure_limiter import FAILURE_LIMIT, FAILURE_WINDOW_SECONDS, FailureLimiter
 from aistack.mcp.auth.scopes import BOOTSTRAP_SCOPE, MACHINE_SCOPE
 from aistack.mcp.mcp import mcp
 from aistack.services import onboarding_service, team_service
@@ -29,7 +30,8 @@ PROBE_TOOL_NAME = "claims_probe"
 
 @pytest.fixture(name="verifier")
 def verifier_fixture(session_factory: sessionmaker[Session]) -> AIStackTokenVerifier:
-    return AIStackTokenVerifier(SecretStr(INVITE_CODE), session_factory)
+    return AIStackTokenVerifier(SecretStr(INVITE_CODE), session_factory,
+                                FailureLimiter(FAILURE_LIMIT, FAILURE_WINDOW_SECONDS))
 
 
 @pytest.fixture(name="joined")
