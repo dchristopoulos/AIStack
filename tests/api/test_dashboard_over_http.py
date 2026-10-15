@@ -364,6 +364,7 @@ async def test_what_only_an_admin_may_do_is_refused_to_a_member_with_a_sentence(
             await _post(maria, "/teams/acme/groups", name="backend"),
             await _post(maria, "/teams/acme/members/dimitris/remove"),
             await _post(maria, "/teams/acme/members/maria", role="ADMIN"),
+            await _post(maria, "/teams/acme/delete"),
         ]
         members = next(team for team in (await _state(dimitris))["teams"]
                        if team["name"] == "acme")["members"]
@@ -384,6 +385,7 @@ async def test_someone_outside_a_team_is_told_what_they_would_be_told_if_it_did_
         await _post(dimitris, "/teams", name="acme")
 
         for path, body in (("/teams/{team}/leave", {}), ("/teams/{team}/invite", {}),
+                           ("/teams/{team}/delete", {}),
                            ("/teams/{team}/take", {"name": "wizard"}),
                            ("/teams/{team}/groups", {"name": "x"}),
                            ("/skills/wizard/share", {"team": "{team}"})):

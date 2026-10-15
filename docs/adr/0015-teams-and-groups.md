@@ -23,7 +23,7 @@ The shape is the one people already know from Microsoft Teams and GitHub: an org
 - **Every account is in the server's team, `everyone`.** It is what the shared vault was. An upgraded server moves every existing skill there and every user is a member, so nothing anyone could see disappears. It has no invite code and cannot be left.
 - **Each team has its own invite code**, made by the server, stored as a hash, resolved by indexed lookup like a machine token. Making a new one stops the old one working, which is also how a leaked code is cancelled.
 - **A token is a person on one computer and is never shared.** A second computer gets its own from `add_machine` and sees everything its user does. A friend joins with their own account and a team's invite code.
-- **Two roles: admin and member.** An admin manages the invite code, members, groups, and where a team's skills sit. A team always has at least one. "Backend developer" is not a role with permissions; it is being in the `backend` group.
+- **Two roles: admin and member.** An admin manages the invite code, members, groups, and where a team's skills sit. A team always has at least one while anyone is in it; the last member leaving deletes it, and an admin can delete it (ADR-0028). "Backend developer" is not a role with permissions; it is being in the `backend` group.
 - **Sharing into a group takes belonging to it, or to a group above it.** Seeing an open group does not make it writable.
 - **One member can be given sight of every group**, private ones included, without being added to each. It grants reading and taking, not sharing.
 - **Unsubscribing from a group** stops sync offering updates from it and the groups under it. It hides nothing.

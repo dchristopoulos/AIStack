@@ -13,7 +13,13 @@ from aistack.db.models.invite import Invite
 from aistack.db.models.machine import Machine
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc, utc_now
-from aistack.services import onboarding_service, skill_service, sync_service, team_service
+from aistack.services import (
+    onboarding_service,
+    operator_service,
+    skill_service,
+    sync_service,
+    team_service,
+)
 from tests.archives import local_digests, skill_archive
 from tests.teams import make_team
 
@@ -600,6 +606,114 @@ def test_an_admin_removing_a_teams_skill_leaves_the_copies_people_took(session_f
     assert _sync(session_factory, maria, {"wizard": local_digests()}).up_to_date == 1
     with session_factory() as session:
         assert session.scalars(select(Skill.source_skill_id)).all() == [None, None]
+
+
+def test_the_last_member_leaving_deletes_the_team_and_frees_its_name(session_factory,
+                                                                     dimitris):
+    _do(session_factory, team_service.create_team, dimitris.user.user_id, "solo")
+    _push(session_factory, dimitris)
+    _share(session_factory, dimitris, "solo")
+    code = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, "solo")
+
+    assert _do(session_factory, team_service.leave_team, dimitris.user.user_id, "solo") == "solo"
+
+    assert _do(session_factory, team_service.list_teams, dimitris.user.user_id) == []
+    assert _listing(session_factory, dimitris) == [(None, None, "wizard")]
+    with session_factory() as session:
+        assert session.scalar(select(func.count()).select_from(Invite)
+                              .join(Team, Team.team_id == Invite.team_id)
+                              .where(Team.name == "solo")) == 0
+    with pytest.raises(NotFound, match="not a team invite code"):
+        _do(session_factory, team_service.join_team, dimitris.user.user_id, code)
+    assert _do(session_factory, team_service.create_team, dimitris.user.user_id,
+               "solo") == "solo"
+
+
+def test_the_only_member_cannot_demote_themselves_and_is_told_what_to_do(session_factory,
+                                                                        dimitris):
+    _do(session_factory, team_service.create_team, dimitris.user.user_id, "solo")
+
+    with pytest.raises(Conflict, match="only member of team 'solo'. Leave it or delete it"):
+        _do(session_factory, team_service.set_member, dimitris.user.user_id, "solo",
+            "dimitris", "MEMBER")
+
+
+def test_an_admin_deletes_a_team_and_members_keep_their_library_copies(session_factory,
+                                                                       dimitris, maria, acme):
+    _push(session_factory, dimitris)
+    _share(session_factory, dimitris, acme)
+    _take(session_factory, maria, acme)
+    _do(session_factory, team_service.create_group, dimitris.user.user_id, acme, "design")
+
+    with pytest.raises(ValidationError, match="Only an admin"):
+        _do(session_factory, team_service.delete_team, maria.user.user_id, acme)
+    assert _do(session_factory, team_service.delete_team, dimitris.user.user_id, acme) == acme
+
+    for person in (dimitris, maria):
+        assert _do(session_factory, team_service.list_teams, person.user.user_id) == []
+        assert _listing(session_factory, person) == [(None, None, "wizard")]
+    # Maria's copy is still hers on her computer, and nothing offers her a team update.
+    assert _sync(session_factory, maria, {"wizard": local_digests()}).up_to_date == 1
+    with session_factory() as session:
+        assert session.scalars(select(Skill.source_skill_id)).all() == [None, None]
+        assert session.scalar(select(func.count()).select_from(Team)
+                              .where(Team.name == acme)) == 0
+
+
+def test_an_admin_outside_a_private_group_cannot_move_or_remove_its_skills(session_factory,
+                                                                           dimitris, maria,
+                                                                           acme):
+    _do(session_factory, team_service.set_member, dimitris.user.user_id, acme, "maria", "ADMIN")
+    _do(session_factory, team_service.create_group, maria.user.user_id, acme, "vault",
+        private=True)
+    _push(session_factory, maria)
+    _share(session_factory, maria, acme, group="vault")
+
+    for action, arguments in ((team_service.move_skill, ("wizard", None)),
+                              (team_service.remove_skill, ("wizard",))):
+        with pytest.raises(NotFound) as hidden:
+            _do(session_factory, action, dimitris.user.user_id, acme, *arguments)
+        with pytest.raises(NotFound) as missing:
+            _do(session_factory, action, dimitris.user.user_id, acme,
+                *(("sorcerer",) + arguments[1:]))
+        assert _same_sentence(hidden, "wizard", missing, "sorcerer")
+
+
+def _offboard(session_factory, username, successors=None):
+    return _do(session_factory, operator_service.take_out_of_teams, username, successors)
+
+
+def test_the_operator_names_an_admin_for_a_team_whose_admins_are_gone(session_factory,
+                                                                     dimitris, maria, acme):
+    with session_factory.begin() as session:
+        session.execute(delete(Machine).where(Machine.user_id == dimitris.user.user_id))
+
+    _do(session_factory, operator_service.name_admin, acme, "maria")
+
+    assert _do(session_factory, team_service.new_invite_code, maria.user.user_id, acme)
+
+
+def test_taking_someone_off_the_server_hands_over_the_teams_they_ran(session_factory,
+                                                                     dimitris, maria, eve,
+                                                                     acme):
+    _do(session_factory, team_service.create_team, dimitris.user.user_id, "solo")
+    code = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, acme)
+
+    # The only admin of acme: refused, and nothing changes, until someone takes it over.
+    with pytest.raises(ValidationError, match="only admin of team 'acme'"):
+        _offboard(session_factory, "dimitris")
+    assert len(_do(session_factory, team_service.list_teams, dimitris.user.user_id)) == 2
+
+    assert _offboard(session_factory, "dimitris", {"acme": "maria"}) == ["acme", "solo"]
+
+    assert _do(session_factory, team_service.list_teams, dimitris.user.user_id) == []
+    assert [(team.name, team.role, team.members) for team in
+            _do(session_factory, team_service.list_teams, maria.user.user_id)] == [
+        ("acme", TeamRole.ADMIN, 1)]
+    with pytest.raises(NotFound, match="not a team invite code"):
+        _do(session_factory, team_service.join_team, eve.user.user_id, code)
+    # Their own team, which only they were in, is gone and its name free.
+    assert _do(session_factory, team_service.create_team, eve.user.user_id, "solo") == "solo"
 
 
 # --- groups, nested -------------------------------------------------------------------------

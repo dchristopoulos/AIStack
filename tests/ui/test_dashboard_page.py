@@ -413,6 +413,46 @@ async def test_an_invite_is_listed_as_pending_and_cancelled_from_the_list(sign_i
     assert dimitris.console_errors == []
 
 
+async def test_an_admin_deletes_a_team_and_members_keep_what_they_took(sign_in):
+    maria = await sign_in("maria")
+    taken = [skill["name"] for skill in (await maria.state())["skills"]
+             if (skill.get("source") or {}).get("team") == "aistack"]
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    await _open_team(dimitris, "aistack")
+    await page.get_by_role("tab", name="Settings").click()
+
+    await page.get_by_role("button", name="Delete team").click()
+    await page.get_by_role("dialog", name="Delete aistack?").get_by_role(
+        "button", name="Delete team").click()
+
+    await expect(page.get_by_role("heading", name="Library", level=1)).to_be_visible()
+    assert "aistack" not in [team["name"] for team in (await dimitris.state())["teams"]]
+    after = await maria.state()
+    assert "aistack" not in [team["name"] for team in after["teams"]]
+    assert taken and set(taken) <= {skill["name"] for skill in after["skills"]}
+    assert dimitris.console_errors == []
+
+
+async def test_the_only_member_leaving_a_team_deletes_it(sign_in):
+    alex = await sign_in("alex")
+    page = alex.page
+    await page.get_by_role("button", name="Add a team").click()
+    await page.get_by_role("dialog").get_by_role("button", name="Continue").click()
+    create = page.get_by_role("dialog", name="New team")
+    await create.get_by_label("Name").fill("solo")
+    await create.get_by_role("button", name="Create").click()
+    await page.get_by_role("tab", name="Settings").click()
+
+    await page.get_by_role("button", name="Leave team").click()
+    await page.get_by_role("dialog", name="Leave solo?").get_by_role(
+        "button", name="Leave and delete").click()
+
+    await expect(page.get_by_role("heading", name="Library", level=1)).to_be_visible()
+    assert "solo" not in [team["name"] for team in (await alex.state())["teams"]]
+    assert alex.console_errors == []
+
+
 async def test_someone_new_with_no_team_is_shown_how_to_get_one(browser, server_url, links):
     token = await join(server_url, "newbie", "laptop")
     context = await browser.new_context()
