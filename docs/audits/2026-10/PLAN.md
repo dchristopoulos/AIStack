@@ -28,7 +28,7 @@ How to work through it:
 ### Progress
 
 - [x] 1. Claim and publish `aistack-mcp`, and make every install sentence resolve (#129)
-- [ ] 2. Bump PyJWT and pin the build
+- [x] 2. Bump PyJWT and pin the build (#133)
 - [ ] 3. Make local setup's agent commands work and stop printing secrets
 - [x] 4. An invite dies with its maker's right to invite (#126)
 - [ ] 5. Lock the team while its admins and members change
@@ -102,6 +102,8 @@ Files: pyproject.toml, poetry.lock (pyjwt ≥ 2.15.1); .github/workflows/tests.y
 ADR: none needed.
 
 Tests: Full suite on SQLite and PostgreSQL; the container job; a test that fails when a workflow `uses:` is not a 40-character SHA.
+
+Outcome: PyJWT is at 2.15.1, and the pytest job runs `pip-audit` over every locked package, so a known advisory fails the build. Every action is pinned by commit, the workflow's token reads the repository and nothing else by default, Poetry is pinned to the Dockerfile's 2.4.1, and the base image is pinned by digest. Dependabot proposes Python, action and base-image updates weekly, with fastmcp left alone. The image carries an SBOM and provenance and is signed with Sigstore, and a weekly scheduled build takes in base-image fixes. SECURITY.md already existed. Moved: STD-07's Trivy scan of the image to step 42, because a scanner that fails on unfixed base-image CVEs would block every merge until Debian ships the fix.
 
 ### 3. Make local setup's agent commands work and stop printing secrets
 
@@ -697,7 +699,7 @@ Tests: Every dashboard action writes one line naming the action, team and user i
 
 ### 42. Tests and checks the code is missing
 
-Closes: [IMP-03](improvements.md#imp-03-the-log-replay-test-cannot-catch-a-localhost-dashboard-write-that-forgets-its-log-event), [IMP-04](improvements.md#imp-04-admin-and-destructive-dashboard-paths-never-run-in-any-test-privacy-of-an-existing-group-moving-or-removing-a-team-skill-subscribing-and-console-errors-are-mostly-unchecked), [IMP-17](improvements.md#imp-17-no-static-check-guards-the-python-or-the-pages-1876-line-script-and-the-page-ships-an-untested-200-line-fake-backend), and the macOS job from [IMP-01](improvements.md#imp-01-the-windows-job-gates-neither-merging-nor-publishing-and-local-mode-then-updates-itself-from-pypi) (a `macos-latest` job running the Windows job's tests, in the publishing jobs' `needs`).
+Closes: [IMP-03](improvements.md#imp-03-the-log-replay-test-cannot-catch-a-localhost-dashboard-write-that-forgets-its-log-event), [IMP-04](improvements.md#imp-04-admin-and-destructive-dashboard-paths-never-run-in-any-test-privacy-of-an-existing-group-moving-or-removing-a-team-skill-subscribing-and-console-errors-are-mostly-unchecked), [IMP-17](improvements.md#imp-17-no-static-check-guards-the-python-or-the-pages-1876-line-script-and-the-page-ships-an-untested-200-line-fake-backend), the Trivy image scan from [STD-07](industry-standards.md#std-07-nothing-scans-or-updates-dependencies-and-the-shipped-lock-pins-pyjwt-2130-which-has-14-published-advisories) (report-only until it has an allowlist), and the macOS job from [IMP-01](improvements.md#imp-01-the-windows-job-gates-neither-merging-nor-publishing-and-local-mode-then-updates-itself-from-pypi) (a `macos-latest` job running the Windows job's tests, in the publishing jobs' `needs`).
 Largest effort among them: S.
 
 Files: tests/mcp/test_library_log.py; tests/api/test_dashboard_over_http.py; pyproject.toml (ruff); .github/workflows/tests.yaml (ruff, `node --check` on the page's scripts).

@@ -1,0 +1,28 @@
+# Weekly pull requests for the three things the build pins: the Python dependencies in
+# poetry.lock, the GitHub Actions in tests.yaml (by commit), and the Dockerfile's base image
+# (by digest). Each goes through the same tests as any other change.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # Pinned exactly on purpose (AGENTS.md): it moves only by hand, with its results re-checked.
+      - dependency-name: fastmcp
+    groups:
+      python:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

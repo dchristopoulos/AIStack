@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # --- build: resolve and install the locked dependencies into a virtualenv ---------------------
-FROM python:3.13-slim AS build
+# The base image by digest, so a rebuild uses exactly what was tested. Dependabot proposes
+# the next digest, and the weekly scheduled build in tests.yaml takes it in.
+FROM python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f AS build
 
 ENV PIP_NO_CACHE_DIR=1 \
     POETRY_NO_INTERACTION=1 \
@@ -22,7 +24,7 @@ COPY src ./src
 RUN poetry install --only main
 
 # --- runtime: the virtualenv and the source, nothing that built them --------------------------
-FROM python:3.13-slim
+FROM python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
 
 # A fixed, unprivileged uid, so a mounted volume has a predictable owner.
 RUN useradd --system --uid 10001 --no-create-home aistack \
