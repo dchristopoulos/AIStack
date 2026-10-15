@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, UniqueConstraint, Uuid
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aistack.db.models.base import Base
 from aistack.db.models.operating_system import OperatingSystem
 from aistack.db.models.timestamps import utc_now
+from aistack.db.models.value_set import ValueSet
 
 MACHINE_NAME_MAX_LENGTH = 64
 
@@ -25,7 +26,7 @@ class Machine(Base):
     # create_constraint is what emits the CHECK, and it has defaulted to False since SQLAlchemy
     # 1.4: without it the column is a bare VARCHAR and the database enforces nothing.
     os: Mapped[OperatingSystem] = mapped_column(
-        Enum(OperatingSystem, native_enum=False, create_constraint=True, length=16,
+        ValueSet(OperatingSystem, native_enum=False, create_constraint=True, length=16,
              validate_strings=True, name="ck_machine_os"),
         nullable=False
     )

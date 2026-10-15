@@ -5,7 +5,6 @@ from enum import StrEnum
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum,
     ForeignKey,
     Index,
     String,
@@ -17,6 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from aistack.db.models.base import Base
 from aistack.db.models.timestamps import utc_now
+from aistack.db.models.value_set import ValueSet
 
 TEAM_NAME_MAX_LENGTH = 64
 GROUP_NAME_MAX_LENGTH = 64
@@ -51,7 +51,7 @@ class Team(Base):
     team_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(TEAM_NAME_MAX_LENGTH), nullable=False, unique=True)
     kind: Mapped[TeamKind] = mapped_column(
-        Enum(TeamKind, native_enum=False, create_constraint=True, length=16,
+        ValueSet(TeamKind, native_enum=False, create_constraint=True, length=16,
              validate_strings=True, name="ck_team_kind"),
         nullable=False
     )
@@ -80,7 +80,7 @@ class TeamMember(Base):
                                                nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user.user_id"), nullable=False)
     role: Mapped[TeamRole] = mapped_column(
-        Enum(TeamRole, native_enum=False, create_constraint=True, length=16,
+        ValueSet(TeamRole, native_enum=False, create_constraint=True, length=16,
              validate_strings=True, name="ck_team_member_role"),
         nullable=False
     )

@@ -377,6 +377,29 @@ async def test_a_breaking_upgrade_elsewhere_is_explained_through_the_agent(compu
             await _call(laptop, "sync")
 
 
+async def test_a_breaking_upgrade_while_the_agent_runs_is_explained_at_its_next_call(
+        computer, library_url):
+    """ADR-0031: a process already running when another upgrades the Library is told too."""
+    from aistack.db.engine import build_engine
+
+    async with computer("laptop") as (laptop, _):
+        await _call(laptop, "sync")
+        engine = build_engine(library_url)
+        try:
+            with engine.begin() as connection:
+                connection.execute(text("UPDATE alembic_version SET version_num = '9999'"))
+                connection.execute(text("UPDATE schema_compatibility SET "
+                                        "oldest_compatible_revision = '9999', "
+                                        "written_by_release = '9.9.0'"))
+        finally:
+            engine.dispose()
+
+        for _ in range(2):
+            with pytest.raises(ToolError, match="updated by AIStack 9.9.0 on another computer"
+                                                ".*Run `uv tool upgrade aistack-mcp`"):
+                await _call(laptop, "sync")
+
+
 def test_processes_starting_at_once_on_a_new_computer_claim_one_machine_id(tmp_path):
     """Two agent sessions opened together on a fresh computer must not become two machines."""
     id_file = tmp_path / "machine-id"
