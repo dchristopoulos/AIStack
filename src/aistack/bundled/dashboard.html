@@ -175,7 +175,7 @@ a.crumb.home:hover { background: none; }
 .rail-item[aria-current="page"] .rail-btn { border-radius: 14px; background: var(--text); color: var(--inverse); border-color: var(--text); }
 .rail-item[aria-current="page"] .rail-btn::before { height: 34px; }
 .placed { display: flex; flex-wrap: wrap; gap: 4px; }
-.place-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 4px 0 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); font: 12px var(--mono); color: var(--text); }
+.place-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; max-width: 100%; padding: 0 4px 0 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); font: 12px var(--mono); color: var(--text); }
 .place-chip a { color: inherit; }
 .place-chip button { width: 18px; height: 18px; display: grid; place-items: center; border: 0; border-radius: 4px; background: none; color: var(--faint); cursor: pointer; padding: 0; }
 .place-chip button:hover { background: var(--active); color: var(--danger); }
@@ -2095,12 +2095,15 @@ document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape' && $app.classList.contains('drawer-open')) { setDrawer(false); $drawerBtn.focus(); }
 });
 window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
-// Back on the tab: show what changed meanwhile, such as a sync or a teammate joining, or that
-// the session ended. Not while a dialog is open: it holds what the user is typing.
-document.addEventListener('visibilitychange', () => {
+// Back on the tab, or on the window from the terminal beside it: show what changed meanwhile,
+// such as a sync or a teammate joining, or that the session ended. Not while a dialog is open:
+// it holds what the user is typing.
+const refreshOnReturn = () => {
   if (document.visibilityState !== 'visible' || !state || document.querySelector('dialog[open]')) return;
   load().catch(e => { if (e instanceof SessionEnded) sessionEnded(); });
-});
+};
+document.addEventListener('visibilitychange', refreshOnReturn);
+window.addEventListener('focus', refreshOnReturn);
 
 // A tooltip opens below its control, clear of the sticky bars, unless the window ends there.
 for (const type of ['pointerover', 'focusin']) {
