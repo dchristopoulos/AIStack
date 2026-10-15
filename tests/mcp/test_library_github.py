@@ -323,7 +323,9 @@ async def test_a_file_cannot_speak_for_another_computer(computer, repository, tm
     b'{"event_id": "00000000-0000-0000-0000-000000000002"}',
     library_log.Event(uuid.UUID(int=2), "2999-12-31T00:00:00.000000Z", uuid.UUID(int=1),
                       library_log.FOLDER_SYNCED, {}).to_json().encode(),
-])
+# Named, because the nested one as an id is 200,000 characters, past what Windows lets pytest
+# put in an environment variable.
+], ids=["not-utf-8", "nested-too-deep", "missing-fields", "far-future"])
 def test_a_bad_file_in_the_log_is_named_not_a_crash(tmp_path, content):
     folder = tmp_path / "clone" / "log" / str(uuid.UUID(int=1))
     folder.mkdir(parents=True)
