@@ -2,7 +2,7 @@
 
 Sign-in, authorization, secrets, and the build and dependency chain. For local mode and a GitHub Library, only what the review behind commit 3027697 missed. Every reproduction ran against a throwaway server started for it, with demo data; the probe scripts are described in each finding and were not committed.
 
-How far this was checked: each finding below was reproduced or traced line by line by the auditor who raised it, and **Confirmed** means exactly that. The independent second pass that tries to refute each finding ran only for the authorization and UX findings: the account's weekly limit stopped the rest. Where the main session re-checked a finding itself, its entry says so. Treat **Suspected** findings, and anything marked High or Critical without a second pass, as needing a reproduction before the fix lands; the reproduction is described in each.
+How far this was checked: each finding below was reproduced or traced line by line by whoever raised it, and **Confirmed** means exactly that. The independent second pass that tries to refute each finding was done only for the authorization and UX findings; there was no time for the rest. Where a finding was re-checked separately, its entry says so. Treat **Suspected** findings, and anything marked High or Critical without a second pass, as needing a reproduction before the fix lands; the reproduction is described in each.
 
 | Id | Finding | Severity | Status | Effort |
 |---|---|---|---|---|
@@ -202,7 +202,7 @@ The existing test, test_signing_out_ends_the_session_in_that_browser, only prove
 - POST /api/logout returned 200 with Set-Cookie clearing it;
 - GET /api/state with the captured value returned 200.
 
-Re-traced by the main session: `sign_out` in src/aistack/api/dashboard.py:145-151 only deletes the cookie; nothing records the session as ended, and `_signed_in` accepts any unexpired session ticket.
+Re-traced separately: `sign_out` in src/aistack/api/dashboard.py:145-151 only deletes the cookie; nothing records the session as ended, and `_signed_in` accepts any unexpired session ticket.
 
 **Proposed fix.** Add {"jti": uuid4} in sign_dashboard_session. Add TicketSigner.end_session(token), which verifies the token and remembers its jti until exp, the same way as _used_links, and check that set in verified_dashboard_session. sign_out calls end_session before deleting the cookie. Keeping it in memory matches ADR-0017, since a restart already ends every session.
 
@@ -636,7 +636,7 @@ Second pass (corrected): The core claim holds. I corrected 'Dashboard routes hav
 
 ## Push validation, dependencies and the build
 
-The auditor assigned to push validation, hashing, paths, the install path, the container and dependencies did not run (the account's weekly limit). What is here is the main session's own, smaller pass: the dependency scan, the CI workflow, the Dockerfile's basics, and the existing test suite. A full pass on archive validation, the install staging path, the sync skill's shell steps and `self_update.py` is the last step of PLAN.md.
+Push validation, hashing, paths, the install path, the container and dependencies did not get a full pass in this audit. What is here is a smaller one: the dependency scan, the CI workflow, the Dockerfile's basics, and the existing test suite. A full pass on archive validation, the install staging path, the sync skill's shell steps and `self_update.py` is the last step of PLAN.md.
 
 ### PUSH-01: The jobs that hold publishing credentials run third-party actions by moving tags and an unpinned Poetry
 

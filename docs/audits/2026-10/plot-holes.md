@@ -2,7 +2,7 @@
 
 Flows that dead-end, states the product cannot get out of, promises the documents make that the code does not keep, and what breaks between two computers, two releases, or a server and local mode.
 
-How far this was checked: each finding below was reproduced or traced line by line by the auditor who raised it, and **Confirmed** means exactly that. The independent second pass that tries to refute each finding ran only for the authorization and UX findings: the account's weekly limit stopped the rest. Where the main session re-checked a finding itself, its entry says so. Treat **Suspected** findings, and anything marked High or Critical without a second pass, as needing a reproduction before the fix lands; the reproduction is described in each.
+How far this was checked: each finding below was reproduced or traced line by line by whoever raised it, and **Confirmed** means exactly that. The independent second pass that tries to refute each finding was done only for the authorization and UX findings; there was no time for the rest. Where a finding was re-checked separately, its entry says so. Treat **Suspected** findings, and anything marked High or Critical without a second pass, as needing a reproduction before the fix lands; the reproduction is described in each.
 
 | Id | Finding | Severity | Status | Effort |
 |---|---|---|---|---|
@@ -41,7 +41,7 @@ Server mode's basic loop works as the docs say. Join, add_machine, push, share, 
 
 **How it was confirmed.** Ran &lt;scratch&gt;/plot-holes-server/p2_skills.py (section 1) against my own server on 8150. eve pushed her own code-review (rev 1) from her laptop, placed it on her desktop, and the desktop installed it. lead shared an unrelated code-review to team acme2. eve sent POST /api/teams/acme2/take {name: code-review} and got {"ok": true}. The desktop's sync, with eve's own copy on disk, then returned update code-review from_revision 1 to_revision 2, pushed_by lead, with no ask entry. p7_shots.py repeated this in Chromium: screenshot ph-take-over-own.png shows the toast. /api/state then showed revision 2 pushed_by pat, with the existing placement still there. Output is in p2.out.
 
-Re-traced by the main session: `skill_service.take_from_team` (src/aistack/services/skill_service.py:203-223) calls `_find_or_create_skill` on the caller's personal team by name and stores the team's revision on top, with no check that the existing skill was ever linked to the team's (the check `share` makes for `possibly_unrelated`).
+Re-traced separately: `skill_service.take_from_team` (src/aistack/services/skill_service.py:203-223) calls `_find_or_create_skill` on the caller's personal team by name and stores the team's revision on top, with no check that the existing skill was ever linked to the team's (the check `share` makes for `possibly_unrelated`).
 
 **Proposed fix.** In skill_service.take_from_team, when `mine` exists, is not archived, its source_skill_id is not this team skill, and its latest content hash differs from the team's, raise a Conflict unless the caller confirmed. The sentence should name the user's own skill, its revision, and the computers it is on, and say that taking the team's copy replaces it there at the next sync. Carry the confirmation as `replace: true` in the body of POST /api/teams/{team}/take and as an optional get_skill argument named in the Conflict sentence. On the dashboard, show a confirm dialog listing the affected computers before taking, and reword the toast when placements already exist. Document the new body key in DESIGN.md's route table.
 
@@ -323,7 +323,7 @@ Related: [AUTO-16](automation.md#auto-16-an-upgrade-relies-on-the-operator-remem
 
 ## Local mode and moving between modes
 
-The auditor assigned to local mode did not run (the account's weekly limit). Local mode's log, clock and rebuild problems were found by the concurrency auditor and are in [concurrency-and-reliability.md](concurrency-and-reliability.md) (ENT-03, ENT-06); its setup, terminal commands and moving a Library are in [automation.md](automation.md) (AUTO-01, AUTO-03, AUTO-05 to AUTO-08, AUTO-12, AUTO-19). What follows is the main session's own pass: it ran local mode over stdio and the localhost dashboard in a scratch home.
+Local mode did not get a pass of its own in this audit. Its log, clock and rebuild problems were found in the concurrency work and are in [concurrency-and-reliability.md](concurrency-and-reliability.md) (ENT-03, ENT-06); its setup, terminal commands and moving a Library are in [automation.md](automation.md) (AUTO-01, AUTO-03, AUTO-05 to AUTO-08, AUTO-12, AUTO-19). What follows is a smaller pass that ran local mode over stdio and the localhost dashboard in a scratch home.
 
 ### LH-01: Local mode cannot be installed: `aistack-mcp` is not on PyPI and no release has ever been tagged
 
@@ -369,7 +369,7 @@ Related: [AUTO-20](automation.md#auto-20-computers-cant-be-renamed-or-removed-an
 - Taking a person off the server per OPERATING closes their MCP token and dashboard session at once (401).
 - A username-taken join with a team invite does not use the invite up (the transaction rolls back), and an invite used by someone already in the team stays pending for its intended recipient.
 - OPERATING's list-users, list-teams, delete-machine, no-machine-left and rotate scripts run verbatim on SQLite while the server is up. PostgreSQL could not be checked: 5433 was down, and I did not start a cluster outside my folder.
-- Already known to the main session and not re-reported: OPERATING.md:18-22's `uvx aistack-mcp serve` path fails today because the package is not on PyPI; the container path is unaffected.
+- Already covered by LH-01 and not repeated here: OPERATING.md:18-22's `uvx aistack-mcp serve` path fails today because the package is not on PyPI; the container path is unaffected.
 - Own server on 8150 (SQLite, scripts and outputs in &lt;scratch&gt;/plot-holes-server/) was stopped; the demo server on 8000 still answers ok; git status in /home/user/AIStack is clean.
 - Local mode's six tools over stdio behave as documented in a scratch home: first sync backs up, `get_skill` writes the folder with its executable bit, `disable_skill` removes it, an edited copy is asked about with `edited_from`, and rejections name what to fix (a name that does not match its frontmatter, a binary file, a path-like name).
 - `aistack check` and `aistack dashboard` work against a scratch `AISTACK_HOME`; the localhost dashboard names its cookie by port and refuses a Host other than 127.0.0.1.

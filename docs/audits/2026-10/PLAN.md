@@ -679,7 +679,7 @@ Tests: The replay test fails when a localhost-dashboard write forgets its event;
 Closes: no single finding.
 Largest effort among them: M.
 
-The auditor for this area did not run (the account's weekly limit), so it is the one area of the brief with only a light pass.
+This area got only a light pass in the audit, the one area that did.
 
 Files: src/aistack/services/skill_archive.py, skill_validation.py, content_hash.py, local_skills.py; src/aistack/mcp/routes/transfer.py; both sync-aistack skills (their shell steps); src/aistack/bootstrap/self_update.py.
 

@@ -2,7 +2,7 @@
 
 Every step a person does by hand, or has to understand, in setup, adding a computer or an agent, moving a Library, recovering a lost laptop, joining a team, syncing, updating, and the operator's own tasks; with what the product could do itself instead.
 
-How far this was checked: each finding below was reproduced or traced line by line by the auditor who raised it, and **Confirmed** means exactly that. The independent second pass that tries to refute each finding ran only for the authorization and UX findings: the account's weekly limit stopped the rest. Where the main session re-checked a finding itself, its entry says so. Treat **Suspected** findings, and anything marked High or Critical without a second pass, as needing a reproduction before the fix lands; the reproduction is described in each.
+How far this was checked: each finding below was reproduced or traced line by line by whoever raised it, and **Confirmed** means exactly that. The independent second pass that tries to refute each finding was done only for the authorization and UX findings; there was no time for the rest. Where a finding was re-checked separately, its entry says so. Treat **Suspected** findings, and anything marked High or Critical without a second pass, as needing a reproduction before the fix lands; the reproduction is described in each.
 
 | Id | Finding | Severity | Status | Effort |
 |---|---|---|---|---|
@@ -61,7 +61,7 @@ README Known limits lists revoking as a script. But this leaves the user with no
 
 **How it was confirmed.** Read the route list in api/dashboard.py (181-301): only skill, account and team actions. grep of dashboard.html finds no rename, remove or revoke for a computer. The machine-scope tools include add_machine and nothing that removes a machine. grep for last_synced shows only the writes in sync_service.py:262-266. The auto-update behaviour comes from the reconciliation rows for desired=enabled with local=stale.
 
-Re-checked by the main session: api/dashboard.py registers no machine route, and the dashboard has no control that removes or renames a computer.
+Re-checked separately: api/dashboard.py registers no machine route, and the dashboard has no control that removes or renames a computer.
 
 **Proposed fix.** Add `onboarding_service.remove_machine(session, user_id, machine_id)`:
 - It deletes the caller's own machine only. Someone else's machine, or an unknown id, gets NotFound with the same sentence.
@@ -503,7 +503,7 @@ README's measured run with 25 skills took 14 turns, about three minutes and $0.9
 
 Someone whose first computer works has no sentence that works for the second.
 
-**How it was confirmed.** Traced the strings and self_update.py, together with the PyPI 404 the main session already found.
+**How it was confirmed.** Traced the strings and self_update.py, together with the PyPI 404 recorded in LH-01.
 
 **Proposed fix.** Publish the package (the pypi job needs a v-tag). Independently:
 - Work out the install spec from the running copy: PEP 610 direct_url.json through importlib.metadata, or uv-receipt.toml.

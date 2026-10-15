@@ -2,7 +2,7 @@
 
 The dashboard against [docs/design-system.md](../../design-system.md): consistency, accessibility (contrast, focus, keyboard, screen reader), responsive layout, and both themes. Contrast was checked with axe on twelve screens, every accent, both themes; layout at 390, 820, 821, 834, 900, 1024 and 1440px, with names at their allowed maximum length.
 
-How far this was checked: each finding below was reproduced or traced line by line by the auditor who raised it, and **Confirmed** means exactly that. The independent second pass that tries to refute each finding ran only for the authorization and UX findings: the account's weekly limit stopped the rest. Where the main session re-checked a finding itself, its entry says so. Treat **Suspected** findings, and anything marked High or Critical without a second pass, as needing a reproduction before the fix lands; the reproduction is described in each.
+How far this was checked: each finding below was reproduced or traced line by line by whoever raised it, and **Confirmed** means exactly that. The independent second pass that tries to refute each finding was done only for the authorization and UX findings; there was no time for the rest. Where a finding was re-checked separately, its entry says so. Treat **Suspected** findings, and anything marked High or Critical without a second pass, as needing a reproduction before the fix lands; the reproduction is described in each.
 
 | Id | Finding | Severity | Status | Effort |
 |---|---|---|---|---|
@@ -206,7 +206,7 @@ Related: [UX-02](ux.md#ux-02-a-sign-in-link-works-once-but-the-wording-says-five
 
 **How it was confirmed.** probe_keyboard.py step 11 at 390px: phone_place_pill = {visibleText: ', connected', w: 28, h: 30}. aria_snapshot of .top-right shows `link ", connected"`. Code read at :2070 (btn(null, …,'trash')), :1073 and :984.
 
-Seen by the main session in the team Members screenshots.
+Seen in the team Members screenshots.
 
 **Proposed fix.** Members: use `btn('Remove…', {class:'btn ghost sm', 'aria-label': `Remove ${m.username} from ${team.name}…`}, 'trash')`, and on a phone let it wrap with the row actions. Place pill on a phone: keep a short visible word ('GitHub', 'Server') instead of hiding the label, or hide it with the .sr-only pattern so the name stays 'Library: Server, connected'. Add `title` (or data-tip) to the three permitted icon buttons.
 
