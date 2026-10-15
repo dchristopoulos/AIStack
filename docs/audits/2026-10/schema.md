@@ -146,6 +146,8 @@ Related: [AUTHZ-04](security.md#authz-04-the-team-keeps-an-admin-check-counts-fi
 
 **Done when.** A test starts local mode, then bumps alembic_version and schema_compatibility.oldest_compatible_revision to an unknown '9999' from a second connection; the next tool call answers with the 'Run uv tool upgrade aistack-mcp' sentence instead of a database error.
 
+**Resolution (step 18c).** `guard_schema` checks the version row at the start of every transaction on servers as well as in local mode, so a server replica left on an older release refuses each call with a sentence instead of writing the old shape; OPERATING.md says to upgrade every replica.
+
 ### DB-09: 0008 and 0009 are 'additive' but not compatible: an older writer silently breaks invariants the newer release depends on
 
 **Confirmed.** Severity **Low**, effort **S**. Hurts: Someone with two computers, or two agent sessions, on one database running different releases: sync warns them about a conflict that does not exist, and in a log-shared Library a change made by the older process is never logged.
@@ -159,6 +161,8 @@ Related: [AUTHZ-04](security.md#authz-04-the-team-keeps-an-admin-check-counts-fi
 **Proposed fix.** Amend ADR-0024 through a new ADR, and the AGENTS.md Migrations bullet: a migration is compatible only if (1) its shape is additive, (2) no newer code treats a value older releases do not maintain as authoritative, and (3) it adds no table or column that must be written in the same transaction as an older release's writes. Otherwise mark it False and do the expand-and-contract dance. Add the three questions to the migration template (src/aistack/db/migrations/script.py.mako) as a comment above older_releases_compatible. For 0009 specifically, sync can treat a revision older than the newest revision this machine itself pushed (skill_version.pushed_by plus the machine's push events) as unknown rather than as another computer's change.
 
 **Done when.** script.py.mako and AGENTS.md carry the three-question rule; a rerun of stale_revision.py after the sync change reports edited_from as null (unknown) or 2, not 1.
+
+**Resolution (step 18c).** The rule is in ADR-0031, AGENTS.md and script.py.mako. The sync change is not made: no published release predates 0009 (the first tag, `v0.1.0`, already carries 0009 and 0010, and nothing reached PyPI before it), so no older writer of `machine_skill.revision` exists to correct for, and the heuristics that could detect one also hide a real "another computer pushed since" warning.
 
 ### DB-10: Missing indexes on the columns the services look up by, and no constraint for 'one Library per user'
 
