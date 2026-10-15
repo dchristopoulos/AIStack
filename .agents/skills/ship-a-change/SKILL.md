@@ -31,12 +31,15 @@ The history reads as the owner's own engineering work.
 
 ## 4. Gate
 
-Decide which kind of change it is. Done when the PR says which, in one sentence.
+The owner's standing rule: work that was decided and planned, and passes, merges without asking him. Arm auto-merge with the rebase method on every PR. `main` requires `pytest`, `browsers (firefox)`, `browsers (webkit)` and `container`, and GitHub refuses auto-merge on a branch with no required checks.
 
-- **Trust boundary**: auth, sync, push validation and hashing, migrations or migration tooling, anything that deletes, any route that answers without a session. It waits for the owner's diff review, with auto-merge left off. Write "This is <kind>, so it needs your diff review; auto-merge is not armed." and move on to the next piece of work.
-- **Everything else** (docs, UI, tests, a change the owner already approved): arm auto-merge with the rebase method. `main` requires `pytest`, `browsers (firefox)`, `browsers (webkit)` and `container`, and GitHub refuses auto-merge on a branch with no required checks.
+A **trust-boundary** change (auth, sync, push validation and hashing, migrations or migration tooling, anything that deletes, any route that answers without a session) earns its merge with more evidence instead of a wait. Before arming it:
 
-When the owner says "merge when green", that is the go-ahead for a trust-boundary PR too: arm it, or land it as below.
+- review your own diff against AGENTS.md "Trust-boundary work gets a diff review": a missing authorization check, a path traversal, a secret in a log line;
+- run the PostgreSQL half, and watch each enforcement test go red with the enforcement removed;
+- say in the PR, in one sentence, that it is a trust-boundary change and what was verified.
+
+Stop and ask only for a new design direction nobody decided, or a change that would make data unrecoverable.
 
 ## 5. Land a stack
 

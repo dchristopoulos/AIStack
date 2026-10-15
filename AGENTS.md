@@ -143,7 +143,7 @@ Default five canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, 
 
 ### Shipping a change
 
-Commit, open the PR, decide whether it waits for a human diff review, and land it (stacks included) with the `ship-a-change` skill in `.agents/skills/`.
+Commit, open the PR, gate it, and land it (stacks included) with the `ship-a-change` skill in `.agents/skills/`. Planned work that passes merges without asking the owner, trust-boundary changes included once their extra checks pass.
 
 ### Domain docs
 
