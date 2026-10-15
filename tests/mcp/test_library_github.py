@@ -117,10 +117,10 @@ async def test_changes_made_offline_go_out_with_the_next_push(computer, reposito
         _write(home, "wizard", "Cast.")
         with offline(repository):
             pushed = await _call(laptop, "push_skill", name="wizard")
-            assert pushed["revision"] == 1
+            assert (pushed["revision"], pushed["shared"]) == (1, False)
         # Back online: the next change carries the earlier one with it.
         _write(home, "review", "Review.")
-        await _call(laptop, "push_skill", name="review")
+        assert (await _call(laptop, "push_skill", name="review"))["shared"] is True
 
     async with computer("desktop") as (desktop, _):
         listed = await _call(desktop, "list_skills")
@@ -180,6 +180,8 @@ def test_check_says_where_the_library_lives_or_what_is_wrong(tmp_path, repositor
     ready = _check(tmp_path / "laptop", {"AISTACK_LIBRARY_REPO": str(repository)})
     assert ready.returncode == 0, ready.stderr
     assert f"in the GitHub repository {repository}" in ready.stdout
+    # A new, empty repository is the usual first computer's: nothing to warn about.
+    assert ready.stderr == ""
 
     unreachable = _check(tmp_path / "desktop",
                          {"AISTACK_LIBRARY_REPO": str(tmp_path / "missing.git")})
@@ -256,7 +258,7 @@ async def test_a_log_from_a_newer_release_is_explained_through_the_agent(compute
         uuid.UUID(int=2), _soon(), uuid.UUID(int=1), "skill_renamed", {}))
 
     async with computer("desktop") as (desktop, _):
-        with pytest.raises(ToolError, match="Update AIStack on this computer"):
+        with pytest.raises(ToolError, match="Update AIStack on this computer: run `uv tool upgrade aistack-mcp`"):
             await _call(desktop, "list_skills")
 
 

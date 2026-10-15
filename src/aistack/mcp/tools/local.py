@@ -58,6 +58,9 @@ class LocalSyncResult(SyncResult):
       - up_to_date: how many enabled skills match.
       - folders: every skills folder this computer has an agent for, and harness the one
         this call synced. Sync each of the others too.
+      - first_sync: true the first time this folder syncs here. Then call list_skills and
+        ask once whether to install the user's own skills that are on no folder here: they
+        come from their other computers. See the sync-aistack skill.
     team_updates is always empty and sync_skill_url always null here.
 
     Args:
@@ -181,6 +184,7 @@ class LocalPushSkillResult(TypedDict):
     revision: int
     created: bool
     unchanged: bool
+    shared: bool
 
 
 @local_mcp.tool(
@@ -203,6 +207,9 @@ class LocalPushSkillResult(TypedDict):
             - created: true when it was new to the Library
             - unchanged: true when these exact files were already stored, so no revision
               was added. Only content counts: a chmod alone is not a change.
+            - shared: false when the Library is on GitHub and this computer could not reach
+              it. The revision is kept here and goes out with a later call that reaches it;
+              tell the user their other computers get it only then.
     """)
 @handle_mcp_errors
 def push_skill(name: str, origin: str | None = None,
@@ -219,10 +226,11 @@ def push_skill(name: str, origin: str | None = None,
         library_log.record(session, library_log.pushed(caller.machine_id, name, origin, harness,
                                                        packed))
 
-    library_after_write()
+    shared = library_after_write()
     logger.info(f"Skill pushed. Skill: '{pushed.name}'. Revision: '{pushed.revision}'.")
     return LocalPushSkillResult(name=pushed.name, revision=pushed.revision,
-                                created=pushed.created, unchanged=pushed.unchanged)
+                                created=pushed.created, unchanged=pushed.unchanged,
+                                shared=shared)
 
 
 class LocalDisableSkillResult(TypedDict):

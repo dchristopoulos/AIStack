@@ -17,7 +17,11 @@ from aistack.bootstrap.context.application_context import (
     build_application_context,
     build_local_context,
 )
-from aistack.bundled import local_setup_instructions, local_sync_skill_document
+from aistack.bundled import (
+    SYNC_SKILL_NAME,
+    local_setup_instructions,
+    local_sync_skill_document,
+)
 from aistack.commons.exceptions import AIStackError
 from aistack.db.schema import NewerSchema
 
@@ -130,6 +134,15 @@ def check_local() -> None:
     print(f"AIStack is ready. Your Library lives {where}.")
 
 
+def write_sync_skill(skills_folder: Path) -> None:
+    """`aistack sync-skill <skills folder>`: setup's step, the same on every system. Windows
+    PowerShell 5.1 writes UTF-16 through `>`, which no agent reads as a skill."""
+    target = skills_folder / SYNC_SKILL_NAME / "SKILL.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(local_sync_skill_document(), encoding="utf-8", newline="\n")
+    print(f"Wrote {target}.")
+
+
 def export_library(destination: Path) -> None:
     """`aistack export <folder>`: every skill in this Library as a skill folder (ADR-0020).
 
@@ -171,8 +184,10 @@ def run() -> None:
                     "AIStack server.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
                                                        "sync-skill", "check", "export"])
-    parser.add_argument("folder", nargs="?", type=Path, default=Path("aistack-library"),
-                        help="Where 'export' writes the skills. Default: ./aistack-library")
+    parser.add_argument("folder", nargs="?", type=Path,
+                        help="Where 'export' writes the skills, ./aistack-library by default; "
+                             "the skills folder 'sync-skill' writes its skill into, instead of "
+                             "printing it")
     arguments = parser.parse_args()
     command = arguments.command
 
@@ -181,7 +196,10 @@ def run() -> None:
         print(local_setup_instructions(), end="")
         return
     if command == "sync-skill":
-        print(local_sync_skill_document(), end="")
+        if arguments.folder is None:
+            print(local_sync_skill_document(), end="")
+        else:
+            write_sync_skill(arguments.folder.expanduser())
         return
 
     try:
@@ -192,7 +210,7 @@ def run() -> None:
         elif command == "check":
             check_local()
         elif command == "export":
-            export_library(arguments.folder)
+            export_library((arguments.folder or Path("aistack-library")).expanduser())
         else:
             serve_local()
     except ValueError as error:

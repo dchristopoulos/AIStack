@@ -1,6 +1,6 @@
 ---
 name: sync-aistack
-description: Sync this computer's skills with the user's own Library on AIStack. Use when the user says "sync aistack", asks whether their skills are up to date, or starts a work session.
+description: Sync this computer's skills with the user's own Library on AIStack. Use when the user says "sync aistack", asks whether their skills are up to date, starts a work session, or wants their Library moved somewhere else.
 ---
 
 # Sync AIStack
@@ -51,3 +51,11 @@ Only when you synced both folders and at least one reported `first_sync`. Take t
 ## 5. Report
 
 Say in a sentence or two what changed: what was installed or updated (between which revisions), what was backed up, and what is waiting on the user. When nothing changed, say everything is up to date.
+
+## Moving the Library
+
+When the user wants their Library somewhere else, such as from this computer only to a private GitHub repository or a database their other computers share:
+
+1. Run `<aistack-mcp> export ~/aistack-library`, with the full path and settings `claude mcp get aistack` (in Codex, `codex mcp get aistack`) shows. It writes every skill in the Library there, and refuses a folder that already has files.
+2. Run `<aistack-mcp> setup` and follow its steps 2 to 8 for the new place. In step 6, take the old connection out first: `claude mcp remove --scope user aistack`, or in Codex replace the `[mcp_servers.aistack]` block.
+3. After the restart, copy each folder in `~/aistack-library` that is not already in a skills folder here into `~/.claude/skills` (or `~/.agents/skills` without Claude Code), then sync: the new Library backs them up without asking. Revision history stays behind in the old place.

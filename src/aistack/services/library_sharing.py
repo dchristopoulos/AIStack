@@ -47,8 +47,9 @@ class LibrarySharing:
             if library_log.catch_up(session, events):
                 logger.info("The Library's copy was rebuilt from the log.")
 
-    def publish(self) -> None:
-        """Push every recorded event not yet in the repository."""
+    def publish(self) -> bool:
+        """Push every recorded event not yet in the repository. False when some could not
+        go out, and wait for the next push."""
         with self.session_factory.begin() as session:
             pending = library_log.unpublished(session)
         try:
@@ -56,7 +57,8 @@ class LibrarySharing:
         except RepoUnavailable as error:
             logger.warning(f"The Library's repository could not be reached; "
                            f"{len(pending)} changes go out with the next push. {error}")
-            return
+            return False
         if pending:
             with self.session_factory.begin() as session:
                 library_log.mark_published(session, [event.event_id for event in pending])
+        return True

@@ -105,9 +105,8 @@ def build_local_context(settings: LocalSettings) -> None:
         # Still serve, so the agent can say why in chat: its user never sees this log.
         _local_refusal = (
             f"The Library was updated by {error.upgraded_by} on another computer, and "
-            "this computer runs an older AIStack that cannot use it. Restart your coding agent "
-            "to update AIStack here; if this message comes back, run "
-            "`uvx aistack-mcp@latest` once in a terminal. Nothing was changed.")
+            "this computer runs an older AIStack that cannot use it. Run `uv tool upgrade "
+            "aistack-mcp` in a terminal, then restart your coding agent. Nothing was changed.")
         logger.error(str(error))
         return
     _session_factory = build_session_factory(_engine)
@@ -179,10 +178,10 @@ def library_before_read(force: bool = False) -> None:
             _local_principal = MachinePrincipal(machine.machine_id, machine.user_id)
 
 
-def library_after_write() -> None:
-    """For a GitHub Library: push what this computer recorded."""
-    if _sharing is not None:
-        _sharing.publish()
+def library_after_write() -> bool:
+    """For a GitHub Library: push what this computer recorded. False when it could not, and
+    the change reaches the other computers only with a later push."""
+    return _sharing is None or _sharing.publish()
 
 
 def is_local_mode() -> bool:

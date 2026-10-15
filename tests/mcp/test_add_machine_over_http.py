@@ -68,7 +68,8 @@ async def test_the_returned_command_connects_the_other_computer_as_a_new_machine
     assert codex["url"] == server_url
     assert codex["http_headers"] == {"Authorization": f"Bearer {new_token}"}
     assert {tool: rule["approval_mode"] for tool, rule in codex["tools"].items()} == {
-        "sync": "approve", "get_skill": "approve", "push_skill": "approve"}
+        "sync": "approve", "list_skills": "approve", "get_skill": "approve",
+        "push_skill": "approve"}
 
     # The pasted token authenticates as the new machine, not as the one that minted it.
     async with client_for(server_url, new_token) as client:

@@ -48,14 +48,13 @@ On Windows PowerShell, set `$env:AISTACK_LIBRARY_REPO` (or `$env:AISTACK_DATABAS
 
 ## 5. Install the sync skill
 
-Create the skills folder first if it is missing: Claude Code only watches a skills folder that existed when it started. In Claude Code:
+In Claude Code:
 
 ```bash
-mkdir -p ~/.claude/skills/sync-aistack
-<aistack-mcp> sync-skill > ~/.claude/skills/sync-aistack/SKILL.md
+<aistack-mcp> sync-skill ~/.claude/skills
 ```
 
-In Codex, the same into `~/.agents/skills/sync-aistack`. Check the file starts with `---` and `name: sync-aistack`.
+In Codex, the same with `~/.agents/skills`. It writes `sync-aistack/SKILL.md` in that folder, creating what is missing, and prints where. Do it before connecting: Claude Code only watches a skills folder that existed when it started.
 
 ## 6. Connect your coding agent
 
@@ -69,15 +68,16 @@ In Codex, add this to `~/.codex/config.toml`, creating the file if needed and ke
 
 ```toml
 [mcp_servers.aistack]
-command = "<full path to aistack-mcp>"
-env = { AISTACK_LIBRARY_REPO = "<owner>/aistack-library" }
+command = '<full path to aistack-mcp>'
+env = { AISTACK_LIBRARY_REPO = '<owner>/aistack-library' }
 startup_timeout_sec = 60
 tools.sync.approval_mode = "approve"
+tools.list_skills.approval_mode = "approve"
 tools.get_skill.approval_mode = "approve"
 tools.push_skill.approval_mode = "approve"
 ```
 
-`startup_timeout_sec` gives AIStack time to read a large Library on its first start; Codex otherwise stops waiting after a few seconds. The three `tools` lines approve only what sync does without asking: comparing, installing, and backing up to the user's private Library. Tell the user so in one line.
+Keep the single quotes: they take a Windows path's backslashes and a password's symbols as they are. `startup_timeout_sec` gives AIStack time to read a large Library on its first start; Codex otherwise stops waiting after a few seconds. The four `tools` lines approve only what sync does without asking: comparing, listing the Library, installing, and backing up to the user's private Library. Tell the user so in one line.
 
 ## 7. Offer to sync at the start of every session
 
