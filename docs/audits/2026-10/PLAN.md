@@ -35,7 +35,8 @@ How to work through it:
 - [ ] 6. A team can always be managed: delete a team, let a lone admin leave, repair an orphaned one
 - [ ] 7. Sharing over a group's skill takes being able to share into that group
 - [x] 8. A session belongs to the computer that opened it; signing out ends it (#127)
-- [ ] 9. A person can remove and rename their own computers, and see when each last synced
+- [x] 9. A person can remove and rename their own computers, and see when each last synced (#140)
+- [ ] 9b. Remove and rename a computer in local mode
 - [ ] 10. Taking a team skill never silently replaces an unrelated skill of yours
 - [ ] 11. Throttle failed credentials and keep caller text out of the log
 - [ ] 12. Backups that restore, and a snapshot before every upgrade
@@ -187,7 +188,22 @@ Files: src/aistack/services/onboarding_service.py (`remove_machine`, `rename_mac
 
 ADR: [ADR-0027 (draft)](../../adr/0027-a-session-belongs-to-the-computer-that-opened-it.md).
 
-Tests: Removing one's own machine makes its token 401 on /mcp; another user's id answers like an unknown one; the last computer cannot be removed; a UI test removes a computer by the button's words; the log-replay property test covers the new kind.
+Tests: Removing one's own machine makes its token 401 on /mcp; another user's id answers like an unknown one; the last computer cannot be removed; a UI test removes a computer by the button's words.
+
+Split (step 9 was bigger than one PR): step 9 is the server, with the routes registered `local=False`, plus the `machine.added_by_machine_id` migration. Local mode moved to step 9b, because it is a new log kind with its own release order.
+
+### 9b. Remove and rename a computer in local mode
+
+Closes: the local-mode half of [AUTO-20](automation.md#auto-20-computers-cant-be-renamed-or-removed-and-a-reinstall-leaves-vm-and-vm-2-forever) and [AUTO-02](automation.md#auto-02-on-a-server-a-person-cannot-cut-off-their-own-lost-or-stolen-computer).
+Largest effort among them: M.
+
+Two releases, per ADR-0024: the first replays `machine_removed` and `machine_renamed` and records neither; the second registers step 9's two routes on the localhost dashboard and records them. Decide first what replay does with a later event from a computer that was removed (it may still be running offline): drop it, or bring the computer back. Today replay refuses an event from an unknown computer, which would stop every other computer's Library.
+
+Files: src/aistack/services/library_log.py (the two kinds); src/aistack/api/dashboard.py (`local=True` in the second release).
+
+ADR: [ADR-0027](../../adr/0027-a-session-belongs-to-the-computer-that-opened-it.md).
+
+Tests: the log-replay property test covers both kinds; a rename on one computer reaches a second; an event from a removed computer does what the decision says.
 
 ### 10. Taking a team skill never silently replaces an unrelated skill of yours
 

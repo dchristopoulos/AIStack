@@ -1705,8 +1705,10 @@ function folderView(m, agent) {
         el('div', { class: 'titles' },
           el('h1', null, AGENTS[agent].name, el('span', { class: 'muted', style: 'font-weight:400' }, ' on '), m.name),
           el('div', { class: 'folder-path' }, el('span', { class: 't2' }, 'Global folder'), el('code', null, AGENTS[agent].folder),
-            el('span', { class: 't2' }, 'Read by ' + AGENTS[agent].readers)))),
+            el('span', { class: 't2' }, 'Read by ' + AGENTS[agent].readers),
+            el('span', { class: 't2' }, lastSynced(m, agent))))),
       el('div', { class: 'head-actions' },
+        btn('Computer settings', { fk: 'computer:' + m.id, on: { click: () => computerDialog(m) } }, 'monitor'),
         others.length ? btn('Copy from…', { fk: 'copy-from', on: { click: () => copyFromDialog(t, others) } }, 'copy') : null,
         btn('Add skills', { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(t) } }, 'plus')))),
     el('div', { class: 'wrap body' },
@@ -1715,7 +1717,7 @@ function folderView(m, agent) {
         here.map(s => el('div', { class: 'tr', role: 'row' },
           td('c-main', el('span', { class: 'name' }, s.name), s.description && el('span', { class: 't2' }, s.description)),
           sourceCell(s.source),
-          td('meta nowrap', el('span', { class: 't1 mono', title: `Revision ${s.revision}, ${plural(s.files, 'file')}` }, 'r' + s.revision)),
+          revisionHere(s, t),
           td('row end', btn('Remove', {
             class: 'btn ghost sm', fk: `fr:${s.name}`, 'aria-label': `Remove ${s.name} from ${where}`,
             on: { click: ev => run(ev.currentTarget, async () => {
@@ -1728,6 +1730,63 @@ function folderView(m, agent) {
       el('div', { class: 'tbl-foot' }, el('span', null, 'Removing a skill here keeps it in your library and on your other computers. ',
         'The folder is asked about at the next ', el('code', null, SYNC), ', never deleted unasked.'))),
   ];
+}
+
+function lastSynced(m, agent) {
+  const at = (m.last_synced || {})[agent];
+  return at ? ['Last synced ', when(at)] : `Not synced yet: say "${SYNC}" there`;
+}
+
+// The revision this folder last installed, when it is behind the library's.
+function revisionHere(s, t) {
+  const p = s.placements.find(x => x.machine === t.m.id && x.harness === t.agent);
+  const behind = p && p.revision != null && p.revision < s.revision;
+  return td('meta nowrap', behind
+    ? el('span', { class: 't1 mono', title: `r${s.revision} in your library arrives at the next sync` }, `r${p.revision} here`)
+    : el('span', { class: 't1 mono', title: `Revision ${s.revision}, ${plural(s.files, 'file')}` }, 'r' + s.revision));
+}
+
+function computerDialog(m) {
+  const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
+  const server = state.server !== false;
+  const from = m.added_by || (m.added_by_removed ? 'A computer since removed' : 'Set up here first');
+  const name = el('input', { class: 'input', type: 'text', name: 'computer-name', maxLength: 64, value: m.name, autocomplete: 'off' });
+  const only = state.machines.length === 1;
+  openDialog({
+    title: m.name,
+    submitLabel: server ? 'Rename' : 'Close',
+    cancelLabel: server ? 'Cancel' : null,
+    body: [
+      el('dl', { class: 'facts' },
+        fact('Added', when(m.added_on)),
+        fact('Added from', from),
+        agentsShown(m).map(agent => fact(`${AGENTS[agent].name} last synced`, (m.last_synced || {})[agent] ? when(m.last_synced[agent]) : 'Never'))),
+      server && field('Name', name),
+      server && (only
+        ? el('p', { class: 't2' }, 'This is your only computer, so it cannot be removed.')
+        : btn('Remove this computer…', { class: 'btn danger', on: { click: () => { document.querySelector('dialog[open]').close(); removeComputerDialog(m); } } }, 'trash')),
+    ],
+    onSubmit: server ? async () => {
+      const res = await api(`/api/machines/${enc(m.id)}/rename`, { name: name.value });
+      return res.name === m.name ? null : `Renamed ${m.name} to ${res.name}.`;
+    } : null,
+  });
+}
+
+function removeComputerDialog(m) {
+  confirmDialog({
+    title: `Remove ${m.name}?`,
+    submitLabel: 'Remove',
+    lines: [
+      'Its connection to AIStack stops at once, and any dashboard it opened is signed out.',
+      'Your library and your other computers keep every skill. Nothing on it is deleted.',
+      'To use it again, add it from another computer.',
+    ],
+    onSubmit: async () => {
+      await api(`/api/machines/${enc(m.id)}/remove`, {});
+      return () => { go('#/'); toast(`Removed ${m.name}.`); };
+    },
+  });
 }
 
 function addSkillsDialog(t) {
@@ -2553,7 +2612,12 @@ const DB = (() => {
   const P = machine => ({ machine, harness: 'claude_code' });
   return {
     user: { username: 'dimitris', full_name: 'Dimitris Christopoulos' },
-    machines: [{ id: MAC, name: 'macbook', os: 'MACOS', harnesses: ['claude_code', 'agents'] }, { id: DESK, name: 'desktop', os: 'LINUX', harnesses: ['claude_code'] }],
+    machines: [
+      { id: MAC, name: 'macbook', os: 'MACOS', harnesses: ['claude_code', 'agents'], added_on: ago(900), added_by: null, added_by_removed: false,
+        last_synced: { claude_code: ago(2), agents: ago(26) } },
+      { id: DESK, name: 'desktop', os: 'LINUX', harnesses: ['claude_code'], added_on: ago(600), added_by: 'macbook', added_by_removed: false,
+        last_synced: { claude_code: null } },
+    ],
     skills: [
       { name: 'code-review', description: 'Reviews a diff against team standards and flags risky changes.', revision: 2, pushed_by: 'maria', updated_on: ago(30), files: 4, placements: [P(MAC)],
         source: { team: 'aistack', group: 'developers', revision: 2, latest_revision: 3, latest_pushed_by: 'maria', update_available: true } },
@@ -2731,6 +2795,23 @@ const DEMO_ROUTES = [
     dTeamSkill(t, name);
     t.skills = t.skills.filter(s => s.name !== name);
     DB.skills.forEach(x => { if (x.name === name && x.source && x.source.team === team) x.source = null; });
+  }],
+  [/^\/api\/machines\/([^/]+)\/remove$/, (b, id) => {
+    const m = DB.machines.find(x => x.id === id) || fail(`You have no computer '${id}'.`);
+    if (DB.machines.length === 1) fail(`'${m.name}' is your only computer, so it cannot be removed: you would have no way back in. Add the computer you use instead first, then remove this one.`);
+    DB.machines = DB.machines.filter(x => x !== m);
+    DB.machines.forEach(x => { if (x.added_by === m.name) { x.added_by = null; x.added_by_removed = true; } });
+    DB.skills.forEach(s => { s.placements = s.placements.filter(p => p.machine !== id); });
+    return { removed: m.name };
+  }],
+  [/^\/api\/machines\/([^/]+)\/rename$/, (b, id) => {
+    const m = DB.machines.find(x => x.id === id) || fail(`You have no computer '${id}'.`);
+    const name = (b.name || '').trim();
+    if (!name) fail('name is blank. Give a name with at least one non-whitespace character.');
+    if (DB.machines.some(x => x !== m && x.name === name)) fail(`You already have a computer named '${name}'. Pick another name.`);
+    DB.machines.forEach(x => { if (x.added_by === m.name) x.added_by = name; });
+    m.name = name;
+    return { name };
   }],
   [/^\/api\/logout$/, () => {}],
 ];

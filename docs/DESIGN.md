@@ -310,6 +310,8 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/skills/{name}/machines/{machine_id}` | `enabled` (true or false), optional `harness` (`claude_code`, the default, or `agents`) | Switches one of the user's own skills on or off in one harness of one of their computers. The files move at that harness's next sync there |
 | `POST /api/skills/{name}/share` | `team`, `group` (a path, or null for team level) | `team`, `group`, `revision`, `created`, `unchanged`, `previous_pushed_by`, `possibly_unrelated`: what `share_skill` returns |
 | `POST /api/skills/{name}/remove` | `{}` | Removes the skill from the Library on every computer |
+| `POST /api/machines/{machine_id}/remove` | `{}` | `removed`: the computer's name. Its token, sessions and transfer URLs end at once. The user's last computer is refused with `409`. Server only (ADR-0027) |
+| `POST /api/machines/{machine_id}/rename` | `name` | `name`, unique among the user's computers. Server only |
 | `POST /api/account` | `full_name` (blank clears it) | `full_name`. Server only |
 | `POST /api/teams` | `name` | `name`. The caller is the new team's admin |
 | `POST /api/teams/join` | `code` (a team's invite code) | `team` |
@@ -333,7 +335,9 @@ A group's path contains slashes, so it always travels in the body and never in t
 {
   "user": {"username": "dimitris", "full_name": "Dimitris Christopoulos"},
   "machines": [
-    {"id": "af6c2628-…", "name": "macbook", "os": "MACOS", "harnesses": ["claude_code"]}
+    {"id": "af6c2628-…", "name": "macbook", "os": "MACOS", "harnesses": ["claude_code"],
+     "added_on": "2026-10-13T09:12:01.402113+00:00", "added_by": null, "added_by_removed": false,
+     "last_synced": {"claude_code": "2026-10-14T00:40:12.513920+00:00"}}
   ],
   "skills": [
     {
@@ -343,7 +347,7 @@ A group's path contains slashes, so it always travels in the body and never in t
       "pushed_by": "dimitris",
       "updated_on": "2026-10-14T00:43:56.158183+00:00",
       "files": 2,
-      "placements": [{"machine": "af6c2628-…", "harness": "claude_code"}],
+      "placements": [{"machine": "af6c2628-…", "harness": "claude_code", "revision": 1}],
       "source": {
         "team": "acme", "group": null,
         "revision": 2, "latest_revision": 3, "latest_pushed_by": "maria",
@@ -380,10 +384,12 @@ A group's path contains slashes, so it always travels in the body and never in t
 | `server` | False on `aistack dashboard` in local mode, where the page hides what only a server can do: creating, joining, and sharing with a team |
 | `library` | Where the Library lives: `{"kind": "server"}`, `{"kind": "this_computer"}`, or `{"kind": "postgresql", "provider": "Neon", "host": "…"}`. Never an address or a password |
 | `machines` | The user's computers, oldest first. `os` is `MACOS`, `WINDOWS`, or `LINUX` |
+| `machines[].added_on`, `added_by` | When the computer was registered, and the name of the computer whose `add_machine` registered it: null for a first computer. `added_by_removed` is true when that computer has since been removed (ADR-0027) |
+| `machines[].last_synced` | Each of its harnesses, with when it last synced (UTC), or null for one that never has |
 | `machines[].harnesses` | The harnesses on that computer, in the server's order: those that have synced there and those holding a decision about a skill. `["claude_code"]` for a computer with neither, which has not synced since harnesses existed |
 | `skills` | The Library, by name, without the ones removed from it |
 | `skills[].revision`, `pushed_by`, `updated_on`, `files` | The latest revision of the user's own copy: its number, who pushed it, when (UTC), and how many files it has |
-| `skills[].placements` | Where the skill is switched on: each a computer's id and a harness, oldest computer first. On is a decision the server holds, not proof the files are there yet |
+| `skills[].placements` | Where the skill is switched on: each a computer's id and a harness, oldest computer first. On is a decision the server holds, not proof the files are there yet. `revision` is the one last installed or pushed there, null until it has synced |
 | `skills[].source` | The team skill this copy was taken from or shared to, or null. Null also when the user can no longer see that skill: the copy is then simply theirs |
 | `source.revision` | The team's revision this copy came from. `latest_revision` and `latest_pushed_by` describe the team's newest, and `update_available` is true when it is newer |
 | `teams` | The teams the user is in, by name. The Library is not among them. `kind` is `SHARED`: every team is one somebody created (ADR-0019) |

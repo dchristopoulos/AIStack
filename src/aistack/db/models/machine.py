@@ -35,6 +35,10 @@ class Machine(Base):
     token_hash: Mapped[str] = mapped_column(String(TOKEN_HASH_LENGTH), nullable=False, unique=True)
     created_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                  default=utc_now)
+    # The computer whose `add_machine` registered this one; None for a first computer. No
+    # foreign key: once that computer is removed, "added from a computer since removed" is
+    # still worth saying, and is exactly what a person checks after losing one (ADR-0027).
+    added_by_machine_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("user_id", "name", name="uq_machine_user_name"),

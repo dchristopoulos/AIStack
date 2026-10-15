@@ -4,11 +4,11 @@ import uuid
 from dataclasses import dataclass, field
 from time import perf_counter
 
-from sqlalchemy import exists, select, update
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from aistack.commons.exceptions import Conflict, ValidationError
+from aistack.commons.exceptions import Conflict, NotFound, ValidationError
 from aistack.commons.text import loggable
 from aistack.db.models.machine import MACHINE_NAME_MAX_LENGTH, Machine
 from aistack.db.models.operating_system import OperatingSystem
@@ -102,11 +102,13 @@ class AddedMachine:
 
 
 def add_machine(session: Session, user_id: uuid.UUID, machine_name: str, os: str,
-                machine_id: uuid.UUID | None = None) -> AddedMachine:
+                machine_id: uuid.UUID | None = None,
+                added_by: uuid.UUID | None = None) -> AddedMachine:
     """Register another machine for `user_id` within the caller's transaction.
 
     `user_id` comes from the verified bearer, never from a tool argument: a machine can only
-    ever add a sibling for its own user.
+    ever add a sibling for its own user. `added_by` is the machine that asked, recorded so a
+    person can tell a computer they added from one somebody else did (ADR-0027).
     """
     started_at = perf_counter()
     machine_name = _validated_name(machine_name, "name", MACHINE_NAME_MAX_LENGTH)
@@ -119,6 +121,7 @@ def add_machine(session: Session, user_id: uuid.UUID, machine_name: str, os: str
         name=machine_name,
         os=operating_system,
         token_hash=hash_token(token),
+        added_by_machine_id=added_by,
     )
     session.add(machine)
     try:
@@ -134,6 +137,60 @@ def add_machine(session: Session, user_id: uuid.UUID, machine_name: str, os: str
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return AddedMachine(machine=machine, token=token)
+
+
+def own_machine(session: Session, user_id: uuid.UUID, machine_id: str) -> Machine:
+    """One of the caller's own computers, by the id the dashboard holds. Somebody else's
+    computer is answered exactly like one that does not exist."""
+    try:
+        machine = session.get(Machine, uuid.UUID(machine_id))
+    except (ValueError, TypeError, AttributeError):
+        machine = None
+    if machine is None or machine.user_id != user_id:
+        raise NotFound(f"You have no computer '{loggable(str(machine_id))}'.")
+    return machine
+
+
+def remove_machine(session: Session, user_id: uuid.UUID, machine_id: str) -> str:
+    """Take one of the caller's computers off the server, and return its name.
+
+    Its token stops working at once, and every dashboard session and transfer URL it opened
+    ends with it (ADR-0027). The caller's last computer is refused: without one, nobody can
+    open the dashboard to add another, and only the operator could let them back in.
+    """
+    # Locked, so two removals at once cannot each see the other computer still there and
+    # leave none. BEGIN IMMEDIATE already serializes this on SQLite (ADR-0014).
+    session.execute(select(User.user_id).where(User.user_id == user_id).with_for_update())
+    machine = own_machine(session, user_id, machine_id)
+    others = session.scalar(select(func.count()).select_from(Machine).where(
+        Machine.user_id == user_id, Machine.machine_id != machine.machine_id))
+    if not others:
+        raise Conflict(f"'{machine.name}' is your only computer, so it cannot be removed: "
+                       "you would have no way back in. Add the computer you use instead "
+                       "first, then remove this one.")
+    name = machine.name
+    # Its placements and sync records go with it (ON DELETE CASCADE).
+    session.delete(machine)
+    session.flush()
+    logger.info(f"Machine removed by its owner. Machine: '{machine.machine_id}'. "
+                f"User: '{user_id}'.")
+    return name
+
+
+def rename_machine(session: Session, user_id: uuid.UUID, machine_id: str, name: str) -> str:
+    """Give one of the caller's computers a new name, unique among theirs, and return it."""
+    name = _validated_name(name, "name", MACHINE_NAME_MAX_LENGTH)
+    machine = own_machine(session, user_id, machine_id)
+    if machine.name == name:
+        return name
+    machine.name = name
+    try:
+        with session.begin_nested():
+            session.flush()
+    except IntegrityError as error:
+        raise Conflict(f"You already have a computer named '{name}'. Pick another name.") \
+            from error
+    return name
 
 
 def set_full_name(session: Session, user_id: uuid.UUID, full_name: str) -> str | None:
