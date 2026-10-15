@@ -37,6 +37,22 @@ def skills_folder(harness: Harness, home: Path) -> Path:
     return home.joinpath(*HARNESSES[harness].home_relative)
 
 
+# What shows a coding agent that reads `~/.agents/skills` is installed, beside the folder.
+_AGENTS_FOLDER_READERS = (".codex", ".gemini", ".kimi-code", ".cursor", ".copilot",
+                          ".config/opencode", ".config/amp")
+
+
+def folders_in_use(home: Path) -> list[str]:
+    """The harnesses this computer has an agent for, Claude Code first: what sync covers."""
+    folders = []
+    if (home / ".claude").is_dir():
+        folders.append(Harness.CLAUDE_CODE.value)
+    if (skills_folder(Harness.AGENTS, home).is_dir()
+            or any((home / reader).is_dir() for reader in _AGENTS_FOLDER_READERS)):
+        folders.append(Harness.AGENTS.value)
+    return folders
+
+
 def observed(folder: Path) -> dict[str, dict[str, str]]:
     """`{skill folder: {relative path: sha256}}`, the listing sync's shell command sends.
 

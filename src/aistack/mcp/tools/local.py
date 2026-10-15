@@ -35,6 +35,10 @@ def _folder(harness: HarnessKey) -> Path:
     return local_skills.skills_folder(validated_harness(harness), Path.home())
 
 
+class LocalSyncResult(SyncResult):
+    folders: list[str]
+
+
 @local_mcp.tool(
     description="""Compare one skills folder on this computer with the user's Library.
 
@@ -51,6 +55,8 @@ def _folder(harness: HarnessKey) -> Path:
         loses_local_edits: say their edits will be lost. enable, restore = get_skill;
         push = push_skill; remove = disable_skill; skip = nothing.
       - up_to_date: how many enabled skills match.
+      - folders: every skills folder this computer has an agent for. Sync each of them,
+        Claude Code first.
     team_updates is always empty and sync_skill_url always null here.
 
     Args:
@@ -58,7 +64,7 @@ def _folder(harness: HarnessKey) -> Path:
                  Gemini CLI, Cursor and others). Omit for claude_code.
     """)
 @handle_mcp_errors
-def sync(harness: HarnessKey = "claude_code") -> SyncResult:
+def sync(harness: HarnessKey = "claude_code") -> LocalSyncResult:
     library_before_read(force=True)
     caller = get_local_principal()
     folder = _folder(harness)
@@ -78,7 +84,8 @@ def sync(harness: HarnessKey = "claude_code") -> SyncResult:
 
     library_after_write()
     logger.info(f"Sync reported. Local skills: '{len(local)}'.")
-    return sync_result(report, sync_skill_url=None)
+    return LocalSyncResult(**sync_result(report, sync_skill_url=None),
+                           folders=local_skills.folders_in_use(Path.home()))
 
 
 @local_mcp.tool(

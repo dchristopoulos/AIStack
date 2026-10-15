@@ -404,3 +404,11 @@ async def test_open_dashboard_serves_the_library_for_this_session(computer, monk
     assert second["url"].startswith(base + "/")
     assert first["url"].startswith("http://127.0.0.1:")
     assert [skill["name"] for skill in state["skills"]] == ["wizard"]
+
+
+async def test_sync_names_every_skills_folder_this_computer_has(computer):
+    async with computer("laptop") as (laptop, home):
+        (home / ".claude").mkdir()
+        assert (await _call(laptop, "sync"))["folders"] == ["claude_code"]
+        (home / ".codex").mkdir()
+        assert (await _call(laptop, "sync"))["folders"] == ["claude_code", "agents"]
