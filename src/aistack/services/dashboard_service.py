@@ -5,6 +5,7 @@ what its user may see and never has to hide anything itself.
 """
 
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import func, select
@@ -93,8 +94,16 @@ def require_a_machine(session: Session, user_id: uuid.UUID) -> None:
                         "the dashboard is closed to it.")
 
 
+@dataclass(frozen=True)
+class Placed:
+    name: str
+    machine_id: uuid.UUID
+    harness: str
+    enabled: bool
+
+
 def set_on_machine(session: Session, user_id: uuid.UUID, name: str, machine_id: str,
-                   enabled: bool, harness: str | None = None) -> None:
+                   enabled: bool, harness: str | None = None) -> Placed:
     """Switch one of the user's own skills on or off in one harness of one of their computers.
 
     The decision is recorded; the files move the next time that harness syncs there.
@@ -110,6 +119,7 @@ def set_on_machine(session: Session, user_id: uuid.UUID, name: str, machine_id: 
         raise NotFound(f"You have no computer '{loggable(str(machine_id))}'.")
     skill_service.set_enabled(session, machine.machine_id, harness, skill.skill_id,
                               enabled=bool(enabled))
+    return Placed(skill.name, machine.machine_id, harness.value, bool(enabled))
 
 
 def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
