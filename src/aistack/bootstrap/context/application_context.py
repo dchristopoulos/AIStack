@@ -19,7 +19,7 @@ from aistack.bootstrap.configuration.settings.settings_config import (
     validate_invite_code,
 )
 from aistack.commons.exceptions import AIStackError, Conflict
-from aistack.db.engine import build_engine, build_session_factory
+from aistack.db.engine import build_engine, build_read_session_factory, build_session_factory
 from aistack.db.schema import NewerSchema, guard_schema, migrate_schema
 from aistack.db.models.machine import Machine
 from aistack.mcp.auth.principal import MachinePrincipal
@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 _settings: Settings | None = None
 _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
+# For a request that only reads: on SQLite it neither waits for nor blocks a writer (ADR-0030).
+_read_session_factory: sessionmaker[Session] | None = None
 _ticket_signer: TicketSigner | None = None
 # Local mode only: the one caller every tool call comes from.
 _local_principal: MachinePrincipal | None = None
@@ -58,7 +60,7 @@ _NOT_BUILT = ("The application context has not been built. Call build_applicatio
 
 def build_application_context(settings: Settings) -> None:
     """Assemble the database and MCP authentication from explicit settings."""
-    global _settings, _engine, _session_factory, _ticket_signer
+    global _settings, _engine, _session_factory, _read_session_factory, _ticket_signer
 
     validate_invite_code(settings.invite_code)
 
@@ -67,6 +69,7 @@ def build_application_context(settings: Settings) -> None:
     migrate_schema(_engine)
     _session_factory = build_session_factory(_engine)
     guard_schema(_session_factory, _server_refusal)
+    _read_session_factory = build_read_session_factory(_engine)
     # A fresh key per process (ADR-0010): a restart invalidates every outstanding transfer
     # URL, and there is no key to store, leak, or rotate.
     _ticket_signer = TicketSigner(secrets.token_bytes(SIGNING_KEY_BYTES))
@@ -75,7 +78,7 @@ def build_application_context(settings: Settings) -> None:
     from aistack.mcp.auth.aistack_token_verifier import AIStackTokenVerifier
     from aistack.mcp.mcp import mcp
 
-    mcp.auth = AIStackTokenVerifier(settings.invite_code, _session_factory)
+    mcp.auth = AIStackTokenVerifier(settings.invite_code, _read_session_factory)
 
     # Confirm configuration without revealing the invite code or its length.
     logger.info("Application context built. Invite code: 'configured'.")
@@ -87,8 +90,8 @@ def build_local_context(settings: LocalSettings) -> None:
     Never attaches a token verifier, and the local server takes none: over stdio the caller
     is whoever could start this process (ADR-0020).
     """
-    global _engine, _session_factory, _ticket_signer, _local_principal, _local_refusal
-    global _library, _sharing
+    global _engine, _session_factory, _read_session_factory, _ticket_signer, _local_principal
+    global _local_refusal, _library, _sharing
 
     settings.home.mkdir(parents=True, exist_ok=True)
     if settings.library_repo:
@@ -110,6 +113,7 @@ def build_local_context(settings: LocalSettings) -> None:
         return
     _session_factory = build_session_factory(_engine)
     guard_schema(_session_factory, _refuse_locally)
+    _read_session_factory = build_read_session_factory(_engine)
     # Signs `aistack dashboard`'s sign-in link and session, fresh per process as on a server.
     _ticket_signer = TicketSigner(secrets.token_bytes(SIGNING_KEY_BYTES))
 
@@ -312,6 +316,14 @@ def get_session_factory() -> sessionmaker[Session]:
     return _session_factory
 
 
+def get_read_session_factory() -> sessionmaker[Session]:
+    """Sessions that only read and may not write (ADR-0030). Anything that changes state,
+    and anything that reads in order to decide a write, uses `get_session_factory()`."""
+    if _read_session_factory is None:
+        raise RuntimeError(_NOT_BUILT)
+    return _read_session_factory
+
+
 def get_ticket_signer() -> TicketSigner:
     if _ticket_signer is None:
         raise RuntimeError(_NOT_BUILT)
@@ -320,14 +332,15 @@ def get_ticket_signer() -> TicketSigner:
 
 def dispose_application_context() -> None:
     """Drop the engine and its pool. Used by tests between temporary databases."""
-    global _settings, _engine, _session_factory, _ticket_signer, _local_principal
-    global _local_refusal, _library, _sharing
+    global _settings, _engine, _session_factory, _read_session_factory, _ticket_signer
+    global _local_principal, _local_refusal, _library, _sharing
 
     if _engine is not None:
         _engine.dispose()
     _settings = None
     _engine = None
     _session_factory = None
+    _read_session_factory = None
     _ticket_signer = None
     _local_principal = None
     _local_refusal = None
