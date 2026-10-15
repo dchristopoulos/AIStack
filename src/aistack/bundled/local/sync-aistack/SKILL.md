@@ -12,7 +12,7 @@ Bring this computer's skills in line with the Library, the user's private store 
 The `sync` tool and the others below come from the `aistack` MCP server. If they are not available in this session, stop: do not try to do their work another way. Tell the user AIStack is not connected in this session, and what to do:
 
 - If setup has just finished, restart Claude Code, or Codex if that is the agent you are, once. It reads its server list at startup.
-- Otherwise run `claude mcp get aistack` (in Codex, `codex mcp get aistack`) to see the command and settings it starts AIStack with, then run that command in a terminal with the same settings and `check` after it, for example `AISTACK_LIBRARY_REPO=<owner>/aistack-library ~/.local/bin/aistack-mcp check`. It says what is wrong: a database or repository it cannot reach, or a GitHub login that is missing. If the command itself is not found, AIStack is not installed: `uv tool install aistack-mcp`.
+- Otherwise run `"$(uv tool dir --bin)/aistack-mcp" check` in a terminal (on Windows, `& "$(uv tool dir --bin)\aistack-mcp.exe" check`). It finds the Library this computer's agent uses by itself, and says what is wrong: a database or repository it cannot reach, or a GitHub login that is missing. For a Library in a database it asks for the address in `AISTACK_DATABASE_URL`; let the user set that in their own terminal, since it holds the password. If the command itself is not found, AIStack is not installed: `uv tool install aistack-mcp`.
 
 If the tools are there but answer with an error that says what to do, such as another computer having updated the Library, tell the user exactly that.
 
@@ -56,6 +56,6 @@ Say in a sentence or two what changed: what was installed or updated (between wh
 
 When the user wants their Library somewhere else, such as from this computer only to a private GitHub repository or a database their other computers share:
 
-1. Run `<aistack-mcp> export ~/aistack-library`, with the full path and settings `claude mcp get aistack` (in Codex, `codex mcp get aistack`) shows. It writes every skill in the Library there, and refuses a folder that already has files.
+1. Run `<aistack-mcp> export ~/aistack-library`, with the full path. It finds the Library this computer's agent uses by itself (one in a database also needs `AISTACK_DATABASE_URL`, which the user sets), writes every skill in it there, and refuses a folder that already has files.
 2. Run `<aistack-mcp> setup` and follow its steps 2 to 8 for the new place. In step 6, take the old connection out first: `claude mcp remove --scope user aistack`, or in Codex replace the `[mcp_servers.aistack]` block.
 3. After the restart, copy each folder in `~/aistack-library` that is not already in a skills folder here into `~/.claude/skills` (or `~/.agents/skills` without Claude Code), then sync: the new Library backs them up without asking. Revision history stays behind in the old place.

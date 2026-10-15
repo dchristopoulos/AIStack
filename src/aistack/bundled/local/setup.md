@@ -100,5 +100,5 @@ Tell the user:
 
 - **Restart Claude Code once**, or Codex if that is the agent you are. It reads its server list at startup. Skills installed from now on load without a restart.
 - After restarting, say **"sync aistack"**. It backs up this computer's skills to the Library and installs what their other computers put there.
-- **"open my aistack dashboard"** opens the Library in the browser, on this computer, for as long as the session runs. `aistack-mcp dashboard` in a terminal does the same without an agent.
+- **"open my aistack dashboard"** opens the Library in the browser, on this computer, for as long as the session runs. `aistack-mcp dashboard` in a terminal does the same without an agent, for the same Library (for one in a database, with `AISTACK_DATABASE_URL` set).
 - For another computer, paste the same setup there and choose the same place: the same repository or the same database. For choice 1 there is nothing to share.

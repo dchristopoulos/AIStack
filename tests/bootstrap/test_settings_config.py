@@ -155,3 +155,85 @@ def test_a_library_lives_in_one_place():
                          aistack_database_url="postgresql://x@y/z")
     with pytest.raises(ValueError, match="not both"):
         both.library_url()
+
+
+@pytest.fixture(name="local")
+def local_fixture(tmp_path, monkeypatch):
+    """LocalSettings as a command builds them, from a clean environment."""
+    from aistack.bootstrap.configuration.settings.settings_config import LocalSettings
+
+    for variable in ("AISTACK_LIBRARY_REPO", "AISTACK_DATABASE_URL"):
+        monkeypatch.delenv(variable, raising=False)
+
+    def local(**place):
+        return LocalSettings(aistack_home=tmp_path, **place)
+
+    return local
+
+
+def test_the_agents_place_is_recorded_and_found_without_settings(local, tmp_path):
+    local(aistack_library_repo="maria/aistack-library").resolved(record=True)
+
+    found = local().resolved(record=False)
+    assert found.library_repo == "maria/aistack-library"
+    assert "password" not in (tmp_path / "library.toml").read_text()
+
+
+def test_a_database_address_is_never_written_down(local, tmp_path):
+    local(aistack_database_url="postgresql+psycopg://maria:s3cret@db.neon.tech/skills"
+          ).resolved(record=True)
+
+    assert "s3cret" not in (tmp_path / "library.toml").read_text()
+    with pytest.raises(ValueError, match="lives in the PostgreSQL database skills at "
+                                         "db.neon.tech. Set AISTACK_DATABASE_URL"):
+        local().resolved(record=False)
+    # Given the address again, the command runs.
+    assert local(aistack_database_url="postgresql://maria:s3cret@db.neon.tech/skills"
+                 ).resolved(record=False).database_url
+
+
+def test_a_command_given_another_place_names_both_and_opens_neither(local):
+    local(aistack_library_repo="maria/aistack-library").resolved(record=True)
+
+    with pytest.raises(ValueError) as refused:
+        local(aistack_library_repo="maria/other").resolved(record=False)
+    assert "maria/aistack-library" in str(refused.value)
+    assert "maria/other" in str(refused.value)
+
+
+def test_the_agent_moving_its_library_moves_the_record(local):
+    local(aistack_library_repo="maria/aistack-library").resolved(record=True)
+    local(aistack_library_repo="maria/moved").resolved(record=True)
+
+    assert local().resolved(record=False).library_repo == "maria/moved"
+
+
+def test_a_computer_with_no_place_set_keeps_its_library_here(local, tmp_path):
+    assert local().resolved(record=True).library_url().endswith("/aistack.db")
+    assert local().resolved(record=False).library_repo is None
+    assert 'kind = "this_computer"' in (tmp_path / "library.toml").read_text()
+
+
+@pytest.mark.parametrize("content", ["kind = ", 'kind = "ftp"', "kind = 3", b"\xff\xfe"])
+def test_a_garbled_record_is_named_not_guessed(local, tmp_path, content):
+    file = tmp_path / "library.toml"
+    if isinstance(content, bytes):
+        file.write_bytes(content)
+    else:
+        file.write_text(content)
+    with pytest.raises(ValueError, match="library.toml"):
+        local().resolved(record=False)
+
+
+def test_the_agents_start_rewrites_a_garbled_record(local, tmp_path):
+    (tmp_path / "library.toml").write_text("kind = ")
+    local(aistack_library_repo="maria/aistack-library").resolved(record=True)
+
+    assert local().resolved(record=False).library_repo == "maria/aistack-library"
+
+
+def test_a_sqlite_file_named_by_the_agent_is_found_again(local, tmp_path):
+    library = tmp_path / "elsewhere.db"
+    local(aistack_database_url=f"sqlite:///{library}").resolved(record=True)
+
+    assert local().resolved(record=False).library_url() == f"sqlite:///{library}"
