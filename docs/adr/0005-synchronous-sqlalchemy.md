@@ -1,6 +1,6 @@
 # Synchronous SQLAlchemy, not async
 
-Status: accepted (reverses the async convention committed 2026-08-24 in CLAUDE.md, same day, after external review and measurement)
+Status: accepted (reverses the async convention adopted on 2026-08-24, the same day, after review and measurement)
 
 Services and models use synchronous SQLAlchemy: plain `sqlite3` driver for SQLite, `psycopg` for Postgres. Tools are plain `def` functions.
 
