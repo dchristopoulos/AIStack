@@ -528,8 +528,8 @@ def test_an_http_origin_is_accepted(origin):
 
 
 @pytest.mark.parametrize("path", [".env", "config/.env", ".env.local", ".ENV", ".env.production"])
-def test_an_environment_file_is_refused_because_the_vault_is_shared(path):
-    with pytest.raises(ValidationError, match="whole team"):
+def test_an_environment_file_is_refused_because_skills_travel(path):
+    with pytest.raises(ValidationError, match="every computer and team"):
         validated_skill("wizard", _files({path: b"API_KEY=1\n"}))
 
 

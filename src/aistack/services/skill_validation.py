@@ -235,7 +235,8 @@ def _validate_segment(segment: str, shown_path: str) -> None:
     if _is_environment_file(segment.casefold()):
         raise ValidationError(
             f"The path '{shown_path}' is an environment file, which is where secrets are "
-            "kept, and the vault is shared with the whole team. Leave it out of the skill."
+            "kept, and a skill is copied to every computer and team it reaches. Leave it out "
+            "of the skill."
         )
     if segment.casefold() in _VERSION_CONTROL_FOLDERS:
         raise ValidationError(
@@ -296,7 +297,7 @@ def _decoded(path: str, content: bytes) -> str:
         text = content.decode("utf-8")
     except UnicodeDecodeError as error:
         raise ValidationError(
-            f"'{loggable(path)}' is not UTF-8 text. The vault stores text files only; leave "
+            f"'{loggable(path)}' is not UTF-8 text. AIStack stores text files only; leave "
             "binary files (images, archives, compiled output) out of the skill."
         ) from error
     if "\x00" in text:

@@ -33,7 +33,7 @@ The server-side integer that orders a skill's versions. Distinct from the author
 _Avoid_: Version number (ambiguous)
 
 **Vault**:
-The canonical skills one place holds: a user's Library, or a team. A skill name is unique within a vault. Only the Library is installed from; a team's vault is shared into and taken from. Before ADR-0015 a server was a single vault everyone installed from, and that vault is now the team `everyone`.
+The canonical skills one place holds: a user's Library, or a team. A skill name is unique within a vault. Only the Library is installed from; a team's vault is shared into and taken from. Before ADR-0015 a server was a single vault everyone installed from; it became the team `everyone`, an ordinary team since ADR-0019.
 _Avoid_: Registry, marketplace, "the vault" for the whole server
 
 **Library**:
