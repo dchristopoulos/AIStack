@@ -117,7 +117,7 @@ def build_local_context(settings: LocalSettings) -> None:
     first_start = False
     if settings.library_repo:
         repo = LibraryRepo(settings.home / _LIBRARY_CLONE, settings.library_repo)
-        _sharing = LibrarySharing(repo, _session_factory)
+        _sharing = LibrarySharing(repo, _engine, _session_factory)
         first_start = not (repo.folder / ".git").is_dir()
         try:
             # Only a first start reaches the network, to clone. Any other start replays what

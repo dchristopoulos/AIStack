@@ -7,21 +7,38 @@ carries on from its copy: unpublished events stay recorded and go out with the n
 
 import logging
 import time
+import uuid
+from pathlib import Path
 
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from aistack.db.engine import build_engine, build_session_factory
+from aistack.db.schema import migrate_schema
+from aistack.db.swap import swap_in
 from aistack.services import library_log
+from aistack.services.library_log import Event
 from aistack.services.library_repo import LibraryRepo, RepoUnavailable
 
 logger = logging.getLogger(__name__)
 
 # A copy read again within this many seconds is not pulled again; sync always pulls.
 _PULL_INTERVAL_SECONDS = 15
+# A rebuild beside the copy starts over when this computer changed the copy meanwhile. After
+# this many, it rebuilds in place, holding the lock, rather than never finishing.
+_REBUILD_ATTEMPTS = 3
+# What would be lost by swapping in the rebuilt copy: a change recorded here, and not yet
+# published, while it was being built.
+_RECORDED_MEANWHILE = ("SELECT 1 FROM main.library_event WHERE published = 0 AND event_id "
+                       "NOT IN (SELECT event_id FROM rebuilt.library_event) LIMIT 1")
 
 
 class LibrarySharing:
-    def __init__(self, repo: LibraryRepo, session_factory: sessionmaker[Session]):
+    def __init__(self, repo: LibraryRepo, engine: Engine,
+                 session_factory: sessionmaker[Session]):
+        """`engine` is the copy's: a SQLite file in AISTACK_HOME."""
         self.repo = repo
+        self.engine = engine
         self.session_factory = session_factory
         self._pulled_at = float("-inf")
 
@@ -44,8 +61,48 @@ class LibrarySharing:
         """Apply what the clone holds, without the network."""
         events = self.repo.events()
         with self.session_factory.begin() as session:
-            if library_log.catch_up(session, events):
-                logger.info("The Library's copy was rebuilt from the log.")
+            new = library_log.arrivals(session, events)
+        if not new:
+            return
+        # Archives are read before the transaction; another process may apply some of these
+        # meanwhile, so what is new is asked again inside it.
+        validated = library_log.prepared(new)
+        with self.session_factory.begin() as session:
+            if library_log.append(session, library_log.arrivals(session, events), validated):
+                return
+        self._rebuild(events, validated)
+        logger.info("The Library's copy was rebuilt from the log.")
+
+    def _rebuild(self, events: list[Event],
+                 validated: library_log.Prepared) -> None:
+        """Replay the whole log into a new file beside the copy, then swap its rows in, so
+        other sessions on this computer read the old copy meanwhile instead of waiting."""
+        copy = Path(self.engine.url.database)
+        for _ in range(_REBUILD_ATTEMPTS):
+            with self.session_factory.begin() as session:
+                local = library_log.unpublished(session)
+            # A name of its own, since two agent sessions can rebuild at once.
+            beside = copy.with_name(f"{copy.name}.rebuild-{uuid.uuid4().hex}")
+            try:
+                engine = build_engine(f"sqlite:///{beside.as_posix()}")
+                try:
+                    migrate_schema(engine)
+                    validated |= library_log.prepared([
+                        event for event in [*events, *local] if event.event_id not in validated])
+                    with build_session_factory(engine).begin() as session:
+                        library_log.rebuild(session, events, local, validated)
+                finally:
+                    engine.dispose()
+                if swap_in(self.engine, beside, unless=_RECORDED_MEANWHILE):
+                    return
+            finally:
+                for leftover in (beside, *(beside.with_name(beside.name + suffix)
+                                           for suffix in ("-wal", "-shm", "-journal"))):
+                    leftover.unlink(missing_ok=True)
+        logger.info("The Library's copy kept changing while it was rebuilt beside; "
+                    "rebuilding it in place.")
+        with self.session_factory.begin() as session:
+            library_log.rebuild(session, events)
 
     def publish(self) -> bool:
         """Push every recorded event not yet in the repository. False when some could not
