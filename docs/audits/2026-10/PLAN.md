@@ -50,7 +50,7 @@ How to work through it:
 - [x] 19. Order the local log so a fast clock cannot win, and rebuild without holding the lock (#128)
 - [x] 20. Every terminal command finds the agent's Library (#130)
 - [x] 20b. Moving a Library is one command that keeps history (#137)
-- [ ] 20c. Say when GitHub cannot be reached, and nudge a Library kept on this computer only
+- [x] 20c. Say when GitHub cannot be reached, and nudge a Library kept on this computer only (#146)
 - [ ] 20d. A moved Library tells the computers still on the old place
 - [ ] 21. A restored home folder is a new computer
 - [ ] 22. A second computer gets the sync skill and the session-start hook, whatever its agent
