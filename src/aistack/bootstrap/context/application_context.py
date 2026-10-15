@@ -5,6 +5,7 @@ import platform
 import re
 import secrets
 import socket
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -141,13 +142,18 @@ def build_local_context(settings: LocalSettings) -> None:
             return
 
     machine_id = _claimed_machine_id(settings.home / _MACHINE_ID_FILE)
+    # Asked before the transaction, and only for a computer the Library does not know yet:
+    # reading the hardware can take a second, and nothing slow runs inside a transaction.
+    with _session_factory() as session:
+        known = session.get(Machine, machine_id) is not None
+    machine_name = "computer" if known else _computer_name()
     for attempt in range(2):
         try:
             with _session_factory.begin() as session:
                 machine = local_machine(
                     session, machine_id,
                     username=settings.username or _login_name(),
-                    machine_name=socket.gethostname().split(".")[0] or "computer",
+                    machine_name=machine_name,
                     os=_OPERATING_SYSTEMS.get(platform.system(), "LINUX"))
                 principal = MachinePrincipal(machine_id=machine.machine_id,
                                              user_id=machine.user_id)
@@ -186,6 +192,25 @@ def library_after_write() -> bool:
 
 def is_local_mode() -> bool:
     return _local_principal is not None or _local_refusal is not None
+
+
+def _computer_name() -> str:
+    """What a person calls this computer: "MacBook Pro M4 Pro", not the host name macOS makes
+    from their account ("Dimitriss-MacBook-Pro") or the one Windows makes up."""
+    system = platform.system()
+    if system == "Darwin":
+        try:
+            hardware = subprocess.run(["system_profiler", "SPHardwareDataType"],
+                                      capture_output=True, text=True, timeout=10).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            hardware = ""
+        model = re.search(r"Model Name: (.+)", hardware)
+        chip = re.search(r"Chip: (?:Apple )?(.+)", hardware)
+        if model:
+            return " ".join(found.group(1).strip() for found in (model, chip) if found)
+    if system == "Windows":
+        return "Windows PC"
+    return socket.gethostname().split(".")[0] or "computer"
 
 
 def library_description() -> dict[str, str]:
