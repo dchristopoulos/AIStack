@@ -127,7 +127,7 @@ class ShareSkillResult(TypedDict):
 
     Args:
         name: The skill's name, one of the user's own.
-        team: A team the user is in, as list_teams names it.
+        team: The team as the user named it. list_teams lists theirs if they did not.
         group: A group inside that team the user belongs to. Omit for the whole team.
 
     Returns:
@@ -179,7 +179,9 @@ class ListSkillsResult(TypedDict):
 
     Use when the user asks what they have or what is available ("what skills does the team
     have?"), or is looking for a skill to do something: this listing is the search. Answer
-    in two parts: their own skills (team is null), then each team's.
+    in two parts: their own skills (team is null), then each team's. Revisions count
+    separately in each place, so a team's number and the user's own say nothing about
+    which is newer; sync's team_updates does.
 
     To install a team's skill on this machine, call get_skill with its name and team: it
     is copied into the user's own skills and stays theirs. To give one of their own to a
@@ -233,14 +235,15 @@ class GetSkillResult(TypedDict):
 @mcp.tool(
     description="""Enable a skill on this machine and get a URL to download its files.
 
-    Use to install a skill, update it, restore an edited copy, or re-enable a disabled one:
-    each means "this folder should have the latest revision". It replaces the local
-    folder, so if sync reported local edits, the user must have agreed to lose them. With
-    team, the team's latest revision is first copied into the user's own skills: that is
-    how a team's skill is installed and an offered update accepted.
+    Use to install, update, restore, or re-enable a skill: each means "this folder should
+    have the latest revision". It replaces the local folder, so if sync reported local
+    edits, the user must have agreed to lose them. With team, the team's latest revision
+    is first copied into the user's own skills: that is how a team's skill is installed
+    and an offered update accepted.
 
     Install the files from a shell, where <skills> is the result's folder and <stage> is
-    <skills>/.aistack-staging:
+    <skills>/.aistack-staging. Run them for each skill on its own, with every path
+    written out: Claude Code refuses an rm of a shell variable, so no loops or functions.
 
         curl -sS -o <stage>/<name>.tgz "<download_url>"
         mkdir <stage>/<name>, then: tar -xzf <stage>/<name>.tgz -C <stage>/<name>
@@ -248,14 +251,14 @@ class GetSkillResult(TypedDict):
         delete <stage>/<name>.tgz
 
     Create <stage> first and clear any leftover <stage>/<name>. If tar fails, the .tgz is a
-    JSON error: read it. On Windows use curl.exe and tar.exe. The move is a rename, so a
-    failed download never leaves half a skill. It is usable without a restart; if it is
-    not found at once, try again. tar restores file modes. Leave <stage> in place; sync
-    ignores it. The listed hashes need no checking.
+    JSON error: read it. On Windows use curl.exe and tar.exe. It is usable without a
+    restart; if it is not found at once, try again. tar restores file modes. Leave <stage>
+    in place; sync ignores it.
 
     Args:
-        name: The skill's name, as list_skills or sync reported it.
-        team: Omit for one of the user's own. Name a team to take its copy.
+        name: The skill's name.
+        team: The team to take it from, as the user named it ("from backend"). Omit for
+             one of the user's own.
         harness: The skills folder, as given to sync. Omit for claude_code.
 
     Returns:
@@ -264,8 +267,8 @@ class GetSkillResult(TypedDict):
             - revision: the revision you are installing
             - version: the author's version string, or null
             - pushed_by: who uploaded this revision, not necessarily its author
-            - content_hash, files: its hash, and each file's path, sha256, executable bit
-            - download_url: where to GET the archive. A credential: keep it private.
+            - content_hash, files: hashes and executable bits, that need no checking
+            - download_url: the archive. A credential: keep it private.
             - expires_in_seconds: how long the URL works
     """)
 @handle_mcp_errors
