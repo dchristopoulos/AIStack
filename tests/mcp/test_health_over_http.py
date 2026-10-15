@@ -24,8 +24,8 @@ async def test_health_reports_an_unreachable_database_without_saying_why(server_
     def broken():
         raise RuntimeError("password authentication failed for user 'aistack'")
 
-    monkeypatch.setattr(application_context, "get_session_factory", broken)
-    monkeypatch.setattr("aistack.mcp.routes.health.get_session_factory", broken)
+    monkeypatch.setattr(application_context, "get_read_session_factory", broken)
+    monkeypatch.setattr("aistack.mcp.routes.health.get_read_session_factory", broken)
 
     async with httpx.AsyncClient() as http:
         response = await http.get(_health_url(server_url))

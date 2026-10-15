@@ -13,6 +13,7 @@ from typing import TypedDict
 
 from aistack.bootstrap.context.application_context import (
     get_local_principal,
+    get_read_session_factory,
     get_session_factory,
     library_after_write,
     library_before_read,
@@ -110,7 +111,7 @@ def sync(harness: HarnessKey | None = None) -> LocalSyncResult:
 @handle_mcp_errors
 def list_skills() -> ListSkillsResult:
     library_before_read()
-    with get_session_factory().begin() as session:
+    with get_read_session_factory().begin() as session:
         skills = skill_service.list_skills(session, get_local_principal().user_id)
 
     return ListSkillsResult(skills=[

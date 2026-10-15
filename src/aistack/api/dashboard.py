@@ -22,6 +22,7 @@ from starlette.routing import Route
 from aistack.bootstrap.context.application_context import (
     get_local_principal,
     get_public_url,
+    get_read_session_factory,
     get_session_factory,
     get_ticket_signer,
     is_local_mode,
@@ -194,7 +195,8 @@ async def state(request: Request) -> Response:
     holder = _signed_in(request)
     if is_local_mode():
         await asyncio.to_thread(library_before_read)
-    shown = await asyncio.to_thread(_in_transaction, _as_user(dashboard_service.state), holder)
+    shown = await asyncio.to_thread(_in_transaction, _as_user(dashboard_service.state), holder,
+                                    read_only=True)
     # The page hides what only a server can do, such as creating a team, when this is false.
     return _json(shown | {"server": not is_local_mode(), "library": library_description()})
 
@@ -424,11 +426,12 @@ def _flag(body: dict[str, Any], key: str, required: bool = True) -> bool | None:
     return value
 
 
-def _in_transaction(function: Callable[..., Any], holder: DashboardHolder,
-                    *arguments: Any) -> Any:
+def _in_transaction(function: Callable[..., Any], holder: DashboardHolder, *arguments: Any,
+                    read_only: bool = False) -> Any:
     """One request, one transaction, exactly as a tool call, for a session whose computer is
     still connected."""
-    with get_session_factory().begin() as session:
+    factory = get_read_session_factory() if read_only else get_session_factory()
+    with factory.begin() as session:
         dashboard_service.require_its_machine(session, holder)
         return function(session, holder, *arguments)
 
