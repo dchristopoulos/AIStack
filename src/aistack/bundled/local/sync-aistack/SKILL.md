@@ -25,7 +25,7 @@ AIStack keeps two skills folders in line, and every tool call names one of them 
 | `claude_code` | `~/.claude/skills` | Claude Code |
 | `agents` | `~/.agents/skills` | Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode, Amp |
 
-Call `sync` without a harness first: it syncs `claude_code`, and its `folders` field lists every folder this computer has an agent for. Do steps 2 and 3 for each of those folders in turn, `claude_code` first, then step 4 once. Do not ask the user which folders to sync, and say nothing about a folder no agent here reads.
+Call `sync` without a harness first: it syncs this computer's first folder and says which in `harness`, and its `folders` field lists every folder this computer has an agent for. Do steps 2 and 3 for each of those folders in turn, then step 4 once. Do not ask the user which folders to sync, and say nothing about a folder no agent here reads.
 
 ## 2. Call `sync`
 
