@@ -5,9 +5,12 @@ from typing import TypedDict
 from fastmcp.server.dependencies import get_http_request
 
 from aistack.bootstrap.context.application_context import (
+    get_failure_limiter,
     get_session_factory,
     get_ticket_signer,
 )
+from aistack.commons.exceptions import NotFound
+from aistack.mcp.auth.failure_limiter import client_address, note_failure
 from aistack.mcp.auth.principal import current_machine
 from aistack.mcp.mcp import mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
@@ -145,8 +148,15 @@ class JoinTeamResult(TypedDict):
     """)
 @handle_mcp_errors
 def join_team(code: str) -> JoinTeamResult:
-    with get_session_factory().begin() as session:
-        team = team_service.join_team(session, current_machine().user_id, code)
+    try:
+        with get_session_factory().begin() as session:
+            team = team_service.join_team(session, current_machine().user_id, code)
+    except NotFound:
+        # A wrong code is a refused credential, from a signed-in caller or not (SEC-02).
+        address = client_address(get_http_request())
+        logger.info(f"Team code refused. Client: '{address}'.")
+        note_failure(get_failure_limiter(), address, "team invite code")
+        raise
     return JoinTeamResult(team=team)
 
 

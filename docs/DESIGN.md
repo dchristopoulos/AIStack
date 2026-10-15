@@ -553,7 +553,9 @@ Trusted team, honestly stated:
 - A machine updates to the latest revision of its user's own skill without confirmation. Only that user's pushes, and team revisions they chose to take, create such a revision. A teammate's change never arrives unasked: it is an offer that names who pushed it (ADR-0015).
 - Any member may share over a team's skill where they may share a new one: at team level anyone, in a group those who belong to it or to a group above it (ADR-0029). The revision carries their name, and nobody receives it without accepting it.
 - Machine tokens: sha256-hashed at rest, revocable by row deletion, never logged.
-- The server's invite code is a static long-lived shared secret: rotate by changing the env var and restarting; share it over something better than a group chat. A team's invite is a row with a hashed code (ADR-0022): it admits one person, expires after seven days, and can be cancelled on its own. Since ADR-0019 it also creates accounts, which the expiry bounds even when a link lands in a proxy's log.
+- The server's invite code is a static long-lived shared secret, from `AISTACK_INVITE_CODE` or the file `AISTACK_INVITE_CODE_FILE` names: rotate by writing a new one and recreating the container (OPERATING.md); share it over something better than a group chat. Startup refuses a code under 24 characters, with fewer than 10 different ones, or printed in AIStack's own documents.
+- Refused credentials are counted per client address in memory: after 20 in a minute the address gets 429 before any route runs, and each refusal is logged with the address and never with what was sent. A refused `join` for a taken name is limited to 5 an hour per address and per team code.
+- Usernames and team names share one server-wide namespace, so anyone holding an invite code, or any account through `create_team`, can learn whether a name is taken. That limit makes listing them slow, not impossible: a private team's name should not itself be a secret. A team's invite is a row with a hashed code (ADR-0022): it admits one person, expires after seven days, and can be cancelled on its own. Since ADR-0019 it also creates accounts, which the expiry bounds even when a link lands in a proxy's log.
 - The dashboard has no passwords. A sign-in link is a credential for five minutes, the session cookie for eight hours, and both die with the process because the signing key is in memory.
 
 Deferred deliberately: audit trail, signing, approval workflows, per-skill push permissions.
@@ -645,4 +647,4 @@ Still open:
 
 Resolved by the ticket #1 spikes: the pinned FastMCP threadpools plain `def` tools (ADR-0005 holds), and Claude Code completes elicitation, which sync then does not use (ADR-0012).
 
-Resolved: the invite code is operator-supplied via env only, never generated at boot and never printed; rotation is changing the env var and restarting. The generic-vs-specific resource model is settled by ADR-0007.
+Resolved: the invite code is operator-supplied, from the environment or a file it names, never generated at boot and never printed; rotation is writing a new one and recreating the container. The generic-vs-specific resource model is settled by ADR-0007.

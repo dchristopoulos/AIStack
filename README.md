@@ -90,8 +90,9 @@ Start a local server from a checkout and fill it with a small demo team:
 ```bash
 git clone https://github.com/dchristopoulos/AIStack && cd AIStack
 poetry install
-AISTACK_HOST=127.0.0.1 AISTACK_INVITE_CODE=try-it-out-locally-1234 poetry run aistack serve &
-poetry run python scripts/demo_seed.py http://127.0.0.1:8000 try-it-out-locally-1234
+CODE="$(openssl rand -base64 24)"
+AISTACK_HOST=127.0.0.1 AISTACK_INVITE_CODE="$CODE" poetry run aistack serve &
+poetry run python scripts/demo_seed.py http://127.0.0.1:8000 "$CODE"
 ```
 
 It prints a one-time sign-in link for each of three demo users.
@@ -99,10 +100,13 @@ It prints a one-time sign-in link for each of three demo users.
 ## Running a server
 
 ```bash
+openssl rand -base64 24 > invite-code.txt && chmod 600 invite-code.txt
 docker run -d --name aistack -p 8000:8000 \
-  -e AISTACK_INVITE_CODE="$(openssl rand -base64 24)" \
+  -e AISTACK_INVITE_CODE="$(cat invite-code.txt)" \
   -v aistack-data:/data ghcr.io/dchristopoulos/aistack:latest
 ```
+
+`invite-code.txt` is the server's invite code, which you join with first; keep it.
 
 One container, one volume, one port, with SQLite inside. Set `DATABASE_URL` to use PostgreSQL instead ([ADR-0002](docs/adr/0002-sqlite-default-postgres-optional.md)). The image is built for amd64 and arm64 and published only from commits on `main` that passed CI. Upgrading is starting the new image: the server migrates its database at startup in a single transaction ([ADR-0016](docs/adr/0016-alembic-migrations-in-one-transaction.md)).
 

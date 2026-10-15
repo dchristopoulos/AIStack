@@ -19,13 +19,20 @@ from sqlalchemy.orm import Session, sessionmaker
 from aistack.bootstrap.configuration.settings.settings_config import (
     LocalSettings,
     Settings,
-    validate_invite_code,
+    resolved_invite_code,
 )
 from aistack.bootstrap.hardware import hardware_id
 from aistack.commons.exceptions import AIStackError, Conflict
 from aistack.db.engine import build_engine, build_read_session_factory, build_session_factory
 from aistack.db.schema import NewerSchema, guard_schema, migrate_schema
 from aistack.db.models.machine import Machine
+from aistack.mcp.auth.failure_limiter import (
+    FAILURE_LIMIT,
+    FAILURE_WINDOW_SECONDS,
+    REFUSED_JOIN_LIMIT,
+    REFUSED_JOIN_WINDOW_SECONDS,
+    FailureLimiter,
+)
 from aistack.mcp.auth.principal import MachinePrincipal
 from aistack.services.library_repo import LibraryRepo, validate_repository
 from aistack.services.library_sharing import LibrarySharing
@@ -41,6 +48,8 @@ _session_factory: sessionmaker[Session] | None = None
 # For a request that only reads: on SQLite it neither waits for nor blocks a writer (ADR-0030).
 _read_session_factory: sessionmaker[Session] | None = None
 _ticket_signer: TicketSigner | None = None
+_failure_limiter: FailureLimiter | None = None
+_join_limiter: FailureLimiter | None = None
 # Local mode only: the one caller every tool call comes from.
 _local_principal: MachinePrincipal | None = None
 # What the dashboard says about where the Library lives; never the address itself.
@@ -71,7 +80,7 @@ def build_application_context(settings: Settings) -> None:
     """Assemble the database and MCP authentication from explicit settings."""
     global _settings, _engine, _session_factory, _read_session_factory, _ticket_signer
 
-    validate_invite_code(settings.invite_code)
+    invite_code = resolved_invite_code(settings)
 
     _settings = settings
     _engine = build_engine(settings.database_url)
@@ -82,12 +91,13 @@ def build_application_context(settings: Settings) -> None:
     # A fresh key per process (ADR-0010): a restart invalidates every outstanding transfer
     # URL, and there is no key to store, leak, or rotate.
     _ticket_signer = TicketSigner(secrets.token_bytes(SIGNING_KEY_BYTES))
+    _build_failure_limiters()
 
     # Tools import this module; defer MCP imports to avoid a circular import.
     from aistack.mcp.auth.aistack_token_verifier import AIStackTokenVerifier
     from aistack.mcp.mcp import mcp
 
-    mcp.auth = AIStackTokenVerifier(settings.invite_code, _read_session_factory)
+    mcp.auth = AIStackTokenVerifier(invite_code, _read_session_factory, _failure_limiter)
 
     # Confirm configuration without revealing the invite code or its length.
     logger.info("Application context built. Invite code: 'configured'.")
@@ -126,6 +136,7 @@ def build_local_context(settings: LocalSettings) -> None:
     _read_session_factory = build_read_session_factory(_engine)
     # Signs `aistack dashboard`'s sign-in link and session, fresh per process as on a server.
     _ticket_signer = TicketSigner(secrets.token_bytes(SIGNING_KEY_BYTES))
+    _build_failure_limiters()
 
     first_start = False
     if settings.library_repo:
@@ -425,10 +436,32 @@ def get_ticket_signer() -> TicketSigner:
     return _ticket_signer
 
 
+def _build_failure_limiters() -> None:
+    """Fresh per process, like the signing key: a restart forgets who was turned away."""
+    global _failure_limiter, _join_limiter
+    _failure_limiter = FailureLimiter(FAILURE_LIMIT, FAILURE_WINDOW_SECONDS)
+    _join_limiter = FailureLimiter(REFUSED_JOIN_LIMIT, REFUSED_JOIN_WINDOW_SECONDS)
+
+
+def get_failure_limiter() -> FailureLimiter:
+    """Refused credentials per client address."""
+    if _failure_limiter is None:
+        raise RuntimeError(_NOT_BUILT)
+    return _failure_limiter
+
+
+def get_join_limiter() -> FailureLimiter:
+    """Refused joins per address and per team invite code (SEC-08)."""
+    if _join_limiter is None:
+        raise RuntimeError(_NOT_BUILT)
+    return _join_limiter
+
+
 def dispose_application_context() -> None:
     """Drop the engine and its pool. Used by tests between temporary databases."""
     global _settings, _engine, _session_factory, _read_session_factory, _ticket_signer
     global _local_principal, _local_refusal, _library, _sharing, _local_home
+    global _failure_limiter, _join_limiter
 
     if _engine is not None:
         _engine.dispose()
@@ -437,6 +470,8 @@ def dispose_application_context() -> None:
     _session_factory = None
     _read_session_factory = None
     _ticket_signer = None
+    _failure_limiter = None
+    _join_limiter = None
     _local_principal = None
     _local_refusal = None
     _library = {"kind": "server"}

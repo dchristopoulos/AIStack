@@ -1,11 +1,18 @@
 import logging
 
+import fastmcp
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from aistack.bootstrap.__main__ import WIRE_LOGGERS, configure_logging
+from aistack.bootstrap.__main__ import (
+    ARGUMENT_ECHO_LOGGER,
+    QUIET_LOGGERS,
+    WIRE_LOGGERS,
+    configure_logging,
+)
 from aistack.bootstrap.configuration.settings.settings_config import (PLACEHOLDER_INVITE_CODE,
                                                                       Settings,
+                                                                      resolved_invite_code,
                                                                       validate_invite_code)
 
 
@@ -14,18 +21,26 @@ def restore_logging():
     """configure_logging() reconfigures the root logger globally, so put it back afterwards."""
     root = logging.getLogger()
     level, handlers = root.level, list(root.handlers)
-    wire_levels = {name: logging.getLogger(name).level for name in WIRE_LOGGERS}
+    named = {name: logging.getLogger(name)
+             for name in (*WIRE_LOGGERS, *QUIET_LOGGERS, "fastmcp", ARGUMENT_ECHO_LOGGER)}
+    saved = {name: (each.level, list(each.handlers), list(each.filters), each.propagate)
+             for name, each in named.items()}
+    log_enabled = fastmcp.settings.log_enabled
     yield
     root.setLevel(level)
     root.handlers = handlers
-    for name, wire_level in wire_levels.items():
-        logging.getLogger(name).setLevel(wire_level)
+    for name, (each_level, each_handlers, each_filters, propagate) in saved.items():
+        named[name].setLevel(each_level)
+        named[name].handlers = each_handlers
+        named[name].filters = each_filters
+        named[name].propagate = propagate
+    fastmcp.settings.log_enabled = log_enabled
 
 
 def _settings(**overrides) -> Settings:
     # _env_file=None or these read whatever .env the developer happens to have in the working
     # directory, and a test named "defaults are documented" then asserts against their config.
-    return Settings(_env_file=None, aistack_invite_code="a-real-invite-code", **overrides)
+    return Settings(_env_file=None, aistack_invite_code="a-real-invite-code-of-enough-length", **overrides)
 
 
 def test_defaults_are_documented_and_sqlite_backed():
@@ -39,38 +54,88 @@ def test_defaults_are_documented_and_sqlite_backed():
 
 
 def test_a_missing_invite_code_fails_startup():
-    with pytest.raises(ValidationError) as rejection:
-        Settings(_env_file=None)
+    with pytest.raises(ValueError) as rejection:
+        resolved_invite_code(Settings(_env_file=None))
 
-    assert "aistack_invite_code" in str(rejection.value).lower()
+    assert "AISTACK_INVITE_CODE" in str(rejection.value)
 
 
-@pytest.mark.parametrize("invite_code", [PLACEHOLDER_INVITE_CODE, "tiny7chr", " padded-code-here "])
+@pytest.mark.parametrize("invite_code", [
+    PLACEHOLDER_INVITE_CODE,
+    "tiny7chr",
+    " padded-code-here-and-long-enough ",
+    # Long enough, and guessable: one character, or a word said twice (SEC-02).
+    "aaaaaaaaaaaaaaaa",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "passwordpasswordpassword",
+    # The README's demo code, printed for anyone to try.
+    "try-it-out-locally-1234",
+])
 def test_a_placeholder_or_unusable_invite_code_fails_startup(invite_code):
     with pytest.raises(ValueError) as rejection:
         validate_invite_code(SecretStr(invite_code))
 
     # Says which variable to fix, and never prints what was configured.
     assert "AISTACK_INVITE_CODE" in str(rejection.value)
-    assert invite_code not in str(rejection.value)
+    assert invite_code.strip() not in str(rejection.value)
+
+
+def test_a_generated_code_passes():
+    validate_invite_code(SecretStr("Zm9vYmFyYmF6cXV4cXV1eDEyMzQ1Njc4"))
+
+
+def test_the_invite_code_can_come_from_a_file(tmp_path):
+    code_file = tmp_path / "invite-code.txt"
+    # What `openssl rand -base64 24 > invite-code.txt` writes: the code and one newline.
+    code_file.write_text("a-real-invite-code-of-enough-length\n")
+
+    code = resolved_invite_code(Settings(_env_file=None, aistack_invite_code_file=code_file))
+
+    assert code.get_secret_value() == "a-real-invite-code-of-enough-length"
+
+
+def test_a_weak_code_in_the_file_is_refused_without_repeating_it(tmp_path):
+    code_file = tmp_path / "invite-code.txt"
+    code_file.write_text("aaaaaaaaaaaaaaaa\n")
+
+    with pytest.raises(ValueError) as rejection:
+        resolved_invite_code(Settings(_env_file=None, aistack_invite_code_file=code_file))
+
+    assert "AISTACK_INVITE_CODE_FILE" in str(rejection.value)
+    assert "aaaaaaaaaaaaaaaa" not in str(rejection.value)
+
+
+def test_a_missing_code_file_is_named(tmp_path):
+    with pytest.raises(ValueError, match="AISTACK_INVITE_CODE_FILE"):
+        resolved_invite_code(Settings(_env_file=None,
+                                      aistack_invite_code_file=tmp_path / "missing.txt"))
+
+
+def test_a_code_and_a_code_file_together_are_refused(tmp_path):
+    code_file = tmp_path / "invite-code.txt"
+    code_file.write_text("a-real-invite-code-of-enough-length")
+
+    with pytest.raises(ValueError, match="Keep one"):
+        resolved_invite_code(Settings(_env_file=None, aistack_invite_code_file=code_file,
+                                      aistack_invite_code="another-real-invite-code-here"))
 
 
 def test_a_usable_invite_code_passes_startup_validation():
-    validate_invite_code(SecretStr("a-real-invite-code"))
+    validate_invite_code(SecretStr("a-real-invite-code-of-enough-length"))
 
 
 def test_the_configured_invite_code_is_masked_in_any_repr():
     settings = _settings()
 
-    assert "a-real-invite-code" not in repr(settings)
-    assert "a-real-invite-code" not in str(settings.invite_code)
+    assert "a-real-invite-code-of-enough-length" not in repr(settings)
+    assert "a-real-invite-code-of-enough-length" not in str(settings.invite_code)
 
 
 @pytest.mark.parametrize("url", ["postgresql://u:abc@h/d", "postgresql://h/d?password=abc"])
 def test_database_credentials_are_hidden_in_settings_errors_and_repr(url):
     with pytest.raises(ValidationError) as rejection:
-        Settings(_env_file=None, database_url=url)
-    assert "aistack_invite_code" in str(rejection.value)
+        Settings(_env_file=None, database_url=url, aistack_port=0)
+    assert "aistack_port" in str(rejection.value)
     assert "abc" not in str(rejection.value)
     settings = _settings(database_url=url)
     assert "abc" not in repr(settings)
