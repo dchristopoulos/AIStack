@@ -53,17 +53,19 @@ In Codex, the same into `~/.agents/skills/sync-aistack`. Check the file starts w
 
 ## 6. Connect your coding agent
 
+Use the full path to `uvx` in the agent's settings, from `command -v uvx` (on Windows, `(Get-Command uvx).Source`): an agent started from a desktop app may not have the folder uv installed it in on its path, and would then fail to start AIStack without saying why.
+
 In Claude Code, with the same variable the check used (`-e AISTACK_LIBRARY_REPO=...` for choice 2, `-e AISTACK_DATABASE_URL=...` for choice 3, none for choice 1):
 
 ```bash
-claude mcp add --scope user -e AISTACK_LIBRARY_REPO='<owner>/aistack-library' aistack -- uvx aistack-mcp@latest
+claude mcp add --scope user -e AISTACK_LIBRARY_REPO='<owner>/aistack-library' aistack -- "$(command -v uvx)" aistack-mcp@latest
 ```
 
 In Codex, add this to `~/.codex/config.toml`, creating the file if needed and keeping everything already in it, then check it with `codex mcp get aistack`. The `env` line holds the same variable the check used; leave it out for choice 1.
 
 ```toml
 [mcp_servers.aistack]
-command = "uvx"
+command = "<full path to uvx>"
 args = ["aistack-mcp@latest"]
 env = { AISTACK_LIBRARY_REPO = "<owner>/aistack-library" }
 startup_timeout_sec = 60

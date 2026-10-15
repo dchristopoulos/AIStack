@@ -29,6 +29,7 @@ SKILL_PUSHED = "skill_pushed"
 SKILL_PLACED = "skill_placed"
 SKILL_REMOVED = "skill_removed"
 FOLDER_SYNCED = "folder_synced"
+_KINDS = {MACHINE_ADDED, SKILL_PUSHED, SKILL_PLACED, SKILL_REMOVED, FOLDER_SYNCED}
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,10 @@ def record(session: Session, event: Event, published: bool = False) -> None:
 
 def apply(session: Session, event: Event) -> Any:
     """Make the change `event` describes, through the call the tool that recorded it made."""
+    # Asked first: a newer release's change may also name a computer this one cannot place.
+    if event.kind not in _KINDS:
+        raise ValidationError(f"The Library's log has a change of a kind this release does "
+                              f"not know, '{event.kind}'. Update AIStack on this computer.")
     if event.kind == MACHINE_ADDED:
         return _add_machine(session, event)
     machine = session.get(Machine, event.machine_id)
@@ -106,8 +111,7 @@ def apply(session: Session, event: Event) -> Any:
     if event.kind == FOLDER_SYNCED:
         return sync_service.record_sync(session, machine.machine_id,
                                         validated_harness(data["harness"]))
-    raise ValidationError(f"The Library's log has a change of a kind this release does not "
-                          f"know, '{event.kind}'. Update AIStack on this computer.")
+    raise AssertionError(f"Unhandled event kind '{event.kind}'.")
 
 
 def applied_through(session: Session) -> str | None:
