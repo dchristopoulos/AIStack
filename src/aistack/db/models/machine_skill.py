@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, UniqueConstraint, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aistack.db.models.base import Base
@@ -31,6 +31,9 @@ class MachineSkill(Base):
                                              nullable=False)
     skill_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("skill.skill_id"), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # The revision last installed here or pushed from here: what a local copy that matches no
+    # revision was edited from. Null until one of the two happens.
+    revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                  default=utc_now)
     updated_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,

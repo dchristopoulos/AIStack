@@ -76,7 +76,8 @@ def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
     # Pushing a skill the user had removed brings it back.
     skill.archived = False
 
-    set_enabled(session, machine_id, harness, skill.skill_id, enabled=True)
+    set_enabled(session, machine_id, harness, skill.skill_id, enabled=True,
+                revision=version.revision)
 
     logger.debug(
         f"Push persisted. Skill: '{name}'. Revision: '{version.revision}'. "
@@ -177,7 +178,8 @@ def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name:
              if team is None else take_from_team(session, user_id, name, team))
     skill.archived = False
     version = _latest_version(session, skill.skill_id)
-    set_enabled(session, machine_id, harness, skill.skill_id, enabled=True)
+    set_enabled(session, machine_id, harness, skill.skill_id, enabled=True,
+                revision=version.revision)
 
     files = session.execute(
         select(SkillFile.path, SkillFile.sha256, SkillFile.executable)
@@ -395,20 +397,23 @@ def export_library(session: Session, machine_id: uuid.UUID,
 
 
 def set_enabled(session: Session, machine_id: uuid.UUID, harness: Harness,
-                skill_id: uuid.UUID, enabled: bool) -> None:
+                skill_id: uuid.UUID, enabled: bool, revision: int | None = None) -> None:
     """Record a decision about a skill in one harness of a machine, keeping exactly one row
-    per machine, harness, and skill."""
+    per machine, harness, and skill. `revision` is the one just installed or pushed there."""
     decision = _machine_skill(session, machine_id, harness, skill_id)
     if decision is None:
         try:
             # A savepoint, so losing a race for the row costs a re-read and not the push.
             with session.begin_nested():
                 session.add(MachineSkill(machine_id=machine_id, harness=harness,
-                                         skill_id=skill_id, enabled=enabled))
+                                         skill_id=skill_id, enabled=enabled,
+                                         revision=revision))
             return
         except IntegrityError:
             decision = _machine_skill(session, machine_id, harness, skill_id)
     decision.enabled = enabled
+    if revision is not None:
+        decision.revision = revision
 
 
 def _require_registered_machine(session: Session, machine_id: uuid.UUID,

@@ -63,6 +63,10 @@ class Question:
     local: Observed
     # The revision the local copy matches, or None when it matches none.
     local_revision: int | None
+    # For a copy that matches none: the revision last installed or pushed in this folder, which
+    # it was edited from. Older than the latest means another computer pushed meanwhile, and
+    # pushing this copy would take the place of that change. None when it is not known.
+    edited_from: int | None
     latest_revision: int
     pushed_by: str
     options: tuple[Option, ...]
@@ -137,7 +141,8 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
     for name in sorted(revisions):
         history = revisions[name]
         latest = history[-1]
-        desired = _desired(decisions.get(name))
+        enabled, last_revision = decisions.get(name, (None, None))
+        desired = _desired(enabled)
         observed, local_revision = _observed(name in local_hashes, local_hashes.get(name),
                                              history)
         verdict = reconcile(desired, observed)
@@ -147,8 +152,9 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
         elif verdict.step is Step.UPDATE:
             update.append(Update(name, local_revision, latest.revision, latest.pushed_by))
         elif verdict.step is Step.ASK:
-            ask.append(Question(name, desired, observed, local_revision, latest.revision,
-                                latest.pushed_by, verdict.options))
+            edited_from = last_revision if observed is Observed.UNKNOWN else None
+            ask.append(Question(name, desired, observed, local_revision, edited_from,
+                                latest.revision, latest.pushed_by, verdict.options))
         elif desired is Desired.ENABLED and observed is Observed.CURRENT:
             up_to_date += 1
 
@@ -157,7 +163,7 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
     backup = tuple(sorted(name for name in local_hashes
                           if name not in revisions and name != SYNC_SKILL_NAME))
     team_updates = _team_updates(session, user_id,
-                                 {name for name, enabled in decisions.items() if enabled})
+                                 {name for name, (enabled, _) in decisions.items() if enabled})
 
     # A user who keeps their own sync skill manages it like any other; otherwise the server's
     # copy is the reference. It belongs in Claude Code's folder, and in the agents folder only
@@ -228,15 +234,17 @@ def _canonical_hash(files: Mapping[str, str]) -> str | None:
         return None
 
 
-def _decisions(session: Session, machine_id: uuid.UUID, harness: Harness) -> dict[str, bool]:
+def _decisions(session: Session, machine_id: uuid.UUID,
+               harness: Harness) -> dict[str, tuple[bool, int | None]]:
     """Every skill decided about in this harness of this machine: True enabled, False
-    explicitly disabled. A decision in another harness is no decision here."""
+    explicitly disabled, with the revision last installed or pushed there. A decision in
+    another harness is no decision here."""
     rows = session.execute(
-        select(Skill.name, MachineSkill.enabled)
+        select(Skill.name, MachineSkill.enabled, MachineSkill.revision)
         .join(MachineSkill, MachineSkill.skill_id == Skill.skill_id)
         .where(MachineSkill.machine_id == machine_id, MachineSkill.harness == harness)
     ).all()
-    return dict(rows)
+    return {name: (enabled, revision) for name, enabled, revision in rows}
 
 
 def record_sync(session: Session, machine_id: uuid.UUID, harness: Harness) -> bool:

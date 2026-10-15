@@ -168,7 +168,7 @@ Enabled for this machine:
 | absent | install, silently |
 | matches an older revision | update, silently — reporting what changed and who pushed it |
 | matches the latest revision | nothing |
-| matches no revision (locally modified) | ask: restore / push / skip (skip re-reports next sync) |
+| matches no revision (locally modified) | ask: restore / push / skip (skip re-reports next sync); `edited_from` below `latest_revision` says another computer pushed since |
 
 Not enabled for this machine, but present on disk:
 
@@ -518,6 +518,8 @@ MACHINE_SKILL                                  -- desired state per machine and 
   enabled           BOOLEAN      NOT NULL      -- row with FALSE = explicit disable;
                                                -- no row = no decision on this machine.
                                                -- The distinction drives the sync contract
+  revision          INTEGER      NULL          -- last installed or pushed here; an edited
+                                               -- copy reports it as edited_from
   created_on        TIMESTAMPTZ  NOT NULL
   updated_on        TIMESTAMPTZ  NOT NULL
   UNIQUE (machine_id, harness, skill_id)

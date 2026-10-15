@@ -356,6 +356,21 @@ def test_an_edited_enabled_skill_is_a_question_with_restore_push_and_skip(sessio
     }
 
 
+def test_an_edit_of_a_revision_another_computer_moved_past_says_what_it_was_edited_from(
+        session_factory, dimitris, desktop):
+    """Two computers edit one skill: pushing the second would take the place of the first."""
+    _push(session_factory, dimitris, files={"notes.md": "one\n"})
+    with session_factory.begin() as session:
+        skill_service.get_skill(session, desktop.machine.machine_id, desktop.user.user_id,
+                                "wizard")
+    _push(session_factory, dimitris, files={"notes.md": "two\n"})
+
+    question = _only_question(_sync(session_factory, desktop, EDITED))
+
+    assert (question.local, question.edited_from, question.latest_revision) == (
+        Observed.UNKNOWN, 1, 2)
+
+
 def test_skipping_means_being_asked_again(session_factory, dimitris):
     """Skip is not a state the server stores. The same input gives the same question."""
     _push(session_factory, dimitris)

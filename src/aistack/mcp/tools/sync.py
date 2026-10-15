@@ -42,6 +42,7 @@ class AskEntry(TypedDict):
     desired: str
     local: str
     local_revision: int | None
+    edited_from: int | None
     latest_revision: int
     pushed_by: str
     options: list[OptionEntry]
@@ -79,20 +80,21 @@ class SyncResult(TypedDict):
         Windows: Get-ChildItem <folder> -Recurse -File | Get-FileHash
 
     Then, per field of the result, passing the same harness to each tool:
-      - install and update: call get_skill and install, without asking. Then say what
+      - install and update: get_skill and install each, without asking. Say what
         updated, between which revisions, and who pushed it.
-      - backup: local skills not yet in the user's own skills. push_skill each, without
-        asking: that space is private and mirrors this computer. Nothing is shared.
+      - backup: local skills not yet in the user's own. push_skill each, without asking:
+        that space is private and mirrors this computer.
       - ask: put each to the user and act only on their answer. desired: enabled,
         disabled, or undecided here; local: current, stale, or unknown (edited). Offer
         exactly the listed options. overwrites_local: say local files will be replaced;
-        loses_local_edits: say their edits will be lost. enable, restore = get_skill and
-        install; push = push_skill; remove = delete the folder; skip = nothing.
-      - team_updates: a team has a newer version of a skill the user took from it. Ask
-        each time. Yes = get_skill with that team, and install.
+        loses_local_edits: say their edits will be lost. edited_from < latest_revision:
+        say push replaces another computer's newer edit. enable, restore = get_skill
+        and install; push = push_skill; remove = delete the folder; skip = nothing.
+      - team_updates: a team has a newer version of a skill the user took from it. Ask.
+        Yes = get_skill with that team, and install.
       - up_to_date: how many enabled skills match.
-      - sync_skill_url: null, or where the server's own sync-aistack skill is. Without
-        asking, curl -sS -o it to <folder>/sync-aistack/SKILL.md.
+      - sync_skill_url: when set, curl -sS -o it to <folder>/sync-aistack/SKILL.md,
+        without asking.
       - first_sync: true the first time this folder syncs here. See the sync-aistack skill.
 
     Args:
@@ -139,6 +141,7 @@ def sync_result(report: sync_service.SyncReport, sync_skill_url: str | None) -> 
                 desired=question.desired.value,
                 local=question.local.value,
                 local_revision=question.local_revision,
+                edited_from=question.edited_from,
                 latest_revision=question.latest_revision,
                 pushed_by=question.pushed_by,
                 options=[OptionEntry(choice=option.choice.value,
