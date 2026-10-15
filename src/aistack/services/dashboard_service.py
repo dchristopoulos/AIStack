@@ -23,6 +23,7 @@ from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.team import Team, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
+from aistack.db.ordering import bytewise
 from aistack.services import skill_service, team_service, visibility
 from aistack.services.harnesses import DEFAULT_HARNESS, validated_harness
 
@@ -176,7 +177,7 @@ def _team_skills(session: Session, user_id: uuid.UUID) -> dict[str, list[dict[st
         select(visible.c.skill_id, visible.c.name, visible.c.description, visible.c.team,
                visible.c.group, newest.c.revision, newest.c.pushed_by, newest.c.created_on)
         .join(newest, newest.c.skill_id == visible.c.skill_id)
-        .order_by(visible.c.team, visible.c.group, visible.c.name)
+        .order_by(bytewise(visible.c.team), bytewise(visible.c.group), bytewise(visible.c.name))
     ).all()
     by_team: dict[str, list[dict[str, Any]]] = {}
     for skill_id, name, description, team, group, revision, pushed_by, pushed_on in rows:
@@ -197,7 +198,7 @@ def _my_skills(session: Session, user_id: uuid.UUID,
                mine.c.source_revision, newest.c.revision, newest.c.pushed_by,
                newest.c.created_on, newest.c.files)
         .join(newest, newest.c.skill_id == mine.c.skill_id)
-        .order_by(mine.c.name)
+        .order_by(bytewise(mine.c.name))
     ).all()
     placements: dict[uuid.UUID, list[dict[str, str]]] = {}
     for skill_id, machine_id, harness in session.execute(

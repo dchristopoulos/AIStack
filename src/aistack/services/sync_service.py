@@ -18,6 +18,7 @@ from aistack.db.models.skill import Skill
 from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.timestamps import utc_now
 from aistack.db.models.user import User
+from aistack.db.ordering import bytewise
 from aistack.services import visibility
 from aistack.services.content_hash import canonical_content_hash, normalized_path
 from aistack.services.harnesses import validated_harness
@@ -287,7 +288,7 @@ def _revisions(session: Session, user_id: uuid.UUID,
         select(mine.c.name, SkillVersion.revision, SkillVersion.content_hash, User.username)
         .join(SkillVersion, SkillVersion.skill_id == mine.c.skill_id)
         .join(User, User.user_id == SkillVersion.pushed_by)
-        .order_by(mine.c.name, SkillVersion.revision)
+        .order_by(bytewise(mine.c.name), SkillVersion.revision)
     ).all()
 
     history: dict[str, list[_Revision]] = {}
@@ -325,7 +326,7 @@ def _team_updates(session: Session, user_id: uuid.UUID,
               & (SkillVersion.revision == newest.c.revision))
         .join(User, User.user_id == SkillVersion.pushed_by)
         .where(newest.c.revision > mine.c.source_revision)
-        .order_by(mine.c.name)
+        .order_by(bytewise(mine.c.name))
     ).all()
     return tuple(TeamUpdate(*row) for row in rows)
 

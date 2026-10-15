@@ -18,6 +18,7 @@ from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.team import Team, TeamGroup
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
+from aistack.db.ordering import bytewise
 from aistack.services import visibility
 from aistack.services.harnesses import folder, validated_harness
 from aistack.services.skill_archive import build_archive, read_archive
@@ -143,7 +144,8 @@ def list_skills(session: Session, user_id: uuid.UUID) -> list[SkillSummary]:
         team = chosen.c.team if in_a_team else null()
         group = chosen.c.group if in_a_team else null()
         # PostgreSQL refuses to order by a constant, which is what `team` is for one's own.
-        order = (chosen.c.team, chosen.c.name) if in_a_team else (chosen.c.name,)
+        order = ((bytewise(chosen.c.team), bytewise(chosen.c.name)) if in_a_team
+                 else (bytewise(chosen.c.name),))
         return session.execute(
             select(chosen.c.name, team, group, chosen.c.description, newest.c.revision,
                    User.username)
@@ -184,7 +186,7 @@ def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name:
     files = session.execute(
         select(SkillFile.path, SkillFile.sha256, SkillFile.executable)
         .where(SkillFile.skill_version_id == version.skill_version_id)
-        .order_by(SkillFile.path)
+        .order_by(bytewise(SkillFile.path))
     ).all()
     return InstallableSkill(
         name=skill.name,
@@ -389,7 +391,7 @@ def export_library(session: Session, machine_id: uuid.UUID,
     """
     exported = []
     for skill in session.scalars(visibility.my_skills(user_id)
-                                 .where(Skill.archived.is_(False)).order_by(Skill.name)):
+                                 .where(Skill.archived.is_(False)).order_by(bytewise(Skill.name))):
         version = _latest_version(session, skill.skill_id)
         _, archive = archive_of(session, machine_id, version.skill_version_id)
         exported.append(ExportedSkill(skill.name, version.content_hash, archive))
@@ -512,7 +514,7 @@ def _stored_as_uploaded(session: Session, skill: Skill, version: SkillVersion) -
     files = session.execute(
         select(SkillFile.path, SkillFile.content, SkillFile.sha256, SkillFile.executable)
         .where(SkillFile.skill_version_id == version.skill_version_id)
-        .order_by(SkillFile.path)
+        .order_by(bytewise(SkillFile.path))
     ).all()
     return ValidatedSkill(
         name=skill.name,
