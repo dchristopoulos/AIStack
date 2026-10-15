@@ -1,4 +1,5 @@
 import getpass
+import hashlib
 import logging
 import os
 import platform
@@ -6,6 +7,7 @@ import re
 import secrets
 import socket
 import subprocess
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,7 @@ from aistack.bootstrap.configuration.settings.settings_config import (
     Settings,
     validate_invite_code,
 )
+from aistack.bootstrap.hardware import hardware_id
 from aistack.commons.exceptions import AIStackError, Conflict
 from aistack.db.engine import build_engine, build_read_session_factory, build_session_factory
 from aistack.db.schema import NewerSchema, guard_schema, migrate_schema
@@ -46,8 +49,13 @@ _library: dict[str, str] = {"kind": "server"}
 _sharing: LibrarySharing | None = None
 # Local mode on a Library a newer release changed beyond what this one can run on (ADR-0024).
 _local_refusal: str | None = None
+# Local mode's AISTACK_HOME, where this computer's id lives.
+_local_home: Path | None = None
 
 _MACHINE_ID_FILE = "machine-id"
+# Beside the id: a hash of it with the hardware's, and the id a restored home folder came with.
+_FINGERPRINT_FILE = "machine-fingerprint"
+_RESTORED_FILE = "restored-from"
 _LIBRARY_CLONE = "library"
 
 _OPERATING_SYSTEMS = {"Darwin": "MACOS", "Windows": "WINDOWS"}
@@ -92,9 +100,10 @@ def build_local_context(settings: LocalSettings) -> None:
     is whoever could start this process (ADR-0020).
     """
     global _engine, _session_factory, _read_session_factory, _ticket_signer, _local_principal
-    global _local_refusal, _library, _sharing
+    global _local_refusal, _library, _sharing, _local_home
 
     settings.home.mkdir(parents=True, exist_ok=True)
+    _local_home = settings.home
     if settings.library_repo:
         try:
             validate_repository(settings.library_repo)
@@ -145,7 +154,8 @@ def build_local_context(settings: LocalSettings) -> None:
                 "status` shows you signed in, then restart your coding agent.")
             return
 
-    machine_id = _claimed_machine_id(settings.home / _MACHINE_ID_FILE)
+    machine_id = _this_computer(settings.home,
+                                _claimed_machine_id(settings.home / _MACHINE_ID_FILE))
     # Asked before the transaction, and only for a computer the Library does not know yet:
     # reading the hardware can take a second, and nothing slow runs inside a transaction.
     with _session_factory() as session:
@@ -301,6 +311,81 @@ def _claimed_machine_id(id_file: Path) -> uuid.UUID:
     return _read_machine_id(id_file)
 
 
+def _this_computer(home: Path, machine_id: uuid.UUID) -> uuid.UUID:
+    """`machine_id`, unless this home folder was restored onto another computer from a backup:
+    then a new id, so the two computers stop being one (LH-02).
+
+    The new id is derived from the old one and the hardware, so every process starting on the
+    new computer arrives at the same one without a lock. The fingerprint is written before the
+    id, so a process that reads the old id after it still derives the same new one.
+    """
+    hardware = hardware_id()
+    if hardware is None:
+        return machine_id
+    fingerprint_file = home / _FINGERPRINT_FILE
+    try:
+        recorded = fingerprint_file.read_text().strip()
+    except FileNotFoundError:
+        recorded = None
+    if recorded is None or recorded == _fingerprint(machine_id, hardware):
+        if recorded is None:
+            _write_whole(fingerprint_file, _fingerprint(machine_id, hardware))
+        return machine_id
+
+    restored = uuid.uuid5(machine_id, hardware)
+    _write_whole(home / _RESTORED_FILE, f"{machine_id}\n")
+    _write_whole(fingerprint_file, _fingerprint(restored, hardware))
+    _write_whole(home / _MACHINE_ID_FILE, f"{restored}\n")
+    logger.info(f"This home folder came from another computer. Machine: '{restored}'.")
+    return restored
+
+
+def _fingerprint(machine_id: uuid.UUID, hardware: str) -> str:
+    # Salted with the id, so the file says nothing about the hardware on its own.
+    return hashlib.sha256(f"{machine_id}:{hardware}".encode()).hexdigest()
+
+
+def _write_whole(path: Path, text: str) -> None:
+    """Replace a file in one step, so a reader sees the old text or the new, never part.
+
+    Processes starting together all write the same text. Windows refuses a replace while
+    another one of the same file is under way, so a refusal is fine once the text is there.
+    """
+    staged = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    staged.write_text(text)
+    try:
+        for attempt in range(50):
+            try:
+                os.replace(staged, path)
+                return
+            except PermissionError:
+                if _holds(path, text):
+                    return
+                if attempt == 49:
+                    raise
+                time.sleep(0.01)
+    finally:
+        staged.unlink(missing_ok=True)
+
+
+def _holds(path: Path, text: str) -> bool:
+    try:
+        return path.read_text() == text
+    except OSError:
+        return False
+
+
+def restored_here() -> bool:
+    """True from the start that found this home folder restored onto a new computer until the
+    next sync has said so. `sync` reports it, then calls `restore_reported`."""
+    return _local_home is not None and (_local_home / _RESTORED_FILE).exists()
+
+
+def restore_reported() -> None:
+    if _local_home is not None:
+        (_local_home / _RESTORED_FILE).unlink(missing_ok=True)
+
+
 def _read_machine_id(id_file) -> uuid.UUID | None:
     try:
         return uuid.UUID(id_file.read_text().strip())
@@ -343,7 +428,7 @@ def get_ticket_signer() -> TicketSigner:
 def dispose_application_context() -> None:
     """Drop the engine and its pool. Used by tests between temporary databases."""
     global _settings, _engine, _session_factory, _read_session_factory, _ticket_signer
-    global _local_principal, _local_refusal, _library, _sharing
+    global _local_principal, _local_refusal, _library, _sharing, _local_home
 
     if _engine is not None:
         _engine.dispose()
@@ -356,3 +441,4 @@ def dispose_application_context() -> None:
     _local_refusal = None
     _library = {"kind": "server"}
     _sharing = None
+    _local_home = None

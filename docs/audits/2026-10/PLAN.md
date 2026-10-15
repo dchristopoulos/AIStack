@@ -52,7 +52,8 @@ How to work through it:
 - [x] 20b. Moving a Library is one command that keeps history (#137)
 - [x] 20c. Say when GitHub cannot be reached, and nudge a Library kept on this computer only (#146)
 - [ ] 20d. A moved Library tells the computers still on the old place
-- [ ] 21. A restored home folder is a new computer
+- [x] 21. A restored home folder is a new computer (#148)
+- [ ] 21b. A server notices a machine token copied to another computer
 - [ ] 22. A second computer gets the sync skill and the session-start hook, whatever its agent
 - [ ] 23. Setup can be run again, and a stopped setup can finish
 - [ ] 24. Record the decision: ADR-0026 and the glossary
@@ -390,11 +391,26 @@ Tests: a release that reads but does not write the event replays a log holding o
 Closes: [LH-02](plot-holes.md#lh-02-a-home-folder-restored-onto-a-new-computer-makes-two-computers-one-the-machine-id-and-on-a-server-the-token-travel-with-it), [AUTO-11](automation.md#auto-11-running-setup-in-the-second-agent-on-an-already-connected-computer-registers-the-same-computer-twice-and-the-two-then-undo-each-other).
 Largest effort among them: M.
 
-Files: src/aistack/bootstrap/context/application_context.py (`_claimed_machine_id` with a hardware fingerprint); src/aistack/db/models/machine.py and a compatible migration (server: fingerprint hash); src/aistack/services/sync_service.py (`new_computer` in the report).
+Files: src/aistack/bootstrap/hardware.py (the operating system's id for the computer); src/aistack/bootstrap/context/application_context.py (a fingerprint beside `machine-id`, and a new id when it disagrees); src/aistack/mcp/tools/local.py (`new_computer` in the sync result); src/aistack/bundled/setup-aistack.md (step 1 checks both agents).
 
 ADR: none needed.
 
-Tests: A copied `AISTACK_HOME` under a different fingerprint registers a second machine; running setup in a second agent on one computer reuses the computer instead of registering it twice.
+Tests: A copied `AISTACK_HOME` under a different fingerprint registers a second machine and says so once, and the original keeps its placements; processes starting together on the restored home agree on one new id; setup's step 1 checks both agents.
+
+The server half of LH-02 is step 21b: the server cannot read a computer's hardware, so the agent would have to send it.
+
+### 21b. A server notices a machine token copied to another computer
+
+Closes: the server half of [LH-02](plot-holes.md#lh-02-a-home-folder-restored-onto-a-new-computer-makes-two-computers-one-the-machine-id-and-on-a-server-the-token-travel-with-it).
+Largest effort among them: M.
+
+The token in `~/.claude.json` or `~/.codex/config.toml` travels with a restored home folder. The server sees only the token, so the sync skill would pass a fingerprint the agent reads from the operating system (the same id `bootstrap/hardware.py` reads), hashed with the machine id, to `sync`. A nullable `machine.fingerprint_hash` (a compatible migration) records the first one; a different one is refused with one sentence and the add_machine path. This adds a `sync` argument, which needs its own design pass before it is built: the agent reads the id with a shell command per operating system, and a missing argument from an older sync skill must keep working.
+
+Files: src/aistack/db/models/machine.py and a compatible migration; src/aistack/services/sync_service.py; src/aistack/mcp/tools/sync.py; the bundled sync skill.
+
+ADR: none needed.
+
+Tests: a sync with a different fingerprint than the machine's first is refused with the add_machine sentence; a sync without one still works.
 
 ### 22. A second computer gets the sync skill and the session-start hook, whatever its agent
 

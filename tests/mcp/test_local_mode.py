@@ -2,6 +2,7 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -490,3 +491,66 @@ async def test_an_edit_of_an_older_revision_says_another_computer_pushed_since(c
     # The laptop edited what it pushed itself: nothing newer would be replaced.
     assert (on_laptop["edited_from"], on_laptop["latest_revision"]) == (2, 2)
 
+
+
+async def test_a_home_folder_restored_onto_another_computer_becomes_a_computer_of_its_own(
+        computer, tmp_path, monkeypatch):
+    """LH-02: a backup or Migration Assistant copies the machine id along with the skills."""
+    monkeypatch.setattr(application_context, "hardware_id", lambda: "old-laptop")
+    async with computer("laptop") as (laptop, home):
+        _write_skill(home)
+        await _call(laptop, "push_skill", name="wizard")
+        assert (await _call(laptop, "sync"))["new_computer"] is False
+        old = application_context.get_local_principal()
+    shutil.copytree(tmp_path / "laptop", tmp_path / "new-laptop", symlinks=True)
+
+    monkeypatch.setattr(application_context, "hardware_id", lambda: "new-laptop")
+    async with computer("new-laptop") as (restored, _):
+        new = application_context.get_local_principal()
+        assert (await _call(restored, "sync"))["new_computer"] is True
+        assert (await _call(restored, "sync"))["new_computer"] is False
+        with application_context.get_session_factory().begin() as session:
+            assert len(session.scalars(select(Machine)).all()) == 2
+    assert (new.user_id, new.machine_id != old.machine_id) == (old.user_id, True)
+
+    monkeypatch.setattr(application_context, "hardware_id", lambda: "old-laptop")
+    async with computer("laptop") as (laptop, _):
+        assert application_context.get_local_principal() == old
+        report = await _call(laptop, "sync")
+        assert (report["up_to_date"], report["new_computer"]) == (1, False)
+
+
+def test_processes_starting_at_once_on_a_restored_home_agree_on_its_new_id(tmp_path,
+                                                                          monkeypatch):
+    monkeypatch.setattr(application_context, "hardware_id", lambda: "old-laptop")
+    old = application_context._this_computer(
+        tmp_path, application_context._claimed_machine_id(tmp_path / "machine-id"))
+    monkeypatch.setattr(application_context, "hardware_id", lambda: "new-laptop")
+    starting = threading.Barrier(8)
+    claimed = []
+
+    def start():
+        starting.wait()
+        claimed.append(application_context._this_computer(
+            tmp_path, application_context._claimed_machine_id(tmp_path / "machine-id")))
+
+    threads = [threading.Thread(target=start) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(set(claimed)) == 1 and claimed[0] != old
+    assert (tmp_path / "machine-id").read_text().strip() == str(claimed[0])
+    # Started again on the same computer, it stays what it became.
+    assert application_context._this_computer(tmp_path, claimed[0]) == claimed[0]
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "machine-fingerprint", "machine-id", "restored-from"]
+    assert "new-laptop" not in (tmp_path / "machine-fingerprint").read_text()
+
+
+def test_a_computer_whose_hardware_cannot_be_read_keeps_its_id(tmp_path, monkeypatch):
+    monkeypatch.setattr(application_context, "hardware_id", lambda: None)
+    claimed = application_context._claimed_machine_id(tmp_path / "machine-id")
+    assert application_context._this_computer(tmp_path, claimed) == claimed
+    assert [path.name for path in tmp_path.iterdir()] == ["machine-id"]
