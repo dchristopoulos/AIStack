@@ -146,3 +146,12 @@ def test_a_public_url_that_is_not_a_plain_address_is_rejected(configured):
 ])
 def test_an_ordinary_public_url_is_accepted(configured):
     assert _settings(aistack_public_url=configured).public_url == configured
+
+
+def test_a_library_lives_in_one_place():
+    from aistack.bootstrap.configuration.settings.settings_config import LocalSettings
+
+    both = LocalSettings(aistack_library_repo="maria/skills",
+                         aistack_database_url="postgresql://x@y/z")
+    with pytest.raises(ValueError, match="not both"):
+        both.library_url()
