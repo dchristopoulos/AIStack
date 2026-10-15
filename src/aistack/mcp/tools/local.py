@@ -37,6 +37,7 @@ def _folder(harness: HarnessKey) -> Path:
 
 class LocalSyncResult(SyncResult):
     folders: list[str]
+    harness: str
 
 
 @local_mcp.tool(
@@ -55,18 +56,22 @@ class LocalSyncResult(SyncResult):
         loses_local_edits: say their edits will be lost. enable, restore = get_skill;
         push = push_skill; remove = disable_skill; skip = nothing.
       - up_to_date: how many enabled skills match.
-      - folders: every skills folder this computer has an agent for. Sync each of them,
-        Claude Code first.
+      - folders: every skills folder this computer has an agent for, and harness the one
+        this call synced. Sync each of the others too.
     team_updates is always empty and sync_skill_url always null here.
 
     Args:
         harness: claude_code (~/.claude/skills) or agents (~/.agents/skills, read by Codex,
-                 Gemini CLI, Cursor and others). Omit for claude_code.
+                 Gemini CLI, Cursor and others). Omit for the computer's first folder.
     """)
 @handle_mcp_errors
-def sync(harness: HarnessKey = "claude_code") -> LocalSyncResult:
+def sync(harness: HarnessKey | None = None) -> LocalSyncResult:
     library_before_read(force=True)
     caller = get_local_principal()
+    folders = local_skills.folders_in_use(Path.home())
+    # No harness: the first folder this computer has, so a computer with only Codex does not
+    # get a Claude Code folder recorded on it.
+    harness = harness or (folders[0] if folders else "claude_code")
     folder = _folder(harness)
     local = local_skills.observed(folder)
     # AIStack's own skill, where setup put it, is kept at this release's copy: the server
@@ -84,8 +89,8 @@ def sync(harness: HarnessKey = "claude_code") -> LocalSyncResult:
 
     library_after_write()
     logger.info(f"Sync reported. Local skills: '{len(local)}'.")
-    return LocalSyncResult(**sync_result(report, sync_skill_url=None),
-                           folders=local_skills.folders_in_use(Path.home()))
+    return LocalSyncResult(**sync_result(report, sync_skill_url=None), folders=folders,
+                           harness=harness)
 
 
 @local_mcp.tool(

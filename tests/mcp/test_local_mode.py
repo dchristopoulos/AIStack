@@ -412,3 +412,10 @@ async def test_sync_names_every_skills_folder_this_computer_has(computer):
         assert (await _call(laptop, "sync"))["folders"] == ["claude_code"]
         (home / ".codex").mkdir()
         assert (await _call(laptop, "sync"))["folders"] == ["claude_code", "agents"]
+
+
+async def test_a_sync_without_a_folder_starts_with_one_this_computer_has(computer):
+    async with computer("laptop") as (laptop, home):
+        (home / ".codex").mkdir()
+        report = await _call(laptop, "sync")
+        assert (report["harness"], report["folders"]) == ("agents", ["agents"])
