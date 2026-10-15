@@ -93,8 +93,8 @@ The key that signs links and sessions is made at startup and kept in memory. **A
 
 There are two kinds of invite code, and you manage only one.
 
-- **The server's invite code** is `AISTACK_INVITE_CODE`. It lets a new person create an account on this server. Everyone who joins is in the team `everyone`, which has no code of its own and cannot be left.
-- **A team's invite code** starts with `aistinv_`. A team's admin makes one from chat or the dashboard and sends it to someone who already has an account. The server stores only its hash, so there is nothing to read back out of the database. Making a new one stops the old one working.
+- **The server's invite code** is `AISTACK_INVITE_CODE`. It lets a new person create an account on this server, in no team. It is for you and the people you hand it to yourself; everyone else usually arrives through a team's invite link.
+- **A team's invite code** starts with `aistinv_`. A team's admin, or a member the admin lets invite, makes one from chat or the dashboard. Each one lets one person in and lasts seven days, making another cancels none, and any pending one can be cancelled from the team's settings. Its link, `/invite/<code>`, tells someone new to the server what to paste, and the same code then creates their account. The server stores only its hash, so there is nothing to read back out of the database.
 
 Users create teams and groups themselves and administer them. Nothing in a team needs the operator.
 

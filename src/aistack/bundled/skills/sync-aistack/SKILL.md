@@ -7,6 +7,13 @@ description: Sync this machine's skills with the user's own skills on AIStack. U
 
 Bring this machine's skills in line with the Library, the user's private space on the AIStack server. It mirrors their computers and is the only place this machine installs from. Sync when work starts, the way you would `git pull`.
 
+## 0. Check that AIStack is connected
+
+The `sync` tool and the others below come from the `aistack` MCP server. If they are not available in this session, stop: do not reach the server another way, such as `curl`, and never read a token out of a configuration file. Tell the user AIStack is not connected in this session, and what to do:
+
+- If setup has just finished, restart Claude Code, or Codex if that is the agent you are, once. It reads its server list at startup.
+- Otherwise run `claude mcp get aistack` (in Codex, `codex mcp get aistack`) and say what it reports. If the server cannot be reached, it is down or not reachable from this computer. If it reports an authentication failure, this computer's token no longer works: whoever runs the server can rotate it, or the user says "add my other computer" on a computer that is still connected and runs the command it gives here, after `claude mcp remove aistack --scope user`.
+
 ## 1. Find the skills folders on this computer
 
 AIStack keeps two skills folders in line, and every tool call names one of them as its `harness`:
