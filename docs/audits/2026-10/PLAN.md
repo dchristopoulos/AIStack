@@ -71,7 +71,7 @@ How to work through it:
 - [ ] 32. Local mode: git-hardened project folders
 - [ ] 33. Dashboard API for project folders
 - [ ] 34. Dashboard page: projects in the computer tree
-- [ ] 35. Keyboard and screen reader
+- [x] 35. Keyboard and screen reader (#161)
 - [ ] 36. The pages before sign-in, the icon, and local mode's remembered choices
 - [ ] 37. Shorter text, and words that say what is true
 - [x] 38. Bring DESIGN.md, OPERATING.md and the README back in line with the code (#158)

@@ -38,11 +38,11 @@ the page paints by the script in `<head>` (see Settings below).
 | `--head` | #f8f8fa | #212226 | table header, dialog and card footers |
 | `--active` | #e7e7eb | #2c2d33 | hover on the sidebar |
 | `--border` | #e2e2e7 | #2e2f35 | hairlines |
-| `--border-strong` | #cdcdd4 | #41434a | inputs, buttons, indent guides |
+| `--border-strong` | #cdcdd4 | #41434a | buttons, indent guides |
 | `--text` | #18181b | #ececef | body text |
 | `--muted` | #585962 | #a6a8b0 | secondary text (≥ 6:1) |
 | `--faint` | #696a73 | #8f919a | counts, hints (≥ 4.5:1 on every surface) |
-| `--track` | #8b8c95 | #71737c | an off switch (≥ 3:1) |
+| `--track` | #8b8c95 | #71737c | an off switch, the border of a text field or select (≥ 3:1) |
 | `--danger`, `--danger-soft` | #c4242b | #ff7a7f | removing |
 | `--ok` | #1f8a3d | #6bcb7f | connected |
 | `--purple`, `--purple-soft` | | | the Private badge only |
@@ -137,14 +137,14 @@ cannot be said with what is there.
 | Component | Function | Variants |
 |---|---|---|
 | Button | `btn(label, props, icon)` | default (outlined), `primary` (accent fill, one per view), `ghost` (quiet, in rows), `danger` (removing), `danger solid` (the confirm of a removal), `sm`, `icon` (only with `aria-label`) |
-| Switch | `sw()` | on/off, with a tooltip saying what each state means |
+| Switch | `sw()` | on/off, with a tooltip saying what each state means; its word never changes with its state (`aria-checked` carries that); one that cannot be turned is `disabled` (kept focusable) with its reason as `why`, shown beside it |
 | Dialog | `openDialog()` | centred (a decision or a form), `sheet: true` (a side panel about one thing: a skill's details) |
-| Confirm | `confirmDialog()` | for anything that removes; says what stays |
+| Confirm | `confirmDialog()` | for anything that removes; says what stays; opens on Cancel, and its lines are the dialog's description |
 | Copy field | `copyField(value, label)` | any sentence or command a person pastes elsewhere |
 | Menu | `menu(label, fk, items)` | a labelled "Manage" button, never a bare "⋯"; only for secondary admin actions in a row |
 | Table | `.tbl` + `.tr` + `td()` | `library`, `folder`, `tree` (indent guides), member and group grids |
 | Empty state | `empty(icon, title, …body)` | says what to do next, with the button that does it |
-| Toast | `toast(text, kind)` | `ok`, `warn`, `error`; the sentence names what happened |
+| Toast | `toast(text, kind)` | `ok`, `warn`, `error`; the sentence names what happened; outcomes stay until dismissed |
 | Card | `.card` + `.card-body` + `.card-foot` | `danger`, `choice-card` (an option with its own button) |
 | Facts | `dl.facts` | label on the left, value on the right |
 | Picker | `fieldset.picker` | checkboxes or radios, grouped by computer (`target-group`) |
@@ -170,6 +170,24 @@ one entry per place the Library can live.
   versioned keys (`aistack.appearance.v1`, `aistack.picked-agents.v1`), every access in
   try/catch. The page works without them.
 - **Destructive actions confirm** and say what is not lost ("It stays in your library").
+
+## Keyboard and screen reader
+
+- The first Tab reaches "Skip to content", which moves focus to `main`.
+- A new page (a link, Back, the drawer) takes focus to its `h1`, unless focus is on something
+  still there. A new page closes any dialog that was open.
+- An action that takes away its own button hands focus on: to the control named in its
+  `data-next`, else the next control of the same kind, else the heading. Never to the page.
+- A dialog that saves says its outcome in a toast after it closes, never while it is open.
+- Open on a phone, the drawer is modal: everything behind it is inert and Tab goes round
+  inside it.
+- A button repeated on every row names its row: "Take update to code-review", with the
+  visible words first.
+- Every row of a table has as many cells as its header, or says how many it spans with
+  `aria-colspan`. Avatars and other letters drawn as pictures are `aria-hidden`.
+- A page title is `<view>, <place>, AIStack`, and each team tab has its own.
+- Escape hides a tooltip until the pointer or focus leaves its control.
+- axe (`tests/ui`) finds nothing on any screen, in both themes and with the drawer open.
 
 ## Settings
 

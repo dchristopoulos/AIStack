@@ -4,6 +4,8 @@ Everything is found by role and by the words a user reads, never by a CSS class,
 tests state what the page must let someone do and stay true when its look changes.
 """
 
+import re
+
 import pytest
 from playwright.async_api import expect
 
@@ -82,7 +84,7 @@ async def test_a_team_skill_named_like_one_of_yours_replaces_it_only_once_confir
     await _open_team(alex, "aistack")
     row = alex.page.get_by_role("row").filter(has_text="release-notes")
 
-    await row.get_by_role("button", name="Replace yours…").click()
+    await row.get_by_role("button", name="Replace yours with the team's release-notes…").click()
     dialog = alex.page.get_by_role("dialog", name="Replace your release-notes?")
     await expect(dialog.get_by_text("your own release-notes, r1, last pushed by alex")
                  ).to_be_visible()
@@ -849,4 +851,256 @@ async def test_a_lost_computer_is_removed_from_its_page(sign_in):
     await expect(page.get_by_role("navigation", name="Main").get_by_role(
         "link", name="desktop / Claude Code")).to_have_count(0)
     assert [machine["name"] for machine in (await dimitris.state())["machines"]] == ["macbook"]
+    assert dimitris.console_errors == []
+
+
+# What a keyboard and a screen reader meet. Each test walks several screens in one tab, so the
+# whole set costs a few seconds and needs no second database.
+
+_AXE_ROUTES = ("#/library", "#/f/{macbook}/claude_code", "#/t/aistack/skills",
+               "#/t/aistack/members", "#/t/aistack/groups", "#/t/aistack/settings",
+               "#/settings", "#/storage")
+
+
+async def _axe_violations(page) -> list[str]:
+    from axe_playwright_python.async_playwright import Axe
+
+    result = await Axe().run(page)
+    return [f"{rule['id']}: {[node['target'] for node in rule['nodes']]}"
+            for rule in result.response["violations"]]
+
+
+async def _macbook(opened) -> str:
+    return next(machine["id"] for machine in (await opened.state())["machines"]
+                if machine["name"] == "macbook")
+
+
+@_SQLITE_ONLY
+async def test_axe_finds_nothing_on_any_screen_in_either_theme_or_on_a_phone(sign_in):
+    problems = {}
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    macbook = await _macbook(dimitris)
+    # Measure settled theme colours, rather than an intermediate transition.
+    await page.emulate_media(reduced_motion="reduce")
+    for viewport, scheme in (((1280, 900), "light"), ((1280, 900), "dark"), ((390, 844), "light")):
+        await page.set_viewport_size({"width": viewport[0], "height": viewport[1]})
+        await page.evaluate("theme => window.appearance.set({theme})", scheme)
+        for route in _AXE_ROUTES:
+            await page.goto(f"{dimitris.base_url}/app{route.format(macbook=macbook)}")
+            await expect(page.get_by_role("heading", level=1)).to_be_visible()
+            problems[(viewport[0], scheme, route)] = await _axe_violations(page)
+        if viewport[0] == 390:
+            await page.get_by_role("button", name="Open navigation").click()
+            problems[(390, scheme, "drawer")] = await _axe_violations(page)
+            await page.keyboard.press("Escape")
+        else:
+            # A confirmation, and a switch that cannot be turned because a group above is off.
+            await page.goto(f"{dimitris.base_url}/app#/t/aistack/skills")
+            await page.get_by_role("switch", name="Subscribed to developers", exact=True).click()
+            await expect(page.get_by_role("switch", name="Subscribed to developers/backend")
+                         ).to_have_attribute("aria-disabled", "true")
+            problems[(1280, scheme, "switch off through a group")] = await _axe_violations(page)
+            await page.get_by_role("switch", name="Subscribed to developers", exact=True).click()
+            await page.goto(f"{dimitris.base_url}/app#/t/aistack/settings")
+            await page.get_by_role("button", name="Leave team").click()
+            await expect(page.get_by_role("dialog")).to_be_visible()
+            problems[(1280, scheme, "confirm")] = await _axe_violations(page)
+    assert {where: found for where, found in problems.items() if found} == {}
+
+
+@_SQLITE_ONLY
+async def test_a_keyboard_skips_to_the_page_and_lands_on_each_new_page_s_heading(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+
+    await page.keyboard.press("Tab")
+    skip = page.get_by_role("link", name="Skip to content")
+    await expect(skip).to_be_focused()
+    await page.keyboard.press("Enter")
+    await expect(page.get_by_role("main")).to_be_focused()
+    await page.keyboard.press("Tab")
+    await expect(page.get_by_role("searchbox", name="Search your library")).to_be_focused()
+    assert await page.get_by_role("searchbox", name="Search your library").get_attribute(
+        "aria-keyshortcuts") == "/"
+
+    await page.get_by_role("navigation", name="Main").get_by_role("link", name="Settings").focus()
+    await page.keyboard.press("Enter")
+    await expect(page.get_by_role("heading", name="Settings", level=1)).to_be_focused()
+    assert await page.title() == "Settings, AIStack"
+
+    titles = {}
+    for tab in ("skills", "members", "groups", "settings"):
+        await page.goto(f"{dimitris.base_url}/app#/t/aistack/{tab}")
+        await expect(page.get_by_role("heading", level=1)).to_be_visible()
+        titles[tab] = await page.title()
+    assert titles == {"skills": "Skills, aistack, AIStack", "members": "Members, aistack, AIStack",
+                      "groups": "Groups, aistack, AIStack",
+                      "settings": "Team settings, aistack, AIStack"}
+    await page.goto(f"{dimitris.base_url}/app#/t/aistack/members")
+    await expect(page.get_by_role("button", name="Remove alex from aistack…")).to_have_text("Remove…")
+    assert dimitris.console_errors == []
+
+
+@_SQLITE_ONLY
+async def test_tables_read_cell_by_cell_and_name_which_row_each_button_is_for(sign_in):
+    maria = await sign_in("maria")
+    page = maria.page
+    await expect(page.get_by_role("button", name="Take update to code-review")).to_be_visible()
+    await expect(page.get_by_role("button", name="Add to computer: sql-style")).to_be_visible()
+    shapes = {}
+    for route in ("#/library", "#/t/aistack/skills", "#/t/aistack/members"):
+        await page.goto(f"{maria.base_url}/app{route}")
+        await expect(page.get_by_role("table").first).to_be_visible()
+        shapes[route] = await page.get_by_role("table").first.evaluate("""table => {
+            const rows = [...table.querySelectorAll('[role=row]')];
+            const width = row => [...row.querySelectorAll('[role=cell], [role=columnheader]')]
+                .reduce((n, cell) => n + Number(cell.getAttribute('aria-colspan') || 1), 0);
+            const names = [...table.querySelectorAll('button')]
+                .map(b => b.getAttribute('aria-label') || b.textContent.trim());
+            return { widths: [...new Set(rows.map(width))],
+                     repeated: names.filter((n, i) => names.indexOf(n) !== i) };
+        }""")
+    assert all(len(shape["widths"]) == 1 for shape in shapes.values()), shapes
+    assert all(shape["repeated"] == [] for shape in shapes.values()), shapes
+    await expect(page.get_by_role("row").filter(has_text="dimitris").get_by_role("cell").first
+                 ).to_have_accessible_name("dimitris Dimitris Christopoulos")
+
+    # Taking the update takes its button away; focus goes to that skill, not to the page.
+    await page.goto(f"{maria.base_url}/app#/library")
+    await page.get_by_role("button", name="Take update to code-review").click()
+    await page.get_by_role("dialog").get_by_role("button", name="Take update").click()
+    await expect(page.get_by_role("button", name="code-review", exact=True)).to_be_focused()
+    assert maria.console_errors == []
+
+
+@_SQLITE_ONLY
+async def test_a_confirmation_opens_on_cancel_and_a_held_enter_does_not_answer_it(sign_in):
+    alex = await sign_in("alex")
+    page = alex.page
+    await page.goto(f"{alex.base_url}/app#/t/aistack/settings")
+
+    await page.get_by_role("button", name="Leave team").focus()
+    await page.keyboard.down("Enter")
+    dialog = page.get_by_role("dialog", name="Leave aistack?")
+    await expect(dialog.get_by_role("button", name="Cancel")).to_be_focused()
+    await expect(dialog).to_have_accessible_description(
+        re.compile("Skills you added to your library stay yours"))
+    await page.keyboard.down("Enter")  # the same key, still held: a repeat
+    await page.keyboard.up("Enter")
+    assert [team["name"] for team in (await alex.state())["teams"]] == ["aistack"]
+
+    # Back closes the dialog instead of leaving it over a page it has nothing to do with.
+    await expect(dialog).to_be_visible()
+    await page.go_back()
+    await expect(page.get_by_role("dialog")).to_have_count(0)
+    assert [team["name"] for team in (await alex.state())["teams"]] == ["aistack"]
+
+
+@_SQLITE_ONLY
+async def test_the_phone_drawer_keeps_focus_inside_until_it_is_closed(sign_in):
+    dimitris = await sign_in("dimitris", viewport=(390, 844))
+    page = dimitris.page
+    await expect(page.get_by_role("link", name="Library: Server, connected")).to_be_visible()
+    opener = page.get_by_role("button", name="Open navigation")
+
+    await opener.click()
+    outside = []
+    for _ in range(40):
+        await page.keyboard.press("Tab")
+        if not await page.evaluate("!!document.activeElement.closest('aside')"):
+            outside.append(await page.evaluate("document.activeElement.outerHTML.slice(0, 80)"))
+    await page.keyboard.press("Escape")
+
+    assert outside == []
+    await expect(opener).to_be_focused()
+
+
+@_SQLITE_ONLY
+async def test_toasts_are_said_after_the_dialog_and_stay_until_dismissed(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    await page.evaluate("""() => {
+        window.toastsSeen = [];
+        new MutationObserver(() => window.toastsSeen.push(!!document.querySelector('dialog[open]')))
+            .observe(document.getElementById('toasts'), { childList: true });
+    }""")
+    await page.clock.install()
+
+    await page.get_by_role("button", name="Add to computer: sql-style").click()
+    dialog = page.get_by_role("dialog")
+    await dialog.get_by_role("checkbox", name="desktop / Claude Code").check()
+    await dialog.get_by_role("button", name="Save").click()
+    toast = page.get_by_role("status").get_by_text("sql-style")
+    await expect(toast).to_be_visible()
+    assert await page.evaluate("window.toastsSeen") == [False]
+    assert "desktop" in _on(await dimitris.state(), "sql-style")
+
+    await toast.hover()
+    await page.clock.fast_forward("00:20")
+    await expect(toast).to_be_visible()
+    await page.mouse.move(0, 0)
+    # Later outcomes must not discard one that is still waiting to be read.
+    for name in ("code-review", "release-notes", "commit-messages", "pentest-checklist"):
+        await page.get_by_role("button", name=f"Add to computer: {name}").click()
+        await page.get_by_role("dialog").get_by_role("checkbox", name="desktop / Claude Code").check()
+        await page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    await expect(page.get_by_role("status").get_by_role("button", name="Dismiss")).to_have_count(5)
+    await page.clock.fast_forward("01:00")
+    await expect(toast).to_be_visible()
+    dismiss = page.get_by_role("status").get_by_role("button", name="Dismiss")
+    await dismiss.first.focus()
+    await dismiss.first.click()
+    await expect(toast).to_have_count(0)
+    await expect(dismiss.first).to_be_focused()
+    for _ in range(4):
+        await page.keyboard.press("Enter")
+    await expect(dismiss).to_have_count(0)
+    await expect(page.get_by_role("heading", name="Library", level=1)).to_be_focused()
+
+    # An error stays until it is dismissed.
+    await page.route("**/api/skills/**", lambda route: route.fulfill(
+        status=400, json={"error": "Nothing changed: the server said no."}))
+    await page.get_by_role("button", name="Add to computer: sql-style").click()
+    await page.get_by_role("dialog").get_by_role("checkbox", name="desktop / Claude Code").uncheck()
+    await page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    await expect(page.get_by_role("dialog").get_by_text("the server said no")).to_be_visible()
+    await page.keyboard.press("Escape")
+    await page.goto(f"{dimitris.base_url}/app#/t/aistack/skills")
+    await page.route("**/api/teams/**", lambda route: route.fulfill(
+        status=400, json={"error": "Nothing changed: the server said no."}))
+    await page.get_by_role("switch", name="Subscribed to developers", exact=True).click()
+    error = page.get_by_role("alert").filter(has_text="the server said no")
+    await expect(error).to_be_visible()
+    await page.clock.fast_forward("01:00")
+    await expect(error).to_be_visible()
+    await error.get_by_role("button", name="Dismiss").click()
+    await expect(error).to_have_count(0)
+
+
+@_SQLITE_ONLY
+async def test_a_switch_says_the_same_word_on_or_off_and_why_it_cannot_be_turned(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    await page.goto(f"{dimitris.base_url}/app#/t/aistack/skills")
+    parent = page.get_by_role("switch", name="Subscribed to developers", exact=True)
+    child = page.get_by_role("switch", name="Subscribed to developers/backend")
+
+    await parent.click()
+    await expect(parent).to_have_attribute("aria-checked", "false")
+    await expect(parent).to_have_text("Subscribed")
+    await expect(child).to_have_attribute("aria-disabled", "true")
+    await expect(child).to_have_accessible_description("Off through developers")
+    await child.focus()
+    await expect(child).to_be_focused()
+    before = _team(await dimitris.state(), "aistack")["groups"]
+    await page.keyboard.press("Enter")
+    assert _team(await dimitris.state(), "aistack")["groups"] == before
+
+    # Escape hides a tooltip that is in the way.
+    await parent.hover()
+    tip = "el => getComputedStyle(el, '::after').display"
+    assert await parent.evaluate(tip) != "none"
+    await page.keyboard.press("Escape")
+    assert await parent.evaluate(tip) == "none"
     assert dimitris.console_errors == []
