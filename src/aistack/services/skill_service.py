@@ -30,6 +30,7 @@ from aistack.services import (
     visibility,
 )
 from aistack.services.harnesses import folder, validated_harness
+from aistack.services.harnesses import project_folder as project_folder_path
 from aistack.services.skill_archive import build_archive, read_archive
 from aistack.services.skill_validation import ValidatedFile, ValidatedSkill, validated_skill
 
@@ -192,7 +193,8 @@ def list_skills(session: Session, user_id: uuid.UUID) -> list[SkillSummary]:
 
 def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
               team: str | None = None, harness: str | None = None,
-              replace: bool = False) -> InstallableSkill:
+              replace: bool = False,
+              project_folder: MachineProject | None = None) -> InstallableSkill:
     """Enable the user's own skill `name` in one harness of this machine and describe its
     latest revision.
 
@@ -202,6 +204,9 @@ def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name:
     With `team`, the team's latest revision is first taken into the user's own skills. That
     is how a team skill is installed and how an offered update is accepted, and it is why a
     copy survives its user leaving the team: what a machine runs was always their own.
+
+    With `project_folder`, the skill is enabled in that project folder instead, and the
+    folder returned is relative to the project's top level (ADR-0026).
     """
     harness = validated_harness(harness)
     # Sync offers "enable" for a skill the user removed whose folder is still on disk.
@@ -211,8 +216,13 @@ def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name:
     restored = skill.archived
     _bring_back(session, skill)
     version = _latest_version(session, skill.skill_id)
-    placed = set_enabled(session, machine_id, harness, skill.skill_id, enabled=True,
-                         revision=version.revision)
+    if project_folder is None:
+        placed = set_enabled(session, machine_id, harness, skill.skill_id, enabled=True,
+                             revision=version.revision)
+    else:
+        placed = project_service.set_enabled(session, project_folder, skill.skill_id,
+                                             enabled=True, revision=version.revision)
+    operating_system = session.get(Machine, machine_id).os
 
     files = session.execute(
         select(SkillFile.path, SkillFile.sha256, SkillFile.executable)
@@ -229,7 +239,8 @@ def get_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name:
         content_hash=version.content_hash,
         files=tuple(InstallableFile(path=path, sha256=sha256, executable=executable)
                     for path, sha256, executable in files),
-        folder=folder(harness, session.get(Machine, machine_id).os),
+        folder=(folder(harness, operating_system) if project_folder is None
+                else project_folder_path(harness, operating_system)),
         changed=restored or placed,
     )
 
@@ -457,7 +468,8 @@ def remove_from_my_skills(session: Session, user_id: uuid.UUID, name: str) -> st
 
 
 def disable_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
-                  name: str, harness: str | None = None) -> str:
+                  name: str, harness: str | None = None,
+                  project_folder: MachineProject | None = None) -> str:
     """Record that this harness on this machine should not have `name`. The row stays, as
     `enabled = False`.
 
@@ -466,6 +478,12 @@ def disable_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
     """
     harness = validated_harness(harness)
     skill = visibility.required_my_skill(session, user_id, name, removed_too=True)
+    if project_folder is not None:
+        if not project_service.disable(session, project_folder, skill.skill_id):
+            raise NotFound(f"'{skill.name}' was never enabled in this project folder, so "
+                           "there is nothing to disable. If its folder is on disk and the "
+                           "user wants it gone, delete the folder.")
+        return skill.name
     decision = _machine_skill(session, machine_id, harness, skill.skill_id)
     if decision is None:
         raise NotFound(

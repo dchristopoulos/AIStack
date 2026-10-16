@@ -12,7 +12,7 @@ from aistack.mcp.mcp import mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.mcp.routes.setup import SETUP_PATH
 from aistack.mcp.server_url import server_base_url
-from aistack.services import sync_service
+from aistack.services import projects, sync_service
 from aistack.services.harnesses import HarnessKey
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,17 @@ class TeamUpdateEntry(TypedDict):
     own_changes: bool
 
 
+class ProjectEntry(TypedDict):
+    key: str
+    name: str
+    managed: bool
+
+
+class Here(TypedDict):
+    path: str
+    remote: str | None
+
+
 class SyncResult(TypedDict):
     install: list[InstallEntry]
     update: list[UpdateEntry]
@@ -66,6 +77,9 @@ class SyncResult(TypedDict):
     up_to_date: int
     sync_skill_url: str | None
     first_sync: bool
+    project: ProjectEntry | None
+    left_to_repository: list[str]
+    from_other_computers: list[str]
 
 
 @mcp.tool(
@@ -73,14 +87,10 @@ class SyncResult(TypedDict):
 
     Use when the user says "sync aistack" or starts work. It changes nothing. Send every
     skill folder in <folder> (harness claude_code: ~/.claude/skills; agents:
-    ~/.agents/skills) with the sha256 of each file, paths relative to the skill's folder.
-    Skip 'synced', dot-folders, and .DS_Store. Digests from a shell:
+    ~/.agents/skills, or the same under a project's top level) with the sha256 of each
+    file, as the sync-aistack skill says. Skip 'synced', dot-folders, and .DS_Store.
 
-        cd <folder> && find -L . -mindepth 2 -type f ! -name .DS_Store \\
-          ! -path './.*' ! -path './synced/*' -exec shasum -a 256 {} +
-        Windows: Get-ChildItem <folder> -Recurse -File | Get-FileHash
-
-    Per field of the result, passing the same harness to each tool:
+    Per field of the result, passing the same harness and project to each tool:
       - install and update: get_skill and install each, without asking. Say what
         updated, between which revisions, and who pushed it.
       - backup: local skills not yet in the user's own. push_skill each, without asking:
@@ -98,19 +108,27 @@ class SyncResult(TypedDict):
         it, without asking.
       - first_sync: true the first time this folder syncs here. Do step 5 of
         <folder>/sync-aistack/SKILL.md.
+      - project, left_to_repository, from_other_computers: as the sync-aistack skill says.
 
     Args:
         local: {skill folder: {relative file path: sha256 hex}}. {} if there are none.
         harness: Which folder this is. Omit for claude_code.
+        here, project, repository: a project's folder, as the sync-aistack skill says.
     """)
 @handle_mcp_errors
 def sync(local: dict[str, dict[str, str]],
-         harness: HarnessKey = "claude_code") -> SyncResult:
+         harness: HarnessKey = "claude_code", here: Here | None = None,
+         project: str | None = None, repository: list[str] | None = None) -> SyncResult:
     started_at = perf_counter()
     caller = current_machine()
+    # Checked before the transaction. A remote can carry a token: it is never logged, and
+    # only the key made from it is kept.
+    where = None if here is None else projects.validated_here(here.get("path"),
+                                                               here.get("remote"))
 
     with get_session_factory().begin() as session:
-        report = sync_service.sync(session, caller.machine_id, caller.user_id, local, harness)
+        report = sync_service.sync(session, caller.machine_id, caller.user_id, local, harness,
+                                   here=where, project=project, repository=repository or ())
 
     sync_skill_url = None
     if report.refresh_sync_skill:
@@ -123,7 +141,7 @@ def sync(local: dict[str, dict[str, str]],
         f"Install: '{len(report.install)}'. Update: '{len(report.update)}'. "
         f"Ask: '{len(report.ask)}'. Backup: '{len(report.backup)}'. "
         f"Team updates: '{len(report.team_updates)}'. "
-        f"Up to date: '{report.up_to_date}'. "
+        f"Up to date: '{report.up_to_date}'. Project folder: '{project is not None}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return sync_result(report, sync_skill_url)
@@ -163,4 +181,8 @@ def sync_result(report: sync_service.SyncReport, sync_skill_url: str | None) -> 
         up_to_date=report.up_to_date,
         sync_skill_url=sync_skill_url,
         first_sync=report.first_sync,
+        project=None if report.project is None else ProjectEntry(
+            key=report.project.key, name=report.project.name, managed=report.project.managed),
+        left_to_repository=list(report.left_to_repository),
+        from_other_computers=list(report.from_other_computers),
     )
