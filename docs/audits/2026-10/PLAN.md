@@ -80,7 +80,9 @@ How to work through it:
 - [x] 38. Bring DESIGN.md, OPERATING.md and the README back in line with the code (#158)
 - [x] 39. See what changed before taking an update, and get an older revision back (6b65ccd)
 - [ ] 39b. Restore an older revision in local mode (a reader release, then a writer a week later)
-- [ ] 40. Cheaper syncs
+- [ ] 40. Sync reports what is true: nested .git, unsubscribed groups, removed skills, skills that cannot be backed up
+- [ ] 40b. Fewer calls per sync: one push for many skills, download URLs in the report, smaller results
+- [ ] 40c. A session start that stays quiet when nothing changed
 - [ ] 41. Audit trail, logs and an export
 - [ ] 41b. The operator can forget a person
 - [ ] 41c. Metrics for the operator, behind a token
@@ -850,16 +852,40 @@ ADR: none needed.
 
 Tests: The replay test's random sequences include a restore; a restore made in local mode reaches a second computer's copy.
 
-### 40. Cheaper syncs
+### 40. Sync reports what is true
 
-Closes: [AUTO-18](automation.md#auto-18-a-server-mode-sync-makes-the-model-copy-every-file-digest-and-run-about-seven-commands-per-installed-skill), [IMP-11](improvements.md#imp-11-a-first-sync-with-many-skills-costs-one-tool-call-per-backup-and-in-a-github-library-one-commit-and-push-per-skill), [IMP-12](improvements.md#imp-12-tool-results-and-listings-spend-the-agents-context-on-what-it-never-uses-and-two-descriptions-have-no-room-left), [IMP-15](improvements.md#imp-15-one-team-update-is-offered-once-per-folder-and-again-on-every-sync-after-it-was-declined), [IMP-16](improvements.md#imp-16-a-skill-that-can-never-be-backed-up-is-listed-under-backup-on-every-sync), [ENT-05](concurrency-and-reliability.md#ent-05-syncs-file-listing-includes-a-nested-git-that-push-leaves-out-so-a-skill-folder-that-is-a-git-clone-never-shows-as-current-and-restore-deletes-its-git), [AUTO-24](automation.md#auto-24-the-session-start-hook-runs-a-full-sync-at-every-startup-even-when-nothing-changed), [IMP-02](improvements.md#imp-02-unsubscribing-from-a-group-stops-syncs-update-offers-but-not-the-dashboards), [DB-13](schema.md#db-13-group-unsubscriptions-survive-leaving-a-team-so-a-returning-member-silently-misses-updates), [PH-11](plot-holes.md#ph-11-after-removing-a-skill-from-the-library-a-computer-that-never-decided-about-it-is-asked-enableskip-forever-and-the-skill-can-no-longer-be-found).
+Split from "Cheaper syncs", which was three PRs. This one makes sync and the dashboard agree with the Library: a skill folder that is a git clone hashes as current, an unsubscribed group's updates are offered nowhere, leaving a team takes its mutes along, a removed skill is asked about as removed, and a skill that can never be backed up says why, without a push.
+
+Closes: [ENT-05](concurrency-and-reliability.md#ent-05-syncs-file-listing-includes-a-nested-git-that-push-leaves-out-so-a-skill-folder-that-is-a-git-clone-never-shows-as-current-and-restore-deletes-its-git), [IMP-02](improvements.md#imp-02-unsubscribing-from-a-group-stops-syncs-update-offers-but-not-the-dashboards), [DB-13](schema.md#db-13-group-unsubscriptions-survive-leaving-a-team-so-a-returning-member-silently-misses-updates), [PH-11](plot-holes.md#ph-11-after-removing-a-skill-from-the-library-a-computer-that-never-decided-about-it-is-asked-enableskip-forever-and-the-skill-can-no-longer-be-found), [IMP-16](improvements.md#imp-16-a-skill-that-can-never-be-backed-up-is-listed-under-backup-on-every-sync).
 Largest effort among them: M.
 
-Files: src/aistack/services/sync_service.py; src/aistack/mcp/tools/sync.py and skills.py; bundled sync skills; src/aistack/services/library_sharing.py (one push per sync, not per skill).
+Files: src/aistack/services/sync_service.py, reconciliation inputs only; src/aistack/services/dashboard_service.py; src/aistack/services/team_service.py; src/aistack/mcp/tools/sync.py; bundled sync skills.
 
 ADR: none needed.
 
-Tests: A first sync of 50 skills in a GitHub Library makes one push; a skill that cannot be backed up is reported once with its reason and then only on change; a `.git` inside a skill folder does not make it 'unknown'; an unsubscribed group's updates are not offered on the dashboard either.
+Tests: a `.git` inside a skill folder does not make it 'unknown'; an unsubscribed group's updates are not offered on the dashboard either; leave and rejoin starts subscribed; a removed skill is asked about with a remove option; a skill that cannot be backed up is reported under `cannot_back_up` with its reason.
+
+### 40b. Fewer calls per sync
+
+Closes: [AUTO-18](automation.md#auto-18-a-server-mode-sync-makes-the-model-copy-every-file-digest-and-run-about-seven-commands-per-installed-skill), [IMP-11](improvements.md#imp-11-a-first-sync-with-many-skills-costs-one-tool-call-per-backup-and-in-a-github-library-one-commit-and-push-per-skill), [IMP-12](improvements.md#imp-12-tool-results-and-listings-spend-the-agents-context-on-what-it-never-uses-and-two-descriptions-have-no-room-left).
+Largest effort among them: M.
+
+Files: src/aistack/mcp/tools/sync.py and skills.py; src/aistack/services/library_sharing.py (one push per sync, not per skill); bundled sync skills.
+
+ADR: none needed.
+
+Tests: A first sync of 50 skills in a GitHub Library makes one push; get_skill for a 100-file skill returns under 1 KB; the sync description has 100 characters of headroom.
+
+### 40c. A session start that stays quiet when nothing changed
+
+Closes: [AUTO-24](automation.md#auto-24-the-session-start-hook-runs-a-full-sync-at-every-startup-even-when-nothing-changed), and the cheap half of [IMP-15](improvements.md#imp-15-one-team-update-is-offered-once-per-folder-and-again-on-every-sync-after-it-was-declined) (ask once per skill across folders; skipping a revision needs an ADR amending ADR-0015).
+Largest effort among them: S.
+
+Files: src/aistack/bootstrap/__main__.py (`status --hook`); bundled setup and sync skills.
+
+ADR: none needed.
+
+Tests: `status --hook` prints nothing when the folder matches the Library, and one line after a skill is added.
 
 ### 41. Audit trail, logs and an export
 
