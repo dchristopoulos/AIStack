@@ -12,6 +12,7 @@ from aistack.commons.exceptions import Conflict, InvalidTicket, NotFound
 from aistack.commons.text import loggable
 from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
+from aistack.db.models.machine_project_skill import MachineProjectSkill
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
@@ -421,15 +422,21 @@ def _team_it_follows(session: Session, mine: Skill, target: Skill) -> str | None
 def remove_from_my_skills(session: Session, user_id: uuid.UUID, name: str) -> str:
     """Take a skill out of the user's own skills, on every computer of theirs.
 
-    Nothing on a disk is touched: the decision in every harness of every machine becomes
-    "not here", and the next sync there asks whether to delete the folder. The row is kept
-    so that sync does not take that folder for a new skill and back it up again.
+    Nothing on a disk is touched: the decision in every folder of every machine, project
+    folders included, becomes "not here", and the next sync there asks whether to delete the
+    folder. The row is kept so that sync does not take that folder for a new skill and back
+    it up again.
     """
     skill = visibility.required_my_skill(session, user_id, name)
     skill.archived = True
     session.execute(
         update(MachineSkill)
         .where(MachineSkill.skill_id == skill.skill_id)
+        .values(enabled=False)
+    )
+    session.execute(
+        update(MachineProjectSkill)
+        .where(MachineProjectSkill.skill_id == skill.skill_id)
         .values(enabled=False)
     )
     return skill.name
