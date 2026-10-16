@@ -269,9 +269,15 @@ def _action(path: str, local: bool = True,
 
 @_action("/skills/{name}/machines/{machine_id}")
 def set_skill_on_machine(session, user_id, path, body):
+    project = _text(body, "project", required=False)
+    if project is not None and is_local_mode():
+        # Its log event is replayed by this release and recorded by a later one (ADR-0026).
+        raise ValidationError("A project's folders are managed on an AIStack server for now. "
+                              "Local mode will manage them in a later release.")
     placed = dashboard_service.set_on_machine(session, user_id, path["name"],
                                               path["machine_id"], _flag(body, "enabled"),
-                                              _text(body, "harness", required=False))
+                                              _text(body, "harness", required=False),
+                                              project)
     # Local mode logs every change, so other computers sharing the Library get it (ADR-0025).
     if is_local_mode():
         library_log.record(session, library_log.new_event(
@@ -300,6 +306,21 @@ def remove_my_skill(session, user_id, path, body):
     if is_local_mode():
         library_log.record(session, library_log.new_event(
             session, get_local_principal().machine_id, library_log.SKILL_REMOVED, name=removed))
+
+
+# A project's key has slashes in it, so it travels in the body. Server only for
+# now: in local mode each is a log event a later release records (ADR-0026).
+@_action("/machines/{machine_id}/projects", local=False)
+def add_project(session, user_id, path, body):
+    dashboard_service.add_project(session, user_id, path["machine_id"], _text(body, "project"),
+                                  _text(body, "harness", required=False))
+
+
+@_action("/machines/{machine_id}/projects/remove", local=False)
+def remove_project(session, user_id, path, body):
+    return {"removed": dashboard_service.remove_project(
+        session, user_id, path["machine_id"], _text(body, "project"),
+        _text(body, "harness", required=False))}
 
 
 # Server only for now: in local mode a removal or a rename is a change to the Library's log,

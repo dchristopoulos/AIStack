@@ -16,13 +16,24 @@ from aistack.commons.exceptions import SignedOut
 from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
+from aistack.db.models.machine_project import MachineProject
+from aistack.db.models.machine_project_skill import MachineProjectSkill
 from aistack.db.models.machine_skill import MachineSkill
+from aistack.db.models.project import Project
 from aistack.db.models.skill import Skill
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
 from aistack.db.models.value_set import known
 from aistack.db.ordering import bytewise
-from aistack.services import onboarding_service, revisions, skill_service, team_service, visibility
+from aistack.services import (
+    onboarding_service,
+    project_service,
+    projects,
+    revisions,
+    skill_service,
+    team_service,
+    visibility,
+)
 from aistack.services.harnesses import validated_harness
 from aistack.services.transfer_ticket import DashboardHolder, token_prefix
 
@@ -113,17 +124,43 @@ class Placed:
 
 
 def set_on_machine(session: Session, user_id: uuid.UUID, name: str, machine_id: str,
-                   enabled: bool, harness: str | None = None) -> Placed:
-    """Switch one of the user's own skills on or off in one harness of one of their computers.
+                   enabled: bool, harness: str | None = None,
+                   project: str | None = None) -> Placed:
+    """Switch one of the user's own skills on or off in one harness of one of their computers,
+    or in a project folder that computer manages (ADR-0026).
 
-    The decision is recorded; the files move the next time that harness syncs there.
+    The decision is recorded; the files move the next time that folder syncs there.
     """
     harness = validated_harness(harness)
     skill = visibility.required_my_skill(session, user_id, name)
     machine = onboarding_service.own_machine(session, user_id, machine_id)
-    skill_service.set_enabled(session, machine.machine_id, harness, skill.skill_id,
-                              enabled=bool(enabled))
+    if project is None:
+        skill_service.set_enabled(session, machine.machine_id, harness, skill.skill_id,
+                                  enabled=bool(enabled))
+    else:
+        folder = project_service.required_folder(session, user_id, machine.machine_id,
+                                                 projects.validated_key(project), harness)
+        project_service.set_enabled(session, folder, skill.skill_id, enabled=bool(enabled))
     return Placed(skill.name, machine.machine_id, harness.value, bool(enabled))
+
+
+def add_project(session: Session, user_id: uuid.UUID, machine_id: str, project: str,
+                harness: str | None) -> None:
+    """Start managing one of the user's projects on one of their computers. Its path stays
+    unknown until that folder syncs there."""
+    machine = onboarding_service.own_machine(session, user_id, machine_id)
+    project_service.add_folder(session, user_id, machine.machine_id,
+                               projects.validated_key(project), validated_harness(harness))
+
+
+def remove_project(session: Session, user_id: uuid.UUID, machine_id: str, project: str,
+                   harness: str | None) -> int:
+    """Stop managing a project on one computer, in one harness or in all. The Library, the
+    files on disk and the other computers are untouched."""
+    machine = onboarding_service.own_machine(session, user_id, machine_id)
+    return project_service.remove_folder(session, user_id, machine.machine_id,
+                                         projects.validated_key(project),
+                                         None if harness is None else validated_harness(harness))
 
 
 def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
@@ -136,7 +173,8 @@ def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
     stopped syncing, stands out (ADR-0027).
     """
     harnesses_of: dict[uuid.UUID, set[Harness]] = {}
-    for table in (MachineHarness, MachineSkill):
+    # A harness used only in a project folder is still one of the computer's agents.
+    for table in (MachineHarness, MachineSkill, MachineProject):
         for machine_id, harness in session.execute(
                 select(table.machine_id, table.harness).distinct()
                 .join(Machine, Machine.machine_id == table.machine_id)
@@ -152,6 +190,19 @@ def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
     }
     names = dict(session.execute(
         select(Machine.machine_id, Machine.name).where(Machine.user_id == user_id)).all())
+    projects_of: dict[uuid.UUID, dict[str, dict[str, Any]]] = {}
+    for machine_id, key, name, harness, path, at in session.execute(
+            select(MachineProject.machine_id, Project.key, Project.name, MachineProject.harness,
+                   MachineProject.path, MachineProject.last_synced_on)
+            .join(Project, Project.project_id == MachineProject.project_id)
+            .where(Project.user_id == user_id, known(MachineProject.harness))
+            .order_by(bytewise(Project.name), bytewise(Project.key),
+                      MachineProject.harness)).all():
+        shown_project = projects_of.setdefault(machine_id, {}).setdefault(
+            key, {"key": key, "name": name, "folders": []})
+        shown_project["folders"].append({
+            "harness": harness.value, "path": path,
+            "last_synced_on": None if at is None else as_utc(at).isoformat()})
     shown = []
     for machine_id, name, os, created_on, added_by in session.execute(
             select(Machine.machine_id, Machine.name, Machine.os, Machine.created_on,
@@ -170,6 +221,7 @@ def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
             "added_by_removed": added_by is not None and added_by not in names,
             "last_synced": {harness.value: synced.get((machine_id, harness))
                             for harness in harnesses},
+            "projects": list(projects_of.get(machine_id, {}).values()),
         })
     return shown
 
@@ -229,7 +281,21 @@ def _my_skills(session: Session, user_id: uuid.UUID,
         # `revision` is what was last installed or pushed there; None until it syncs.
         placements.setdefault(skill_id, []).append({"machine": str(machine_id),
                                                     "harness": harness.value,
-                                                    "revision": installed})
+                                                    "revision": installed, "project": None})
+    for skill_id, machine_id, harness, installed, key in session.execute(
+            select(MachineProjectSkill.skill_id, MachineProject.machine_id,
+                   MachineProject.harness, MachineProjectSkill.revision, Project.key)
+            .join(MachineProject, MachineProject.machine_project_id
+                  == MachineProjectSkill.machine_project_id)
+            .join(Project, Project.project_id == MachineProject.project_id)
+            .join(Machine, Machine.machine_id == MachineProject.machine_id)
+            .where(Project.user_id == user_id, MachineProjectSkill.enabled.is_(True),
+                   known(MachineProject.harness))
+            .order_by(Machine.created_on, Machine.machine_id, bytewise(Project.key),
+                      MachineProject.harness)).all():
+        placements.setdefault(skill_id, []).append({"machine": str(machine_id),
+                                                    "harness": harness.value,
+                                                    "revision": installed, "project": key})
 
     changed = skill_service.changed_since_taken(
         session, [(row.skill_id, row.source_skill_id, row.source_revision) for row in rows
