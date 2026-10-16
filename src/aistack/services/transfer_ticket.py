@@ -52,6 +52,9 @@ class UploadTicket:
     skill_name: str
     origin: str | None
     harness: Harness
+    # The project folder it was pushed from, or None for the global one (ADR-0026). The
+    # upload checks again that the computer still manages it.
+    project_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -115,6 +118,7 @@ class TicketSigner:
             "skill_name": ticket.skill_name,
             "origin": ticket.origin,
             "harness": ticket.harness.value,
+            "project_id": None if ticket.project_id is None else str(ticket.project_id),
         })
 
     def sign_download(self, ticket: DownloadTicket) -> str:
@@ -133,6 +137,9 @@ class TicketSigner:
                 skill_name=claims["skill_name"],
                 origin=claims["origin"],
                 harness=Harness(claims["harness"]),
+                # Absent from a URL minted before projects, which meant the global folder.
+                project_id=(None if claims.get("project_id") is None
+                            else uuid.UUID(claims["project_id"])),
             )
         except (KeyError, ValueError, TypeError) as error:
             raise _not_valid("push_skill") from error

@@ -15,7 +15,7 @@ from aistack.mcp.mcp import mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.mcp.routes.transfer import DOWNLOAD_PATH, UPLOAD_PATH
 from aistack.mcp.server_url import server_base_url
-from aistack.services import skill_service
+from aistack.services import project_service, projects, skill_service
 from aistack.services.harnesses import HarnessKey, validated_harness
 from aistack.services.skill_validation import validated_origin, validated_skill_name
 from aistack.services.transfer_ticket import (
@@ -65,6 +65,7 @@ class PushSkillResult(TypedDict):
         origin: The http(s) URL the skill came from, when you know it. Omit it for a skill
                the user wrote themselves.
         harness: The folder it was pushed from, as sync was given. Omit for claude_code.
+        project: The project's key, when it was pushed from that project's folder.
 
     Returns:
         PushSkillResult containing:
@@ -74,7 +75,8 @@ class PushSkillResult(TypedDict):
     """)
 @handle_mcp_errors
 def push_skill(name: str, origin: str | None = None,
-               harness: HarnessKey = "claude_code") -> PushSkillResult:
+               harness: HarnessKey = "claude_code",
+               project: str | None = None) -> PushSkillResult:
     caller = current_machine()
     logger.debug(f"Preparing push. Skill: '{loggable(name)}'. User: '{caller.user_id}'.")
 
@@ -82,6 +84,7 @@ def push_skill(name: str, origin: str | None = None,
     name = validated_skill_name(name)
     origin = validated_origin(origin)
     harness = validated_harness(harness)
+    folder = None if project is None else _project_folder(caller, project, harness)
 
     ticket = get_ticket_signer().sign_upload(UploadTicket(
         machine_id=caller.machine_id,
@@ -90,10 +93,12 @@ def push_skill(name: str, origin: str | None = None,
         skill_name=name,
         origin=origin,
         harness=harness,
+        project_id=None if folder is None else folder.project_id,
     ))
 
     # The URL carries the ticket, so it is returned and never logged.
-    logger.info(f"Upload URL issued. Skill: '{name}'. User: '{caller.user_id}'.")
+    logger.info(f"Upload URL issued. Skill: '{name}'. User: '{caller.user_id}'. "
+                f"Project: '{None if folder is None else folder.project_id}'.")
     return PushSkillResult(
         name=name,
         upload_url=f"{server_base_url(get_http_request())}{UPLOAD_PATH}/{ticket}",
@@ -271,6 +276,7 @@ class GetSkillResult(TypedDict):
         team: The team to take it from ("from backend"). Omit for the user's own.
         harness: The skills folder, as given to sync. Omit for claude_code.
         replace: True once the user agreed to replace their own skill.
+        project: A project's key, to install in its folder; folder is then relative.
 
     Returns:
         GetSkillResult containing:
@@ -278,20 +284,23 @@ class GetSkillResult(TypedDict):
             - revision: the revision you are installing
             - version: the author's version string, or null
             - pushed_by: who uploaded this revision, not necessarily its author
-            - content_hash, files: hashes and modes, needing no check
             - download_url: the archive, a credential: keep it private
             - expires_in_seconds: how long the URL works
     """)
 @handle_mcp_errors
 def get_skill(name: str, team: str | None = None,
-              harness: HarnessKey = "claude_code", replace: bool = False) -> GetSkillResult:
+              harness: HarnessKey = "claude_code", replace: bool = False,
+              project: str | None = None) -> GetSkillResult:
     started_at = perf_counter()
     caller = current_machine()
     logger.debug(f"Getting skill. Skill: '{loggable(name)}'. Machine: '{caller.machine_id}'.")
 
     with get_session_factory().begin() as session:
+        folder = None if project is None else project_service.required_folder(
+            session, caller.user_id, caller.machine_id, projects.validated_key(project),
+            validated_harness(harness))
         skill = skill_service.get_skill(session, caller.machine_id, caller.user_id, name, team,
-                                        harness, replace)
+                                        harness, replace, project_folder=folder)
 
     ticket = get_ticket_signer().sign_download(DownloadTicket(
         machine_id=caller.machine_id,
@@ -303,6 +312,7 @@ def get_skill(name: str, team: str | None = None,
         f"Skill enabled and download URL issued. Skill: '{skill.name}'. "
         f"Revision: '{skill.revision}'. Machine: '{caller.machine_id}'. "
         f"Harness: '{loggable(harness)}'. "
+        f"Project: '{None if folder is None else folder.project_id}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return GetSkillResult(
@@ -340,6 +350,7 @@ class DisableSkillResult(TypedDict):
     Args:
         name: The skill's name.
         harness: The folder to remove it from, as sync was given. Omit for claude_code.
+        project: A project's key, to remove it from that project's folder.
 
     Returns:
         DisableSkillResult containing:
@@ -347,16 +358,29 @@ class DisableSkillResult(TypedDict):
             - enabled: always false
     """)
 @handle_mcp_errors
-def disable_skill(name: str, harness: HarnessKey = "claude_code") -> DisableSkillResult:
+def disable_skill(name: str, harness: HarnessKey = "claude_code",
+                  project: str | None = None) -> DisableSkillResult:
     started_at = perf_counter()
     caller = current_machine()
     logger.debug(f"Disabling skill. Skill: '{loggable(name)}'. Machine: '{caller.machine_id}'.")
 
     with get_session_factory().begin() as session:
+        folder = None if project is None else project_service.required_folder(
+            session, caller.user_id, caller.machine_id, projects.validated_key(project),
+            validated_harness(harness))
         disabled = skill_service.disable_skill(session, caller.machine_id, caller.user_id,
-                                               name, harness)
+                                               name, harness, project_folder=folder)
 
     logger.info(f"Skill disabled. Skill: '{disabled}'. Machine: '{caller.machine_id}'. "
                 f"Harness: '{loggable(harness)}'. "
+                f"Project: '{None if folder is None else folder.project_id}'. "
                 f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
     return DisableSkillResult(name=disabled, enabled=False)
+
+
+def _project_folder(caller, project: str, harness):
+    """The project folder a push names, which this computer must manage before a URL is
+    minted for it. Read only: the upload checks it again before it writes."""
+    with get_read_session_factory().begin() as session:
+        return project_service.required_folder(session, caller.user_id, caller.machine_id,
+                                               projects.validated_key(project), harness)

@@ -70,3 +70,10 @@ def validated_harness(harness: str | None) -> Harness:
 def folder(harness: Harness, operating_system: OperatingSystem) -> str:
     """Where this harness's skills live on a machine with that operating system."""
     return HARNESSES[harness].folders[operating_system]
+
+
+def project_folder(harness: Harness, operating_system: OperatingSystem) -> str:
+    """Where this harness's skills live in a project, relative to its top level: the same
+    folder one level down (ADR-0026). Relative, so a path an agent sent never comes back."""
+    separator = "\\" if operating_system is OperatingSystem.WINDOWS else "/"
+    return separator.join(HARNESSES[harness].home_relative)
