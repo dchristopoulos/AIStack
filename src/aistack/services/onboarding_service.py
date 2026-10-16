@@ -44,7 +44,7 @@ def join(session: Session, username: str, machine_name: str, os: str,
     makes new ones.
     """
     started_at = perf_counter()
-    username = _validated_username(username)
+    username = validated_username(username)
     machine_name = _validated_name(machine_name, "machine_name", MACHINE_NAME_MAX_LENGTH)
     operating_system = _validated_operating_system(os)
     # Resolved in this transaction, before anything is written: a code replaced since the
@@ -62,14 +62,15 @@ def join(session: Session, username: str, machine_name: str, os: str,
         session.flush()
     except IntegrityError as error:
         # The answer to a join can be lost after it committed, and it was the only copy of
-        # the token, so the retry lands here too (ENT-11).
+        # the token, so the retry lands here too (ENT-11). Which of the two holds the name is
+        # not said, as `create_team` does not say it: a team's name is its members' to know.
         raise Conflict(
-            f"Username '{username}' is already taken. Pick a different one, or, if "
-            "this is you on a new computer, add the machine from a computer that "
-            "is already registered instead of joining again. If you joined with this name "
-            "moments ago and the answer never arrived, the account was made but no computer "
-            "has its token: ask whoever runs the AIStack server to register this computer "
-            "for you."
+            f"Username '{username}' is already taken, by a user or by a team. Pick a "
+            "different one. If it is your own and this is a new computer, add the machine "
+            "from a computer that is already registered instead of joining again. If you "
+            "joined with this name moments ago and the answer never arrived, the account was "
+            "made but no computer has its token: ask whoever runs the AIStack server to "
+            "register this computer for you."
         ) from error
 
     token = generate_machine_token()
@@ -234,7 +235,7 @@ def _claim_admin(session: Session, user: User) -> None:
     session.refresh(user, ["is_admin"])
 
 
-def _validated_username(username: str) -> str:
+def validated_username(username: str) -> str:
     """A username is what teammates see as `pushed_by` before a skill changes on their machine.
 
     So no two may differ only in how they look: one case, one alphabet, no spaces. That rules

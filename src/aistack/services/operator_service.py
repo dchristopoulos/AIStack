@@ -12,16 +12,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from aistack.commons.exceptions import NotFound, ValidationError
+from aistack.commons.exceptions import Conflict, NotFound, ValidationError
 from aistack.commons.text import loggable
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
-from aistack.services import onboarding_service, team_service
+from aistack.services import onboarding_service, team_service, visibility
 from aistack.services.token_service import generate_machine_token, hash_token
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,27 @@ def offboard(session: Session, username: str,
     logger.info(f"User taken off the server by the operator. User: '{user_id}'. "
                 f"Machines removed: '{len(removed)}'.")
     return teams, [machine.name for machine in removed]
+
+
+def rename_user(session: Session, username: str, new: str) -> None:
+    """Give someone a new username, and their personal team with it. Every revision names
+    them by id, so each `pushed_by` shows the new name. Refused when a user or a team already
+    has it."""
+    user = _user(session, username)
+    new = onboarding_service.validated_username(new)
+    # Every user has a personal team of their name, so the team names cover the usernames.
+    taken = Conflict(f"A user or a team on this server is already called '{new}'. Pick a "
+                     "different name. Nothing was changed.")
+    if session.scalar(select(Team.team_id).where(Team.name == new)) is not None:
+        raise taken
+    try:
+        # A join that takes the name meanwhile fails one of the two unique names.
+        with session.begin_nested():
+            user.username = new
+            visibility.personal_team(session, user.user_id).name = new
+    except IntegrityError as error:
+        raise taken from error
+    logger.info(f"User renamed by the operator. User: '{user.user_id}'.")
 
 
 @dataclass(frozen=True)
