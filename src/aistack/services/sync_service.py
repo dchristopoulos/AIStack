@@ -1,7 +1,7 @@
 import hashlib
 import logging
 import uuid
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from time import perf_counter
 
@@ -13,13 +13,14 @@ from aistack.bundled import SYNC_SKILL_NAME, sync_skill_document
 from aistack.commons.exceptions import ValidationError
 from aistack.db.models.harness import Harness
 from aistack.db.models.machine_harness import MachineHarness
+from aistack.db.models.machine_project import MachineProject
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.timestamps import utc_now
 from aistack.db.models.user import User
 from aistack.db.ordering import bytewise
-from aistack.services import project_service, revisions, skill_service, visibility
+from aistack.services import project_service, projects, revisions, skill_service, visibility
 from aistack.services.content_hash import canonical_content_hash, normalized_path
 from aistack.services.harnesses import validated_harness
 from aistack.services.reconciliation import Desired, Observed, Option, Step, reconcile
@@ -32,6 +33,8 @@ logger = logging.getLogger(__name__)
 # hash and look up.
 MAX_LOCAL_SKILLS = 1000
 MAX_LOCAL_FILES = 20_000
+# A folder name git holds in a project's skills folder: any text a file system allows.
+_REPOSITORY_NAME_MAX_LENGTH = 255
 
 
 
@@ -91,6 +94,16 @@ class TeamUpdate:
 
 
 @dataclass(frozen=True)
+class ProjectHere:
+    """The repository the session runs in, as this server knows it (ADR-0026)."""
+
+    key: str
+    name: str
+    # This computer manages a folder in it. Nothing is stored for one it does not.
+    managed: bool
+
+
+@dataclass(frozen=True)
 class SyncReport:
     install: tuple[Install, ...]
     update: tuple[Update, ...]
@@ -109,6 +122,14 @@ class SyncReport:
     # This folder has never synced on this machine before. The agent offers, once, to put
     # the skills its other folder has here too (ADR-0021).
     first_sync: bool
+    # The repository the session runs in, when the agent named one.
+    project: ProjectHere | None = None
+    # Enabled in this project folder, but a folder the repository holds has the name, so
+    # nothing of the Library's goes there. The agent says so once.
+    left_to_repository: tuple[str, ...] = ()
+    # A project folder's first sync: skills enabled in this project on the user's other
+    # computers, and in none of this folder's decisions or folders. Offered once.
+    from_other_computers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -119,7 +140,9 @@ class _Revision:
 
 
 def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
-         local: Mapping[str, Mapping[str, str]], harness: str | None = None) -> SyncReport:
+         local: Mapping[str, Mapping[str, str]], harness: str | None = None,
+         here: projects.Here | None = None, project: str | None = None,
+         repository: Collection[str] = ()) -> SyncReport:
     """Compare one harness's folder on this machine with what its user's own skills say it
     should have.
 
@@ -130,12 +153,33 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
     Sync never changes desired state and never returns file content: every action it
     reports is carried out by a later get_skill, push_skill, or disable_skill call. The one
     thing it writes is that this harness synced, and when.
+
+    With `project`, the folder compared is that project's, in the repository `here` names,
+    and the one thing it writes is that folder, which is how a computer starts managing it
+    (ADR-0026). `local` then holds only the folders git ignores, and `repository` names
+    every other folder there: the repository's, which nothing of the Library's replaces.
     """
     started_at = perf_counter()
     harness = validated_harness(harness)
     local_hashes = _local_hashes(local)
-    decisions = _decisions(session, machine_id, harness)
-    revisions = _revisions(session, user_id, set(local_hashes) | set(decisions))
+    blocked = _repository_names(repository, project)
+    where = None if here is None else _here(session, user_id, machine_id, here)
+    registered = None
+    if project is not None:
+        if where is None or projects.validated_key(project) != where.key:
+            raise ValidationError("project must be the key sync reported for the repository "
+                                  "here names. Sync with here first, and send its key.")
+        registered = project_service.register_folder(session, user_id, machine_id, where.key,
+                                                      where.name, harness, here.path)
+        where = ProjectHere(where.key, where.name, managed=True)
+        decisions = project_service.decisions(session, registered.folder)
+    else:
+        decisions = _decisions(session, machine_id, harness)
+    # The sync skill never goes in a project folder: it is the agent's own, in the global one.
+    left_alone = blocked | ({SYNC_SKILL_NAME} if registered is not None else set())
+    for name in left_alone:
+        local_hashes.pop(name, None)
+    revisions = _revisions(session, user_id, (set(local_hashes) | set(decisions)) - left_alone)
 
     install: list[Install] = []
     update: list[Update] = []
@@ -166,8 +210,22 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
     # backing up. Once the user pushes their own, it is in `revisions` like any other.
     backup = tuple(sorted(name for name in local_hashes
                           if name not in revisions and name != SYNC_SKILL_NAME))
-    team_updates = _team_updates(session, user_id,
-                                 {name for name, (enabled, _) in decisions.items() if enabled})
+    enabled_here = {name for name, (enabled, _) in decisions.items() if enabled}
+    team_updates = _team_updates(session, user_id, enabled_here - left_alone)
+
+    if registered is not None:
+        offered = () if not registered.first_sync else tuple(
+            name for name in project_service.placed_elsewhere(
+                session, user_id, registered.folder.project_id, machine_id)
+            if name not in decisions and name not in local_hashes and name not in left_alone)
+        _log_reconciled(machine_id, harness, local_hashes, install, update, ask, backup,
+                        team_updates, up_to_date, started_at)
+        return SyncReport(install=tuple(install), update=tuple(update), ask=tuple(ask),
+                          backup=backup, team_updates=team_updates, up_to_date=up_to_date,
+                          refresh_sync_skill=False, first_sync=registered.first_sync,
+                          project=where,
+                          left_to_repository=tuple(sorted(enabled_here & blocked)),
+                          from_other_computers=offered)
 
     # A user who keeps their own sync skill manages it like any other; otherwise the server's
     # copy is the reference. It belongs in Claude Code's folder, and in the agents folder only
@@ -182,6 +240,16 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
                           and local_hashes.get(SYNC_SKILL_NAME) != _bundled_sync_skill_hash())
     first_sync = record_sync(session, machine_id, harness)
 
+    _log_reconciled(machine_id, harness, local_hashes, install, update, ask, backup,
+                    team_updates, up_to_date, started_at)
+    return SyncReport(install=tuple(install), update=tuple(update), ask=tuple(ask),
+                      backup=backup, team_updates=team_updates, up_to_date=up_to_date,
+                      refresh_sync_skill=refresh_sync_skill, first_sync=first_sync,
+                      project=where)
+
+
+def _log_reconciled(machine_id, harness, local_hashes, install, update, ask, backup,
+                    team_updates, up_to_date, started_at) -> None:
     logger.debug(
         f"Sync reconciled. Machine: '{machine_id}'. Harness: '{harness}'. "
         f"Local: '{len(local_hashes)}'. "
@@ -190,9 +258,35 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
         f"Current: '{up_to_date}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
-    return SyncReport(install=tuple(install), update=tuple(update), ask=tuple(ask),
-                      backup=backup, team_updates=team_updates, up_to_date=up_to_date,
-                      refresh_sync_skill=refresh_sync_skill, first_sync=first_sync)
+
+
+def _here(session: Session, user_id: uuid.UUID, machine_id: uuid.UUID,
+          here: projects.Here) -> ProjectHere:
+    """The repository a session runs in, and whether this computer manages a folder in it.
+    Reads only: a repository someone merely works in is never recorded."""
+    key = here.key or projects.local_project_key(machine_id, here.path)
+    project = visibility.my_project(session, user_id, key)
+    managed = project is not None and session.scalar(
+        select(MachineProject.machine_project_id).where(
+            MachineProject.machine_id == machine_id,
+            MachineProject.project_id == project.project_id).limit(1)) is not None
+    return ProjectHere(key, projects.project_name(here.key or here.path), managed)
+
+
+def _repository_names(names: Collection[str], project: str | None) -> set[str]:
+    """The folders a project's repository holds, which sync leaves alone. Checked, never
+    quoted back: they are only compared with the Library's names."""
+    if isinstance(names, str) or not all(isinstance(name, str) and len(name)
+                                          <= _REPOSITORY_NAME_MAX_LENGTH for name in names):
+        raise ValidationError("repository is a list of folder names, each at most "
+                              f"{_REPOSITORY_NAME_MAX_LENGTH} characters.")
+    if len(names) > MAX_LOCAL_SKILLS:
+        raise ValidationError(f"repository lists {len(names)} folders, and the limit is "
+                              f"{MAX_LOCAL_SKILLS}.")
+    if names and project is None:
+        raise ValidationError("repository names a project folder's own skills; send it with "
+                              "project.")
+    return set(names)
 
 
 def _bundled_sync_skill_hash() -> str:
