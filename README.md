@@ -213,7 +213,7 @@ Where to start reading the code:
 
 ## Roadmap
 
-- **Project skills folders:** manage skills inside a repository, not only global folders ([ADR-0026](docs/adr/0026-skills-folders-inside-projects.md), proposed).
+- **Project skills folders:** manage skills inside a repository, not only global folders ([ADR-0026](docs/adr/0026-skills-folders-inside-projects.md)).
 - **Rules** as a second resource type, projected into `CLAUDE.md`, `AGENTS.md`, and `.cursor/rules/`.
 - **Background sync**, instead of syncing when asked.
 - **Dashboard administration:** server administration, version pinning, and revision management.

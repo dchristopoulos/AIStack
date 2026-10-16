@@ -5,10 +5,10 @@ place their machines install from. Every other team holds what its members share
 member sees a team skill when it sits at team level or in a group they may see; `group_access`
 has that rule.
 
-This is the only module that decides whether a user may reach a skill, a group, or a team.
-Code elsewhere looks a skill up by team and name only after this module has established the
-caller's place in that team. Anything the caller may not see is answered exactly like
-something that does not exist: same exception, same sentence.
+This is the only module that decides whether a user may reach a skill, a group, a team, or a
+project. Code elsewhere looks a skill up by team and name only after this module has
+established the caller's place in that team. Anything the caller may not see is answered
+exactly like something that does not exist: same exception, same sentence.
 """
 
 import uuid
@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from aistack.commons.exceptions import NotFound
 from aistack.commons.text import loggable
+from aistack.db.models.project import Project
 from aistack.db.models.skill import Skill
 from aistack.db.models.team import (
     GroupMember,
@@ -69,6 +70,21 @@ def required_my_skill(session: Session, user_id: uuid.UUID, name: str,
         raise NotFound(f"You have no skill named '{name}'. Call list_skills to see yours and "
                        "your teams'; to take one from a team, call get_skill with its team.")
     return skill
+
+
+def my_project(session: Session, user_id: uuid.UUID, key: str) -> Project | None:
+    """One of the user's own projects, by its key (ADR-0026). The only lookup by key."""
+    return session.scalar(select(Project).where(Project.user_id == user_id, Project.key == key))
+
+
+def required_my_project(session: Session, user_id: uuid.UUID, key: str) -> Project:
+    """One of the user's own projects. Another user's project is answered as an unknown one:
+    the key names a repository, and a different answer would say somebody manages it."""
+    project = my_project(session, user_id, key)
+    if project is None:
+        raise NotFound(f"You have no project '{loggable(key)}'. A project is added by syncing "
+                       "inside its repository, or on the dashboard.")
+    return project
 
 
 @dataclass(frozen=True)

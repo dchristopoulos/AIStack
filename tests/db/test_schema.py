@@ -10,7 +10,7 @@ import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import MetaData, func, inspect, select, text
+from sqlalchemy import MetaData, delete, func, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
 import aistack.db
@@ -20,12 +20,16 @@ from aistack.db.models import Base
 from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
+from aistack.db.models.machine_project import MachineProject
+from aistack.db.models.machine_project_skill import MachineProjectSkill
 from aistack.db.models.machine_skill import MachineSkill
+from aistack.db.models.project import Project
+from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.user import User
 from aistack.db.schema import BASELINE_REVISION, ForeignDatabase, NewerSchema, migrate_schema
-from aistack.services import skill_service, sync_service
+from aistack.services import onboarding_service, skill_service, sync_service, visibility
 from tests.conftest import _drop_everything
 
 MIGRATIONS = pathlib.Path(aistack.db.__file__).parent / "migrations"
@@ -345,6 +349,38 @@ def test_rebuilding_a_table_does_not_cascade_into_the_rows_that_reference_it(emp
 
     # The skill's two files, and the copy of them in its user's own skills.
     assert _file_count(empty_engine) == 4
+
+
+PROJECT_TABLES = {"project", "machine_project", "machine_project_skill"}
+
+
+def test_an_older_release_rebuilding_a_copy_empties_its_project_rows(portable_engine):
+    """ADR-0025 rebuilds a copy by deleting every table it knows, children first. A release
+    from before the project tables knows none of them, so only their cascades empty them."""
+    factory = build_session_factory(portable_engine)
+    with factory.begin() as session:
+        joined = onboarding_service.join(session, "dimitris", "laptop", "LINUX")
+        skill = Skill(team_id=visibility.personal_team(session, joined.user.user_id).team_id,
+                      name="wizard", description="Walks.", pushed_by=joined.user.user_id)
+        project = Project(user_id=joined.user.user_id, key="github.com/acme/r", name="r")
+        session.add_all([skill, project])
+        session.flush()
+        folder = MachineProject(machine_id=joined.machine.machine_id,
+                                project_id=project.project_id, harness=Harness.CLAUDE_CODE)
+        session.add(folder)
+        session.flush()
+        session.add(MachineProjectSkill(machine_project_id=folder.machine_project_id,
+                                        skill_id=skill.skill_id, enabled=True))
+
+    with factory.begin() as session:
+        for table in reversed(Base.metadata.sorted_tables):
+            if table.name not in PROJECT_TABLES | {"alembic_version", "schema_compatibility"}:
+                session.execute(delete(table))
+
+    with portable_engine.connect() as connection:
+        for table in PROJECT_TABLES:
+            assert connection.scalar(select(func.count()).select_from(
+                Base.metadata.tables[table])) == 0, table
 
 
 def test_foreign_keys_are_enforced_again_after_a_migration(engine):

@@ -9,7 +9,7 @@ A skills folder with a name, which the coding agents that read it load skills fr
 _Avoid_: Agent (that means a subagent definition), provider, IDE, "Codex" for the `agents` folder (it reaches every agent that reads it)
 
 **Project**:
-A git repository, known by its remote written as `host/path` (`github.com/dchristopoulos/aistack`), so the same repository is one project on every computer wherever its clone sits (ADR-0026, proposed). A repository with no remote, or whose remote is a path on disk, is a project of one computer. A folder outside git, or a repository whose top level is the home folder, is not one. A person's project is recorded only once they add it.
+A git repository, known by its remote written as `host/path` (`github.com/dchristopoulos/aistack`), so the same repository is one project on every computer wherever its clone sits (ADR-0026). A repository with no remote, or whose remote is a path on disk, is a project of one computer. A folder outside git, or a repository whose top level is the home folder, is not one. A person's project is recorded only once they add it.
 _Avoid_: Workspace, repo (in prose), checkout, folder
 
 **Project folder**:

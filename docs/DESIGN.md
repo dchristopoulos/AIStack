@@ -65,7 +65,7 @@ No FastAPI and no frontend framework: the dashboard is one HTML file with its ow
 - **ADR-0023: In local mode every computer keeps the database's own address.** No per-computer logins and no pairing: each computer's MCP configuration holds the provider's connection string, any computer migrates, and a lost laptop means resetting the database password and pasting the new one on the others. Teams stay on server mode with revocable machine tokens.
 - **ADR-0024: Older releases keep working through additive upgrades.** Each migration says whether releases before it still work. The database records the oldest schema that can use it, so an older computer keeps running on a schema that only grew, and is refused with one clear sentence (in local mode, through its agent) after a breaking change.
 - **ADR-0025 (proposed): A Library on GitHub is a log each computer replays.** Each computer keeps its own SQLite copy; the private repository holds one file per change, in a folder per computer, so git never conflicts. Replay goes through the same service calls, in a fixed order, and a copy that disagrees is rebuilt from the whole log.
-- **ADR-0026 (proposed): Skills folders inside a project.** A project is a git repository known by its normalised remote, and its two skills folders at the top level are harnesses one level down, placed per computer in tables of their own. AIStack writes only skill folders git ignores there, hiding each from git through the clone's `.git/info/exclude`, and leaves the repository's own skills alone. Not built yet: the steps are in the October 2026 audit plan.
+- **ADR-0026: Skills folders inside a project.** A project is a git repository known by its normalised remote, and its two skills folders at the top level are harnesses one level down, placed per computer in tables of their own. AIStack writes only skill folders git ignores there, hiding each from git through the clone's `.git/info/exclude`, and leaves the repository's own skills alone. The project tables are built; the remaining steps are in the October 2026 audit plan.
 - **ADR-0032: A GitHub Library's log is ordered by a hybrid logical clock.** An event's time is the later of the wall clock and just after the newest event its copy holds, so a computer whose clock runs ahead cannot sort its older edit after a newer one. A rebuild replays into a new file beside the copy and swaps the rows in, so other sessions keep reading meanwhile.
 
 ## 4. What is built
@@ -544,7 +544,38 @@ MACHINE_HARNESS                                -- the harnesses a machine has sy
   created_on        TIMESTAMPTZ  NOT NULL      -- its first sync
   last_synced_on    TIMESTAMPTZ  NULL
   UNIQUE (machine_id, harness)
+
+PROJECT                                        -- a repository one person manages skills in (ADR-0026)
+  project_id        UUID PK
+  user_id           FK → USER NOT NULL ON DELETE CASCADE
+  key               VARCHAR(255) NOT NULL      -- normalised remote, or local/<machine_id>/<digest>
+  name              VARCHAR(64)  NOT NULL      -- display only
+  created_on        TIMESTAMPTZ  NOT NULL
+  UNIQUE (user_id, key)
+
+MACHINE_PROJECT                                -- a project folder: one harness's folder in a project on a computer
+  machine_project_id UUID PK
+  machine_id        FK → MACHINE NOT NULL ON DELETE CASCADE
+  project_id        FK → PROJECT NOT NULL ON DELETE CASCADE
+  harness           ENUM(claude_code, agents) NOT NULL  -- varchar+check
+  path              VARCHAR(1024) NULL         -- top level last seen, display only
+  created_on        TIMESTAMPTZ  NOT NULL
+  last_synced_on    TIMESTAMPTZ  NULL          -- null until its first sync
+  UNIQUE (machine_id, project_id, harness)
+  INDEX (project_id)
+
+MACHINE_PROJECT_SKILL                          -- desired state in a project folder
+  machine_project_skill_id UUID PK
+  machine_project_id FK → MACHINE_PROJECT NOT NULL ON DELETE CASCADE
+  skill_id          FK → SKILL NOT NULL ON DELETE CASCADE
+  enabled           BOOLEAN NOT NULL           -- false = explicit disable; no row = no decision
+  revision          INT NULL                   -- last installed or pushed in this folder
+  created_on        TIMESTAMPTZ  NOT NULL
+  updated_on        TIMESTAMPTZ  NOT NULL
+  UNIQUE (machine_project_id, skill_id)
 ```
+
+Every foreign key in the project tables cascades, because a release from before them rebuilds a GitHub Library's copy by deleting only the tables it knows (ADR-0025).
 
 Behavior summary: install/adopt/restore/re-enable = `get_skill` (upsert MACHINE_SKILL enabled=true for that harness + materialize latest revision); remove = `disable_skill` + local folder deletion by the agent. Enabled skills always resolve to the latest revision (no pinning). One MCP call is one transaction: a push lands whole or not at all.
 
