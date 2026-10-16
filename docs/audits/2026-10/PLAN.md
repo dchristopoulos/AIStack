@@ -62,7 +62,7 @@ How to work through it:
 - [x] 24. Record the decision: ADR-0026 and the glossary (#152)
 - [x] 25. Identify a project from its remote or its path (#153)
 - [x] 26. Add the project tables (one compatible migration) (#156)
-- [ ] 27. Project placements in the services, and a removed skill wanted nowhere
+- [x] 27. Project placements in the services, and a removed skill wanted nowhere (#159)
 - [ ] 28. Replay project events before anything records them (bridge release)
 - [ ] 29. Sync a project folder
 - [ ] 30. Server-mode tools take a project
