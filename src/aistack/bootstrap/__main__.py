@@ -268,8 +268,63 @@ def connect_agent(agent: str, hook: bool) -> None:
         agent_config.connect_codex(program, place)
     print(f"Connected {agent} to AIStack at {program}.")
     if hook:
-        print(f"Added the sync reminder at session start to "
-              f"{agent_config.add_session_start_hook(agent)}.")
+        added = agent_config.add_session_start_hook(
+            agent, agent_config.hook_command(program, agent))
+        print(f"Added the sync reminder at session start to {added}.")
+
+
+def status_hook(agent: str | None) -> None:
+    """`aistack status --hook`: the session-start reminder to sync, printed only when a sync of
+    this computer's folders would have something to do (AUTO-24). It never fails a session:
+    anything it cannot settle prints the reminder."""
+    try:
+        quiet = _nothing_to_sync(agent)
+    except (Exception, SystemExit):
+        quiet = False
+    if not quiet:
+        print(agent_config.HOOK_REMINDER)
+
+
+def _nothing_to_sync(agent: str | None) -> bool:
+    if agent:
+        use_agent_place(agent)
+    settings = LocalSettings().resolved(record=False)
+    if settings.place() is None and not (settings.home / "aistack.db").exists():
+        return False
+    configure_logging("ERROR")
+    build_local_context(settings)
+    return not sync_would_act()
+
+
+def sync_would_act() -> bool:
+    """Whether a sync of every skills folder this computer has would report something to do,
+    against the Library the running context opened."""
+    from aistack.bootstrap.context.application_context import (
+        get_local_principal,
+        get_session_factory,
+        library_before_read,
+        library_problem,
+    )
+    from aistack.db.models.harness import Harness
+    from aistack.services import local_skills, sync_service
+
+    library_before_read(force=True)
+    if library_problem() is not None:
+        return True
+    caller = get_local_principal()
+    for harness in local_skills.folders_in_use(Path.home()):
+        local = local_skills.observed(local_skills.skills_folder(Harness(harness), Path.home()))
+        # The sync a session would run, rolled back: it records that the folder synced.
+        with get_session_factory()() as session:
+            try:
+                report = sync_service.sync(session, caller.machine_id, caller.user_id, local,
+                                           harness)
+            finally:
+                session.rollback()
+        if (report.install or report.update or report.ask or report.backup
+                or report.team_updates or report.first_sync):
+            return True
+    return False
 
 
 def export_library(destination: Path) -> None:
@@ -430,7 +485,8 @@ def run() -> None:
                     "setup steps for a coding agent, 'sync-skill' the skill they install, and "
                     "'check' whether this computer reaches its Library; 'github' signs in to "
                     "GitHub and finds or creates the private repository a Library lives in; "
-                    "'export' writes every skill in the Library to a folder; 'move github', "
+                    "'export' writes every skill in the Library to a folder; 'status --hook' "
+                    "reminds the agent to sync when there is something to; 'move github', "
                     "'move postgresql' or 'move here' moves it with its history; 'connect' "
                     "connects Claude Code or Codex to it; 'serve' runs the AIStack server, "
                     "'backup' and 'restore' copy its database, and 'admin' manages its "
@@ -438,7 +494,7 @@ def run() -> None:
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
                                                        "sync-skill", "check", "export",
                                                        "github", "move", "connect", "backup",
-                                                       "restore", "admin"])
+                                                       "restore", "admin", "status"])
     parser.add_argument("folder", nargs="?",
                         help="Where 'export' writes the skills, ./aistack-library by default; "
                              "the skills folder 'sync-skill' writes its skill into, instead of "
@@ -453,7 +509,9 @@ def run() -> None:
                         help="For 'check' and 'export': use the Library this agent is "
                              "connected to, without showing its settings")
     parser.add_argument("--hook", action="store_true",
-                        help="For 'connect': also remind the agent to sync at session start")
+                        help="For 'connect': also remind the agent to sync at session start. "
+                             "'status --hook' is that reminder: printed only when sync has "
+                             "something to do")
     arguments = parser.parse_args()
     command = arguments.command
     folder = Path(arguments.folder).expanduser() if arguments.folder else None
@@ -471,6 +529,11 @@ def run() -> None:
     if command == "connect" and arguments.folder not in agent_config.AGENTS:
         parser.error("connect takes the agent to connect: claude-code or codex")
 
+    if command == "status":
+        if not arguments.hook:
+            parser.error("status runs as the session-start hook: aistack status --hook")
+        status_hook(arguments.agent)
+        return
     if command == "github":
         sys.exit(github_setup.connect(LocalSettings().home))
     if command in ("backup", "restore") and arguments.folder is None:

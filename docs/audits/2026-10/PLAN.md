@@ -83,8 +83,10 @@ How to work through it:
 - [x] 40. Sync reports what is true: nested .git, unsubscribed groups, removed skills, skills that cannot be backed up (06269bf)
 - [x] 40b. Fewer calls per sync: one push for many skills, a listing that narrows, room in the descriptions (f91a3ae)
 - [ ] 40d. Sync without copying digests or running seven commands per skill (trust boundary; get_skill's smaller result waits for a minor release)
-- [ ] 40c. A session start that stays quiet when nothing changed
-- [ ] 41. Audit trail, logs and an export
+- [x] 40c. A session start that stays quiet when nothing changed (f43f3b1)
+- [ ] 41. One log: a line for every change, one format, no SDK chatter
+- [ ] 41d. Download your Library, and the headers an https server sends
+- [ ] 41e. The page's words in one table
 - [ ] 41b. The operator can forget a person
 - [ ] 41c. Metrics for the operator, behind a token
 - [ ] 42. Tests and checks the code is missing
@@ -903,16 +905,40 @@ ADR: none needed.
 
 Tests: `status --hook` prints nothing when the folder matches the Library, and one line after a skill is added.
 
-### 41. Audit trail, logs and an export
+### 41. One log: a line for every change, one format, no SDK chatter
 
-Closes: [STD-10](industry-standards.md#std-10-changes-made-on-the-dashboard-leave-no-log-line-shares-groups-group-privacy-takes-and-placements), [STD-11](industry-standards.md#std-11-the-server-log-mixes-two-formats-and-fastmcps-multi-line-rich-lines-ignore-aistack_log_level), [IMP-18](improvements.md#imp-18-most-of-the-server-log-is-mcp-sdk-chatter), the export half of [STD-15](industry-standards.md#std-15-a-person-on-a-server-can-neither-export-their-library-nor-be-erased), [STD-13](industry-standards.md#std-13-no-hsts-even-when-aistack_public_url-is-https-inline-scripts-allowed-by-the-csp-and-a-server-banner-on-every-response), [STD-20](industry-standards.md#std-20-the-dashboard-is-english-only-by-construction-locale-fixed-to-en-and-strings-inline).
-Largest effort among them: L.
+Split from "Audit trail, logs and an export", which was three PRs.
 
-Files: src/aistack/api/dashboard.py (one INFO line per action, no caller text); src/aistack/bootstrap/__main__.py (one log format); src/aistack/api/dashboard.py (`GET /api/library.tar.gz`); dashboard.html (strings in one object; Intl.PluralRules).
+Closes: [STD-10](industry-standards.md#std-10-changes-made-on-the-dashboard-leave-no-log-line-shares-groups-group-privacy-takes-and-placements), [STD-11](industry-standards.md#std-11-the-server-log-mixes-two-formats-and-fastmcps-multi-line-rich-lines-ignore-aistack_log_level), [IMP-18](improvements.md#imp-18-most-of-the-server-log-is-mcp-sdk-chatter).
+Largest effort among them: M.
+
+Files: src/aistack/services/skill_service.py and team_service.py (one INFO line per change, names through `loggable()` beside the ids); src/aistack/bootstrap/__main__.py (one log format, FastMCP's logger taken over, the SDK's per-request lines floored at WARNING).
 
 ADR: none needed.
 
-Tests: Every dashboard action writes one line naming the action, team and user id; the server log has one format; a person downloads their Library and it matches `aistack export`.
+Tests: every mutator writes one line naming the change, the team and the user, held by a table a new mutator must join; after `configure_logging("ERROR")` nothing logs at INFO; the SDK's two loggers sit at WARNING.
+
+### 41d. Download your Library, and the headers an https server sends
+
+Closes: the export half of [STD-15](industry-standards.md#std-15-a-person-on-a-server-can-neither-export-their-library-nor-be-erased), [STD-13](industry-standards.md#std-13-no-hsts-even-when-aistack_public_url-is-https-inline-scripts-allowed-by-the-csp-and-a-server-banner-on-every-response).
+Largest effort among them: M. **Trust boundary** (a route that returns file content, and the page's security headers).
+
+Files: src/aistack/api/dashboard.py (`GET /api/library.tar.gz`, HSTS, a hash-based script-src, the `__Host-` cookie); src/aistack/mcp/mcp.py (`server_header=False`); docs/OPERATING.md (the Caddyfile's HSTS line).
+
+ADR: none needed.
+
+Tests: a person downloads their Library and it matches `aistack export`; on an https server /app sends HSTS and a script-src without 'unsafe-inline', and no `server` header; the browser tests pass in all three engines.
+
+### 41e. The page's words in one table
+
+Closes: [STD-20](industry-standards.md#std-20-the-dashboard-is-english-only-by-construction-locale-fixed-to-en-and-strings-inline).
+Largest effort among them: M.
+
+Files: src/aistack/bundled/dashboard.html (strings in one object; `Intl.PluralRules`).
+
+ADR: none needed.
+
+Tests: the browser tests pass unchanged, which is the proof that no word moved.
 
 ### 41b. The operator can forget a person
 

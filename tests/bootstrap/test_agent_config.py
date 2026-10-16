@@ -108,6 +108,25 @@ def test_the_hook_is_added_once_and_keeps_the_hooks_already_there(home_fixture):
         "echo hi", agent_config.HOOK_COMMAND]
 
 
+def test_local_modes_hook_takes_the_place_of_the_reminder_that_always_speaks(home_fixture):
+    """AUTO-24: one AIStack hook, the one that speaks only when there is something to sync."""
+    agent_config.add_session_start_hook("claude-code")
+    quiet = agent_config.hook_command(PROGRAM, "claude-code")
+
+    agent_config.add_session_start_hook("claude-code", quiet)
+    agent_config.add_session_start_hook("claude-code", quiet)
+
+    written = json.loads((home_fixture / ".claude" / "settings.json").read_text())
+    assert [entry["hooks"][0]["command"] for entry in written["hooks"]["SessionStart"]] == [
+        quiet]
+
+
+def test_the_hook_reminds_when_it_cannot_tell_and_never_fails_a_session(home_fixture):
+    done = _aistack(home_fixture, "status", "--hook", "--agent", "claude-code")
+
+    assert (done.returncode, done.stdout) == (0, agent_config.HOOK_REMINDER + "\n")
+
+
 def test_a_settings_file_that_is_not_valid_json_is_left_alone(home_fixture):
     settings = home_fixture / ".codex" / "hooks.json"
     settings.parent.mkdir()
@@ -157,7 +176,9 @@ def test_connect_checks_the_library_installs_the_skill_and_connects_codex(home_f
     ours = tomllib.loads((home_fixture / ".codex" / "config.toml").read_text())
     assert ours["mcp_servers"]["aistack"]["env"] == {"AISTACK_HOME": library}
     hooks = json.loads((home_fixture / ".codex" / "hooks.json").read_text())
-    assert len(hooks["hooks"]["SessionStart"]) == 1
+    program = ours["mcp_servers"]["aistack"]["command"]
+    assert [entry["hooks"][0]["command"] for entry in hooks["hooks"]["SessionStart"]] == [
+        f'"{program}" status --hook --agent codex']
 
     # Later, with nothing in the environment, the agent's own connection says where it is.
     again = _aistack(home_fixture, "check", "--agent", "codex")
