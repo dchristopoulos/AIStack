@@ -1,6 +1,6 @@
 # Skills folders inside a project
 
-Status: proposed, 2026-10-15. Amends ADR-0018, which left projects out and set the terms for taking them in: a project is known by its normalised git remote, and files git tracks are never touched. Research: [docs/research/coding-agent-config-layout.md](../research/coding-agent-config-layout.md).
+Status: accepted, 2026-10-16. Amends ADR-0018, which left projects out and set the terms for taking them in: a project is known by its normalised git remote, and files git tracks are never touched. Research: [docs/research/coding-agent-config-layout.md](../research/coding-agent-config-layout.md).
 
 Some skills belong to one repository, such as how its API is laid out or how it is released. Placed globally, they load in every session in every repository. Kept by hand in the repository's `.claude/skills`, they live on one computer, untracked, and are lost with the clone. The agents already read project folders. Claude Code reads `.claude/skills` from the working directory up to the repository's top level. Codex, Gemini CLI, Kimi Code, opencode, Cursor, Copilot CLI and Amp read `.agents/skills` the same way. Those are the two harness folders again, one level down.
 
