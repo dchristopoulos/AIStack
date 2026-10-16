@@ -83,7 +83,7 @@ How to work through it:
 - [x] 40. Sync reports what is true: nested .git, unsubscribed groups, removed skills, skills that cannot be backed up (06269bf)
 - [x] 40b. Fewer calls per sync: one push for many skills, a listing that narrows, room in the descriptions (f91a3ae)
 - [ ] 40d. Sync without copying digests or running seven commands per skill (trust boundary; get_skill's smaller result waits for a minor release)
-- [ ] 40c. A session start that stays quiet when nothing changed
+- [x] 40c. A session start that stays quiet when nothing changed (f43f3b1)
 - [ ] 41. Audit trail, logs and an export
 - [ ] 41b. The operator can forget a person
 - [ ] 41c. Metrics for the operator, behind a token
