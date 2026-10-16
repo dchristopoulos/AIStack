@@ -35,7 +35,7 @@ class JoinedMachine:
 
 def join(session: Session, username: str, machine_name: str, os: str,
          team_invite: str | None = None, machine_id: uuid.UUID | None = None,
-         user_id: uuid.UUID | None = None) -> JoinedMachine:
+         user_id: uuid.UUID | None = None, full_name: str | None = None) -> JoinedMachine:
     """Create a user and first machine within the caller's transaction.
 
     With `team_invite`, the bearer the caller presented was that team's invite code, and the
@@ -47,11 +47,13 @@ def join(session: Session, username: str, machine_name: str, os: str,
     username = validated_username(username)
     machine_name = _validated_name(machine_name, "machine_name", MACHINE_NAME_MAX_LENGTH)
     operating_system = _validated_operating_system(os)
+    # The name the person gave in the sentence they pasted, so they need not type it again.
+    full_name = None if full_name is None else _validated_full_name(full_name)
     # Resolved in this transaction, before anything is written: a code replaced since the
     # bearer was verified admits nobody.
     invite = None if team_invite is None else team_service.invited_to(session, team_invite)
 
-    user = User(user_id=user_id, username=username)
+    user = User(user_id=user_id, username=username, full_name=full_name)
     session.add(user)
     try:
         session.flush()
@@ -201,12 +203,16 @@ def rename_machine(session: Session, user_id: uuid.UUID, machine_id: str, name: 
 
 def set_full_name(session: Session, user_id: uuid.UUID, full_name: str) -> str | None:
     """Set or, with blank text, clear the name teammates read beside the caller's username."""
-    if isinstance(full_name, str) and not full_name.strip():
-        cleaned = None
-    else:
-        cleaned = _validated_name(full_name, "Full name", FULL_NAME_MAX_LENGTH)
+    cleaned = _validated_full_name(full_name)
     session.execute(update(User).where(User.user_id == user_id).values(full_name=cleaned))
     return cleaned
+
+
+def _validated_full_name(full_name: str) -> str | None:
+    """A name to read beside the username, or None for blank text."""
+    if isinstance(full_name, str) and not full_name.strip():
+        return None
+    return _validated_name(full_name, "Full name", FULL_NAME_MAX_LENGTH)
 
 
 def _claim_admin(session: Session, user: User) -> None:

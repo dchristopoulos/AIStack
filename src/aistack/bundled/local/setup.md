@@ -6,7 +6,13 @@ The steps are written for Claude Code and for Codex; where the two differ, each 
 
 ## 1. Check it is not already set up
 
-In Claude Code, run `claude mcp list`. In Codex, run `grep -c '^\[mcp_servers.aistack\]' ~/.codex/config.toml`. If `aistack` is listed, or the count is 1, stop: this computer is already connected, and the user can say "sync aistack". Otherwise go on.
+Check both agents, whichever one you are: `claude mcp list`, and `grep -c '^\[mcp_servers.aistack\]' ~/.codex/config.toml`. If `aistack` is not listed and the count is 0, go on to step 2.
+
+Otherwise this computer is already connected. `claude mcp list` shows where: an address for an AIStack server, or a command for AIStack running here. For Codex, `sed -n '/^\[mcp_servers.aistack\]/,/^\[/p' ~/.codex/config.toml | grep -E '^(url|command) '` shows the same.
+
+- **A command, and the user named no place, or the place it already uses.** Stop: the user can say "sync aistack". To see the place, run that command with `check`.
+- **A command, and the user named another place** (they pasted the dashboard's sentence after moving their Library, for instance). Run the command with `check`. If it names another place than the one they gave, tell them this computer still uses the old one, then remove the connection, `claude mcp remove aistack --scope user` in Claude Code or the whole `[mcp_servers.aistack]` table in `~/.codex/config.toml`, and go on to step 2 with the place they gave.
+- **An address.** This computer is connected to an AIStack server, and a computer belongs to one AIStack at a time. Tell the user, and ask whether to leave the server for a Library of their own. If they say no, stop. If yes, remove the connection as above and go on to step 2.
 
 Never run `claude mcp get aistack` or `codex mcp get aistack`: they print the Library's settings in full, and a database address holds its password.
 

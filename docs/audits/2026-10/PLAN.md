@@ -62,7 +62,7 @@ How to work through it:
 - [ ] 21b. A server notices a machine token copied to another computer
 - [x] 22. A second computer gets the sync skill and the session-start hook, whatever its agent (#157)
 - [ ] 22b. Adding a computer on a server is one paste, with no token carried between computers
-- [ ] 23. Setup can be run again, and a stopped setup can finish
+- [x] 23. Setup can be run again, and a stopped setup can finish (#167)
 - [x] 24. Record the decision: ADR-0026 and the glossary (#152)
 - [x] 25. Identify a project from its remote or its path (#153)
 - [x] 26. Add the project tables (one compatible migration) (#156)
@@ -534,6 +534,8 @@ Files: src/aistack/bundled/setup-aistack.md; src/aistack/services/onboarding_ser
 ADR: none needed.
 
 Tests: Setup on a connected computer with a team invite joins the team instead of stopping; a join whose answer was lost can be completed; the name a person gives becomes their full name.
+
+Outcome: ENT-11's idempotency key was not built. The answer is kept in a file until the agent is connected, which covers a setup that stops after joining. An answer lost on the network is completed by the operator's `aistack admin register-machine` (step 12b), which the setup text and the refusal both name. A key would need a migration, and it would let a replayed request mint a token. README's move to a server (AUTO-05's third fix) is now setup step 1's "another address, or a command" branch.
 
 ## Skill folders inside projects
 

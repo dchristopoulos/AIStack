@@ -4,9 +4,11 @@ import tomllib
 
 import httpx
 import pytest
+from sqlalchemy import select
 
 from aistack.bootstrap.context import application_context
 from aistack.bundled import sync_skill_document
+from aistack.db.models.user import User
 from aistack.mcp.mcp import mcp
 from tests.conftest import INVITE_CODE
 from tests.mcp.conftest import client_for
@@ -86,8 +88,35 @@ async def test_setup_checks_both_agents_before_registering_this_computer(server_
     step_one = text[text.index("## 1."):text.index("## 2.")]
 
     assert "claude mcp list\ngrep -c '^\\[mcp_servers.aistack\\]'" in step_one
-    assert "If `aistack` is listed, or the count is 1, stop." in step_one
     assert "Never register this computer a second time" in step_one
+
+
+async def test_setup_on_a_connected_computer_joins_the_team_or_offers_to_switch(server_url):
+    """PH-09, UX-12, AUTO-05: a pasted team code is used, and a computer on another AIStack
+    is told so instead of being told it is connected."""
+    text = (await _get(f"{_base(server_url)}/setup")).text
+    step_one = text[text.index("## 1."):text.index("## 2.")]
+
+    assert f"**It is {server_url}.**" in step_one
+    assert "call `join_team` with the code" in step_one
+    assert "**It is another address, or a command.**" in step_one
+    assert "claude mcp remove aistack --scope user" in step_one
+    # The address is read without the token beside it.
+    assert "grep -E '^(url|command) '" in step_one
+
+
+async def test_a_setup_that_stopped_after_joining_can_finish(server_url):
+    """PH-10, ENT-11: the only copy of the token is kept until the agent is connected, and a
+    lost answer is sent to the operator's command, not to a computer the person lacks."""
+    text = (await _get(f"{_base(server_url)}/setup")).text
+    step_three = text[text.index("## 3."):text.index("## 4.")]
+    step_four = text[text.index("## 4."):text.index("## 5.")]
+
+    assert "If that file is already there, an earlier setup registered this computer" in step_three
+    assert "-o ~/.aistack-setup-response.json" in step_three
+    assert "aistack admin register-machine <username>" in step_three
+    assert step_four.index("Check the connection") < step_four.index(
+        "delete the request file and `~/.aistack-setup-response.json`")
 
 
 async def test_the_setup_page_connects_codex_with_one_block_of_valid_toml(server_url):
@@ -179,6 +208,22 @@ async def test_the_documented_join_request_works_with_no_mcp_client(server_url):
     # The token that one request returned is a working machine credential.
     async with client_for(server_url, token) as client:
         assert "sync" in {tool.name for tool in await client.list_tools()}
+
+
+async def test_the_name_given_at_join_is_the_one_teammates_read(server_url, session_factory):
+    """UX-11, AUTO-21: the name in the pasted sentence is kept, not asked for again."""
+    response = await _join_with_one_request(server_url, INVITE_CODE, username="maria",
+                                            full_name="Maria Lopez", machine_name="laptop",
+                                            os="LINUX")
+    refused = await _join_with_one_request(server_url, INVITE_CODE, username="nina",
+                                           full_name="x" * 500, machine_name="laptop",
+                                           os="LINUX")
+
+    assert response.json()["result"]["isError"] is False
+    assert refused.json()["result"]["isError"] is True
+    with session_factory() as session:
+        assert {user.username: user.full_name for user in session.scalars(select(User))} == {
+            "maria": "Maria Lopez"}
 
 
 async def test_running_setup_twice_does_not_create_a_second_user(server_url, session_factory):

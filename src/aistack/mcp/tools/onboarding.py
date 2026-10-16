@@ -46,6 +46,8 @@ class JoinResult(TypedDict):
                      user's machines (e.g. "macbook", "work-laptop", "desktop").
         os: This machine's operating system: MACOS, WINDOWS, or LINUX. Required: the server
            cannot observe the client's platform, so state it.
+        full_name: Optional. The person's name as teammates read it beside the username,
+                  such as "Maria Lopez", when they gave one.
 
     Returns:
         JoinResult containing:
@@ -57,7 +59,8 @@ class JoinResult(TypedDict):
             - team: the team they joined with its invite code, or null for the server's code.
     """)
 @handle_mcp_errors
-def join(username: str, machine_name: str, os: Literal["MACOS", "WINDOWS", "LINUX"]) -> JoinResult:
+def join(username: str, machine_name: str, os: Literal["MACOS", "WINDOWS", "LINUX"],
+         full_name: str | None = None) -> JoinResult:
     started_at = perf_counter()
     logger.debug(
         f"Joining. Username: '{loggable(username)}'. "
@@ -86,7 +89,8 @@ def join(username: str, machine_name: str, os: Literal["MACOS", "WINDOWS", "LINU
     # Commit the user, machine, admin claim, and membership together before returning the token.
     try:
         with get_session_factory().begin() as session:
-            joined = onboarding_service.join(session, username, machine_name, os, team_invite)
+            joined = onboarding_service.join(session, username, machine_name, os, team_invite,
+                                             full_name=full_name)
             result = JoinResult(
                 username=joined.user.username,
                 machine_name=joined.machine.name,

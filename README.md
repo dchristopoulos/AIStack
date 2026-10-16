@@ -65,7 +65,7 @@ Paste this into your agent, with the server's address and an invite code:
 
 ```text
 Set up AIStack: fetch https://aistack.example.com/setup and follow it.
-Invite code: <the invite code>. Call me <your name>.
+Invite code: <the invite code>. My username is <a short handle like maria>, and my name is <your name>.
 ```
 
 The agent registers the computer and connects itself. Restart it once when it says so. To add another computer later, say "add my other computer to aistack" on one that is already connected.

@@ -4,11 +4,12 @@ You are an AI coding agent. The user asked you to connect this computer to the A
 
 The steps are written for Claude Code and for Codex; where the two differ, each step says what to do in either. Connecting one of them is enough for the whole computer: sync keeps Claude Code's skills folder and the shared `~/.agents/skills` folder in line, and that shared folder is what Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode, and Amp read. If you are another agent, stop and tell the user to run this setup from Claude Code or Codex; their skills will still reach you through that folder.
 
-You need three things from the user. Ask for whichever they did not give you:
+You need these from the user. Ask for whichever they did not give you, in one question:
 
 - an **invite code**: the server's own, or a team's, which starts with `aistinv_`. Either one works here, and a team's code also makes them a member of that team.
-- a **username**: a short lowercase handle their team will recognize, like `maria` or `j.smith` (letters, digits, and single `.`, `-`, `_`). It is shown next to every skill revision they push or share.
-- a **name for this computer**, like `macbook` or `work-laptop`. Suggest the short hostname, without the domain. It can be at most 64 characters.
+- a **username**: a short lowercase handle their team will recognize, like `maria` or `j.smith` (letters, digits, and single `.`, `-`, `_`). It is shown next to every skill revision they push or share. If they gave only their name, propose a handle from it and ask whether it suits them.
+- their **name**, as teammates should read it beside the handle, like `Maria Lopez`. Optional: if they gave one, pass it; never ask twice.
+- a **name for this computer**. Use the short hostname, without the domain, unless they said otherwise. It can be at most 64 characters.
 
 Work out the operating system yourself: `MACOS`, `WINDOWS`, or `LINUX`.
 
@@ -25,7 +26,14 @@ grep -c '^\[mcp_servers.aistack\]' ~/.codex/config.toml
 
 A command that is not installed, or a file that does not exist, counts as not connected. If `aistack` is not in the list and the count is 0, this computer is not connected yet: go to step 2.
 
-If `aistack` is listed, or the count is 1, stop. This computer is already connected, through that agent. Tell the user so, and that they can say "sync aistack" there: it keeps every skills folder on this computer current, this agent's included. Never register this computer a second time from here.
+Otherwise find where it points. `claude mcp list` shows the address after `aistack:`, or a command for an AIStack that runs on the computer itself. For Codex, this prints only the address or command line of its table:
+
+```
+sed -n '/^\[mcp_servers.aistack\]/,/^\[/p' ~/.codex/config.toml | grep -E '^(url|command) '
+```
+
+- **It is {mcp_url}.** This computer is already connected to this server. If the user gave a team invite code (it starts with `aistinv_`), they already have an account: if you have AIStack's tools, call `join_team` with the code and tell them which team they joined; if you do not, tell them to say "join a team with this code" to the agent that is connected. Either way, stop here, and tell them they can say "sync aistack": it keeps every skills folder on this computer current. Never register this computer a second time.
+- **It is another address, or a command.** This computer uses another AIStack: another server, or one that runs on this computer and keeps a Library of its own. A computer belongs to one AIStack at a time. Tell the user which one it uses now, and ask whether to switch it to this server. If they say no, stop. If they say yes: the first sync here backs up every skills folder on this computer, so those skills come along. Skills kept only in the old Library, on none of this computer's folders, stay there. For one that runs on this computer, run the command it showed with `export ~/aistack-library` first, and copy the folders the user wants into `~/.claude/skills` or `~/.agents/skills`. Then remove the old connection, `claude mcp remove aistack --scope user` in Claude Code, or the whole `[mcp_servers.aistack]` table in `~/.codex/config.toml`, and go on to step 2.
 
 Never run `claude mcp get aistack` or `codex mcp get aistack`: they print this computer's token in full.
 
@@ -51,22 +59,27 @@ Open the file and confirm it starts with `---` and `name: sync-aistack`. If it i
 
 ## 3. Register this computer
 
-Write this JSON to a temporary request file, with the three values filled in. A file avoids every shell's quoting rules.
+The answer to this step holds this computer's token, and it is the only copy. It is saved to `~/.aistack-setup-response.json` (`$HOME\.aistack-setup-response.json` on Windows) and kept until step 4 has connected your agent, so a setup that stops in between can finish. If that file is already there, an earlier setup registered this computer and stopped: if it holds `result.structuredContent.token`, skip to step 4 with it. Otherwise delete it and go on.
+
+Write this JSON to a temporary request file, with the values filled in. Leave out `full_name` if the user gave no name. A file avoids every shell's quoting rules.
 
 ```json
-{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "join", "arguments": {"username": "<username>", "machine_name": "<computer name>", "os": "<MACOS, WINDOWS, or LINUX>"}}}
+{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "join", "arguments": {"username": "<username>", "full_name": "<their name>", "machine_name": "<computer name>", "os": "<MACOS, WINDOWS, or LINUX>"}}}
 ```
 
-Send it with the invite code as the bearer token, saving the response to a second temporary file so the token in it never reaches the terminal:
+Send it with the invite code as the bearer token, saving the response to the file, so the token in it never reaches the terminal:
 
 ```
-curl -sS {mcp_url} -H "Authorization: Bearer <invite code>" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" --data @<request file> -o <response file>
+curl -sS {mcp_url} -H "Authorization: Bearer <invite code>" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" --data @<request file> -o ~/.aistack-setup-response.json
 ```
 
 The response file is one plain JSON object, not an event stream. Read it:
 
 - `result.structuredContent.token` is this computer's permanent token. Go to step 4.
-- `result.isError` is true: the text in `result.content` says what to fix. Fix it and send again. If it says the username is taken and this is the same person on a second computer (step 1 found no agent connected on this one), stop: they should say "add my other computer" from a computer that is already connected, and paste the command it gives them here.
+- `result.isError` is true: the text in `result.content` says what to fix. Fix it and send again. If it says the username is taken:
+  - The user already has an account and a connected computer: stop. They should say "add my other computer" there, and paste the command it gives them here. If they came with a team invite code, they also say "join a team with this code" there.
+  - This is their only computer, and an earlier setup joined with this name but the answer was lost: stop. Whoever runs the server registers this computer for them with `aistack admin register-machine <username> <computer name> --os <macos, windows or linux>` and sends them what it prints, to paste here.
+  - Otherwise the name belongs to someone else: ask for another.
 - An HTTP 401 with no result: the invite code is wrong. Ask the user to check it.
 
 ## 4. Connect your coding agent
@@ -93,7 +106,7 @@ tools.push_skill.approval_mode = "approve"
 
 Codex otherwise asks before every AIStack call. The four `tools` lines approve only what sync does without asking: comparing, listing the Library, installing, and backing up to the user's private Library. Tell the user so in one line: everything else, such as sharing a skill with a team, still asks, and Codex still asks before writing into `~/.agents/skills`.
 
-Then delete both temporary files. The response file holds the token.
+Check the connection: `claude mcp list` shows `aistack`, or the `grep -c` above prints 1. Only then delete the request file and `~/.aistack-setup-response.json`, which holds the token.
 
 ## 5. Offer to sync at the start of every session
 
