@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import httpx
@@ -290,3 +291,30 @@ async def test_an_unexpected_failure_is_masked(server_url, monkeypatch):
 
     assert response.status_code == 500
     assert response.json() == {"error": "upload_skill failed unexpectedly."}
+
+
+async def test_an_upload_dropped_mid_body_is_logged_as_the_client_leaving(server_url, caplog,
+                                                                          session_factory):
+    """ENT-13: a client that hangs up mid-upload is a flaky network, not a server fault."""
+    token = await _join(server_url)
+    url = httpx.URL(await _upload_url(server_url, token))
+    archive = skill_archive()
+
+    with caplog.at_level(logging.INFO):
+        reader, writer = await asyncio.open_connection(url.host, url.port)
+        writer.write(f"PUT {url.raw_path.decode()} HTTP/1.1\r\nHost: {url.netloc.decode()}\r\n"
+                     f"Content-Length: {len(archive)}\r\n\r\n".encode()
+                     + archive[:len(archive) // 3])
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+        async with asyncio.timeout(5):
+            while not any("hung up" in record.getMessage() for record in caplog.records):
+                await asyncio.sleep(0.05)
+
+    transfer = [record for record in caplog.records
+                if record.name == "aistack.mcp.routes.transfer"]
+    assert [record.levelno for record in transfer] == [logging.INFO]
+    assert "Traceback" not in transfer[0].getMessage()
+    with session_factory() as session:
+        assert session.scalar(select(Skill)) is None

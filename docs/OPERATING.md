@@ -201,7 +201,7 @@ Its token is rejected from the next request on, and the record of which skills i
 
 ### A user has no machine left
 
-If their only machine was deleted, they cannot call `add_machine`, and joining again is refused because the username exists. Register a machine for them:
+If their only machine was deleted, or their first join went through but its answer never reached them, they cannot call `add_machine`, and joining again is refused because the username exists. Register a machine for them:
 
 ```python
 from sqlalchemy import select

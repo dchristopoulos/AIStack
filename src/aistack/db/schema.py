@@ -31,9 +31,20 @@ logger = logging.getLogger(__name__)
 
 # The schema of every database created before migrations existed.
 BASELINE_REVISION = "0001"
+# The tables a database made before migrations existed always has.
+_BASELINE_TABLES = {"user", "machine", "skill"}
 
 _VERSION_TABLE = "alembic_version"
 _COMPATIBILITY_TABLE = "schema_compatibility"
+
+
+class ForeignDatabase(Exception):
+    """The database holds another application's tables, and none of AIStack's."""
+
+    def __init__(self) -> None:
+        super().__init__("This database holds other tables and none of AIStack's, so it belongs "
+                         "to something else. Nothing was changed. Point DATABASE_URL at an "
+                         "empty database, or at AIStack's own.")
 
 
 class NewerSchema(Exception):
@@ -206,8 +217,15 @@ def _record_compatibility(connection: Connection, scripts: ScriptDirectory) -> N
 
 
 def _predates_migrations(connection: Connection) -> bool:
+    """A database from before migrations: the baseline's tables and no version row. Any other
+    non-empty database without the version row is somebody else's, and is refused untouched,
+    because stamping it would run every migration over another application's data."""
     tables = set(inspect(connection).get_table_names())
-    return bool(tables) and _VERSION_TABLE not in tables
+    if not tables or _VERSION_TABLE in tables:
+        return False
+    if not _BASELINE_TABLES <= tables:
+        raise ForeignDatabase()
+    return True
 
 
 def _require_intact_foreign_keys(connection: Connection) -> None:

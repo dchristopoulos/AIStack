@@ -69,6 +69,8 @@ Pass every skill, including ones that did not come from AIStack, and the folder'
 
 With no local skills, pass `{"local": {}}` and the harness. Copy digests exactly as the shell printed them.
 
+If `sync` fails with HTTP 413, "Request body too large", the listing was too big to send: a skill folder almost always holds a `node_modules` or `.git` folder with thousands of files. Find it with `find <folder> -mindepth 2 -type d \( -name node_modules -o -name .git \) -prune`, tell the user which skill it is in, and ask them to move it out of the skills folder. Then list and sync again.
+
 ## 4. Act on the report
 
 Work through the fields in this order, passing the same harness to every tool you call.
