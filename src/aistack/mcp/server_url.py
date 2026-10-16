@@ -7,7 +7,6 @@ from aistack.commons.exceptions import ValidationError
 from aistack.commons.text import loggable
 from aistack.commons.urls import is_plain_http_url
 
-
 # Where a link from `open_dashboard` signs a browser in. Here, with the other addresses the
 # server hands out, so the tool that builds the link and the route that answers it agree.
 DASHBOARD_LOGIN_PATH = "/app/login"

@@ -238,13 +238,13 @@ def test_a_project_somebody_else_manages_answers_like_one_nobody_does(session_fa
     for key in (KEY, "github.com/acme/nothing"):
         with session_factory.begin() as session:
             for attempt in (
-                lambda: project_service.required_folder(session, maria.user.user_id,
+                lambda key=key: project_service.required_folder(session, maria.user.user_id,
                                                         maria.machine.machine_id, key,
                                                         Harness.CLAUDE_CODE),
-                lambda: project_service.add_folder(session, maria.user.user_id,
+                lambda key=key: project_service.add_folder(session, maria.user.user_id,
                                                    maria.machine.machine_id, key,
                                                    Harness.CLAUDE_CODE),
-                lambda: project_service.remove_folder(session, maria.user.user_id,
+                lambda key=key: project_service.remove_folder(session, maria.user.user_id,
                                                       maria.machine.machine_id, key),
             ):
                 with pytest.raises(NotFound) as refused:

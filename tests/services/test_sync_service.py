@@ -1,6 +1,6 @@
-from dataclasses import replace
 import hashlib
 import unicodedata
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest

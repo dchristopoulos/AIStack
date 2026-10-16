@@ -14,8 +14,8 @@ from sqlalchemy.exc import OperationalError
 
 from aistack.bootstrap import admin_cli, agent_config, github_setup, self_update
 from aistack.bootstrap.configuration.settings.settings_config import (
-    DatabaseSettings,
     LIBRARY_FILE,
+    DatabaseSettings,
     LocalSettings,
     Settings,
     described,
@@ -34,8 +34,8 @@ from aistack.commons.release import release
 from aistack.commons.text import loggable
 from aistack.db import backup
 from aistack.db.engine import build_engine
-from aistack.mcp.argument_errors import argument_problems
 from aistack.db.schema import ForeignDatabase, NewerSchema
+from aistack.mcp.argument_errors import argument_problems
 
 logger = logging.getLogger(__name__)
 

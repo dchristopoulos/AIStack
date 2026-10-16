@@ -18,7 +18,7 @@ class ValueSet(Enum):
 
     def result_processor(self, dialect, coltype):
         # `enums` holds the stored spelling of each member, in member order.
-        members = dict(zip(self.enums, self.enum_class))
+        members = dict(zip(self.enums, self.enum_class, strict=True))
 
         def process(value):
             return None if value is None else members.get(value)

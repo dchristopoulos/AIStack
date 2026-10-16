@@ -5,8 +5,8 @@ import pytest
 from fastmcp.exceptions import ToolError
 from sqlalchemy import select
 
-from aistack.db.models.machine import Machine
 from aistack.commons.text import loggable
+from aistack.db.models.machine import Machine
 from tests.conftest import INVITE_CODE
 from tests.mcp.conftest import client_for
 

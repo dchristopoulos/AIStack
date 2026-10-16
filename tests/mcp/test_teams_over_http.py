@@ -532,7 +532,7 @@ async def test_a_team_invite_code_appears_in_no_log_line(server_url, caplog):
         async with client_for(server_url, new) as client:
             await client.call_tool("join", {"username": "alex", "machine_name": "thinkpad",
                                             "os": "WINDOWS"})
-        with pytest.raises(Exception):
+        with pytest.raises(Exception, match="401"):
             async with client_for(server_url, "aistinv_wrong") as client:
                 await client.list_tools()
 

@@ -263,7 +263,7 @@ def main() -> None:
     print("Maria has an update to 'code-review' waiting. Alex is in 'aistack' and in no group, "
           "so the private 'security' group is hidden from him.\n")
     print_links(links)
-    print(f"\nAfter five minutes, `python scripts/demo_seed.py --links` prints new ones.")
+    print("\nAfter five minutes, `python scripts/demo_seed.py --links` prints new ones.")
 
 
 def print_links(links: dict[str, str]) -> None:

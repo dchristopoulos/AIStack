@@ -1,7 +1,6 @@
 import contextlib
 import json
 import os
-import re
 import shutil
 import stat
 import subprocess
@@ -20,8 +19,8 @@ from sqlalchemy import select, text, update
 from aistack.bootstrap import agent_config
 from aistack.bootstrap.__main__ import sync_would_act
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings
-from aistack.bundled import local_sync_skill_document
 from aistack.bootstrap.context import application_context
+from aistack.bundled import local_sync_skill_document
 from aistack.commons.exceptions import Conflict
 from aistack.db.models.machine import Machine
 from aistack.db.models.skill_file import SkillFile

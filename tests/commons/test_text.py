@@ -1,5 +1,11 @@
 from aistack.commons.exceptions import ValidationError
-from aistack.commons.text import LOGGED_FAILURE_MAX_LENGTH, bounded_failure, LOGGED_VALUE_MAX_LENGTH, loggable, sanitized
+from aistack.commons.text import (
+    LOGGED_FAILURE_MAX_LENGTH,
+    LOGGED_VALUE_MAX_LENGTH,
+    bounded_failure,
+    loggable,
+    sanitized,
+)
 
 
 def test_a_newline_cannot_forge_a_log_line():

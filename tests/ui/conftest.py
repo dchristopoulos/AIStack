@@ -23,6 +23,8 @@ _SEED_SCRIPT = pathlib.Path(__file__).parents[2] / "scripts" / "demo_seed.py"
 def pytest_configure(config):
     config.addinivalue_line("markers", "long_names: seed a fourth person whose names are all as "
                                        "long as the server allows")
+    config.addinivalue_line("markers", "console_errors_expected: the test makes the server "
+                                       "refuse on purpose, which the browser logs as an error")
 
 
 def _demo_seed():
@@ -77,10 +79,14 @@ class Opened:
 
 
 @pytest.fixture(name="sign_in")
-async def sign_in_fixture(browser, server_url, links):
-    """Open the dashboard as one of the seeded people, each in a browser context of their own."""
+async def sign_in_fixture(browser, server_url, links, request):
+    """Open the dashboard as one of the seeded people, each in a browser context of their own.
+
+    Every page it opened must end with no console error and no uncaught exception (IMP-04),
+    unless the test is marked as provoking one."""
     base_url = server_url.removesuffix("/mcp")
     contexts = []
+    opened_pages: list[Opened] = []
 
     async def sign_in(username: str, viewport: tuple[int, int] = (1280, 900)) -> Opened:
         context = await browser.new_context(viewport={"width": viewport[0],
@@ -88,6 +94,7 @@ async def sign_in_fixture(browser, server_url, links):
         contexts.append(context)
         page = await context.new_page()
         opened = Opened(page, base_url)
+        opened_pages.append(opened)
         await page.goto(links[username])
         await page.get_by_role("heading", name="Library", level=1).wait_for()
         return opened
@@ -95,3 +102,5 @@ async def sign_in_fixture(browser, server_url, links):
     yield sign_in
     for context in contexts:
         await context.close()
+    if request.node.get_closest_marker("console_errors_expected") is None:
+        assert [error for opened in opened_pages for error in opened.console_errors] == []

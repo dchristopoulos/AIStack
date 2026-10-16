@@ -10,10 +10,9 @@ from aistack.services.skill_archive import ArchivedFile
 from aistack.services.skill_validation import validated_skill
 from tests.archives import local_digests, skill_archive
 from tests.mcp.conftest import call as _call
-from tests.mcp.conftest import client_for
+from tests.mcp.conftest import client_for, second_machine
 from tests.mcp.conftest import join as _join
 from tests.mcp.conftest import push as _push
-from tests.mcp.conftest import second_machine
 
 pytestmark = pytest.mark.anyio
 

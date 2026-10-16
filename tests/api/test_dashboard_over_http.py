@@ -506,6 +506,56 @@ async def test_a_share_over_a_different_skill_is_offered_as_one(server_url):
         ("deploy-steps", True)]
 
 
+async def test_an_admin_runs_a_teams_groups_and_skills_from_the_dashboard(server_url):
+    """IMP-04: these admin and destructive paths never ran in any test."""
+    tokens = {name: await _join(server_url, name) for name in ("dimitris", "maria", "alex")}
+    await _push(server_url, tokens["dimitris"], "wizard")
+    await _push(server_url, tokens["dimitris"], "notes")
+    async with _browser(server_url, tokens["dimitris"]) as dimitris, \
+            _browser(server_url, tokens["maria"]) as maria, \
+            _browser(server_url, tokens["alex"]) as alex:
+        await _team_of_two(server_url, dimitris, maria)
+        code = (await _post(dimitris, "/teams/acme/invite")).json()["code"]
+        await _post(alex, "/teams/join", code=code)
+        await _post(dimitris, "/teams/acme/groups", name="backend")
+        await _post(dimitris, "/teams/acme/group/members", path="backend", username="alex",
+                    member=True)
+        await _post(dimitris, "/skills/wizard/share", team="acme")
+        await _post(dimitris, "/skills/notes/share", team="acme")
+
+        async def sees(browser) -> tuple[list[str], list[str]]:
+            acme = next(team for team in (await _state(browser))["teams"]
+                        if team["name"] == "acme")
+            return ([group["path"] for group in acme["groups"]],
+                    [skill["name"] for skill in acme["skills"]])
+
+        # Into the group, which then turns private: Maria, outside it, loses both.
+        assert (await _post(dimitris, "/teams/acme/skills/wizard/move",
+                            group="backend")).status_code == 200
+        assert (await _post(dimitris, "/teams/acme/group", path="backend",
+                            private=True)).status_code == 200
+        assert await sees(maria) == ([], ["notes"])
+        assert await sees(alex) == (["backend"], ["notes", "wizard"])
+        listed = await _call(server_url, tokens["maria"], "list_skills", team="acme")
+        assert [skill["name"] for skill in listed["skills"]] == ["notes"]
+        await _post(dimitris, "/teams/acme/group", path="backend", private=False)
+        assert await sees(maria) == (["backend"], ["notes", "wizard"])
+
+        # Unsubscribing is the member's own switch.
+        assert (await _post(maria, "/teams/acme/group", path="backend",
+                            subscribed=False)).status_code == 200
+        backend, = [group for group in next(team for team in (await _state(maria))["teams"]
+                                            if team["name"] == "acme")["groups"]]
+        assert backend["subscribed"] is False
+
+        # Removing the team's copy leaves Maria's own, now linked to nothing.
+        await _post(maria, "/teams/acme/take", name="notes")
+        assert (await _post(dimitris, "/teams/acme/skills/notes/remove")).status_code == 200
+        mine, = (await _state(maria))["skills"]
+        assert (mine["name"], mine["source"]) == ("notes", None)
+        assert await sees(maria) == (["backend"], ["wizard"])
+
+
 async def test_what_only_an_admin_may_do_is_refused_to_a_member_with_a_sentence(server_url):
     dimitris_token = await _join(server_url, "dimitris")
     maria_token = await _join(server_url, "maria")

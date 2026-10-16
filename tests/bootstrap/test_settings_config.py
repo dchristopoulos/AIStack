@@ -11,10 +11,12 @@ from aistack.bootstrap.__main__ import (
     WIRE_LOGGERS,
     configure_logging,
 )
-from aistack.bootstrap.configuration.settings.settings_config import (PLACEHOLDER_INVITE_CODE,
-                                                                      Settings,
-                                                                      resolved_invite_code,
-                                                                      validate_invite_code)
+from aistack.bootstrap.configuration.settings.settings_config import (
+    PLACEHOLDER_INVITE_CODE,
+    Settings,
+    resolved_invite_code,
+    validate_invite_code,
+)
 
 
 @pytest.fixture(autouse=True)

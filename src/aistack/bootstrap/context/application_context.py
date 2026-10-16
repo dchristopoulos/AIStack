@@ -29,8 +29,8 @@ from aistack.commons.exceptions import AIStackError, Conflict, NeedsNewerRelease
 from aistack.commons.release import UPDATE_AND_RESTART
 from aistack.db.backup import checkpoint
 from aistack.db.engine import build_engine, build_read_session_factory, build_session_factory
-from aistack.db.schema import NewerSchema, guard_schema, migrate_schema
 from aistack.db.models.machine import Machine
+from aistack.db.schema import NewerSchema, guard_schema, migrate_schema
 from aistack.mcp.auth.failure_limiter import (
     FAILURE_LIMIT,
     FAILURE_WINDOW_SECONDS,

@@ -2,10 +2,10 @@ import logging
 
 import uvicorn
 from fastmcp import FastMCP
+from fastmcp.server.middleware import AuthMiddleware
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from fastmcp.server.middleware import AuthMiddleware
 
 from aistack.bootstrap.context.application_context import get_failure_limiter, get_public_url
 from aistack.commons import request_id
@@ -26,11 +26,10 @@ mcp = FastMCP(
 )
 
 # Register tools and routes before building the HTTP app.
-from aistack.mcp.routes import health, invite, metrics, setup, transfer  # noqa: F401, E402
-from aistack.mcp.tools import onboarding, skills, sync, teams  # noqa: F401, E402
-
 # The dashboard's routes, registered last: they import the login path from the tools.
 from aistack.api import dashboard  # noqa: F401, E402
+from aistack.mcp.routes import health, invite, metrics, setup, transfer  # noqa: F401, E402
+from aistack.mcp.tools import onboarding, skills, sync, teams  # noqa: F401, E402
 
 
 def http_server_config(path: str, log_level: str, **bind) -> uvicorn.Config:

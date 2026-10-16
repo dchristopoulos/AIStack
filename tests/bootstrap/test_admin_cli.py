@@ -11,13 +11,13 @@ from sqlalchemy.exc import OperationalError
 
 from aistack.bootstrap import admin_cli
 from aistack.db.engine import build_session_factory
+from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
-from aistack.db.models.harness import Harness
 from aistack.db.models.user import User
 from aistack.services import onboarding_service, skill_service, team_service, visibility
-from tests.archives import skill_archive
 from aistack.services.token_service import hash_token
+from tests.archives import skill_archive
 
 OPERATING = Path(__file__).parents[2] / "docs" / "OPERATING.md"
 URL = "https://aistack.example.com"

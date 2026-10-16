@@ -10,10 +10,9 @@ from sqlalchemy import select
 from aistack.db.models.machine_skill import MachineSkill
 from tests.archives import skill_archive, skill_document
 from tests.mcp.conftest import call as _call
-from tests.mcp.conftest import client_for
+from tests.mcp.conftest import client_for, second_machine, share_with_everyone
 from tests.mcp.conftest import join as _join
 from tests.mcp.conftest import push as _push
-from tests.mcp.conftest import second_machine, share_with_everyone
 from tests.teams import SERVER_TEAM
 
 pytestmark = pytest.mark.anyio
