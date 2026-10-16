@@ -36,7 +36,8 @@ How to work through it:
 - [x] 7. Sharing over a group's skill takes being able to share into that group (#149)
 - [x] 8. A session belongs to the computer that opened it; signing out ends it (#127)
 - [x] 9. A person can remove and rename their own computers, and see when each last synced (#140)
-- [ ] 9b. Remove and rename a computer in local mode
+- [ ] 9b. Read a computer's removal and rename in local mode
+- [ ] 9c. Remove and rename a computer in local mode (after a release that carries 9b)
 - [x] 10. Taking a team skill never silently replaces an unrelated skill of yours (#150)
 - [x] 11. Throttle failed credentials and keep caller text out of the log (#142)
 - [ ] 12. Backups that restore, and a snapshot before every upgrade
@@ -197,18 +198,31 @@ Tests: Removing one's own machine makes its token 401 on /mcp; another user's id
 
 Split (step 9 was bigger than one PR): step 9 is the server, with the routes registered `local=False`, plus the `machine.added_by_machine_id` migration. Local mode moved to step 9b, because it is a new log kind with its own release order.
 
-### 9b. Remove and rename a computer in local mode
+### 9b. Read a computer's removal and rename in local mode
 
-Closes: the local-mode half of [AUTO-20](automation.md#auto-20-computers-cant-be-renamed-or-removed-and-a-reinstall-leaves-vm-and-vm-2-forever) and [AUTO-02](automation.md#auto-02-on-a-server-a-person-cannot-cut-off-their-own-lost-or-stolen-computer).
-Largest effort among them: M.
+Closes: the replay half of the local-mode part of [AUTO-20](automation.md#auto-20-computers-cant-be-renamed-or-removed-and-a-reinstall-leaves-vm-and-vm-2-forever) and [AUTO-02](automation.md#auto-02-on-a-server-a-person-cannot-cut-off-their-own-lost-or-stolen-computer).
+Largest effort among them: S.
 
-Two releases, per ADR-0024: the first replays `machine_removed` and `machine_renamed` and records neither; the second registers step 9's two routes on the localhost dashboard and records them. Decide first what replay does with a later event from a computer that was removed (it may still be running offline): drop it, or bring the computer back. Today replay refuses an event from an unknown computer, which would stop every other computer's Library.
+The first of two releases, per ADR-0024: replay `machine_removed` and `machine_renamed`, and record neither. A later change from a computer that was removed (it may still be running offline) brings it back, so replay never stops and nothing the person did is lost (ADR-0033).
 
-Files: src/aistack/services/library_log.py (the two kinds); src/aistack/api/dashboard.py (`local=True` in the second release).
+Files: src/aistack/services/library_log.py (the two kinds).
 
-ADR: [ADR-0027](../../adr/0027-a-session-belongs-to-the-computer-that-opened-it.md).
+ADR: [ADR-0033](../../adr/0033-a-removed-computer-comes-back-when-it-changes-something.md).
 
-Tests: the log-replay property test covers both kinds; a rename on one computer reaches a second; an event from a removed computer does what the decision says.
+Tests: the log-replay property test covers both kinds; a rename on one computer reaches a second; an event from a removed computer brings it back; two computers that removed or renamed each other offline still replay.
+
+### 9c. Remove and rename a computer in local mode
+
+Closes: the rest of the local-mode part of [AUTO-20](automation.md#auto-20-computers-cant-be-renamed-or-removed-and-a-reinstall-leaves-vm-and-vm-2-forever) and [AUTO-02](automation.md#auto-02-on-a-server-a-person-cannot-cut-off-their-own-lost-or-stolen-computer).
+Largest effort among them: S.
+
+Only after a release that carries step 9b, so every computer that reads these events knows them (ADR-0024). Register step 9's two routes on the localhost dashboard and record each change with `library_log.removed` and `library_log.renamed` in the same transaction. A computer that catches up on its own removal while running finds its machine row gone, so this step makes `local_identity.local_machine` add it again before its next change, as startup does. OPERATING or the README says that removing a computer in local mode does not cut it off; revoking its access to the repository does.
+
+Files: src/aistack/api/dashboard.py (`local=True`, recording the events); src/aistack/services/local_identity.py; dashboard.html (the computer settings dialog in local mode).
+
+ADR: [ADR-0033](../../adr/0033-a-removed-computer-comes-back-when-it-changes-something.md).
+
+Tests: removing and renaming from the localhost dashboard records one event each and replays to the same Library; a computer that catches up on its own removal keeps working.
 
 ### 10. Taking a team skill never silently replaces an unrelated skill of yours
 

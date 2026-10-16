@@ -2,6 +2,7 @@
 
 import contextlib
 import random
+import uuid
 
 import pytest
 from fastmcp import Client
@@ -12,6 +13,7 @@ from aistack.bootstrap.configuration.settings.settings_config import LocalSettin
 from aistack.bootstrap.context import application_context
 from aistack.commons.exceptions import AIStackError
 from aistack.db.engine import build_engine, build_session_factory
+from aistack.db.models.harness import Harness
 from aistack.db.models.library_event import LibraryEvent
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
@@ -22,7 +24,14 @@ from aistack.db.models.user import User
 from aistack.db.schema import migrate_schema
 from aistack.mcp import local_dashboard
 from aistack.mcp.local import local_mcp
-from aistack.services import dashboard_service, library_log, skill_service
+from aistack.services import (
+    dashboard_service,
+    library_log,
+    local_identity,
+    onboarding_service,
+    skill_service,
+    sync_service,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -117,7 +126,8 @@ async def _random_changes(client, home, seed: int, steps: int = 25) -> None:
     chance = random.Random(seed)
     for step in range(steps):
         name = chance.choice(NAMES)
-        action = chance.choice(["push", "push", "get", "disable", "sync", "remove", "place"])
+        action = chance.choice(["push", "push", "get", "disable", "sync", "remove", "place",
+                                "rename", "retire"])
         try:
             if action == "push":
                 _write(home, name, f"revision written at step {step}")
@@ -133,7 +143,25 @@ async def _random_changes(client, home, seed: int, steps: int = 25) -> None:
             else:
                 caller = application_context.get_local_principal()
                 with application_context.get_session_factory().begin() as session:
-                    if action == "remove":
+                    if action == "rename":
+                        new_name = onboarding_service.rename_machine(
+                            session, caller.user_id, str(caller.machine_id),
+                            chance.choice(["laptop", "work laptop"]))
+                        library_log.record(session, library_log.renamed(
+                            session, caller.machine_id, caller.machine_id, new_name))
+                    elif action == "retire":
+                        # Another computer comes and goes: added, used, then removed here.
+                        other = local_identity.local_machine(
+                            session, uuid.uuid4(), "maria", f"old pc {step}", "WINDOWS")
+                        library_log.record(session, library_log.new_event(
+                            session, other.machine_id, library_log.FOLDER_SYNCED,
+                            harness="claude_code"))
+                        sync_service.record_sync(session, other.machine_id, Harness.CLAUDE_CODE)
+                        library_log.record(session, library_log.removed(
+                            session, caller.machine_id, other))
+                        onboarding_service.remove_machine(session, caller.user_id,
+                                                          str(other.machine_id))
+                    elif action == "remove":
                         removed = skill_service.remove_from_my_skills(session, caller.user_id,
                                                                       name)
                         library_log.record(session, library_log.new_event(
@@ -197,8 +225,6 @@ async def test_two_computers_that_changed_one_skill_offline_end_up_the_same(comp
 
 def test_two_new_computers_that_each_made_the_person_become_one_person(tmp_path):
     """Both started before either had pushed, so each logged a new user; the first one wins."""
-    import uuid
-
     first, second = (
         library_log.Event(uuid.uuid4(), at, uuid.uuid4(), library_log.MACHINE_ADDED,
                           {"user_id": str(uuid.uuid4()), "username": "maria",
@@ -240,3 +266,112 @@ async def test_a_call_that_changes_nothing_adds_nothing_to_the_log(computer):
             built = _snapshot(session)
             events = _events(session)
     assert _replayed(home.parent, events) == built
+
+
+async def test_a_rename_on_one_computer_reaches_a_second(computer):
+    async with computer("laptop") as (laptop, _):
+        laptop_id = application_context.get_local_principal().machine_id
+        with application_context.get_session_factory().begin() as session:
+            shared = _events(session)
+
+    async with computer("desktop", shared) as (desktop, _):
+        caller = application_context.get_local_principal()
+        with application_context.get_session_factory().begin() as session:
+            onboarding_service.rename_machine(session, caller.user_id, str(laptop_id),
+                                              "old laptop")
+            library_log.record(session, library_log.renamed(session, caller.machine_id,
+                                                            laptop_id, "old laptop"))
+            from_desktop = _events(session)
+
+    async with computer("laptop", from_desktop):
+        with application_context.get_session_factory().begin() as session:
+            assert session.get(Machine, laptop_id).name == "old laptop"
+
+
+LAPTOP, DESKTOP, STRANGER = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+MARIA = str(uuid.uuid4())
+
+
+def _event(second: int, machine_id, kind: str, **data) -> library_log.Event:
+    return library_log.Event(uuid.uuid4(), f"2026-10-15T09:00:{second:02d}.000000Z",
+                             machine_id, kind, data)
+
+
+def _added(second: int, machine_id, name: str) -> library_log.Event:
+    return _event(second, machine_id, library_log.MACHINE_ADDED, user_id=MARIA,
+                  username="maria", machine_name=name, os="LINUX")
+
+
+def _removes(second: int, by, target, name: str) -> library_log.Event:
+    return _event(second, by, library_log.MACHINE_REMOVED, target_machine_id=str(target),
+                  name=name, os="LINUX")
+
+
+def _renames(second: int, by, target, name: str) -> library_log.Event:
+    return _event(second, by, library_log.MACHINE_RENAMED, target_machine_id=str(target),
+                  name=name)
+
+
+def _synced(second: int, machine_id) -> library_log.Event:
+    return _event(second, machine_id, library_log.FOLDER_SYNCED, harness="claude_code")
+
+
+def _machines(replayed: dict) -> dict:
+    return {machine_id: name for machine_id, name in replayed["machines"]}
+
+
+def test_a_removed_computer_that_was_still_in_use_comes_back(tmp_path):
+    """ADR-0033: it was offline when the desktop removed it, then synced."""
+    replayed = _replayed(tmp_path, [
+        _added(1, LAPTOP, "laptop"), _synced(2, LAPTOP), _added(3, DESKTOP, "desktop"),
+        _removes(4, DESKTOP, LAPTOP, "laptop"),
+        # A new computer took the name while the laptop was away.
+        _added(5, STRANGER, "laptop"),
+        _synced(6, LAPTOP),
+    ])
+
+    assert _machines(replayed) == {LAPTOP: "laptop-2", DESKTOP: "desktop", STRANGER: "laptop"}
+    # What it had before it was removed went with it; the sync after is its own.
+    assert replayed["folders"] == [(LAPTOP, "claude_code")]
+
+
+def test_a_removed_computer_stays_removed_until_it_changes_something(tmp_path):
+    replayed = _replayed(tmp_path, [
+        _added(1, LAPTOP, "laptop"), _added(2, DESKTOP, "desktop"), _synced(3, LAPTOP),
+        _removes(4, DESKTOP, LAPTOP, "laptop"),
+        # Placed on it by a computer that had not seen the removal: nothing to place on.
+        _event(5, DESKTOP, library_log.SKILL_PLACED, name="wizard", harness="agents",
+               enabled=True, target_machine_id=str(LAPTOP)),
+        _renames(6, DESKTOP, LAPTOP, "old laptop"),
+        _removes(7, DESKTOP, LAPTOP, "laptop"),
+    ])
+
+    assert _machines(replayed) == {DESKTOP: "desktop"}
+    assert replayed["folders"] == []
+
+
+def test_two_computers_that_removed_each_other_offline_keep_one(tmp_path):
+    replayed = _replayed(tmp_path, [
+        _added(1, LAPTOP, "laptop"), _added(2, DESKTOP, "desktop"),
+        _removes(3, DESKTOP, LAPTOP, "laptop"),
+        # The laptop had not seen that. Its change brings it back, and the last one stays.
+        _removes(4, LAPTOP, DESKTOP, "desktop"),
+        _removes(5, LAPTOP, LAPTOP, "laptop"),
+    ])
+
+    assert _machines(replayed) == {LAPTOP: "laptop"}
+
+
+def test_two_computers_renamed_to_one_name_offline_both_keep_a_name(tmp_path):
+    replayed = _replayed(tmp_path, [
+        _added(1, LAPTOP, "laptop"), _added(2, DESKTOP, "desktop"),
+        _renames(3, LAPTOP, LAPTOP, "home"), _renames(4, DESKTOP, DESKTOP, "home"),
+        _renames(5, DESKTOP, DESKTOP, "home"),
+    ])
+
+    assert _machines(replayed) == {LAPTOP: "home", DESKTOP: "home-2"}
+
+
+def test_a_change_from_a_computer_that_was_never_added_is_still_refused(tmp_path):
+    with pytest.raises(AIStackError, match="before that computer was added"):
+        _replayed(tmp_path, [_added(1, LAPTOP, "laptop"), _synced(2, STRANGER)])
