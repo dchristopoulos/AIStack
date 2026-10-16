@@ -1,5 +1,6 @@
 """ADR-0025: a local mode Library is the replay of its log, on any computer, in one order."""
 
+import base64
 import contextlib
 import random
 import uuid
@@ -17,7 +18,10 @@ from aistack.db.models.harness import Harness
 from aistack.db.models.library_event import LibraryEvent
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
+from aistack.db.models.machine_project import MachineProject
+from aistack.db.models.machine_project_skill import MachineProjectSkill
 from aistack.db.models.machine_skill import MachineSkill
+from aistack.db.models.project import Project
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.user import User
@@ -32,6 +36,7 @@ from aistack.services import (
     skill_service,
     sync_service,
 )
+from tests.archives import skill_archive
 
 pytestmark = pytest.mark.anyio
 
@@ -86,6 +91,16 @@ def _events(session) -> list[library_log.Event]:
 def _snapshot(session) -> dict:
     """The Library as a person sees it, in terms every computer agrees on."""
     skill_names = dict(session.execute(select(Skill.skill_id, Skill.name)).all())
+    project_keys = dict(session.execute(select(Project.project_id, Project.key)).all())
+    project_folders = {
+        folder_id: (machine_id, project_keys[project_id], harness.value)
+        for folder_id, machine_id, project_id, harness in session.execute(select(
+            MachineProject.machine_project_id,
+            MachineProject.machine_id,
+            MachineProject.project_id,
+            MachineProject.harness,
+        ))
+    }
     return {
         "users": sorted(session.execute(select(User.user_id, User.username)).all()),
         "machines": sorted(session.execute(select(Machine.machine_id, Machine.name)).all()),
@@ -103,6 +118,27 @@ def _snapshot(session) -> dict:
                        MachineSkill.enabled, MachineSkill.revision)).all()),
         "folders": sorted((machine_id, harness.value) for machine_id, harness in session.execute(
             select(MachineHarness.machine_id, MachineHarness.harness)).all()),
+        "projects": sorted(session.execute(select(
+            Project.user_id,
+            Project.key,
+            Project.name,
+        )).all()),
+        "project_folders": sorted(
+            (*project_folders[folder_id], path)
+            for folder_id, path in session.execute(select(
+                MachineProject.machine_project_id,
+                MachineProject.path,
+            ))
+        ),
+        "project_placements": sorted(
+            (*project_folders[folder_id], skill_names[skill_id], enabled, revision or 0)
+            for folder_id, skill_id, enabled, revision in session.execute(select(
+                MachineProjectSkill.machine_project_id,
+                MachineProjectSkill.skill_id,
+                MachineProjectSkill.enabled,
+                MachineProjectSkill.revision,
+            ))
+        ),
     }
 
 
@@ -110,8 +146,9 @@ def _replayed(tmp_path, events) -> dict:
     engine = build_engine(f"sqlite:///{tmp_path / 'replayed.db'}")
     migrate_schema(engine)
     try:
+        prepared = library_log.prepared(events)
         with build_session_factory(engine).begin() as session:
-            library_log.rebuild(session, events)
+            library_log.rebuild(session, events, validated=prepared)
             return _snapshot(session)
     finally:
         engine.dispose()
@@ -375,3 +412,178 @@ def test_two_computers_renamed_to_one_name_offline_both_keep_a_name(tmp_path):
 def test_a_change_from_a_computer_that_was_never_added_is_still_refused(tmp_path):
     with pytest.raises(AIStackError, match="before that computer was added"):
         _replayed(tmp_path, [_added(1, LAPTOP, "laptop"), _synced(2, STRANGER)])
+
+
+PROJECT_KEY = "github.com/acme/billing"
+
+
+def _project_changes():
+    def pushed(second, machine_id, name, harness, description, project=False):
+        return _event(
+            second,
+            machine_id,
+            library_log.SKILL_PUSHED_TO_PROJECT if project else library_log.SKILL_PUSHED,
+            name=name,
+            harness=harness,
+            origin=None,
+            archive=base64.b64encode(skill_archive(name, description=description)).decode(),
+            **({"project": PROJECT_KEY, "project_name": "billing"} if project else {}),
+        )
+
+    def folder(second, by, harness, path=None, target=None):
+        return _event(
+            second,
+            by,
+            library_log.PROJECT_FOLDER_ADDED,
+            project=PROJECT_KEY,
+            project_name="billing",
+            harness=harness,
+            path=path,
+            target_machine_id=None if target is None else str(target),
+        )
+
+    baseline = [
+        _added(1, LAPTOP, "laptop"),
+        _added(2, DESKTOP, "desktop"),
+        pushed(3, LAPTOP, "wizard", "claude_code", "Global skill."),
+    ]
+    changes = [
+        folder(4, LAPTOP, "claude_code", "/work/billing"),
+        pushed(5, LAPTOP, "project-note", "claude_code", "First project edit.", True),
+        folder(6, LAPTOP, "agents", target=DESKTOP),
+        _event(
+            7,
+            DESKTOP,
+            library_log.SKILL_PLACED_IN_PROJECT,
+            project=PROJECT_KEY,
+            name="wizard",
+            harness="agents",
+            enabled=True,
+            revision=1,
+        ),
+        _event(
+            8,
+            LAPTOP,
+            library_log.PROJECT_FOLDER_REMOVED,
+            project=PROJECT_KEY,
+            harness="claude_code",
+        ),
+        folder(9, LAPTOP, "claude_code", "/work/clones/billing"),
+        _event(
+            10,
+            LAPTOP,
+            library_log.SKILL_PLACED_IN_PROJECT,
+            project=PROJECT_KEY,
+            name="wizard",
+            harness="claude_code",
+            enabled=False,
+            revision=1,
+        ),
+        pushed(11, DESKTOP, "project-note", "agents", "Second project edit.", True),
+        _event(12, LAPTOP, library_log.SKILL_REMOVED, name="wizard"),
+        _event(
+            13,
+            DESKTOP,
+            library_log.SKILL_PLACED_IN_PROJECT,
+            project=PROJECT_KEY,
+            name="wizard",
+            harness="agents",
+            enabled=True,
+            revision=1,
+        ),
+        folder(14, LAPTOP, "agents"),
+        _event(
+            15,
+            LAPTOP,
+            library_log.PROJECT_FOLDER_REMOVED,
+            project=PROJECT_KEY,
+            harness=None,
+        ),
+    ]
+    return baseline, changes
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_project_events_converge_when_appended_or_rebuilt(
+    portable_engine, tmp_path, monkeypatch, seed,
+):
+    baseline, changes = _project_changes()
+    expected = _replayed(tmp_path, [*baseline, *changes])
+    assert expected["projects"] == [(uuid.UUID(MARIA), PROJECT_KEY, "billing")]
+    assert expected["project_folders"] == [(DESKTOP, PROJECT_KEY, "agents", None)]
+    assert expected["project_placements"] == [
+        (DESKTOP, PROJECT_KEY, "agents", "project-note", True, 2),
+        (DESKTOP, PROJECT_KEY, "agents", "wizard", True, 1),
+    ]
+    assert all(row[2] != "project-note" for row in expected["placements"])
+
+    def unexpected_archive_read(*args, **kwargs):
+        raise AssertionError("Replay must use archives prepared before its transaction.")
+
+    monkeypatch.setattr(skill_service, "read_archive", unexpected_archive_read)
+    session_factory = build_session_factory(portable_engine)
+    arrived = list(baseline)
+    prepared = library_log.prepared(arrived)
+    with session_factory.begin() as session:
+        assert library_log.append(session, arrived, prepared)
+    random.Random(seed).shuffle(changes)
+    for event in changes:
+        arrived.append(event)
+        prepared = library_log.prepared(arrived)
+        with session_factory.begin() as session:
+            new = library_log.arrivals(session, arrived)
+            if not library_log.append(session, new, prepared):
+                library_log.rebuild(session, arrived, validated=prepared)
+    with session_factory() as session:
+        assert _snapshot(session) == expected
+
+
+@pytest.mark.parametrize("kind", sorted(library_log._PROJECT_KINDS))
+def test_this_release_cannot_record_a_project_event(session_factory, kind):
+    event = _event(1, LAPTOP, kind)
+    with pytest.raises(AssertionError, match="replays.*records none"):
+        with session_factory.begin() as session:
+            library_log.record(session, event)
+
+
+def test_project_events_still_replay_after_a_later_release_enables_writing(tmp_path, monkeypatch):
+    baseline, changes = _project_changes()
+    monkeypatch.setattr(library_log, "_REPLAY_ONLY", set())
+    assert len(_replayed(tmp_path, [*baseline, *changes])["project_placements"]) == 2
+
+
+@pytest.mark.parametrize("key", [
+    "github.com/user@token/repo",
+    "github.com/acme/\nrepo",
+    "x/" + "r" * 254,
+])
+def test_a_forged_project_key_is_refused_with_its_log_file(tmp_path, key):
+    event = _event(
+        2,
+        LAPTOP,
+        library_log.PROJECT_FOLDER_ADDED,
+        project=key,
+        project_name="billing",
+        harness="agents",
+        path="/work/billing",
+    )
+    with pytest.raises(AIStackError) as refused:
+        _replayed(tmp_path, [_added(1, LAPTOP, "laptop"), event])
+    assert f"log/{event.path}" in str(refused.value)
+    assert "token" not in str(refused.value)
+
+
+@pytest.mark.parametrize("invalid", [
+    {"project_name": "x" * 65},
+    {"project_name": "name\nforged"},
+    {"harness": "unknown"},
+    {"path": "~"},
+    {"path": "/" + "x" * 1024},
+])
+def test_project_replay_checks_names_harnesses_and_paths(tmp_path, invalid):
+    data = {"project": PROJECT_KEY, "project_name": "billing", "harness": "agents",
+            "path": "/work/billing"}
+    event = _event(2, LAPTOP, library_log.PROJECT_FOLDER_ADDED, **(data | invalid))
+    with pytest.raises(AIStackError) as refused:
+        _replayed(tmp_path, [_added(1, LAPTOP, "laptop"), event])
+    assert f"log/{event.path}" in str(refused.value)

@@ -89,6 +89,25 @@ def project_name(key_or_path: str) -> str:
     return name
 
 
+def validated_key(key: str) -> str:
+    """A key as `project_key` or `local_project_key` made it, sent back by an agent or read
+    from a Library's log. Checked, never normalised: a key is compared as it is stored."""
+    key = _checked_text(key, "project", KEY_MAX_LENGTH)
+    if (not key or key != key.lower() or "/" not in key.strip("/")
+            or any(character.isspace() or character in "@?#\\" for character in key)):
+        raise ValidationError("project is not a project key AIStack made. Send the key sync "
+                              "reported under project.")
+    return key
+
+
+def validated_name(name: str) -> str:
+    """A project's display name, as `project_name` made it."""
+    name = _checked_text(name, "project_name", NAME_MAX_LENGTH)
+    if not name.strip():
+        raise ValidationError("project_name is empty.")
+    return name
+
+
 @dataclass(frozen=True)
 class Here:
     """The repository a session runs in, as its sync skill reported it."""

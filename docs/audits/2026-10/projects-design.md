@@ -261,7 +261,7 @@ Replay goes through `project_service`, as every kind goes through a service. It 
 
 ### Bridge rule
 
-- **Release R1** ships migration <next>, `project_service`, and replay of the five kinds. A `_REPLAY_ONLY` set makes `library_log.record()` refuse these kinds, so nothing in R1 can write them.
+- **Release R1** ships migration <next>, `project_service`, and replay of the four kinds. A `_REPLAY_ONLY` set makes `library_log.record()` refuse these kinds, so nothing in R1 can write them.
 - **Release R2** removes them from `_REPLAY_ONLY`. It ships no sooner than a week after R1, because `self_update` runs daily.
 
 A computer still on R0 when R2's events arrive refuses as described above and asks to be updated. That was already the documented behaviour for any new kind. AGENTS.md records the rule.
