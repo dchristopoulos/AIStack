@@ -19,7 +19,7 @@ from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.timestamps import utc_now
 from aistack.db.models.user import User
 from aistack.db.ordering import bytewise
-from aistack.services import revisions, skill_service, visibility
+from aistack.services import project_service, revisions, skill_service, visibility
 from aistack.services.content_hash import canonical_content_hash, normalized_path
 from aistack.services.harnesses import validated_harness
 from aistack.services.reconciliation import Desired, Observed, Option, Step, reconcile
@@ -244,11 +244,12 @@ def _decisions(session: Session, machine_id: uuid.UUID,
     explicitly disabled, with the revision last installed or pushed there. A decision in
     another harness is no decision here."""
     rows = session.execute(
-        select(Skill.name, MachineSkill.enabled, MachineSkill.revision)
+        select(Skill.name, MachineSkill.enabled, MachineSkill.revision, Skill.archived)
         .join(MachineSkill, MachineSkill.skill_id == Skill.skill_id)
         .where(MachineSkill.machine_id == machine_id, MachineSkill.harness == harness)
     ).all()
-    return {name: (enabled, revision) for name, enabled, revision in rows}
+    return {name: (project_service.removed_reads_disabled(enabled, archived), revision)
+            for name, enabled, revision, archived in rows}
 
 
 def record_sync(session: Session, machine_id: uuid.UUID, harness: Harness) -> bool:
