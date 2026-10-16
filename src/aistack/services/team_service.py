@@ -117,7 +117,7 @@ def create_team(session: Session, user_id: uuid.UUID, name: str) -> str:
                        "different one.") from error
     session.add(TeamMember(team_id=team.team_id, user_id=user_id, role=TeamRole.ADMIN))
     session.flush()
-    logger.info(f"Team created. Team: '{team.team_id}'. User: '{user_id}'.")
+    logger.info(f"Team created. Team: '{team.name}' ({team.team_id}). User: '{user_id}'.")
     return team.name
 
 
@@ -140,7 +140,7 @@ def new_invite(session: Session, user_id: uuid.UUID, team: str) -> tuple[str, uu
                     created_on=now, expires_on=now + INVITE_LIFETIME)
     session.add(invite)
     session.flush()
-    logger.info(f"Team invite made. Team: '{found.team_id}'. User: '{user_id}'.")
+    logger.info(f"Team invite made. Team: '{found.name}' ({found.team_id}). User: '{user_id}'.")
     return code, invite.invite_id
 
 
@@ -231,7 +231,7 @@ def admit(session: Session, invite: Invite, user_id: uuid.UUID) -> str:
         raise NotFound(_NOT_AN_INVITE)
     session.add(TeamMember(team_id=team.team_id, user_id=user_id, role=TeamRole.MEMBER))
     session.flush()
-    logger.info(f"Team joined. Team: '{team.team_id}'. User: '{user_id}'.")
+    logger.info(f"Team joined. Team: '{team.name}' ({team.team_id}). User: '{user_id}'.")
     return team.name
 
 
@@ -301,7 +301,8 @@ def cancel_invite(session: Session, user_id: uuid.UUID, team: str, invite_id: st
     if invite.used_on is not None:
         raise ValidationError("That invite was already used, so there is nothing to cancel. "
                               "Remove the member instead if they should not be in the team.")
-    logger.info(f"Team invite cancelled. Team: '{found.team_id}'. User: '{user_id}'.")
+    logger.info(f"Team invite cancelled. Team: '{found.name}' ({found.team_id}). "
+                f"User: '{user_id}'.")
 
 
 def _status(invite: Invite) -> str:
@@ -454,6 +455,9 @@ def set_subscribed(session: Session, user_id: uuid.UUID, team: str, group: str,
                 session.add(GroupUnsubscribed(group_id=target.group_id, user_id=user_id))
         except IntegrityError:
             pass  # The same choice, made at the same moment from somewhere else.
+    logger.info(f"Group {'subscribed' if subscribed else 'unsubscribed'}. "
+                f"Team: '{found.name}' ({found.team_id}). Group: '{target.path}'. "
+                f"User: '{user_id}'.")
 
 
 def leave_team(session: Session, user_id: uuid.UUID, team: str) -> str:
@@ -464,11 +468,13 @@ def leave_team(session: Session, user_id: uuid.UUID, team: str) -> str:
     found, me = lock(session, user_id, team)
     if _members_besides(session, found, user_id) == 0:
         _delete_team(session, found)
-        logger.info(f"Team deleted by its last member leaving. Team: '{found.team_id}'. "
+        logger.info(f"Team deleted by its last member leaving. "
+                    f"Team: '{found.name}' ({found.team_id}). "
                     f"User: '{user_id}'.")
         return found.name
     _keep_an_admin(session, found, me, leaving=True)
     _drop_member(session, found.team_id, user_id)
+    logger.info(f"Team left. Team: '{found.name}' ({found.team_id}). User: '{user_id}'.")
     return found.name
 
 
@@ -480,7 +486,7 @@ def delete_team(session: Session, user_id: uuid.UUID, team: str) -> str:
     """
     found, _ = _as_admin(session, user_id, team)
     _delete_team(session, found)
-    logger.info(f"Team deleted. Team: '{found.team_id}'. By: '{user_id}'.")
+    logger.info(f"Team deleted. Team: '{found.name}' ({found.team_id}). By: '{user_id}'.")
     return found.name
 
 
@@ -490,7 +496,8 @@ def remove_member(session: Session, user_id: uuid.UUID, team: str, username: str
     their = _member(session, found, username)
     _keep_an_admin(session, found, their, leaving=True)
     _drop_member(session, found.team_id, their.user_id)
-    logger.info(f"Team member removed. Team: '{found.team_id}'. Member: '{their.user_id}'. "
+    logger.info(f"Team member removed. Team: '{found.name}' ({found.team_id}). "
+                f"Member: '{their.user_id}'. "
                 f"By: '{user_id}'.")
 
 
@@ -519,7 +526,8 @@ def set_member(session: Session, user_id: uuid.UUID, team: str, username: str,
     if their.role is not TeamRole.ADMIN and not their.can_invite:
         # Invites die with the right to make them.
         _cancel_invites_by(session, found.team_id, their.user_id)
-    logger.info(f"Team member changed. Team: '{found.team_id}'. Member: '{their.user_id}'. "
+    logger.info(f"Team member changed. Team: '{found.name}' ({found.team_id}). "
+                f"Member: '{their.user_id}'. "
                 f"By: '{user_id}'.")
 
 
@@ -544,6 +552,8 @@ def create_group(session: Session, user_id: uuid.UUID, team: str, name: str,
         raise Conflict(f"Team '{found.name}' already has a group '{path}'.") from error
     session.add(GroupMember(group_id=group.group_id, user_id=user_id))
     session.flush()
+    logger.info(f"Group created. Team: '{found.name}' ({found.team_id}). Group: '{path}'. "
+                f"Private: '{bool(private)}'. By: '{user_id}'.")
     return path
 
 
@@ -551,7 +561,11 @@ def set_group(session: Session, user_id: uuid.UUID, team: str, group: str,
               private: bool) -> None:
     """Make a group private or open. Admins only."""
     found, _ = _as_admin(session, user_id, team)
-    _group(session, found, group).private = bool(private)
+    target = _group(session, found, group)
+    was, target.private = target.private, bool(private)
+    logger.info(f"Group privacy set. Team: '{found.name}' ({found.team_id}). "
+                f"Group: '{target.path}'. Private: '{was}' to '{target.private}'. "
+                f"By: '{user_id}'.")
 
 
 def rename_group(session: Session, user_id: uuid.UUID, team: str, group: str,
@@ -578,7 +592,8 @@ def rename_group(session: Session, user_id: uuid.UUID, team: str, group: str,
             session.flush()
     except IntegrityError as error:
         raise Conflict(f"Team '{found.name}' already has a group '{new_path}'.") from error
-    logger.info(f"Group renamed. Team: '{found.team_id}'. Group: '{target.group_id}'. "
+    logger.info(f"Group renamed. Team: '{found.name}' ({found.team_id}). "
+                f"Group: '{old_path}' to '{new_path}' ({target.group_id}). "
                 f"By: '{user_id}'.")
     return new_path
 
@@ -601,7 +616,8 @@ def delete_group(session: Session, user_id: uuid.UUID, team: str, group: str) ->
     # Its members and subscriptions go with it, by cascade.
     session.execute(delete(TeamGroup).where(TeamGroup.group_id == target.group_id))
     session.expunge(target)
-    logger.info(f"Group deleted. Team: '{found.team_id}'. Group: '{target.group_id}'. "
+    logger.info(f"Group deleted. Team: '{found.name}' ({found.team_id}). "
+                f"Group: '{target.path}' ({target.group_id}). "
                 f"By: '{user_id}'.")
 
 
@@ -624,6 +640,9 @@ def set_group_member(session: Session, user_id: uuid.UUID, team: str, group: str
     else:
         session.execute(delete(GroupMember).where(GroupMember.group_id == target.group_id,
                                                   GroupMember.user_id == their.user_id))
+    logger.info(f"Group member {'added' if member else 'removed'}. "
+                f"Team: '{found.name}' ({found.team_id}). Group: '{target.path}'. "
+                f"Member: '{their.user_id}'. By: '{user_id}'.")
 
 
 def move_skill(session: Session, user_id: uuid.UUID, team: str, name: str,
@@ -635,6 +654,8 @@ def move_skill(session: Session, user_id: uuid.UUID, team: str, name: str,
     found, _ = _as_admin(session, user_id, team)
     skill = _skill(session, found, name, user_id)
     skill.group_id = None if group is None else _group(session, found, group).group_id
+    logger.info(f"Team skill moved. Team: '{found.name}' ({found.team_id}). "
+                f"Skill: '{skill.name}'. Group: '{group or 'team level'}'. By: '{user_id}'.")
 
 
 def remove_skill(session: Session, user_id: uuid.UUID, team: str, name: str) -> None:
@@ -645,7 +666,8 @@ def remove_skill(session: Session, user_id: uuid.UUID, team: str, name: str) -> 
     found, _ = _as_admin(session, user_id, team)
     skill = _skill(session, found, name, user_id)
     _delete_skills(session, select(Skill.skill_id).where(Skill.skill_id == skill.skill_id))
-    logger.info(f"Team skill removed. Team: '{found.team_id}'. Skill: '{skill.name}'. "
+    logger.info(f"Team skill removed. Team: '{found.name}' ({found.team_id}). "
+                f"Skill: '{skill.name}'. "
                 f"By: '{user_id}'.")
 
 

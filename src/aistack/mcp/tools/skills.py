@@ -206,7 +206,7 @@ def share_skill(name: str, team: str, group: str | None = None) -> ShareSkillRes
     with get_session_factory().begin() as session:
         shared = skill_service.share(session, caller.user_id, name, team, group)
 
-    logger.info(f"Skill shared. Skill: '{shared.name}'. Revision: '{shared.revision}'. "
+    logger.debug(f"Skill shared. Skill: '{shared.name}'. Revision: '{shared.revision}'. "
                 f"User: '{caller.user_id}'. "
                 f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'.")
     return ShareSkillResult(

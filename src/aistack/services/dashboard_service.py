@@ -6,6 +6,7 @@ what its user may see and never has to hide anything itself.
 
 import difflib
 import hmac
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -39,6 +40,8 @@ from aistack.services import (
 )
 from aistack.services.harnesses import validated_harness
 from aistack.services.transfer_ticket import DashboardHolder, token_prefix
+
+logger = logging.getLogger(__name__)
 
 
 def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
@@ -148,6 +151,10 @@ def set_on_machine(session: Session, user_id: uuid.UUID, name: str, machine_id: 
         folder = project_service.required_folder(session, user_id, machine.machine_id,
                                                  projects.validated_key(project), harness)
         project_service.set_enabled(session, folder, skill.skill_id, enabled=bool(enabled))
+    logger.info(f"Skill {'placed' if enabled else 'taken off'} on the dashboard. "
+                f"Skill: '{skill.name}'. Machine: '{machine.machine_id}'. "
+                f"Harness: '{harness.value}'. In a project: '{project is not None}'. "
+                f"User: '{user_id}'.")
     return Placed(skill.name, machine.machine_id, harness.value, bool(enabled))
 
 
@@ -220,6 +227,7 @@ def add_project(session: Session, user_id: uuid.UUID, machine_id: str, project: 
     machine = onboarding_service.own_machine(session, user_id, machine_id)
     project_service.add_folder(session, user_id, machine.machine_id,
                                projects.validated_key(project), validated_harness(harness))
+    logger.info(f"Project folder added. Machine: '{machine.machine_id}'. User: '{user_id}'.")
 
 
 def remove_project(session: Session, user_id: uuid.UUID, machine_id: str, project: str,
@@ -227,9 +235,12 @@ def remove_project(session: Session, user_id: uuid.UUID, machine_id: str, projec
     """Stop managing a project on one computer, in one harness or in all. The Library, the
     files on disk and the other computers are untouched."""
     machine = onboarding_service.own_machine(session, user_id, machine_id)
-    return project_service.remove_folder(session, user_id, machine.machine_id,
-                                         projects.validated_key(project),
-                                         None if harness is None else validated_harness(harness))
+    removed = project_service.remove_folder(
+        session, user_id, machine.machine_id, projects.validated_key(project),
+        None if harness is None else validated_harness(harness))
+    logger.info(f"Project folders removed. Count: '{removed}'. Machine: '{machine.machine_id}'. "
+                f"User: '{user_id}'.")
+    return removed
 
 
 def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
