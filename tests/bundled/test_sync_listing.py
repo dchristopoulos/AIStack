@@ -58,10 +58,15 @@ def test_the_bash_listing_leaves_out_only_what_push_leaves_out(folder):
 
 @pytest.mark.skipif(shutil.which("powershell") is None and shutil.which("pwsh") is None,
                     reason="the PowerShell listing runs on Windows, and where pwsh is")
-def test_the_powershell_listing_leaves_out_only_what_push_leaves_out(folder):
+def test_the_powershell_listing_leaves_out_only_what_push_leaves_out(folder, tmp_path):
     shell = shutil.which("powershell") or shutil.which("pwsh")
-    command = _block("powershell", "Get-FileHash").replace("<folder>", str(folder))
-    done = subprocess.run([shell, "-NoProfile", "-Command", command], capture_output=True,
-                          text=True, check=True)
+    # From a file, as a person's shell runs it: through -Command, Windows' quoting of the
+    # command line mangles the script's double quotes before PowerShell sees them.
+    script = tmp_path.parent / f"{tmp_path.name}-listing.ps1"
+    script.write_text(_block("powershell", "Get-FileHash").replace("<folder>", str(folder)),
+                      encoding="utf-8-sig")
+    done = subprocess.run([shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                           str(script)], capture_output=True, text=True)
 
+    assert done.returncode == 0, done.stderr
     assert _listed(done.stdout) == _digests(folder), (done.stdout, done.stderr)
