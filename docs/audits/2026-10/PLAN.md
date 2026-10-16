@@ -940,6 +940,8 @@ ADR: none needed.
 
 Tests: the browser tests pass unchanged, which is the proof that no word moved.
 
+Held for the owner (2026-10-16): no translation is planned, and moving every string of a 3,000-line page into a table is a large diff with no reader today. Suggested: do it when a translation is wanted, together with that translation.
+
 ### 41b. The operator can forget a person
 
 Closes: the erasure half of [STD-15](industry-standards.md#std-15-a-person-on-a-server-can-neither-export-their-library-nor-be-erased). Step 41 gives a person their Library as a download; nothing yet erases them.
@@ -947,7 +949,7 @@ Largest effort among them: M. **Trust boundary** (it deletes, and it changes wha
 
 Files: src/aistack/services/operator_service.py (`forget`: `offboard` first, so teams keep an admin and every computer goes; then their personal team's skills archived, `full_name` cleared, and the username renamed to `former-<8 hex>`); src/aistack/bootstrap/admin_cli.py (`aistack admin forget USERNAME`); docs/OPERATING.md ("Forget a person"); CONTEXT.md ("Pushed by").
 
-ADR: a new one amending ADR-0015: a forgotten person's revisions stay, and `pushed_by` shows the pseudonym. Draft it as proposed with the code, and accept it in the same PR once the owner agrees on how provenance reads afterward. Deleting their revisions instead would remove skills other people took into their Libraries, which ADR-0015 rules out.
+ADR: [ADR-0034](../../adr/0034-a-forgotten-persons-revisions-stay-under-a-pseudonym.md), proposed, waiting on the owner: a forgotten person's revisions stay, and `pushed_by` shows the pseudonym. Draft it as proposed with the code, and accept it in the same PR once the owner agrees on how provenance reads afterward. Deleting their revisions instead would remove skills other people took into their Libraries, which ADR-0015 rules out.
 
 Tests: after `forget` on both databases, member lists and revisions show `former-…`, `full_name` is null, the person's computers are gone, and a team they solely ran has the named successor; a second `forget` of the same person is refused with a sentence.
 
