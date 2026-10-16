@@ -290,7 +290,7 @@ async def test_an_unexpected_failure_is_masked(server_url, monkeypatch):
     response = await _put(url, skill_archive())
 
     assert response.status_code == 500
-    assert response.json() == {"error": "upload_skill failed unexpectedly."}
+    assert response.json() == {"error": "Something went wrong on the server. Its log says what."}
 
 
 async def test_an_upload_dropped_mid_body_is_logged_as_the_client_leaving(server_url, caplog,

@@ -122,7 +122,12 @@ def create_team(session: Session, user_id: uuid.UUID, name: str) -> str:
 
 
 def new_invite_code(session: Session, user_id: uuid.UUID, team: str) -> str:
-    """Make a new invite into the team and return its code (ADR-0022).
+    """Make a new invite into the team and return its code (ADR-0022)."""
+    return new_invite(session, user_id, team)[0]
+
+
+def new_invite(session: Session, user_id: uuid.UUID, team: str) -> tuple[str, uuid.UUID]:
+    """Make a new invite into the team: its code, and its id, which the page names it by.
 
     Only its hash is stored, so this is the one moment the code can be read. Every invite is
     its own: one use, seven days, and making another cancels nothing. Admins may, and members
@@ -131,11 +136,12 @@ def new_invite_code(session: Session, user_id: uuid.UUID, team: str) -> str:
     found, _ = _as_inviter(session, user_id, team)
     code = f"{TEAM_INVITE_PREFIX}{secrets.token_urlsafe(24)}"
     now = utc_now()
-    session.add(Invite(team_id=found.team_id, code_hash=hash_token(code), created_by=user_id,
-                       created_on=now, expires_on=now + INVITE_LIFETIME))
+    invite = Invite(team_id=found.team_id, code_hash=hash_token(code), created_by=user_id,
+                    created_on=now, expires_on=now + INVITE_LIFETIME)
+    session.add(invite)
     session.flush()
     logger.info(f"Team invite made. Team: '{found.team_id}'. User: '{user_id}'.")
-    return code
+    return code, invite.invite_id
 
 
 def join_team(session: Session, user_id: uuid.UUID, code: str) -> str:

@@ -65,10 +65,11 @@ def required_my_skill(session: Session, user_id: uuid.UUID, name: str,
         if teams:
             holders = (f"team '{teams[0]}' shares one" if len(teams) == 1 else
                        f"teams {', '.join(repr(team) for team in teams)} share one")
+            # Said without naming a tool: the same sentence reaches local mode, which has no
+            # teams' tools, and the dashboard (UX-09).
             raise NotFound(f"You have no skill named '{name}' of your own, but {holders}. "
-                           f"To install it, call get_skill with team '{teams[0]}'.")
-        raise NotFound(f"You have no skill named '{name}'. Call list_skills to see yours and "
-                       "your teams'; to take one from a team, call get_skill with its team.")
+                           f"Take it from team '{teams[0]}' to install it.")
+        raise NotFound(f"You have no skill named '{name}' in your Library. Names are exact.")
     return skill
 
 
@@ -194,7 +195,7 @@ def team_skill(session: Session, user_id: uuid.UUID, name: str, team: str) -> Sk
         team_skills(session, user_id).where(Skill.name == name, Team.name == team)).first()
     if found is None:
         raise NotFound(f"Team '{loggable(team)}' has no skill named '{name}' that you can "
-                       "reach. Call list_skills to see what your teams hold; names are exact.")
+                       "reach. Names are exact.")
     return found[0]
 
 
@@ -219,8 +220,7 @@ def membership(session: Session, user_id: uuid.UUID, team: str) -> tuple[Team, T
         .execution_options(populate_existing=True)
     ).first()
     if found is None:
-        raise NotFound(f"You are not in a team named '{loggable(team)}'. Call list_teams to "
-                       "see the teams you are in.")
+        raise NotFound(f"You are not in a team named '{loggable(team)}'.")
     return found[0], found[1]
 
 

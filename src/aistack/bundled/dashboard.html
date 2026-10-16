@@ -219,7 +219,7 @@ a.place-pill:hover { color: var(--text); border-color: var(--border-strong); }
 .rail-btn {
   position: relative; flex: none; width: 44px; height: 44px; display: grid; place-items: center;
   border: 1px solid var(--border-strong); border-radius: 50%; background: var(--surface); color: var(--text);
-  font: 600 16px var(--mono); text-transform: uppercase; cursor: pointer;
+  font: 600 16px var(--font); text-transform: uppercase; cursor: pointer;
   transition: border-radius .15s, background .15s, color .15s;
 }
 .rail-btn:hover { border-radius: 14px; }
@@ -232,7 +232,7 @@ a.place-pill:hover { color: var(--text); border-color: var(--border-strong); }
 .rail-btn[aria-current="page"]::before { height: 34px; }
 .rail-btn.ghost { border-style: dashed; color: var(--muted); }
 .rail-item { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; text-decoration: none; }
-.rail-item .rail-name { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 10.5px var(--font); color: var(--muted); }
+.rail-item .rail-name { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 11.5px var(--font); color: var(--muted); }
 .rail-item[aria-current="page"] .rail-name { color: var(--text); }
 .rail-item:hover .rail-btn { border-radius: 14px; }
 .rail-item:hover .rail-btn::before { height: 18px; }
@@ -290,7 +290,7 @@ h1 .mono { font-size: inherit; letter-spacing: -.03em; }
 }
 .nav-item svg, .nav-btn svg { color: var(--faint); }
 .nav-item:hover, .nav-btn:hover { background: var(--active); color: var(--text); }
-.nav-item[aria-current="page"] { background: var(--accent-soft); color: var(--text); font-weight: 550; }
+.nav-item[aria-current="page"] { background: var(--accent-soft); color: var(--text); font-weight: 550; box-shadow: inset 2px 0 0 var(--accent); }
 .nav-item[aria-current="page"] svg { color: var(--accent-text) !important; }
 .nav-item[aria-current="page"] svg, .nav-item:hover svg, .nav-btn:hover svg { color: var(--text); }
 .nav-item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
@@ -321,7 +321,7 @@ h1 .mono { font-size: inherit; letter-spacing: -.03em; }
   flex: none; width: 24px; height: 24px; border-radius: 6px;
   display: grid; place-items: center;
   background: var(--surface); color: var(--text); border: 1px solid var(--border-strong);
-  font-weight: 600; font-size: 11px; text-transform: uppercase;
+  font: 600 12px var(--font); text-transform: uppercase;
 }
 .avatar.round { border-radius: 50%; }
 .avatar.lg { width: 44px; height: 44px; border-radius: var(--r); font-size: 18px; background: var(--accent-soft); color: var(--accent-text); border-color: transparent; }
@@ -508,6 +508,8 @@ input[type="checkbox"]:checked { border-color: var(--accent); background-color: 
   background-position: calc(16px + var(--gx, var(--step) / 2)) 0;
 }
 .name { font: 600 13.5px/1.5 var(--mono); letter-spacing: -.01em; overflow-wrap: anywhere; }
+/* A person's name is not something to type, so it is never in monospace. */
+.person { font-weight: 600; overflow-wrap: anywhere; }
 .name-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .t1 { color: var(--text); overflow-wrap: anywhere; }
 .t1.rev { display: inline-flex; align-items: center; gap: 8px; }
@@ -1374,12 +1376,14 @@ function renderSidebar(r) {
       !last && el('span', { class: 'sep', 'aria-hidden': 'true' }, '/'));
   })));
   const lib = library();
+  // On a server the pill could only ever say Server, so it is shown where it says something.
+  const pill = lib.kind !== 'server' && el('a', { class: 'place-pill', href: '#/storage', title: 'Where your Library lives',
+    'aria-label': `Library: ${PLACE_SHORT[lib.kind]}, ${lib.problem ? 'not reached' : 'connected'}` },
+    el('span', { class: 'dot ' + (lib.problem ? 'amber' : 'ok'), 'aria-hidden': 'true' }), el('span', { class: 'label' }, 'Library: ' + PLACE_SHORT[lib.kind],
+      el('span', { class: 'sr-only' }, lib.problem ? ', not reached' : ', connected')));
   document.getElementById('top-right').replaceChildren(
     ...(DEMO ? [el('span', { class: 'badge' }, el('span', { class: 'dot amber' }), 'Demo data')] : []),
-    el('a', { class: 'place-pill', href: '#/storage', title: 'Where your Library lives',
-      'aria-label': `Library: ${PLACE_SHORT[lib.kind]}, ${lib.problem ? 'not reached' : 'connected'}` },
-      el('span', { class: 'dot ' + (lib.problem ? 'amber' : 'ok'), 'aria-hidden': 'true' }), el('span', { class: 'label' }, 'Library: ' + PLACE_SHORT[lib.kind],
-        el('span', { class: 'sr-only' }, lib.problem ? ', not reached' : ', connected'))));
+    ...(pill ? [pill] : []));
 
   const link = (hash, current, ...kids) => el('a', { class: 'nav-item', href: hash, 'aria-current': current ? 'page' : null }, kids);
   const updates = state.skills.filter(s => s.source && s.source.update_available).length;
@@ -1465,6 +1469,11 @@ const folded = new Set(); // ids of computers folded shut in the sidebar
 const PICKED_KEY = 'aistack.picked-agents.v1';
 function pickedAgents() {
   try { return JSON.parse(localStorage.getItem(PICKED_KEY)) || {}; } catch (_) { return {}; }
+}
+function unpickAgent(m, agent) {
+  const all = pickedAgents();
+  all[m.id] = (all[m.id] || []).filter(a => a !== agent);
+  try { localStorage.setItem(PICKED_KEY, JSON.stringify(all)); } catch (_) { /* gone for this visit only */ }
 }
 function pickAgent(m, agent) {
   const all = pickedAgents();
@@ -1554,12 +1563,9 @@ function copyField(value, label, done = 'Copied. Paste it into your coding agent
 const SETUP = 'Set up AIStack: run `uvx aistack-mcp setup` and follow what it prints.';
 const ADD_COMPUTER = {
   server: () => [
-    el('ol', { class: 'steps' },
-      el('li', null, 'On a computer that is already connected, say this to your coding agent. Name the new computer however you like.'),
-      el('li', null, 'It answers with one command. Run it on the new computer and restart the coding agent there.',
-        el('p', { class: 'help' }, 'The command holds a permanent key for that computer: paste it only there, and delete it from anywhere it was carried. If it leaks, whoever runs the server revokes that computer.')),
-      el('li', null, 'Say ', el('code', null, SYNC), ' on the new computer. Then add skills to it here.')),
+    el('p', null, 'Say this on a computer that is already connected, then run the command it answers with on the new one.'),
     copyField('add my Windows PC to aistack', 'What to say'),
+    el('p', { class: 'help' }, 'The command holds that computer\'s key: paste it only there.'),
   ],
   this_computer: () => [
     el('p', null, 'Your Library lives only on this computer, so another computer cannot reach it.'),
@@ -1646,10 +1652,9 @@ function libraryView() {
     } else {
       list.replaceChildren(
         el('div', { class: 'tbl library', role: 'table', 'aria-label': 'Library' },
-          el('div', { class: 'tr th-row', role: 'row' }, sortTh('name', 'Skill'), sortTh('source', 'Source'), th('Where it is'), thActions()),
+          el('div', { class: 'tr th-row', role: 'row' }, sortTh('name', 'Skill'), sortTh('source', 'Linked team'), th('Where it is'), thActions()),
           shown.map(libraryRow)),
         el('div', { class: 'tbl-foot' },
-          el('span', null, 'A skill reaches a computer the next time your coding agent there runs ', el('code', null, SYNC), '.'),
           el('span', { class: 'count' }, shown.length === state.skills.length ? plural(shown.length, 'skill') : `${shown.length} of ${plural(state.skills.length, 'skill')}`)));
     }
   };
@@ -1674,11 +1679,10 @@ function libraryView() {
           el('kbd', { 'aria-hidden': 'true', title: 'Press / to search' }, '/')))),
     el('div', { class: 'wrap body' },
       onlyHereNotice(),
-      state.skills.length ? el('div', { class: 'stats' },
-        stat('In your library', state.skills.length, state.server === false ? 'Backed up from your computers' : plural(state.skills.filter(s => s.source).length, 'skill') + ' from a team'),
-        stat('Not on any computer', unplaced.length, unplaced.map(s => s.name).join(', ') || 'Everything is in use'),
-        stat('Updates', updating.length,
-          updating.map(s => s.name).join(', ') || 'Everything is current', updating.length ? el('span', { class: 'dot accent' }) : null)) : null,
+      // A figure shows only when it asks for something; on a normal day there are none.
+      unplaced.length || updating.length ? el('div', { class: 'stats' },
+        unplaced.length ? stat('Not on any computer', unplaced.length, unplaced.map(s => s.name).join(', ')) : null,
+        updating.length ? stat('Updates', updating.length, updating.map(s => s.name).join(', '), el('span', { class: 'dot accent' })) : null) : null,
       list),
   ];
 }
@@ -1702,10 +1706,11 @@ function onlyHereNotice() {
   return notice;
 }
 
+// The team a skill is linked to, taken from it or shared to it: a relation, not who wrote it (UX-05).
 const sourceCell = src => td(src ? 'meta src' : 'meta',
   src ? [el('a', { class: 't1 mono link', href: teamHash(src.team), title: 'Open ' + src.team }, src.team),
          el('span', { class: 't2' + (src.group ? ' mono' : '') }, src.group || 'Team level')]
-    : el('span', { class: 't2' }, 'Your own'));
+    : el('span', { class: 't2' }, 'None'));
 
 // Where a skill is, as words: a line per computer, naming its agents. Each agent opens that folder.
 function whereItIs(s) {
@@ -1780,7 +1785,12 @@ function skillSheet(s) {
   const src = s.source;
   const { picker, save } = placementPicker(s, 'Where it is');
   const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
-  const after = then => () => { document.querySelector('dialog[open]').close(); then(s); };
+  // Ticks made in the panel are saved before its other buttons leave it (UX-19).
+  const after = then => ev => run(ev.currentTarget, async () => {
+    const said = await save();
+    document.querySelector('dialog[open]').close();
+    return () => { if (said) toast(said); then(state.skills.find(x => x.name === s.name) || s); };
+  });
   openDialog({
     title: s.name,
     sheet: true,
@@ -1793,7 +1803,7 @@ function skillSheet(s) {
         el('span', { class: 'grow' }, `${src.team} r${src.revision} → r${src.latest_revision}, pushed by ${src.latest_pushed_by}${src.own_changes ? `. Taking it replaces your changes in r${s.revision}.` : ''}`)),
       el('section', { class: 'sheet-sec', 'aria-label': 'About' },
         el('dl', { class: 'facts' },
-          fact('Source', src ? el('a', { class: 'mono link', href: teamHash(src.team) }, teamLabel(src.team, src.group)) : 'Your own'),
+          fact('Linked team', src ? el('a', { class: 'mono link', href: teamHash(src.team) }, teamLabel(src.team, src.group)) : 'None'),
           fact('Revision', `r${s.revision}, ${plural(s.files, 'file')}`),
           fact('Last pushed by', s.pushed_by),
           fact('Last changed', when(s.updated_on)))),
@@ -1832,10 +1842,13 @@ function folderView(m, agent, project = null) {
                 el('span', { class: 't2' }, 'Read by ' + AGENTS[agent].readers),
                 el('span', { class: 't2' }, lastSynced(m, agent))))),
       el('div', { class: 'head-actions' },
+        // Picked in this browser and holding nothing: it can be taken off the list again (UI-20).
+        !project && !m.harnesses.includes(agent) && !here.length
+          ? btn('Remove from this list', { class: 'btn ghost', fk: 'unpick', on: { click: () => { unpickAgent(m, agent); go('#/library'); } } }, 'x') : null,
         project
           ? btn(`Stop managing ${project.name}…`, { class: 'btn', fk: 'stop:' + project.key, on: { click: () => stopManagingDialog(m, agent, project) } }, 'x')
           : btn('Computer settings', { fk: 'computer:' + m.id, on: { click: () => computerDialog(m) } }, 'monitor'),
-        others.length ? btn('Copy from…', { fk: 'copy-from', on: { click: () => copyFromDialog(t, others) } }, 'copy') : null,
+        others.some(o => placedOn(o).length) ? btn('Copy from…', { fk: 'copy-from', on: { click: () => copyFromDialog(t, others) } }, 'copy') : null,
         btn('Add skills', { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(t) } }, 'plus')))),
     el('div', { class: 'wrap body' },
       project && !folder.last_synced_on && el('div', { class: 'card notice' }, el('div', { class: 'card-body' },
@@ -1844,7 +1857,7 @@ function folderView(m, agent, project = null) {
       twice.length ? el('p', { class: 't2 hint' }, `${some(twice)} ${twice.length === 1 ? 'is' : 'are'} also in the global folder. `,
         agent === 'claude_code' ? 'Claude Code uses the global copy.' : 'The agents reading this folder list both copies.') : null,
       here.length ? el('div', { class: 'tbl folder', role: 'table', 'aria-label': 'Skills in ' + where },
-        el('div', { class: 'tr th-row', role: 'row' }, th('Skill'), th('Source'), th('Revision'), thActions()),
+        el('div', { class: 'tr th-row', role: 'row' }, th('Skill'), th('Linked team'), th('Revision'), thActions()),
         here.map(s => el('div', { class: 'tr', role: 'row' },
           td('c-main', el('span', { class: 'name' }, s.name), s.description && el('span', { class: 't2' }, s.description)),
           sourceCell(s.source),
@@ -1853,14 +1866,12 @@ function folderView(m, agent, project = null) {
             class: 'btn ghost sm', fk: `fr:${s.name}`, 'aria-label': `Remove ${s.name} from ${where}`,
             on: { click: ev => run(ev.currentTarget, async () => {
               await place(s, t, false);
-              return `${s.name} leaves ${where} at its next sync. It stays in your library.`;
+              return `Removed ${s.name} from ${where}. Its next sync asks whether to delete the folder; it stays in your library.`;
             }) },
           }, 'x')))))
         : empty('folder', `Nothing in ${where} yet`, el('p', null, 'Add skills from your library, or copy what another agent has.'),
             btn('Add skills', { on: { click: () => addSkillsDialog(t) } }, 'plus')),
-      el('div', { class: 'tbl-foot' }, el('span', null, 'Removing a skill here keeps it in your library and on your other computers. ',
-        'The folder is asked about at the next ', el('code', null, SYNC), ', never deleted unasked.',
-        project ? ` Every copy of this repository on ${m.name} shares these skills, and git never sees them.` : ''))),
+      project ? el('div', { class: 'tbl-foot' }, el('span', null, `Every copy of this repository on ${m.name} shares these skills, and git never sees them.`)) : null),
   ];
 }
 
@@ -1977,11 +1988,15 @@ function addSkillsDialog(t) {
     el('span', { class: 't2', style: 'margin-left:auto' }, r.s.placements.length ? 'in use elsewhere' : 'only in your library')));
   const filter = el('input', { class: 'input', type: 'search', placeholder: 'Search your library', 'aria-label': 'Search your library',
     on: { input: () => rows.forEach((r, i) => { labels[i].hidden = !r.s.name.includes(filter.value.trim().toLowerCase()); }) } });
+  const none = !state.skills.length;
   openDialog({
     title: 'Add to ' + where,
-    submitLabel: 'Add',
+    submitLabel: rows.length ? 'Add' : 'Done',
+    cancelLabel: rows.length ? 'Cancel' : null,
     body: rows.length ? [filter, el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, 'Skills'), el('div', { class: 'picker-list' }, labels))]
-      : [el('p', null, 'Everything in your library is here already.')],
+      : [el('p', null, none
+          ? `Your library is empty. Say "${SYNC}" on a computer to back up its skills${state.server !== false ? ', or add one from a team' : ''}.`
+          : 'Every skill in your library is here already.')],
     onSubmit: async () => {
       const picked = rows.filter(r => r.box.checked);
       const shared = await placeAll(picked.map(r => [r.s, t, true]));
@@ -2121,14 +2136,15 @@ function shareDialog(s) {
 }
 
 function removeMineDialog(s) {
-  const names = state.machines.map(m => m.name).join(', ');
+  const names = state.machines.filter(m => s.placements.some(p => p.machine === m.id)).map(m => m.name);
   confirmDialog({
     title: `Remove ${s.name} from your library?`,
     submitLabel: 'Remove',
     lines: [
-      'It is removed from your library and from all your computers.',
-      `Each computer${names ? ` (${names})` : ''} will be asked at its next sync whether to delete the skill's folder.`,
+      names.length ? `${names.join(', ')} ${names.length === 1 ? 'asks' : 'ask'} at the next sync whether to delete its folder. Nothing is deleted from a computer until you answer there.`
+        : 'No computer has it, so nothing on a computer changes.',
       s.source && `The copy in ${teamLabel(s.source.team, s.source.group)} is not affected.`,
+      `To bring it back, say "install ${s.name}" where its folder still is, or push it again.`,
     ],
     onSubmit: async () => {
       await api(`/api/skills/${enc(s.name)}/remove`, {});
@@ -2313,7 +2329,7 @@ function removeTeamSkillDialog(team, s) {
     title: `Remove ${s.name} from ${team.name}?`,
     submitLabel: 'Remove from team',
     lines: [
-      'The team no longer has this skill, and nobody is offered it or its updates from here.',
+      'The team no longer has this skill, and nobody is offered it or its updates from here. Its history in the team is deleted and cannot be restored.',
       'People who already added it to their library keep their copy.',
     ],
     onSubmit: async () => {
@@ -2366,7 +2382,7 @@ function membersTab(team, admin) {
         td('c-main',
           el('div', { class: 'name-line' },
             el('span', { class: 'avatar round', 'aria-hidden': 'true' }, m.username[0]),
-            el('span', { class: 'name' }, m.username),
+            el('span', { class: 'person' }, m.username),
             me && el('span', { class: 'badge' }, 'You')),
           m.full_name && el('span', { class: 't2' }, m.full_name)),
         td('wide',
@@ -2507,7 +2523,7 @@ function groupPeopleDialog(team, g) {
     box: el('input', { type: 'checkbox', checked: (m.groups || []).includes(g.path) }),
   }));
   const rows = boxes.map(b => el('label', { class: 'picker-opt' }, b.box, el('span', { class: 'avatar round', 'aria-hidden': 'true' }, b.m.username[0]),
-    el('span', { class: 'mono' }, b.m.username), b.m.role === 'ADMIN' && el('span', { class: 'badge' }, 'Admin')));
+    el('span', { class: 'person' }, b.m.username), b.m.role === 'ADMIN' && el('span', { class: 'badge' }, 'Admin')));
   filter.addEventListener('input', () => {
     const q = filter.value.trim().toLowerCase();
     boxes.forEach((b, i) => { rows[i].hidden = !!q && !b.m.username.toLowerCase().includes(q); });
@@ -2607,8 +2623,8 @@ function storageView() {
             el('h3', null, icon(STORAGE[k].icon, 16), STORAGE[k].title),
             el('p', null, STORAGE[k].cost)),
           el('div', { class: 'card-foot' }, btn('Move here…', { fk: 'move:' + k, 'aria-label': 'Move to ' + lowerFirst(STORAGE[k].title), on: { click: () => moveLibraryDialog(k) } }, 'move'))))),
-        el('p', { class: 'note' }, icon('info', 14), el('span', null, 'Want a team? Teams need ', el('strong', null, STORAGE.server.title.toLowerCase()), ' that everyone reaches. ', STORAGE.server.cost)),
-      ] : el('p', { class: 'note' }, icon('info', 14), el('span', null, 'Everyone on this server shares it. To keep a Library of your own instead, set AIStack up again on your computer and choose where it lives there.'))),
+        el('p', { class: 'note' }, icon('info', 14), el('span', null, 'Want a team? A team needs an AIStack server everyone reaches. To move onto one, connect this computer to it: its first sync backs up every skill here.')),
+      ] : el('p', { class: 'note' }, icon('info', 14), el('span', null, 'Your Library on this server is private: only you see it. Teams and groups are where you share.'))),
   ];
 }
 
@@ -2666,7 +2682,8 @@ function settingsView() {
             fact('Username', el('strong', null, state.user.username)),
             fact('Computers', String(state.machines.length)),
             fact('Library', el('a', { class: 'link', href: '#/storage' }, STORAGE[library().kind].title)),
-            state.server !== false && fact('Teams', String(state.teams.length)))))),
+            state.server !== false && fact('Teams', String(state.teams.length)),
+            state.release && fact('AIStack', el('span', { class: 'mono' }, state.release)))))),
   ];
 }
 
@@ -2685,20 +2702,17 @@ function settingsTab(team, admin) {
       el('h2', { class: 'small' }, 'About this team'),
       el('dl', { class: 'facts' },
         fact('Your role', admin ? 'Admin' : 'Member'),
-        fact('Members', String(members(team).length)),
-        fact(admins.length === 1 ? 'Admin' : 'Admins', el('span', { class: 'mono', title: admins.join(', ') }, some(admins))),
-        fact('Skills', String(team.skills.length)),
-        fact('Groups', team.groups.length ? `${team.groups.length}, ${closed} private` : 'None'),
+        fact(admins.length === 1 ? 'Admin' : 'Admins', el('span', { class: 'person', title: admins.join(', ') }, some(admins))),
+        fact('Private groups', closed ? String(closed) : 'None'),
         fact('Joining', 'With an invite code'))),
-    el('div', { class: 'card-foot' }, el('span', null,
-      admin ? 'As an admin you see every group, private ones included.' : 'These count the skills and groups you can see.')));
+    admin && el('div', { class: 'card-foot' }, el('span', null, 'As an admin you see every group, private ones included.')));
   return el('div', { class: 'settings' }, el('div', null,
     (admin || team.can_invite) && card('', 'Invite people',
       'Each invite link lets one person into this team, and makes them an account on this server if they have none. It lasts seven days.',
       'Make one per person. Cancel any you no longer need.',
       btn('Create invite link', { fk: 'invite', on: { click: ev => run(ev.currentTarget, async () => {
         const res = await api(`/api/teams/${enc(team.name)}/invite`, {});
-        return () => inviteCodeDialog(team, res.code);
+        return () => inviteCodeDialog(team, res);
       }) } }, 'key')),
     (admin || team.can_invite) && invitesList(team, admin),
     card(' danger', 'Leave team',
@@ -2738,13 +2752,13 @@ function invitesList(team, admin) {
   return el('div', { class: 'tbl', role: 'table', 'aria-label': 'Invites', style: 'grid-template-columns:auto minmax(0, 1fr) minmax(0, 1fr) auto' },
     el('div', { class: 'tr th-row', role: 'row' }, th('Status'), th('Made by'), th('When'), thActions()),
     invites.map(i => el('div', { class: 'tr', role: 'row' },
-      td('row', el('span', { class: 'badge' + (i.status === 'PENDING' ? ' solid' : '') }, INVITE_STATUS[i.status])),
-      td('meta', el('span', { class: 't1 mono' }, i.created_by), el('span', { class: 't2' }, 'made ', when(i.created_on))),
-      td('meta', i.status === 'ACCEPTED' ? el('span', { class: 't1' }, 'Used by ', el('span', { class: 'mono' }, i.used_by))
+      td('row', el('span', { class: 'badge' + (i.status === 'PENDING' ? ' solid' : '') }, INVITE_STATUS[i.status]), el('span', { class: 't2 mono' }, inviteTag(i.id))),
+      td('meta', el('span', { class: 't1 person' }, i.created_by), el('span', { class: 't2' }, 'made ', when(i.created_on))),
+      td('meta', i.status === 'ACCEPTED' ? el('span', { class: 't1' }, 'Used by ', el('span', { class: 'person' }, i.used_by))
         : i.status === 'PENDING' ? el('span', { class: 't1' }, 'Expires ', when(i.expires_on))
         : el('span', { class: 't2' }, i.status === 'EXPIRED' ? 'Nobody used it in time' : 'Nobody can use it')),
       td('row end', i.status === 'PENDING' && (admin || i.created_by === state.user.username)
-        ? btn('Cancel', { class: 'btn ghost sm', fk: 'cancel-invite:' + i.id, 'aria-label': `Cancel the invite ${i.created_by} made`,
+        ? btn('Cancel', { class: 'btn ghost sm', fk: 'cancel-invite:' + i.id, 'aria-label': `Cancel invite ${inviteTag(i.id)}, made by ${i.created_by}`,
             on: { click: ev => run(ev.currentTarget, async () => {
               await api(`/api/teams/${enc(team.name)}/invites/${enc(i.id)}/cancel`, {});
               return 'Cancelled. That link no longer lets anyone in.';
@@ -2752,7 +2766,11 @@ function invitesList(team, admin) {
         : null))));
 }
 
-function inviteCodeDialog(team, code) {
+// A short, harmless name for an invite, so two made minutes apart can be told apart (UX-13).
+const inviteTag = id => '#' + String(id).replace(/-/g, '').slice(0, 4);
+
+function inviteCodeDialog(team, invite) {
+  const code = invite.code;
   // The link opens a page on this server that says what to paste; it creates the account too (ADR-0019).
   const link = `${location.origin}/invite/${code}`;
   const input = el('input', { class: 'input', type: 'text', readOnly: true, value: link, 'aria-label': 'Invite link', on: { focus: () => input.select() } });
@@ -2769,12 +2787,12 @@ function inviteCodeDialog(team, code) {
     cancelLabel: null,
     returnFk: 'invite',
     body: [
-      el('p', null, 'Send this link to the people you want in the team. It says what to paste into their coding agent, and makes them an account if they have none. It will not be shown again: copy it now. If you lose it, create a new one.'),
+      el('p', null, `Send this link to one person. It works once, within seven days, and is shown only now. In the list it is invite ${inviteTag(invite.id)}.`),
       el('div', { class: 'field' }, el('div', { class: 'code-box' }, input, copy), copied),
-      field('Invite code', codeInput, 'For someone already on this server: they say "join a team with this code".'),
+      field('Invite code', codeInput, 'Someone already on this server says "join a team with this code".'),
       // The link is built from this page's address, and a loopback one opens only here.
       ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) && el('p', { class: 'help' },
-        `Only this computer can open this link: it starts with ${location.host}. To invite someone on another computer, the server needs an address they can reach. Whoever runs it sets AISTACK_PUBLIC_URL, as "Reaching it from other machines" in OPERATING.md describes.`),
+        `Only this computer can open it. For others, whoever runs the server sets AISTACK_PUBLIC_URL.`),
     ],
   });
   copy.focus();
@@ -3098,8 +3116,9 @@ const DEMO_ROUTES = [
     const t = dTeam(team);
     if (t.role !== 'ADMIN' && !t.can_invite) fail(`Only an admin of ${t.name}, or a member an admin lets invite, can do that.`);
     const bytes = crypto.getRandomValues(new Uint8Array(18));
-    (t.invites = t.invites || []).unshift({ id: String(Date.now()), created_by: dMe(), created_on: dNow(), expires_on: new Date(Date.now() + 7 * 86400e3).toISOString(), status: 'PENDING', used_by: null });
-    return { code: 'aistinv_' + Array.from(bytes, x => x.toString(36).padStart(2, '0')).join('').slice(0, 32) };
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), x => x.toString(16).padStart(2, '0')).join('');
+    (t.invites = t.invites || []).unshift({ id, created_by: dMe(), created_on: dNow(), expires_on: new Date(Date.now() + 7 * 86400e3).toISOString(), status: 'PENDING', used_by: null });
+    return { code: 'aistinv_' + Array.from(bytes, x => x.toString(36).padStart(2, '0')).join('').slice(0, 32), id };
   }],
   [/^\/api\/teams\/([^/]+)\/invites\/([^/]+)\/cancel$/, (b, team, id) => {
     const i = (dTeam(team).invites || []).find(x => x.id === id) || fail('That invite is not there.');

@@ -486,10 +486,11 @@ def disable_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
         return skill.name
     decision = _machine_skill(session, machine_id, harness, skill.skill_id)
     if decision is None:
+        where = folder(harness, session.get(Machine, machine_id).os)
         raise NotFound(
-            f"'{skill.name}' was never enabled on this machine in harness '{harness}', so "
-            "there is nothing to disable. If its folder is on disk and the user wants it gone, "
-            "delete the folder; the server holds no decision about it there."
+            f"'{skill.name}' was never enabled in {where} on this computer, so there is "
+            "nothing to disable. If its folder is on disk and the user wants it gone, delete "
+            "the folder: AIStack holds no decision about it there."
         )
     decision.enabled = False
     return skill.name
