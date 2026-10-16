@@ -14,6 +14,9 @@ from tests.mcp.conftest import call, join
 
 pytestmark = pytest.mark.anyio
 
+# The macbook's global Claude Code folder, and not its folder in the aistack project.
+GLOBAL_MACBOOK = re.compile(r"^macbook \/ Claude Code \d")
+
 
 def _skill(state: dict, name: str) -> dict:
     return next(skill for skill in state["skills"] if skill["name"] == name)
@@ -25,10 +28,11 @@ def _placed(placements: list[dict], machine: str, harness: str) -> bool:
 
 
 def _on(state: dict, name: str) -> list[str]:
-    """The computers a skill in the user's library is placed on in Claude Code, by name."""
+    """The computers a skill in the user's library is placed on in Claude Code's global folder,
+    by name."""
     names = {machine["id"]: machine["name"] for machine in state["machines"]}
     return sorted(names[placement["machine"]] for placement in _skill(state, name)["placements"]
-                  if placement["harness"] == "claude_code")
+                  if placement["harness"] == "claude_code" and placement["project"] is None)
 
 
 def _team(state: dict, name: str) -> dict:
@@ -42,7 +46,7 @@ async def _open_team(opened, name: str) -> None:
 
 async def _open_computer(opened, name: str, agent: str = "Claude Code") -> None:
     await opened.page.get_by_role("navigation", name="Main").get_by_role(
-        "link", name=f"{name} / {agent}").click()
+        "link", name=f"{name} / {agent}, global folder").click()
     await expect(opened.page.get_by_role("heading", name=f"{agent} on {name}", level=1)
                  ).to_be_visible()
 
@@ -132,7 +136,7 @@ async def test_a_skill_is_added_to_another_computer_from_the_library(sign_in):
 
     await row.get_by_role("button", name="Add to computer").click()
     dialog = page.get_by_role("dialog")
-    await expect(dialog.get_by_role("checkbox", name="macbook / Claude Code")).to_be_checked()
+    await expect(dialog.get_by_role("checkbox", name="macbook / Claude Code", exact=True)).to_be_checked()
     await dialog.get_by_role("checkbox", name="desktop / Claude Code").check()
     await dialog.get_by_role("button", name="Save").click()
 
@@ -151,7 +155,7 @@ async def test_a_skill_is_taken_off_a_computer_from_its_details_and_stays_in_the
     await row.get_by_role("button", name="Details of release-notes").click()
     details = page.get_by_role("dialog", name="release-notes")
     await expect(details.get_by_text("r1, 2 files")).to_be_visible()
-    await details.get_by_role("checkbox", name="macbook / Claude Code").uncheck()
+    await details.get_by_role("checkbox", name="macbook / Claude Code", exact=True).uncheck()
     await details.get_by_role("button", name="Save").click()
 
     await expect(row.get_by_text("Only in your library")).to_be_visible()
@@ -203,7 +207,7 @@ async def test_a_computer_copies_what_another_one_has(sign_in):
 
     await page.get_by_role("button", name="Copy from…").click()
     dialog = page.get_by_role("dialog")
-    await expect(dialog.get_by_role("radio", name="macbook / Claude Code")).to_be_checked()
+    await expect(dialog.get_by_role("radio", name=GLOBAL_MACBOOK)).to_be_checked()
     await dialog.get_by_role("button", name="Copy").click()
 
     await expect(dialog).to_have_count(0)
@@ -222,7 +226,7 @@ async def test_the_agents_folder_has_its_own_page_and_says_who_reads_it(sign_in)
 
     await page.get_by_role("button", name="Copy from…").click()
     dialog = page.get_by_role("dialog")
-    await expect(dialog.get_by_role("radio", name="macbook / Claude Code")).to_be_checked()
+    await expect(dialog.get_by_role("radio", name=GLOBAL_MACBOOK)).to_be_checked()
     await dialog.get_by_role("button", name="Copy").click()
 
     await expect(dialog).to_have_count(0)
@@ -895,7 +899,9 @@ async def test_a_lost_computer_is_removed_from_its_page(sign_in):
 # What a keyboard and a screen reader meet. Each test walks several screens in one tab, so the
 # whole set costs a few seconds and needs no second database.
 
-_AXE_ROUTES = ("#/library", "#/f/{macbook}/claude_code", "#/t/aistack/skills",
+_AXE_ROUTES = ("#/library", "#/f/{macbook}/claude_code",
+               "#/f/{macbook}/claude_code/github.com%2Fdchristopoulos%2Faistack",
+               "#/t/aistack/skills",
                "#/t/aistack/members", "#/t/aistack/groups", "#/t/aistack/settings",
                "#/settings", "#/storage")
 
