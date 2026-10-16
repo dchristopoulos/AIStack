@@ -70,7 +70,7 @@ How to work through it:
 - [x] 28. Replay project events before anything records them (bridge release) (#160)
 - [x] 29. Sync a project folder (#168)
 - [x] 30. Server-mode tools take a project (#169)
-- [ ] 31. Teach the server's sync-aistack skill the project steps
+- [x] 31. Teach the server's sync-aistack skill the project steps (#170)
 - [ ] 32. Local mode: git-hardened project folders
 - [ ] 33. Dashboard API for project folders
 - [ ] 34. Dashboard page: projects in the computer tree
@@ -695,6 +695,8 @@ ADR: [0026 Skills folders inside projects](../../adr/0026-skills-folders-inside-
 Tests: - The existing check that the bundled skill passes push validation still passes.
 - A new e2e test runs the skill's git commands, extracted from the skill, against a temporary repository with a linked worktree, a tracked skill and an untracked skill. After an install and a removal, 'git status --porcelain' and 'git diff' are unchanged, and the installed folder is ignored in the worktree.
 - One recorded run each with Claude Code and with Codex, in a repository and in a worktree, before the feature is called supported.
+
+Outcome: the e2e test runs the skill's own commands: its three listings, its install guard twice, an install and a removal, in a clone and its linked worktree, and its credential-stripping of a remote. The recorded agent runs are not done yet, so no page or README calls project folders supported.
 
 ### 32. Local mode: git-hardened project folders
 
