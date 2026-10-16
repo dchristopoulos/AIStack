@@ -33,7 +33,7 @@ How to work through it:
 - [x] 4. An invite dies with its maker's right to invite (#126)
 - [x] 5. Lock the team while its admins and members change (#132)
 - [x] 6. A team can always be managed: delete a team, let a lone admin leave, repair an orphaned one (#147)
-- [ ] 6b. A mistyped group can be renamed or deleted
+- [x] 6b. A mistyped group can be renamed or deleted (#165)
 - [x] 7. Sharing over a group's skill takes being able to share into that group (#149)
 - [x] 8. A session belongs to the computer that opened it; signing out ends it (#127)
 - [x] 9. A person can remove and rename their own computers, and see when each last synced (#140)
@@ -180,7 +180,7 @@ Files: src/aistack/services/team_service.py (`rename_group`: admin only, rewrite
 
 ADR: none needed. The audit proposed moving a deleted group's skills one level up, but a private group's skills would then reach people it kept them from, so a group with skills is refused with a sentence that says to move or remove them first. A mistyped group is empty.
 
-Tests: Service tests: an admin renames a group with subgroups and every path follows, and its skills and members stay; a rename onto a taken path changes nothing; an empty group is deleted, and one with a skill or a subgroup is refused and kept; a member who is not an admin is refused, and an admin outside a private group gets the same sentence as for a missing group. A UI test renames and deletes a group by the buttons' words.
+Tests: Service tests: an admin renames a group with subgroups and every path follows, and its skills and members stay; a rename onto a taken path changes nothing; an empty group is deleted, and one with a skill or a subgroup is refused and kept; a member who is not an admin is refused. An admin already sees and manages every group, private ones too (`team_service.groups`), so a rename or delete by one reveals nothing new. A UI test renames and deletes a group by the buttons' words.
 
 ### 7. Sharing over a group's skill takes being able to share into that group
 

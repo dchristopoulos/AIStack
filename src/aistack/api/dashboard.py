@@ -394,6 +394,17 @@ def change_group(session, user_id, path, body):
         team_service.set_subscribed(session, user_id, path["team"], group, subscribed)
 
 
+@_action("/teams/{team}/group/rename", local=False)
+def rename_group(session, user_id, path, body):
+    return {"path": team_service.rename_group(session, user_id, path["team"],
+                                              _text(body, "path"), _text(body, "name"))}
+
+
+@_action("/teams/{team}/group/delete", local=False)
+def delete_group(session, user_id, path, body):
+    team_service.delete_group(session, user_id, path["team"], _text(body, "path"))
+
+
 @_action("/teams/{team}/group/members", local=False)
 def change_group_member(session, user_id, path, body):
     team_service.set_group_member(session, user_id, path["team"], _text(body, "path"),
