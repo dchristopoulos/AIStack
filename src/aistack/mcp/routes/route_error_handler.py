@@ -4,7 +4,7 @@ from functools import wraps
 from time import perf_counter
 from traceback import format_exc
 
-from starlette.requests import Request
+from starlette.requests import ClientDisconnect, Request
 from starlette.responses import JSONResponse, Response
 
 from aistack.commons.exceptions import (
@@ -50,6 +50,12 @@ def handle_route_errors(func: RouteHandler) -> RouteHandler:
         except AIStackError as error:
             route_logger.info(_failure_message(func.__name__, error.message, started_at))
             return error_response(error.message, _STATUS_CODES.get(type(error), 400))
+        except ClientDisconnect:
+            # The client hung up before its body arrived: a flaky network, not a fault here.
+            # Nothing was stored, and nobody is left to read a response.
+            route_logger.info(f"{func.__name__}: the client hung up before its request "
+                              "finished. Nothing was changed.")
+            return Response(status_code=400)
         except Exception:
             # logger.exception() would append the raw exception chain after our escaped text.
             route_logger.error(_failure_message(func.__name__, format_exc(), started_at))

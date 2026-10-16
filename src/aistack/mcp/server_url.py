@@ -1,3 +1,5 @@
+import logging
+
 from starlette.requests import Request
 
 from aistack.bootstrap.context.application_context import get_settings
@@ -11,6 +13,10 @@ from aistack.commons.urls import is_plain_http_url
 DASHBOARD_LOGIN_PATH = "/app/login"
 # Where a team's invite link lands (ADR-0019).
 INVITE_PATH = "/invite"
+
+logger = logging.getLogger(__name__)
+# Said once per process: every request through such a proxy would repeat it.
+_warned_of_untrusted_proxy = False
 
 
 def server_base_url(request: Request) -> str:
@@ -34,7 +40,26 @@ def server_base_url(request: Request) -> str:
             f"'{loggable(derived)}', which is not a plain http(s) URL. Ask whoever runs the "
             "server to set AISTACK_PUBLIC_URL."
         )
+    if derived.startswith("http://"):
+        _warn_of_untrusted_proxy(request)
     return derived
+
+
+def _warn_of_untrusted_proxy(request: Request) -> None:
+    """A proxy said the request came over https, and uvicorn did not apply it because the
+    proxy is not at an address it trusts (AUTO-17). The address handed out is then http://,
+    and the first request a pasted command makes goes out in the clear."""
+    global _warned_of_untrusted_proxy
+    forwarded = (request.headers.get("x-forwarded-proto", "")
+                 + request.headers.get("forwarded", "")).lower()
+    if _warned_of_untrusted_proxy or "https" not in forwarded:
+        return
+    _warned_of_untrusted_proxy = True
+    logger.warning(
+        "Requests arrive through a proxy that says https, but AISTACK_PUBLIC_URL is not set, "
+        "so this server hands out http:// addresses. Set AISTACK_PUBLIC_URL="
+        f"https://{loggable(request.url.netloc)}."
+    )
 
 
 def mcp_endpoint_url(request: Request) -> str:

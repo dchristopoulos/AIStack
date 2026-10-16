@@ -32,7 +32,7 @@ from aistack.commons.release import release
 from aistack.commons.text import loggable
 from aistack.db.engine import build_engine
 from aistack.mcp.argument_errors import argument_problems
-from aistack.db.schema import NewerSchema
+from aistack.db.schema import ForeignDatabase, NewerSchema
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,10 @@ class WithoutArgumentValues(logging.Filter):
 async def main() -> None:
     settings = Settings()
     configure_logging(settings.log_level)
+    if Path(".env").is_file():
+        # Settings read it, DATABASE_URL included, so a server started inside some project
+        # says whose configuration it took.
+        logger.info(f"Read configuration from {Path('.env').resolve()}.")
 
     build_application_context(settings)
 
@@ -457,7 +461,7 @@ def run() -> None:
         logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
         logger.error(f"AIStack cannot start: its configuration is invalid.\n{error}")
         sys.exit(1)
-    except NewerSchema as error:
+    except (NewerSchema, ForeignDatabase) as error:
         logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
         logger.error(f"AIStack cannot start. {error}")
         sys.exit(1)
@@ -466,7 +470,8 @@ def run() -> None:
         # that changed. The driver's last line names which, and holds no password.
         logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
         reason = str(error.orig).strip().splitlines()[-1]
-        logger.error(f"AIStack cannot start: it could not reach the Library's database. {reason}")
+        database = "the server's database" if command == "serve" else "the Library's database"
+        logger.error(f"AIStack cannot start: it could not reach {database}. {reason}")
         sys.exit(1)
     except AIStackError as error:
         # Local mode's start asks the database who this is, and the answer can be a refusal

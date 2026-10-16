@@ -61,6 +61,18 @@ def test_duplicate_username_is_rejected(session_factory: sessionmaker[Session]):
     assert "add the machine" in str(rejection.value)
 
 
+def test_a_join_retried_after_its_answer_was_lost_says_how_to_recover(session_factory):
+    """ENT-11: the first join committed, and its answer held the only copy of the token. The
+    retry cannot add a machine from a computer that has none, so it is told who can."""
+    _join(session_factory, username="dimitris", machine_name="macbook")
+
+    with pytest.raises(Conflict) as rejection:
+        _join(session_factory, username="dimitris", machine_name="macbook")
+
+    assert "the answer never arrived, the account was made" in str(rejection.value)
+    assert "whoever runs the AIStack server to register this computer" in str(rejection.value)
+
+
 def test_the_same_machine_name_is_free_for_a_different_user(session_factory: sessionmaker[Session]):
     _join(session_factory, username="first", machine_name="macbook")
 

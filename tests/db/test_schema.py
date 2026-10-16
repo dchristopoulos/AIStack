@@ -24,7 +24,7 @@ from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.user import User
-from aistack.db.schema import BASELINE_REVISION, NewerSchema, migrate_schema
+from aistack.db.schema import BASELINE_REVISION, ForeignDatabase, NewerSchema, migrate_schema
 from aistack.services import skill_service, sync_service
 from tests.conftest import _drop_everything
 
@@ -305,6 +305,21 @@ def test_a_migration_that_fails_leaves_the_database_as_it_was(empty_engine, tmp_
     assert _revision(empty_engine) == before
     # The skill's two files, and the copy of them in its user's own skills.
     assert _file_count(empty_engine) == 4
+
+
+def test_another_applications_database_is_refused_unchanged(empty_engine):
+    """STD-14: a server started inside a project read its .env, and stamped the app's own
+    database as AIStack's baseline before failing on a table it did not have."""
+    with empty_engine.begin() as connection:
+        connection.execute(text("CREATE TABLE orders (id INTEGER PRIMARY KEY, total INTEGER)"))
+        connection.execute(text("INSERT INTO orders (id, total) VALUES (1, 42)"))
+
+    with pytest.raises(ForeignDatabase, match="none of AIStack's"):
+        migrate_schema(empty_engine)
+
+    assert _tables(empty_engine) == {"orders"}
+    with empty_engine.connect() as connection:
+        assert connection.execute(text("SELECT total FROM orders")).scalar_one() == 42
 
 
 def test_a_failed_first_start_leaves_an_empty_database_empty(empty_engine, tmp_path):

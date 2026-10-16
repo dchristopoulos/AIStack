@@ -61,10 +61,15 @@ def join(session: Session, username: str, machine_name: str, os: str,
         session.add(personal_team)
         session.flush()
     except IntegrityError as error:
+        # The answer to a join can be lost after it committed, and it was the only copy of
+        # the token, so the retry lands here too (ENT-11).
         raise Conflict(
             f"Username '{username}' is already taken. Pick a different one, or, if "
             "this is you on a new computer, add the machine from a computer that "
-            "is already registered instead of joining again."
+            "is already registered instead of joining again. If you joined with this name "
+            "moments ago and the answer never arrived, the account was made but no computer "
+            "has its token: ask whoever runs the AIStack server to register this computer "
+            "for you."
         ) from error
 
     token = generate_machine_token()
