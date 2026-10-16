@@ -16,7 +16,7 @@ from aistack.bootstrap.context import application_context
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.mcp.mcp import mcp
-from tests.archives import skill_archive
+from tests.archives import local_digests, skill_archive
 from tests.conftest import INVITE_CODE
 from tests.mcp.conftest import client_for
 
@@ -394,6 +394,84 @@ async def test_taking_over_a_namesake_of_your_own_waits_for_replace(server_url):
             2, "dimitris", "acme")
 
 
+async def _team_of_two(server_url, dimitris, maria) -> None:
+    await _post(dimitris, "/teams", name="acme")
+    code = (await _post(dimitris, "/teams/acme/invite")).json()["code"]
+    await _post(maria, "/teams/join", code=code)
+
+
+async def test_an_offered_update_shows_its_changed_lines_before_it_is_taken(server_url):
+    """IMP-08: the offer was a revision number and a name, and reading it meant taking it."""
+    dimitris_token = await _join(server_url, "dimitris")
+    maria_token = await _join(server_url, "maria")
+    await _push(server_url, dimitris_token, "code-review", files={"notes.md": "one\n"})
+    async with _browser(server_url, dimitris_token) as dimitris, \
+            _browser(server_url, maria_token) as maria:
+        await _team_of_two(server_url, dimitris, maria)
+        await _post(dimitris, "/skills/code-review/share", team="acme")
+        await _post(maria, "/teams/acme/take", name="code-review")
+        await _push(server_url, dimitris_token, "code-review",
+                    files={"notes.md": "one\nAlso check migrations.\n", "extra.md": "new"})
+        await _post(dimitris, "/skills/code-review/share", team="acme")
+
+        changes = (await maria.get("/api/teams/acme/skills/code-review/changes")).json()
+
+        assert (changes["from_revision"], changes["to_revision"], changes["pushed_by"],
+                changes["truncated"]) == (1, 2, "dimitris", False)
+        assert [(file["path"], file["change"]) for file in changes["files"]] == [
+            ("extra.md", "added"), ("notes.md", "changed")]
+        assert "+Also check migrations.\n" in changes["files"][1]["diff"]
+        # Looking took nothing.
+        assert (await _state(maria))["skills"][0]["revision"] == 1
+
+
+async def test_an_older_revision_comes_back_as_the_newest_and_every_computer_follows(
+        server_url):
+    """PH-08: 'it stays in your history' promised a way back that nothing offered."""
+    token = await _join(server_url, "maria")
+    await _push(server_url, token, files={"notes.md": "one\n"})
+    await _push(server_url, token, files={"notes.md": "two\n"})
+    async with _browser(server_url, token) as maria:
+        history = (await maria.get("/api/skills/wizard/history")).json()["revisions"]
+        assert [(entry["revision"], entry["pushed_by"], entry["files"]) for entry in history] == [
+            (2, "maria", 2), (1, "maria", 2)]
+
+        restored = await _post(maria, "/skills/wizard/restore", revision=1)
+        assert restored.json() == {"revision": 3, "unchanged": False}
+        assert (await _post(maria, "/skills/wizard/restore", revision=7)).status_code == 404
+        assert (await _post(maria, "/skills/wizard/restore", revision="1")).status_code == 400
+
+    report = await _call(server_url, token, "sync",
+                         local={"wizard": local_digests(files={"notes.md": "two\n"})})
+    assert [(entry["name"], entry["to_revision"]) for entry in report["update"]] == [
+        ("wizard", 3)]
+    on_disk = await _call(server_url, token, "sync",
+                          local={"wizard": local_digests(files={"notes.md": "one\n"})})
+    assert on_disk["update"] == [] and on_disk["up_to_date"] == 1
+
+
+async def test_a_share_over_a_different_skill_is_offered_as_one(server_url):
+    """UX-06: teammates who took the original saw an ordinary update."""
+    dimitris_token = await _join(server_url, "dimitris")
+    maria_token = await _join(server_url, "maria")
+    await _push(server_url, dimitris_token, "deploy-steps", files={"notes.md": "ours\n"})
+    await _push(server_url, maria_token, "deploy-steps", files={"notes.md": "unrelated\n"})
+    async with _browser(server_url, dimitris_token) as dimitris, \
+            _browser(server_url, maria_token) as maria:
+        await _team_of_two(server_url, dimitris, maria)
+        await _post(dimitris, "/skills/deploy-steps/share", team="acme")
+
+        shared = (await _post(maria, "/skills/deploy-steps/share", team="acme")).json()
+
+        assert shared["possibly_unrelated"] is True
+        offer = (await _state(dimitris))["skills"][0]["source"]
+        assert (offer["update_available"], offer["different_skill"]) == (True, True)
+
+    report = await _call(server_url, dimitris_token, "sync", local={})
+    assert [(entry["name"], entry["different_skill"]) for entry in report["team_updates"]] == [
+        ("deploy-steps", True)]
+
+
 async def test_what_only_an_admin_may_do_is_refused_to_a_member_with_a_sentence(server_url):
     dimitris_token = await _join(server_url, "dimitris")
     maria_token = await _join(server_url, "maria")
@@ -438,6 +516,8 @@ OUTSIDER_ROUTES = {
     "/teams/{team}/skills/{name}/move": {"group": None},
     "/teams/{team}/skills/{name}/remove": {},
     "/skills/{name}/share": {"team": "{team}"},
+    # None: a GET, which reads and changes nothing.
+    "/teams/{team}/skills/{name}/changes": None,
 }
 _FILLED = {"{invite_id}": "00000000-0000-0000-0000-000000000000", "{username}": "dimitris",
            "{name}": "wizard"}
@@ -466,6 +546,11 @@ async def test_someone_outside_a_team_is_told_what_they_would_be_told_if_it_did_
                 path = path.replace(placeholder, value)
             answers = []
             for team in ("acme", "nowhere"):
+                if body is None:
+                    response = await eve.get(f"/api{path.replace('{team}', team)}")
+                    answers.append((response.status_code,
+                                    response.json()["error"].replace(team, "X")))
+                    continue
                 filled = {key: value.replace("{team}", team) if isinstance(value, str)
                           else value for key, value in body.items()}
                 response = await _post(eve, path.replace("{team}", team), **filled)

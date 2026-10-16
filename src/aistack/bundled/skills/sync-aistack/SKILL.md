@@ -129,7 +129,7 @@ When several skills need the same kind of answer, ask about them together and ac
 
 ### Team updates
 
-Each `team_updates` entry has `name`, `team`, `from_revision`, `to_revision`, `pushed_by`, and `own_changes`. Tell the user which team changed the skill, between which revisions, and who pushed the new one. When `own_changes` is true, the user changed the skill since taking it, so say that too: "You changed wizard since you took revision 1 from backend. Taking ana's revision 2 replaces your changes on every computer that has it." Then ask whether they want it.
+Each `team_updates` entry has `name`, `team`, `from_revision`, `to_revision`, `pushed_by`, `own_changes`, and `different_skill`. Tell the user which team changed the skill, between which revisions, and who pushed the new one. When `own_changes` is true, the user changed the skill since taking it, so say that too: "You changed wizard since you took revision 1 from backend. Taking ana's revision 2 replaces your changes on every computer that has it." When `different_skill` is true, a teammate shared a different skill under the same name, so say it is not an edit: "ana's revision 2 replaced the wizard you took with a different skill of the same name." Then ask whether they want it. The dashboard shows each offer's changes line by line.
 
 - **Yes**: call `get_skill` with `name` and `team`, then install. This copies the team's latest revision into the Library and replaces the local folder.
 - **No**: do nothing. The offer comes back on the next sync.

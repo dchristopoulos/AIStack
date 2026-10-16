@@ -91,6 +91,9 @@ class TeamUpdate:
     # The user changed their copy since taking from_revision: taking replaces their edits
     # on every computer that has it.
     own_changes: bool
+    # A share since from_revision put a different skill of the same name in the team: this
+    # is not an edit of the one the user took (UX-06).
+    different_skill: bool = False
 
 
 @dataclass(frozen=True)
@@ -437,9 +440,10 @@ def _team_updates(session: Session, user_id: uuid.UUID,
         .where(newest.c.revision > mine.c.source_revision)
         .order_by(bytewise(mine.c.name))
     ).all()
-    changed = skill_service.changed_since_taken(
-        session, [(own, source, taken) for _, _, taken, _, _, own, source in rows])
-    return tuple(TeamUpdate(name, team, taken, latest, pushed_by, own in changed)
+    copies = [(own, source, taken) for _, _, taken, _, _, own, source in rows]
+    changed = skill_service.changed_since_taken(session, copies)
+    replaced = skill_service.replaced_since_taken(session, copies)
+    return tuple(TeamUpdate(name, team, taken, latest, pushed_by, own in changed, own in replaced)
                  for name, team, taken, latest, pushed_by, own, source in rows)
 
 

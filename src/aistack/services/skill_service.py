@@ -3,12 +3,13 @@ import logging
 import uuid
 from dataclasses import dataclass
 from time import perf_counter
+from typing import Any
 
 from sqlalchemy import and_, func, null, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from aistack.commons.exceptions import Conflict, InvalidTicket, NotFound
+from aistack.commons.exceptions import Conflict, InvalidTicket, NotFound, ValidationError
 from aistack.commons.text import loggable
 from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
@@ -329,6 +330,54 @@ def changed_since_taken(session: Session,
             and own_hash.get(own) != taken_hash[(source, revision)]}
 
 
+def replaced_since_taken(session: Session,
+                         copies: list[tuple[uuid.UUID, uuid.UUID, int]]) -> set[uuid.UUID]:
+    """Which of the user's own skills follow a team skill that a share has since put a
+    different skill of the same name over. Each copy is as in `changed_since_taken`."""
+    if not copies:
+        return set()
+    newest_mark = dict(session.execute(
+        select(SkillVersion.skill_id, func.max(SkillVersion.revision))
+        .where(SkillVersion.skill_id.in_({source for _, source, _ in copies}),
+               SkillVersion.shared_over_unrelated.is_(True))
+        .group_by(SkillVersion.skill_id)).all())
+    return {own for own, source, taken in copies if newest_mark.get(source, 0) > taken}
+
+
+def restore_revision(session: Session, user_id: uuid.UUID, name: str,
+                     revision: Any) -> PushedSkill:
+    """Store an older revision of the user's own skill as its newest, pushed by them.
+
+    Revisions are immutable, so going back is going forward with old files: every computer
+    that has the skill installs it at its next sync, as it would any new revision.
+    """
+    if type(revision) is not int or revision < 1:
+        raise ValidationError(f"A revision is a whole number from 1; received "
+                              f"'{loggable(str(revision))}'.")
+    mine = visibility.required_my_skill(session, user_id, name)
+    old = session.scalar(select(SkillVersion).where(SkillVersion.skill_id == mine.skill_id,
+                                                    SkillVersion.revision == revision))
+    if old is None:
+        raise NotFound(f"'{mine.name}' has no revision {revision}. Its history lists the "
+                       "revisions it has.")
+    copied = _stored_as_uploaded(session, mine, old)
+    version, previous = _store_revision(session, mine, copied,
+                                        _latest_version(session, mine.skill_id), user_id)
+    unchanged = version is previous
+    if not unchanged:
+        mine.description = old.frontmatter_json.get("description", mine.description)
+    return PushedSkill(
+        name=mine.name,
+        revision=version.revision,
+        created=False,
+        unchanged=unchanged,
+        content_hash=version.content_hash,
+        file_count=len(copied.files),
+        previous_pushed_by=None if previous is None else _username(session, previous.pushed_by),
+        stored_origin=mine.origin,
+    )
+
+
 @dataclass(frozen=True)
 class SharedSkill:
     """What sharing did, as facts for the agent or the screen to report."""
@@ -394,18 +443,19 @@ def share(session: Session, user_id: uuid.UUID, name: str, team: str,
                                             user_id)
     if created and target_group is not None:
         target.group_id = target_group.group_id
-    version, previous = _store_revision(session, target, copied,
-                                        _latest_version(session, target.skill_id), user_id)
-    unchanged = version is previous
-    if not unchanged:
-        target.description = mine.description
-
+    before = _latest_version(session, target.skill_id)
     follows = _team_it_follows(session, mine, target)
     linked = mine.source_skill_id == target.skill_id
     # A copy that follows another team is related to this one when this one's latest came
     # from it: an earlier share of the same copy.
-    related = created or linked or (follows is not None and previous is not None
-                                    and _ever_held(session, mine, previous.content_hash))
+    related = before is None or linked or (follows is not None
+                                           and _ever_held(session, mine, before.content_hash))
+    version, previous = _store_revision(session, target, copied, before, user_id,
+                                        shared_over_unrelated=not related)
+    unchanged = version is previous
+    if not unchanged:
+        target.description = mine.description
+
     # Shared from an older team revision than the latest: the newer one's changes are gone.
     overwrote = (previous.revision if linked and not unchanged and previous is not None
                  and mine.source_revision is not None
@@ -639,8 +689,9 @@ def _find_or_create_skill(session: Session, team_id: uuid.UUID, uploaded: Valida
 
 
 def _store_revision(session: Session, skill: Skill, uploaded: ValidatedSkill,
-                    latest: SkillVersion | None,
-                    user_id: uuid.UUID) -> tuple[SkillVersion, SkillVersion | None]:
+                    latest: SkillVersion | None, user_id: uuid.UUID,
+                    shared_over_unrelated: bool = False,
+                    ) -> tuple[SkillVersion, SkillVersion | None]:
     """Insert the next revision and return it with the one it follows.
 
     When the content is identical to the latest revision nothing is inserted, and that
@@ -662,6 +713,7 @@ def _store_revision(session: Session, skill: Skill, uploaded: ValidatedSkill,
             content_hash=uploaded.content_hash,
             frontmatter_json=uploaded.frontmatter,
             pushed_by=user_id,
+            shared_over_unrelated=shared_over_unrelated or None,
         )
         try:
             with session.begin_nested():

@@ -55,6 +55,7 @@ class TeamUpdateEntry(TypedDict):
     to_revision: int
     pushed_by: str
     own_changes: bool
+    different_skill: bool
 
 
 class ProjectEntry(TypedDict):
@@ -176,7 +177,8 @@ def sync_result(report: sync_service.SyncReport, sync_skill_url: str | None) -> 
                                       from_revision=entry.from_revision,
                                       to_revision=entry.to_revision,
                                       pushed_by=entry.pushed_by,
-                                      own_changes=entry.own_changes)
+                                      own_changes=entry.own_changes,
+                                      different_skill=entry.different_skill)
                       for entry in report.team_updates],
         up_to_date=report.up_to_date,
         sync_skill_url=sync_skill_url,

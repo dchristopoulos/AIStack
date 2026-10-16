@@ -79,6 +79,7 @@ How to work through it:
 - [x] 37. Shorter text, and words that say what is true
 - [x] 38. Bring DESIGN.md, OPERATING.md and the README back in line with the code (#158)
 - [ ] 39. See what changed before taking an update, and get an older revision back
+- [ ] 39b. Restore an older revision in local mode (a reader release, then a writer a week later)
 - [ ] 40. Cheaper syncs
 - [ ] 41. Audit trail, logs and an export
 - [ ] 41b. The operator can forget a person
@@ -838,6 +839,16 @@ Files: src/aistack/services/skill_service.py (`diff`, `restore_revision`); src/a
 ADR: none needed.
 
 Tests: An update offer shows the changed lines; restoring revision 1 makes revision 3 with revision 1's files and every computer updates on its next sync.
+
+### 39b. Restore an older revision in local mode
+
+Split from step 39, which shipped History and Restore on a server only. A restore in local mode is a change to the Library, so it is recorded as an event (ADR-0025), and a new event kind is replayed by one release before any release records it (ADR-0026). So: a `skill_restored` event carrying the skill's name and the restored archive goes into `library_log._REPLAY_ONLY`, applied through `skill_service.restore_revision`'s storing half, in one release; the localhost dashboard gets the routes, and the event is recorded, in a release at least a week later.
+
+Files: src/aistack/services/library_log.py; src/aistack/api/dashboard.py (`local=True` on the history and restore routes); tests/mcp/test_library_log.py.
+
+ADR: none needed.
+
+Tests: The replay test's random sequences include a restore; a restore made in local mode reaches a second computer's copy.
 
 ### 40. Cheaper syncs
 

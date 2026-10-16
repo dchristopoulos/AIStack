@@ -2,7 +2,16 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, UniqueConstraint, Uuid
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,6 +46,9 @@ class SkillVersion(Base):
     created_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                  default=utc_now)
     pushed_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("user.user_id"), nullable=False)
+    # True when a share put this revision over a different skill of the same name, so the
+    # people who took the old one are told it is not an ordinary update (UX-06).
+    shared_over_unrelated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     __table_args__ = (
         # What stops two concurrent pushes from both claiming revision 2. The push allocates
