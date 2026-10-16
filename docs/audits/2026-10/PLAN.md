@@ -33,6 +33,7 @@ How to work through it:
 - [x] 4. An invite dies with its maker's right to invite (#126)
 - [x] 5. Lock the team while its admins and members change (#132)
 - [x] 6. A team can always be managed: delete a team, let a lone admin leave, repair an orphaned one (#147)
+- [ ] 6b. A mistyped group can be renamed or deleted
 - [x] 7. Sharing over a group's skill takes being able to share into that group (#149)
 - [x] 8. A session belongs to the computer that opened it; signing out ends it (#127)
 - [x] 9. A person can remove and rename their own computers, and see when each last synced (#140)
@@ -42,6 +43,7 @@ How to work through it:
 - [x] 11. Throttle failed credentials and keep caller text out of the log (#142)
 - [x] 12a. Backups that restore, and a snapshot before every upgrade (#141)
 - [ ] 12b. Operator tasks are `aistack admin` commands, not Python copied from Markdown
+- [ ] 12c. The operator renames a user, and join says when a team holds the name
 - [x] 13. Scope the 'latest revision' queries and batch the dashboard's team queries (#151)
 - [x] 14. Reads that change nothing stop taking SQLite's write lock (#143)
 - [x] 15. Answer every conflict and limit with a sentence (#155)
@@ -78,6 +80,8 @@ How to work through it:
 - [ ] 39. See what changed before taking an update, and get an older revision back
 - [ ] 40. Cheaper syncs
 - [ ] 41. Audit trail, logs and an export
+- [ ] 41b. The operator can forget a person
+- [ ] 41c. Metrics for the operator, behind a token
 - [ ] 42. Tests and checks the code is missing
 - [ ] 43. Finish the security pass this audit could not
 
@@ -161,9 +165,22 @@ Files: src/aistack/services/team_service.py (`delete_team`, last-member leave de
 
 ADR: [ADR-0028 (draft)](../../adr/0028-a-team-can-be-deleted.md): A team can be deleted, and nobody is kept in one.
 
+PH-04's group half, deleting and renaming a group, is step 6b.
+
 PH-12's service half lands here: an admin's move or remove of a skill in a private group they are not in answers like a missing skill. Its page half, showing such a group as not joined instead of empty, moves to step 37.
 
 Tests: Service tests: the last member leaving deletes the team and frees its name; an admin deletes a team and members' Library copies stay; the operator script names an admin. A UI test deletes a team by the button's words.
+
+### 6b. A mistyped group can be renamed or deleted
+
+Closes: the group half of [PH-04](plot-holes.md#ph-04-a-team-or-group-can-never-be-deleted-or-renamed-a-lone-admin-can-never-leave-team-names-take-usernames-for-good) and of [UX-03](ux.md#ux-03-a-team-made-by-mistake-can-never-be-removed-its-only-member-cannot-leave-and-nothing-deletes-or-renames-a-team-or-group). Step 6 deleted teams; nothing yet deletes or renames a group.
+Largest effort among them: M. **Trust boundary** (it deletes, and a group's path decides who sees its skills).
+
+Files: src/aistack/services/team_service.py (`rename_group`: admin only, rewrites the path of the group and every group under it in one transaction, refused when the new path is taken; `delete_group`: admin only, and only an empty group, with no skills and no groups under it); src/aistack/api/dashboard.py (`/teams/{team}/group/rename`, `/teams/{team}/group/delete`, `local=False`); dashboard.html (Rename and Delete on a group's page); docs/DESIGN.md (the route table).
+
+ADR: none needed. The audit proposed moving a deleted group's skills one level up, but a private group's skills would then reach people it kept them from, so a group with skills is refused with a sentence that says to move or remove them first. A mistyped group is empty.
+
+Tests: Service tests: an admin renames a group with subgroups and every path follows, and its skills and members stay; a rename onto a taken path changes nothing; an empty group is deleted, and one with a skill or a subgroup is refused and kept; a member who is not an admin is refused, and an admin outside a private group gets the same sentence as for a missing group. A UI test renames and deletes a group by the buttons' words.
 
 ### 7. Sharing over a group's skill takes being able to share into that group
 
@@ -277,6 +294,17 @@ Files: src/aistack/bootstrap/__main__.py (`aistack admin machines|rotate|remove-
 ADR: none needed.
 
 Tests: tests/bootstrap/test_admin_cli.py runs every subcommand against SQLite and PostgreSQL; an unknown username exits with a sentence; OPERATING.md contains no Python blocks.
+
+### 12c. The operator renames a user, and join says when a team holds the name
+
+Closes: [PH-16](plot-holes.md#ph-16-a-username-is-permanent-shares-a-namespace-with-team-names-and-a-taken-one-is-always-explained-as-this-is-you-on-a-new-computer). Step 23 links it for setup's handle question; the rename and the join sentence are here.
+Largest effort among them: S. **Trust boundary** (it changes who a name points at).
+
+Files: src/aistack/services/operator_service.py (`rename_user`: the user and their personal team together, refused when a user or a team holds the new name); src/aistack/bootstrap/admin_cli.py (`aistack admin rename-user OLD NEW`); src/aistack/services/onboarding_service.py (`join` tells a name a team holds from one a user holds, and words each); docs/OPERATING.md (a handle is permanent except through this command).
+
+ADR: none needed. Provenance stores `user_id`, so every `pushed_by` follows the new name.
+
+Tests: tests/bootstrap/test_admin_cli.py renames a user on both databases, and their revisions then show the new name; a rename onto a taken user or team name changes nothing; joining with a team's name says a team uses it, not "this is you on a new computer".
 
 ### 13. Scope the 'latest revision' queries and batch the dashboard's team queries
 
@@ -493,7 +521,7 @@ Tests: an HTTP test shows a computer invite from user A, redeemed with `join`, c
 
 ### 23. Setup can be run again, and a stopped setup can finish
 
-Closes: [PH-09](plot-holes.md#ph-09-setup-step-1-stops-at-already-connected-for-any-aistack-connection-a-pasted-team-invite-is-dropped-and-another-server-or-local-mode-dead-ends), [PH-10](plot-holes.md#ph-10-a-setup-that-stops-after-join-locks-the-newcomer-out-the-re-run-refuses-the-used-invite-then-the-username), [ENT-11](concurrency-and-reliability.md#ent-11-a-lost-join-response-locks-a-newcomer-out-of-their-username), [UX-11](ux.md#ux-11-joining-asks-for-the-name-you-want-to-go-by-but-join-needs-a-lowercase-username-and-has-no-place-for-the-full-name), [UX-12](ux.md#ux-12-an-existing-user-who-pastes-the-invite-pages-setup-sentence-may-never-be-put-in-the-team-setup-has-no-branch-for-a-team-code), [AUTO-21](automation.md#auto-21-joining-drops-the-name-the-person-gave-and-asks-questions-local-mode-answers-itself), [AUTO-25](automation.md#auto-25-join-first-alone-is-an-operator-step-that-protects-nothing-today), [PH-16](plot-holes.md#ph-16-a-username-is-permanent-shares-a-namespace-with-team-names-and-a-taken-one-is-always-explained-as-this-is-you-on-a-new-computer). Also part 1 of [AUTO-05](automation.md#auto-05-after-moving-a-library-the-other-computers-stop-at-setup-step-1-and-quietly-stay-on-the-old-one): when `aistack` is connected to a different place than the one asked for, step 1 says so, removes the old connection, and goes on.
+Closes: [PH-09](plot-holes.md#ph-09-setup-step-1-stops-at-already-connected-for-any-aistack-connection-a-pasted-team-invite-is-dropped-and-another-server-or-local-mode-dead-ends), [PH-10](plot-holes.md#ph-10-a-setup-that-stops-after-join-locks-the-newcomer-out-the-re-run-refuses-the-used-invite-then-the-username), [ENT-11](concurrency-and-reliability.md#ent-11-a-lost-join-response-locks-a-newcomer-out-of-their-username), [UX-11](ux.md#ux-11-joining-asks-for-the-name-you-want-to-go-by-but-join-needs-a-lowercase-username-and-has-no-place-for-the-full-name), [UX-12](ux.md#ux-12-an-existing-user-who-pastes-the-invite-pages-setup-sentence-may-never-be-put-in-the-team-setup-has-no-branch-for-a-team-code), [AUTO-21](automation.md#auto-21-joining-drops-the-name-the-person-gave-and-asks-questions-local-mode-answers-itself), [AUTO-25](automation.md#auto-25-join-first-alone-is-an-operator-step-that-protects-nothing-today). Also part 1 of [AUTO-05](automation.md#auto-05-after-moving-a-library-the-other-computers-stop-at-setup-step-1-and-quietly-stay-on-the-old-one): when `aistack` is connected to a different place than the one asked for, step 1 says so, removes the old connection, and goes on.
 Largest effort among them: M.
 
 Files: src/aistack/bundled/setup-aistack.md; src/aistack/services/onboarding_service.py (`join` takes a full name); src/aistack/mcp/tools/onboarding.py.
@@ -813,7 +841,7 @@ Tests: A first sync of 50 skills in a GitHub Library makes one push; a skill tha
 
 ### 41. Audit trail, logs and an export
 
-Closes: [STD-10](industry-standards.md#std-10-changes-made-on-the-dashboard-leave-no-log-line-shares-groups-group-privacy-takes-and-placements), [STD-11](industry-standards.md#std-11-the-server-log-mixes-two-formats-and-fastmcps-multi-line-rich-lines-ignore-aistack_log_level), [STD-19](industry-standards.md#std-19-the-log-is-the-only-way-to-observe-a-server-no-metrics-no-request-ids-no-version), [IMP-18](improvements.md#imp-18-most-of-the-server-log-is-mcp-sdk-chatter), [STD-15](industry-standards.md#std-15-a-person-on-a-server-can-neither-export-their-library-nor-be-erased), [STD-13](industry-standards.md#std-13-no-hsts-even-when-aistack_public_url-is-https-inline-scripts-allowed-by-the-csp-and-a-server-banner-on-every-response), [STD-20](industry-standards.md#std-20-the-dashboard-is-english-only-by-construction-locale-fixed-to-en-and-strings-inline).
+Closes: [STD-10](industry-standards.md#std-10-changes-made-on-the-dashboard-leave-no-log-line-shares-groups-group-privacy-takes-and-placements), [STD-11](industry-standards.md#std-11-the-server-log-mixes-two-formats-and-fastmcps-multi-line-rich-lines-ignore-aistack_log_level), [IMP-18](improvements.md#imp-18-most-of-the-server-log-is-mcp-sdk-chatter), the export half of [STD-15](industry-standards.md#std-15-a-person-on-a-server-can-neither-export-their-library-nor-be-erased), [STD-13](industry-standards.md#std-13-no-hsts-even-when-aistack_public_url-is-https-inline-scripts-allowed-by-the-csp-and-a-server-banner-on-every-response), [STD-20](industry-standards.md#std-20-the-dashboard-is-english-only-by-construction-locale-fixed-to-en-and-strings-inline).
 Largest effort among them: L.
 
 Files: src/aistack/api/dashboard.py (one INFO line per action, no caller text); src/aistack/bootstrap/__main__.py (one log format); src/aistack/api/dashboard.py (`GET /api/library.tar.gz`); dashboard.html (strings in one object; Intl.PluralRules).
@@ -821,6 +849,28 @@ Files: src/aistack/api/dashboard.py (one INFO line per action, no caller text); 
 ADR: none needed.
 
 Tests: Every dashboard action writes one line naming the action, team and user id; the server log has one format; a person downloads their Library and it matches `aistack export`.
+
+### 41b. The operator can forget a person
+
+Closes: the erasure half of [STD-15](industry-standards.md#std-15-a-person-on-a-server-can-neither-export-their-library-nor-be-erased). Step 41 gives a person their Library as a download; nothing yet erases them.
+Largest effort among them: M. **Trust boundary** (it deletes, and it changes what provenance shows).
+
+Files: src/aistack/services/operator_service.py (`forget`: `offboard` first, so teams keep an admin and every computer goes; then their personal team's skills archived, `full_name` cleared, and the username renamed to `former-<8 hex>`); src/aistack/bootstrap/admin_cli.py (`aistack admin forget USERNAME`); docs/OPERATING.md ("Forget a person"); CONTEXT.md ("Pushed by").
+
+ADR: a new one amending ADR-0015: a forgotten person's revisions stay, and `pushed_by` shows the pseudonym. Draft it as proposed with the code, and accept it in the same PR once the owner agrees on how provenance reads afterward. Deleting their revisions instead would remove skills other people took into their Libraries, which ADR-0015 rules out.
+
+Tests: after `forget` on both databases, member lists and revisions show `former-…`, `full_name` is null, the person's computers are gone, and a team they solely ran has the named successor; a second `forget` of the same person is refused with a sentence.
+
+### 41c. Metrics for the operator, behind a token
+
+Closes: [STD-19](industry-standards.md#std-19-the-log-is-the-only-way-to-observe-a-server-no-metrics-no-request-ids-no-version).
+Largest effort among them: M. **Trust boundary** (a new route that answers a bearer).
+
+Files: src/aistack/bootstrap/configuration/settings/settings_config.py (`AISTACK_METRICS_TOKEN`, a `SecretStr`, validated as the invite code is); src/aistack/mcp/routes/metrics.py (`/metrics` in the Prometheus text format; 404 without the setting and without the bearer, compared in constant time); src/aistack/mcp/mcp_error_handler.py and src/aistack/mcp/routes/route_error_handler.py (count each call by tool or route and outcome where they already time it, and put a request id on each log line); the startup line names the version; docs/OPERATING.md.
+
+ADR: none needed. `/health` stays as it is: it answers without a credential, so it carries no counts.
+
+Tests: with the token set, the bearer gets `aistack_tool_calls_total{tool="sync",outcome="ok"}`; without the setting, without the bearer and with a wrong one it answers 404 alike; the token never reaches the log (the container job's grep).
 
 ### 42. Tests and checks the code is missing
 
