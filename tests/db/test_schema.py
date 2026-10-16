@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 
 import aistack.db
 import aistack.db.schema
+from aistack.db.backup import SNAPSHOT_PREFIX
 from aistack.db.engine import build_engine, build_session_factory
 from aistack.db.models import Base
 from aistack.db.models.harness import Harness
@@ -324,6 +325,10 @@ def test_another_applications_database_is_refused_unchanged(empty_engine):
     assert _tables(empty_engine) == {"orders"}
     with empty_engine.connect() as connection:
         assert connection.execute(text("SELECT total FROM orders")).scalar_one() == 42
+    if empty_engine.dialect.name == "sqlite":
+        # Nor is a copy of it kept, as one would be of AIStack's own before a migration.
+        beside = pathlib.Path(empty_engine.url.database).parent
+        assert not list(beside.glob(f"{SNAPSHOT_PREFIX}*"))
 
 
 def test_a_failed_first_start_leaves_an_empty_database_empty(empty_engine, tmp_path):

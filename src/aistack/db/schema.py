@@ -171,26 +171,28 @@ def _snapshot_when_behind(engine: Engine, current: str | None, scripts: ScriptDi
     snapshot_before_migrating(engine, current, head)
 
 
+def _without_version_table(tables: set[str]) -> str | None:
+    """A database from before migrations, or None for an empty one or another application's,
+    which nothing keeps a copy of: `_predates_migrations` refuses it unchanged."""
+    return _BEFORE_MIGRATIONS if _BASELINE_TABLES <= tables else None
+
+
 def _sqlite_revision(connection: Connection) -> str | None:
     """The revision, read through the driver so that no transaction is opened. None for a
-    database with no tables yet."""
+    database with no tables yet, or with another application's."""
     driver = connection.connection.driver_connection
     tables = {row[0] for row in driver.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table'")}
-    if not tables:
-        return None
     if _VERSION_TABLE not in tables:
-        return _BEFORE_MIGRATIONS
+        return _without_version_table(tables)
     row = driver.execute(f"SELECT version_num FROM {_VERSION_TABLE}").fetchone()
     return row[0] if row else None
 
 
 def _revision(connection: Connection) -> str | None:
     tables = set(inspect(connection).get_table_names())
-    if not tables:
-        return None
     if _VERSION_TABLE not in tables:
-        return _BEFORE_MIGRATIONS
+        return _without_version_table(tables)
     return connection.execute(text(f"SELECT version_num FROM {_VERSION_TABLE}")).scalar()
 
 
