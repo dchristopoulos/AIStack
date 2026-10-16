@@ -9,6 +9,8 @@ import sys
 import threading
 import tomllib
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import pytest
 from fastmcp import Client
@@ -435,7 +437,9 @@ async def test_two_computers_named_alike_with_ids_claimed_apart_stay_two(compute
     assert first.user_id == second.user_id
 
 
-async def test_open_dashboard_serves_the_library_for_this_session(computer, monkeypatch):
+@pytest.mark.parametrize("relative_home", [False, True], ids=["absolute-home", "relative-home"])
+async def test_open_dashboard_serves_the_library_for_this_session(
+        computer, monkeypatch, relative_home):
     """ "open my aistack dashboard" in chat, as on a server: the page runs in this process."""
     import httpx
 
@@ -444,15 +448,28 @@ async def test_open_dashboard_serves_the_library_for_this_session(computer, monk
     async with computer("laptop") as (laptop, home):
         _write_skill(home)
         await _call(laptop, "push_skill", name="wizard")
+        if relative_home:
+            monkeypatch.chdir(home)
+            monkeypatch.setattr(local_dashboard, "get_local_home", lambda: Path(".aistack"))
         first = await _call(laptop, "open_dashboard")
         second = await _call(laptop, "open_dashboard")
+
+        # The browser is handed a page only this account can read, which forwards to the
+        # link, so the link is never on its command line (SEC-13).
+        pages = [Path(url2pathname(urlparse(uri).path)) for uri in opened]
+        assert [first["url"] in page.read_text() for page in pages] == [True, False]
+        assert second["url"] in pages[1].read_text()
+        assert not any("/app/login" in uri for uri in opened)
+        if os.name == "posix":
+            assert {stat.S_IMODE(page.stat().st_mode) for page in pages} == {0o600}
+            home_folder = application_context.get_local_home()
+            assert stat.S_IMODE(home_folder.stat().st_mode) == 0o700
 
         base = first["url"].split("/app/")[0]
         async with httpx.AsyncClient(base_url=base) as browser:
             assert (await browser.get(first["url"])).status_code == 303
             state = (await browser.get("/api/state")).json()
 
-    assert opened == [first["url"], second["url"]]
     assert second["url"].startswith(base + "/")
     assert first["url"].startswith("http://127.0.0.1:")
     assert [skill["name"] for skill in state["skills"]] == ["wizard"]

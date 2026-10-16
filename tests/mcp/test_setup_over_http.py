@@ -44,6 +44,9 @@ async def test_the_setup_page_is_public_and_names_this_servers_own_address(serve
     assert f"{_base(server_url)}/setup/sync-aistack/SKILL.md" in response.text
     # Every placeholder was filled in.
     assert not re.search(r"\{(server_url|mcp_url)\}", response.text)
+    # The text names the address the request used, so no cache may keep it (SEC-11).
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["vary"] == "Host"
 
 
 async def test_the_setup_page_uses_the_public_url_behind_a_proxy(server_url, monkeypatch):
@@ -126,6 +129,7 @@ async def test_the_sync_skill_is_served_exactly_as_shipped(server_url):
     assert response.status_code == 200
     assert response.text == sync_skill_document()
     assert response.text.startswith("---\nname: sync-aistack\n")
+    assert response.headers["cache-control"] == "no-store"
 
 
 async def test_a_computer_that_skipped_setup_is_offered_the_same_hook_at_its_first_sync(

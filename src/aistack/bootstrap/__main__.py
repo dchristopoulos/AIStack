@@ -7,7 +7,6 @@ import signal
 import socket
 import sys
 import time
-import webbrowser
 from pathlib import Path
 
 import fastmcp
@@ -151,6 +150,7 @@ async def serve_dashboard() -> None:
         get_local_principal,
         get_ticket_signer,
     )
+    from aistack.mcp.local_dashboard import open_in_browser
     from aistack.mcp.mcp import dashboard_server_config
     from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH
 
@@ -164,7 +164,7 @@ async def serve_dashboard() -> None:
     # The link is a credential, so it goes to this terminal and the browser, never a log.
     print(f"AIStack dashboard: http://127.0.0.1:{port}/app (Ctrl-C stops it)\n"
           f"Sign-in link, good for five minutes: {link}", flush=True)
-    webbrowser.open(link)
+    open_in_browser(link)
     await uvicorn.Server(dashboard_server_config(settings.log_level)).serve(sockets=[listener])
 
 
