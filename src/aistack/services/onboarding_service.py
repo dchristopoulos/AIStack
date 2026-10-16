@@ -205,6 +205,8 @@ def set_full_name(session: Session, user_id: uuid.UUID, full_name: str) -> str |
     """Set or, with blank text, clear the name teammates read beside the caller's username."""
     cleaned = _validated_full_name(full_name)
     session.execute(update(User).where(User.user_id == user_id).values(full_name=cleaned))
+    # That it changed, not to what: a person's name is theirs, not the log's.
+    logger.info(f"Full name {'cleared' if cleaned is None else 'set'}. User: '{user_id}'.")
     return cleaned
 
 

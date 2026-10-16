@@ -1,4 +1,5 @@
 import logging
+import re
 
 import fastmcp
 import pytest
@@ -159,6 +160,27 @@ def test_the_wire_loggers_never_drop_below_info(log_level):
 
     # AIStack's own loggers still follow the operator's choice.
     assert logging.getLogger("aistack").getEffectiveLevel() == logging.getLevelName(log_level)
+
+
+def test_the_sdks_lines_around_every_request_stay_out_and_error_means_error():
+    """IMP-18 and STD-11: two SDK lines per call buried AIStack's one, and ERROR still let
+    INFO lines through."""
+    configure_logging("INFO")
+    for chatty in ("mcp.server.lowlevel.server", "mcp.server.streamable_http"):
+        assert logging.getLogger(chatty).level >= logging.WARNING
+
+    configure_logging("ERROR")
+    for name in (*WIRE_LOGGERS, *QUIET_LOGGERS, "aistack"):
+        assert not logging.getLogger(name).isEnabledFor(logging.INFO), name
+
+
+def test_a_line_carries_the_time_with_its_offset():
+    configure_logging("INFO")
+    record = logging.LogRecord("aistack", logging.INFO, __file__, 1, "x", None, None)
+
+    stamp = logging.getLogger().handlers[0].formatter.format(record).split(" ")[0]
+
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d{4}", stamp), stamp
 
 
 def test_every_library_that_prints_the_wire_payload_is_floored():

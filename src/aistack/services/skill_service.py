@@ -295,6 +295,9 @@ def take_from_team(session: Session, user_id: uuid.UUID, name: str, team: str,
     _bring_back(session, mine)
     mine.source_skill_id = source.skill_id
     mine.source_revision = latest.revision
+    logger.info(f"Skill taken from a team. Skill: '{source.name}'. Team: '{team}'. "
+                f"Revision: '{latest.revision}'. Replaced their own: '{replace}'. "
+                f"User: '{user_id}'.")
     return mine
 
 
@@ -385,6 +388,8 @@ def restore_revision(session: Session, user_id: uuid.UUID, name: str,
     unchanged = version is previous
     if not unchanged:
         mine.description = old.frontmatter_json.get("description", mine.description)
+    logger.info(f"Revision restored. Skill: '{mine.name}'. Revision: '{revision}' as "
+                f"'{version.revision}'. User: '{user_id}'.")
     return PushedSkill(
         name=mine.name,
         revision=version.revision,
@@ -482,6 +487,10 @@ def share(session: Session, user_id: uuid.UUID, name: str, team: str,
     if follows is None:
         mine.source_skill_id = target.skill_id
         mine.source_revision = version.revision
+    logger.info(f"Skill shared. Skill: '{target.name}'. Team: '{destination.name}' "
+                f"({destination.team_id}). Group: '{_group_name(session, target.group_id)}'. "
+                f"Revision: '{version.revision}'. Over an unrelated one: '{not related}'. "
+                f"User: '{user_id}'.")
     return SharedSkill(
         name=target.name,
         team=destination.name,
@@ -533,6 +542,7 @@ def remove_from_my_skills(session: Session, user_id: uuid.UUID, name: str) -> st
         .where(MachineProjectSkill.skill_id == skill.skill_id)
         .values(enabled=False)
     )
+    logger.info(f"Skill removed from the Library. Skill: '{skill.name}'. User: '{user_id}'.")
     return skill.name
 
 
@@ -541,6 +551,7 @@ def bring_back(session: Session, user_id: uuid.UUID, name: str) -> str:
     answered the removal keeps its answer until the user adds it there again (PH-11)."""
     skill = visibility.required_my_skill(session, user_id, name, removed_too=True)
     _bring_back(session, skill)
+    logger.info(f"Skill brought back to the Library. Skill: '{skill.name}'. User: '{user_id}'.")
     return skill.name
 
 

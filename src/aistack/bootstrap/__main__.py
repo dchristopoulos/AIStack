@@ -39,6 +39,9 @@ from aistack.db.schema import ForeignDatabase, NewerSchema
 logger = logging.getLogger(__name__)
 
 LOG_FORMAT = "%(asctime)s %(levelname)-8s [%(name)s.%(funcName)s] %(message)s"
+# RFC 3339 with the offset, so a line read on another computer or beside another log is not
+# off by a time zone (STD-11).
+LOG_DATE_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 
 # Loggers that print raw protocol payloads at DEBUG. A tool result containing a machine token
 # goes over the wire in plaintext by definition, so at DEBUG these write the token to the log
@@ -49,22 +52,26 @@ LOG_FORMAT = "%(asctime)s %(levelname)-8s [%(name)s.%(funcName)s] %(message)s"
 WIRE_LOGGERS = ("mcp.client", "mcp.server.streamable_http", "sse_starlette", "httpcore", "httpx",
                 "fastmcp")
 
-# FastMCP's own line for a rejected bearer. AIStack logs the rejection, with the address, so
-# at INFO this second line would only double what a flood costs the log.
-QUIET_LOGGERS = ("fastmcp.server.auth.middleware",)
+# Floored at WARNING. FastMCP's own line for a rejected bearer: AIStack logs the rejection,
+# with the address, so at INFO this second line would only double what a flood costs the log.
+# And the MCP SDK's two lines around every request, "Processing request of type ..." and
+# "Terminating session: None", which buried AIStack's one line per call (IMP-18).
+QUIET_LOGGERS = ("fastmcp.server.auth.middleware", "mcp.server.lowlevel.server",
+                 "mcp.server.streamable_http")
 
 # Where FastMCP 3.4.7 logs a call's arguments when they fail validation.
 ARGUMENT_ECHO_LOGGER = "fastmcp.server.server"
 
 
 def configure_logging(log_level: str) -> None:
-    logging.basicConfig(level=log_level, format=LOG_FORMAT, force=True)
+    logging.basicConfig(level=log_level, format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT, force=True)
     _route_fastmcp_through_root()
+    chosen = logging.getLevelName(log_level)
     for wire_logger in WIRE_LOGGERS:
-        logging.getLogger(wire_logger).setLevel(max(logging.INFO,
-                                                    logging.getLevelName(log_level)))
+        logging.getLogger(wire_logger).setLevel(max(logging.INFO, chosen))
+    # Only ever raised: a floor below the operator's level would let these through it.
     for quiet_logger in QUIET_LOGGERS:
-        logging.getLogger(quiet_logger).setLevel(logging.WARNING)
+        logging.getLogger(quiet_logger).setLevel(max(logging.WARNING, chosen))
 
 
 def _route_fastmcp_through_root() -> None:
@@ -569,17 +576,17 @@ def run() -> None:
         # Configuration is wrong, not the code. A traceback would bury the one line that says
         # which variable to set, so this exits loudly and readably instead. ValueError covers
         # both a field pydantic rejected and the invite-code check that deliberately is not one.
-        logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
+        logging.basicConfig(level="INFO", format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT, force=True)
         logger.error(f"AIStack cannot start: its configuration is invalid.\n{error}")
         sys.exit(1)
     except (NewerSchema, ForeignDatabase) as error:
-        logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
+        logging.basicConfig(level="INFO", format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT, force=True)
         logger.error(f"AIStack cannot start. {error}")
         sys.exit(1)
     except OperationalError as error:
         # The usual first-run mistake in local mode: an address that is wrong or a password
         # that changed. The driver's last line names which, and holds no password.
-        logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
+        logging.basicConfig(level="INFO", format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT, force=True)
         reason = str(error.orig).strip().splitlines()[-1]
         database = "the server's database" if command == "serve" else "the Library's database"
         logger.error(f"AIStack cannot start: it could not reach {database}. {reason}")
@@ -587,7 +594,7 @@ def run() -> None:
     except AIStackError as error:
         # Local mode's start asks the database who this is, and the answer can be a refusal
         # that names what to change, such as a database that is a server's.
-        logging.basicConfig(level="INFO", format=LOG_FORMAT, force=True)
+        logging.basicConfig(level="INFO", format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT, force=True)
         logger.error(f"AIStack cannot start. {error}")
         sys.exit(1)
     except (agent_config.NotConnected, backup.BackupRefused) as refusal:
