@@ -1420,6 +1420,7 @@ function computerTree(r) {
     const shown = agentsShown(m, here ? r.agent : null);
     const missing = Object.keys(AGENTS).filter(a => !shown.includes(a));
     const kids = el('div', { class: 'tree-kids', hidden: !open },
+      shown.length ? null : el('div', { class: 'tree-agent' }, `Not synced yet: say "${SYNC}" there.`),
       shown.map(agent => {
         const t = { m, agent }, n = placedOn(t).length;
         const leaf = el('a', {
@@ -1481,7 +1482,8 @@ const ADD_COMPUTER = {
   server: () => [
     el('ol', { class: 'steps' },
       el('li', null, 'On a computer that is already connected, say this to your coding agent. Name the new computer however you like.'),
-      el('li', null, 'It answers with one command. Run it on the new computer and restart the coding agent there.'),
+      el('li', null, 'It answers with one command. Run it on the new computer and restart the coding agent there.',
+        el('p', { class: 'help' }, 'The command holds a permanent key for that computer: paste it only there, and delete it from anywhere it was carried. If it leaks, whoever runs the server revokes that computer.')),
       el('li', null, 'Say ', el('code', null, SYNC), ' on the new computer. Then add skills to it here.')),
     copyField('add my Windows PC to aistack', 'What to say'),
   ],
@@ -2623,8 +2625,8 @@ function newTeamDialog() {
   });
 }
 
-function joinDialog() {
-  const code = el('input', { class: 'input mono', type: 'text', autocomplete: 'off', spellcheck: false, placeholder: 'aistinv_…' });
+function joinDialog(invite = '') {
+  const code = el('input', { class: 'input mono', type: 'text', autocomplete: 'off', spellcheck: false, placeholder: 'aistinv_…', value: invite });
   openDialog({
     title: 'Join a team',
     submitLabel: 'Join team',
@@ -2680,7 +2682,16 @@ $sidebar.addEventListener('click', ev => { if (ev.target.closest('a, .nav-btn'))
 document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape' && $app.classList.contains('drawer-open')) { setDrawer(false); $drawerBtn.focus(); }
 });
-window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+// An invite page links to #/join/<code>: the fragment never reaches the server. The code
+// leaves the address at once, so it stays in neither the history nor a bookmark.
+function takeJoinCode() {
+  const m = /^#\/join\/([^/]+)$/.exec(location.hash);
+  if (!m) return null;
+  history.replaceState(null, '', location.pathname + location.search + '#/library');
+  try { return decodeURIComponent(m[1]); } catch (_) { return null; }
+}
+const offerJoin = code => { if (code && state && state.server !== false) joinDialog(code); };
+window.addEventListener('hashchange', () => { const code = takeJoinCode(); render(); window.scrollTo(0, 0); offerJoin(code); });
 // Back on the tab, or on the window from the terminal beside it: show what changed meanwhile,
 // such as a sync or a teammate joining, or that the session ended. Not while a dialog is open:
 // it holds what the user is typing.
@@ -2946,7 +2957,8 @@ async function demoApi(path, body) {
 /* ================= start ================= */
 
 function start() {
-  load().catch(e => {
+  const code = takeJoinCode();
+  load().then(() => offerJoin(code)).catch(e => {
     if (e instanceof SessionEnded) return sessionEnded();
     $main.replaceChildren(el('div', { class: 'wrap body' }, empty('info', 'The dashboard could not load', el('p', null, e.message),
       btn('Try again', { class: 'btn primary', on: { click: ev => { ev.currentTarget.setAttribute('aria-disabled', 'true'); start(); } } }))));

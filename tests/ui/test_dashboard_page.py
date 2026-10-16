@@ -260,6 +260,8 @@ async def test_adding_a_computer_says_what_to_ask_the_agent(sign_in):
 
     sentence = page.get_by_role("dialog").get_by_role("textbox", name="What to say")
     await expect(sentence).to_have_value("add my Windows PC to aistack")
+    # UX-20: what the agent answers is a credential, and the person carries it.
+    await expect(page.get_by_role("dialog").get_by_text("holds a permanent key for that computer")).to_be_visible()
     await page.get_by_role("dialog").get_by_role("button", name="Done").click()
     await expect(page.get_by_role("dialog")).to_have_count(0)
 
@@ -428,6 +430,26 @@ async def test_a_team_is_created_and_joined_with_its_invite_code(sign_in):
     assert "design" in [team["name"] for team in (await alex.state())["teams"]]
 
 
+async def test_a_signed_in_member_joins_from_the_invite_page_in_one_click(sign_in):
+    """AUTO-22: the page links to the dashboard with the code where the server never sees it."""
+    maria = await sign_in("maria")
+    await _open_team(maria, "friends")
+    await maria.page.get_by_role("tab", name="Settings").click()
+    await maria.page.get_by_role("button", name="Create invite link").click()
+    link = await maria.page.get_by_role("dialog").get_by_label("Invite link").input_value()
+
+    alex = await sign_in("alex")
+    await alex.page.goto(link)
+    await alex.page.get_by_role("link", name="join in your dashboard").click()
+    join = alex.page.get_by_role("dialog", name="Join a team")
+    await join.get_by_role("button", name="Join team").click()
+
+    await expect(alex.page.get_by_role("heading", name="friends", level=1)).to_be_visible()
+    assert "friends" in [team["name"] for team in (await alex.state())["teams"]]
+    assert "aistinv_" not in alex.page.url
+    assert alex.console_errors == []
+
+
 async def test_an_admin_lets_a_member_invite_and_the_member_can(sign_in):
     dimitris = await sign_in("dimitris")
     await _open_team(dimitris, "aistack")
@@ -515,6 +537,29 @@ async def test_someone_new_with_no_team_is_shown_how_to_get_one(browser, server_
 
     await expect(page.get_by_role("heading", name="Your library is empty")).to_be_visible()
     await expect(page.get_by_text('choose "Add a team" to create one or join')).to_be_visible()
+    await context.close()
+
+
+async def test_a_computer_that_never_synced_shows_no_agent_until_it_does(browser, server_url,
+                                                                       links):
+    """UX-07: shown with Claude Code, a computer added for Codex invited skills into a folder
+    no agent there reads."""
+    token = await join(server_url, "newbie", "laptop")
+    await call(server_url, token, "add_machine", name="windows-pc", os="WINDOWS")
+    context = await browser.new_context()
+    page = await context.new_page()
+    await page.goto((await call(server_url, token, "open_dashboard"))["url"])
+    navigation = page.get_by_role("navigation", name="Main")
+
+    await expect(navigation.get_by_text('Not synced yet: say "sync aistack" there.')
+                 ).to_have_count(2)
+    await expect(navigation.get_by_role("link", name="windows-pc / Claude Code")).to_have_count(0)
+
+    await call(server_url, token, "sync", local={}, harness="agents")
+    await page.reload()
+    await expect(navigation.get_by_role("link", name="laptop / Agents folder")).to_be_visible()
+    await expect(navigation.get_by_text('Not synced yet: say "sync aistack" there.')
+                 ).to_have_count(1)
     await context.close()
 
 
@@ -773,7 +818,7 @@ async def test_a_computer_says_where_it_came_from_and_is_renamed(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
     await _open_computer(dimitris, "desktop")
-    await expect(page.get_by_text('Not synced yet: say "sync aistack" there')).to_be_visible()
+    await expect(page.get_by_text("Last synced")).to_be_visible()
 
     await page.get_by_role("button", name="Computer settings").click()
     dialog = page.get_by_role("dialog", name="desktop")

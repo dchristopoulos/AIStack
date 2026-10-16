@@ -1,11 +1,12 @@
 """A skill is placed per computer and harness, and each folder is synced on its own (ADR-0018)."""
 
+import hashlib
 from typing import get_args
 
 import pytest
 from sqlalchemy import select
 
-from aistack.bundled import SYNC_SKILL_NAME
+from aistack.bundled import SYNC_SKILL_NAME, sync_skill_document
 from aistack.commons.exceptions import NotFound, ValidationError
 from aistack.db.engine import build_session_factory
 from aistack.db.models.harness import Harness
@@ -227,13 +228,25 @@ def test_the_sync_skill_goes_into_the_agents_folder_only_where_setup_put_it(sess
     assert _sync(session_factory, dimitris, stale, AGENTS).refresh_sync_skill is True
 
 
+def test_a_computer_whose_claude_code_never_synced_gets_the_sync_skill_in_the_agents_folder(
+        session_factory, dimitris):
+    """PH-06: a computer added with add_machine and only Codex there. Codex is the agent
+    connected to AIStack, and nothing else would ever put the sync skill in its folder."""
+    assert _sync(session_factory, dimitris, {}, AGENTS).refresh_sync_skill is True
+    current = {SYNC_SKILL_NAME: {"SKILL.md": hashlib.sha256(
+        sync_skill_document().encode("utf-8")).hexdigest()}}
+    assert _sync(session_factory, dimitris, current, AGENTS).refresh_sync_skill is False
+
+
 def _state(session_factory, joined):
     with session_factory() as session:
         return dashboard_service.state(session, joined.user.user_id)
 
 
-def test_a_computer_that_never_synced_a_harness_shows_claude_code(session_factory, dimitris):
-    assert _state(session_factory, dimitris)["machines"][0]["harnesses"] == [CLAUDE_CODE]
+def test_a_computer_that_never_synced_shows_no_folder(session_factory, dimitris):
+    """UX-07: shown with Claude Code, a computer added for Codex invited placements in a
+    folder no agent there syncs."""
+    assert _state(session_factory, dimitris)["machines"][0]["harnesses"] == []
 
 
 def test_a_computer_shows_the_harnesses_that_synced_or_hold_a_decision(session_factory,

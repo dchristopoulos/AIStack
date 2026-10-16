@@ -14,7 +14,7 @@ ADR-0018 made a harness a skills folder: `claude_code` (`~/.claude/skills`) and 
 
 **Setup runs from Claude Code or from Codex.** The setup page says how to connect either, with the same token and one paste. Codex holds the token as a static `Authorization` header in `~/.codex/config.toml`; its CLI cannot set one, so the agent writes that block.
 
-**The sync skill goes where an agent talks to AIStack.** Anywhere else it would tell an agent with no connection to sync. The server offers to install or refresh `sync-aistack` in Claude Code's folder, which is how a computer connected by `add_machine` gets it, and in the shared folder only when it is already there, which is where setup puts it when Codex is the connected agent. The skill installs it only into the running agent's own folder, so Codex connected on a computer that also has Claude Code does not put it in Claude Code's.
+**The sync skill goes where an agent talks to AIStack.** Anywhere else it would tell an agent with no connection to sync. The server offers to install or refresh `sync-aistack` in Claude Code's folder, which is how a computer connected by `add_machine` gets it, and in the shared folder only when it is already there, which is where setup puts it when Codex is the connected agent, or on a computer whose Claude Code never synced, where the agent syncing the shared folder is the connected one (added 2026-10-16: a Codex-only computer connected by `add_machine` otherwise never got it). The skill installs it only into the running agent's own folder, so Codex connected on a computer that also has Claude Code does not put it in Claude Code's.
 
 ## Consequences
 

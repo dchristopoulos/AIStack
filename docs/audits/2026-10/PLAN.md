@@ -57,7 +57,8 @@ How to work through it:
 - [ ] 20d. A moved Library tells the computers still on the old place
 - [x] 21. A restored home folder is a new computer (#148)
 - [ ] 21b. A server notices a machine token copied to another computer
-- [ ] 22. A second computer gets the sync skill and the session-start hook, whatever its agent
+- [x] 22. A second computer gets the sync skill and the session-start hook, whatever its agent (#157)
+- [ ] 22b. Adding a computer on a server is one paste, with no token carried between computers
 - [ ] 23. Setup can be run again, and a stopped setup can finish
 - [x] 24. Record the decision: ADR-0026 and the glossary (#152)
 - [x] 25. Identify a project from its remote or its path (#153)
@@ -466,7 +467,7 @@ Tests: a sync with a different fingerprint than the machine's first is refused w
 
 ### 22. A second computer gets the sync skill and the session-start hook, whatever its agent
 
-Closes: [PH-06](plot-holes.md#ph-06-a-codex-only-second-computer-added-with-add_machine-never-gets-the-sync-skill-or-the-offer-of-the-library), [UX-07](ux.md#ux-07-a-second-computer-that-has-only-codex-never-gets-the-sync-skill-or-the-first-sync-library-offer-and-the-dashboard-shows-it-a-claude-code-folder-before-it-syncs), [AUTO-09](automation.md#auto-09-a-computer-connected-with-add_machine-is-never-offered-the-session-start-hook-and-a-codex-only-one-never-gets-the-sync-skill), [PH-15](plot-holes.md#ph-15-the-sync-tools-sync-skill-download-fails-on-exactly-the-computers-it-exists-for), [AUTO-10](automation.md#auto-10-adding-a-computer-on-a-server-takes-four-hops-and-moves-a-permanent-token-between-machines-a-one-use-computer-invite-would-make-it-one-paste), [AUTO-22](automation.md#auto-22-the-invite-page-makes-an-existing-user-pick-the-code-out-of-a-setup-sentence), [UX-20](ux.md#ux-20-add-my-other-computer-never-tells-the-person-the-command-they-carry-to-the-other-computer-is-a-permanent-key).
+Closes: [PH-06](plot-holes.md#ph-06-a-codex-only-second-computer-added-with-add_machine-never-gets-the-sync-skill-or-the-offer-of-the-library), [UX-07](ux.md#ux-07-a-second-computer-that-has-only-codex-never-gets-the-sync-skill-or-the-first-sync-library-offer-and-the-dashboard-shows-it-a-claude-code-folder-before-it-syncs), [AUTO-09](automation.md#auto-09-a-computer-connected-with-add_machine-is-never-offered-the-session-start-hook-and-a-codex-only-one-never-gets-the-sync-skill), [PH-15](plot-holes.md#ph-15-the-sync-tools-sync-skill-download-fails-on-exactly-the-computers-it-exists-for), [AUTO-22](automation.md#auto-22-the-invite-page-makes-an-existing-user-pick-the-code-out-of-a-setup-sentence), [UX-20](ux.md#ux-20-add-my-other-computer-never-tells-the-person-the-command-they-carry-to-the-other-computer-is-a-permanent-key).
 Largest effort among them: M.
 
 Files: src/aistack/mcp/tools/onboarding.py (`add_machine` result); src/aistack/services/sync_service.py (`sync_skill_url` for the folder the caller syncs); src/aistack/mcp/routes/invite.py (a join-team copy block); bundled sync skills.
@@ -474,6 +475,21 @@ Files: src/aistack/mcp/tools/onboarding.py (`add_machine` result); src/aistack/s
 ADR: none needed.
 
 Tests: A Codex-only computer added with `add_machine` gets `sync_skill_url` and the first-sync offer on its first sync; the add-machine text says the command is a key; the invite page offers 'join a team with this code' to existing users.
+
+AUTO-10 moved to step 22b: a computer invite is a third kind of bootstrap bearer, which needs an ADR, and is more than this PR. AUTO-09's "fetch the sync skill in `codex_config`" is not needed once the server offers the skill to a computer whose Claude Code never synced, and PH-06's report field for the first-sync offer became one line in the `sync` description pointing at the skill's step 5, which the same sync has just downloaded: the description is at its 2048-character limit, and the offer needs `list_skills` either way.
+
+### 22b. Adding a computer on a server is one paste, with no token carried between computers
+
+Closes: [AUTO-10](automation.md#auto-10-adding-a-computer-on-a-server-takes-four-hops-and-moves-a-permanent-token-between-machines-a-one-use-computer-invite-would-make-it-one-paste).
+Largest effort among them: M.
+
+A one-use, seven-day computer invite for the caller's own account, built like a team invite (ADR-0022): a row with a hashed `aistdev_` code, made by `add_machine` or a dashboard button, redeemed by `join`, which then registers a machine for the existing user and runs the whole setup there. The token never leaves the computer that uses it.
+
+Files: a compatible migration and model for the invite row; src/aistack/services/onboarding_service.py; src/aistack/mcp/tools/onboarding.py; src/aistack/mcp/auth/; src/aistack/api/dashboard.py and the page; src/aistack/bundled/setup-aistack.md; docs/OPERATING.md (recovery hands out a link).
+
+ADR: needed. It amends ADR-0003 and ADR-0019 with a third kind of bootstrap bearer under the same tag-based rule.
+
+Tests: an HTTP test shows a computer invite from user A, redeemed with `join`, creates a machine for A and no new user; it works once, expires, and can be cancelled. The dashboard's Add a computer dialog shows a link.
 
 ### 23. Setup can be run again, and a stopped setup can finish
 

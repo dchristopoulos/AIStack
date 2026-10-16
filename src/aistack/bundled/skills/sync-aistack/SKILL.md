@@ -75,7 +75,7 @@ If `sync` fails with HTTP 413, "Request body too large", the listing was too big
 
 Work through the fields in this order, passing the same harness to every tool you call.
 
-1. **`sync_skill_url`**: usually `null`. When it is a URL, this folder's copy of this skill is missing or differs from the server's. Download it only if `<folder>` is the folder this very file, `sync-aistack/SKILL.md`, was loaded from: `curl -sS -o <folder>/sync-aistack/SKILL.md "<sync_skill_url>"`, without asking. It is AIStack's own file, so nothing of the user's is lost. For any other folder, ignore the URL and never create `sync-aistack` there: the agents reading that folder are not connected to AIStack, and the skill would tell them to sync. Step 5 never copies it either.
+1. **`sync_skill_url`**: usually `null`. When it is a URL, this folder's copy of this skill is missing or differs from the server's. Download it only if `<folder>` is the folder this very file, `sync-aistack/SKILL.md`, was loaded from: `curl -sS --create-dirs -o <folder>/sync-aistack/SKILL.md "<sync_skill_url>"`, without asking. It is AIStack's own file, so nothing of the user's is lost. For any other folder, ignore the URL and never create `sync-aistack` there: the agents reading that folder are not connected to AIStack, and the skill would tell them to sync. Step 5 never copies it either.
 2. **`install`** and **`update`**: call `get_skill` with each entry's `name` and follow its install steps, into the `folder` it returns. Do not ask first. This folder already chose these skills, and the local copy is missing or is an unmodified older revision, so nothing can be lost.
 3. **`backup`**: names of skills on disk that are not yet in the Library. For each, call `push_skill` with the name and follow its upload steps. Do not ask first. The Library is private, so a backup shares nothing with anyone. (An older server called this field `orphans` and asked before pushing; that rule is retired.)
 4. **`ask`**: sync found something it will not decide for the user. Put each entry to them as described under "Asking" and act only on their answer.
@@ -143,6 +143,14 @@ To share a change the other way, the user asks for it ("share wizard with backen
 When any folder reported `first_sync`, offer the Library itself. Call `list_skills`: the user's own skills (those whose `team` is null) that are in neither folder on disk after this sync, and not under `ask`, come from their other computers. If there are any, ask once, naming them: "Your Library has <names> from your other computers. Install them here?" Yes: `get_skill` each into `claude_code` when this computer has Claude Code, otherwise into `agents`, and install it. No: nothing; they can say "install <name>" whenever they want one. Ask this before the question above, so a skill installed now is counted when the folders are compared.
 
 Only when you synced both folders and at least one reported `first_sync`. Take the skills from the Library in each folder: its skill folders on disk after this sync, less anything still under `ask`, less `sync-aistack`. If one folder has skills the other lacks, ask once, naming them: "Use the same skills in Claude Code and in Codex and the other agents? That adds <names> to Claude Code and <names> to the agents folder." Yes: `get_skill` each missing skill with the harness of the folder that lacks it, and install. No: nothing, and it is not asked again, because `first_sync` is true only once.
+
+Then the session-start hook, which setup offers and a computer added with "add my other computer" never saw. Look in the hook file of the agent you are, `~/.claude/settings.json` in Claude Code or `~/.codex/hooks.json` in Codex, for an entry whose command contains `run the sync-aistack skill`. If there is none, ask once whether this agent should sync AIStack at the start of every session, and recommend it. If they agree, add this entry to the list under `hooks.SessionStart`, creating the keys that are missing and keeping everything already in the file, and check that it is still valid JSON before saving it:
+
+```json
+{"matcher": "startup", "hooks": [{"type": "command", "command": "echo AIStack: before the first task, run the sync-aistack skill.", "timeout": 10}]}
+```
+
+It runs no program and holds no token. Codex asks the user to trust a new hook once, in `/hooks`; tell them to accept it.
 
 ## 6. In Codex, keep the connection current
 
