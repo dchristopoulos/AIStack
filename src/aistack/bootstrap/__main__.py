@@ -13,7 +13,7 @@ import fastmcp
 import uvicorn
 from sqlalchemy.exc import OperationalError
 
-from aistack.bootstrap import agent_config, github_setup, self_update
+from aistack.bootstrap import admin_cli, agent_config, github_setup, self_update
 from aistack.bootstrap.configuration.settings.settings_config import (
     DatabaseSettings,
     LIBRARY_FILE,
@@ -420,6 +420,9 @@ def run() -> None:
     # down. The default one ends the process on the spot, past the `finally` below that
     # closes the database; this one exits through it.
     signal.signal(signal.SIGTERM, _exit_on_terminate)
+    if sys.argv[1:2] == ["admin"]:
+        admin_cli.run(sys.argv[2:])
+        return
     parser = argparse.ArgumentParser(
         prog="aistack",
         description="With no command, serve your own Library to the coding agent that started "
@@ -429,12 +432,13 @@ def run() -> None:
                     "GitHub and finds or creates the private repository a Library lives in; "
                     "'export' writes every skill in the Library to a folder; 'move github', "
                     "'move postgresql' or 'move here' moves it with its history; 'connect' "
-                    "connects Claude Code or Codex to it; 'serve' runs the AIStack server, and "
-                    "'backup' and 'restore' copy its database.")
+                    "connects Claude Code or Codex to it; 'serve' runs the AIStack server, "
+                    "'backup' and 'restore' copy its database, and 'admin' manages its "
+                    "users, computers and teams.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
                                                        "sync-skill", "check", "export",
                                                        "github", "move", "connect", "backup",
-                                                       "restore"])
+                                                       "restore", "admin"])
     parser.add_argument("folder", nargs="?",
                         help="Where 'export' writes the skills, ./aistack-library by default; "
                              "the skills folder 'sync-skill' writes its skill into, instead of "

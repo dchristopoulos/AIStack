@@ -91,11 +91,11 @@ Two MCP principals, one centralized authorization rule enforced before any tool 
 
 The dashboard has its own credential and reaches no MCP tool: a session cookie holding a signed ticket for one user, set by opening the link `open_dashboard` returns (ADR-0017). `/app` and `/api/*` refuse without it, and a request that changes state must also carry a header a cross-site form cannot send.
 
-`join` creates the user and their first machine and returns the permanent machine token. The agent writes it into the MCP config; from then on it authenticates every connection silently. The first user to join is marked the server's admin (`is_admin`), but no code reads that mark today, so it grants no power: server-level operations are documented scripts (`docs/OPERATING.md`).
+`join` creates the user and their first machine and returns the permanent machine token. The agent writes it into the MCP config; from then on it authenticates every connection silently. The first user to join is marked the server's admin (`is_admin`), but no code reads that mark today, so it grants no power: server-level operations are `aistack admin` commands (`docs/OPERATING.md`).
 
-**Secrets rule.** Tokens appear exactly once: in the `join` / `add_machine` result (and therefore in the local Claude Code transcript, accepted for the MVP). They never appear in server logs, HTTP logs, error messages, or any other tool result. The invite code is never emitted in logs, errors, tool arguments, or tool results; it exists only as the bootstrap `Authorization` bearer and as operator-supplied config. A team's invite code is made by the server, stored only as a hash, and appears once, in the answer to the admin who asked for it. A dashboard link is a credential for five minutes and is never logged.
+**Secrets rule.** Tokens appear exactly once: in the `join` / `add_machine` result (and therefore in the local Claude Code transcript, accepted for the MVP), or in what `aistack admin rotate` and `register-machine` print to the operator's terminal. They never appear in server logs, HTTP logs, error messages, or any other tool result. The invite code is never emitted in logs, errors, tool arguments, or tool results; it exists only as the bootstrap `Authorization` bearer and as operator-supplied config. A team's invite code is made by the server, stored only as a hash, and appears once, in the answer to the admin who asked for it. A dashboard link is a credential for five minutes and is never logged.
 
-**Revocation** (lost or stolen machine): the user removes the computer on the dashboard, which ends its token, its dashboard sessions and its transfer URLs at once (ADR-0027); the user's last computer cannot be removed there. The operator can also delete the machine row with a documented script, no tool. If that was the user's only machine, recovery is inserting a replacement machine row (or rotating an existing machine's `token_hash`) for that same user. Never delete the user: `pushed_by` is a non-null FK from `SKILL` and `SKILL_VERSION`, so deleting a contributor either fails or destroys provenance.
+**Revocation** (lost or stolen machine): the user removes the computer on the dashboard, which ends its token, its dashboard sessions and its transfer URLs at once (ADR-0027); the user's last computer cannot be removed there. The operator can also remove the computer with `aistack admin remove-machine`. If that was the user's only machine, recovery is `aistack admin register-machine` or `aistack admin rotate` for that same user. Never delete the user: `pushed_by` is a non-null FK from `SKILL` and `SKILL_VERSION`, so deleting a contributor either fails or destroys provenance.
 
 ### Tools (all thirteen, nothing else)
 
@@ -670,7 +670,7 @@ Deferred deliberately: audit trail, signing, approval workflows, per-skill push 
 
 ### Explicitly not built
 
-No FastAPI, no background sync (local mode's daily release check is the only background work), no version pinning (always latest), no deleting a single revision (see §4 Tools), no project-scoped sync yet (global folders only; project folders are planned in ADR-0026), no rules/hooks/agents/MCP gateway/profiles, no OAuth/passwords, no binary files, no server-admin tools or pages (the `is_admin` column ships, but nothing reads it, so it grants no power; server-level operations are documented scripts), no harness besides Claude Code and the shared agents folder (ADR-0018). From ADR-0015: no permission matrix of roles × groups, no automatic updates from a team, no merging when both copies changed, no one machine on two servers. Anything needing many typed parameters is a dashboard action, not a tool: chat must stay low-friction.
+No FastAPI, no background sync (local mode's daily release check is the only background work), no version pinning (always latest), no deleting a single revision (see §4 Tools), no project-scoped sync yet (global folders only; project folders are planned in ADR-0026), no rules/hooks/agents/MCP gateway/profiles, no OAuth/passwords, no binary files, no server-admin tools or pages (the `is_admin` column ships, but nothing reads it, so it grants no power; server-level operations are `aistack admin` commands), no harness besides Claude Code and the shared agents folder (ADR-0018). From ADR-0015: no permission matrix of roles × groups, no automatic updates from a team, no merging when both copies changed, no one machine on two servers. Anything needing many typed parameters is a dashboard action, not a tool: chat must stay low-friction.
 
 ### Proof of the MVP
 
@@ -727,6 +727,7 @@ src/aistack/
     __main__.py            #   `aistack` (local mode), `serve` (the server), `dashboard`,
                            #   `setup`, `sync-skill`, `check`, `github`, `export`, `move`,
                            #   and `connect` (§4 Local mode)
+    admin_cli.py           #   `aistack admin`: the operator's commands
     self_update.py         #   local mode's daily upgrade, in a background thread
     configuration/
       settings/            #   env config: DATABASE_URL, invite code, etc.
