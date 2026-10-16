@@ -36,7 +36,7 @@ How to work through it:
 - [x] 7. Sharing over a group's skill takes being able to share into that group (#149)
 - [x] 8. A session belongs to the computer that opened it; signing out ends it (#127)
 - [x] 9. A person can remove and rename their own computers, and see when each last synced (#140)
-- [ ] 9b. Read a computer's removal and rename in local mode
+- [x] 9b. Read a computer's removal and rename in local mode (#154)
 - [ ] 9c. Remove and rename a computer in local mode (after a release that carries 9b)
 - [x] 10. Taking a team skill never silently replaces an unrelated skill of yours (#150)
 - [x] 11. Throttle failed credentials and keep caller text out of the log (#142)
