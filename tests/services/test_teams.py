@@ -120,6 +120,24 @@ def test_a_username_that_is_already_a_team_is_taken(session_factory, dimitris, m
 
 # --- my skills are mine ---------------------------------------------------------------------
 
+
+def test_the_listing_narrows_to_a_team_or_to_words(session_factory, dimitris, maria, acme):
+    """IMP-12: the listing had no filter, so a search read everything."""
+    _push(session_factory, dimitris, "wizard", description="Casts spells.")
+    _push(session_factory, dimitris, "release-notes", description="Builds release notes.")
+    _share(session_factory, dimitris, acme, "release-notes")
+
+    def names(**narrowed):
+        return [(skill.team, skill.name) for skill in _do(
+            session_factory, skill_service.list_skills, dimitris.user.user_id, **narrowed)]
+
+    assert names(team="acme") == [("acme", "release-notes")]
+    assert names(query="SPELL") == [(None, "wizard")]
+    assert names(query="release", team="acme") == [("acme", "release-notes")]
+    # Words are words: a % in them is matched as itself, not as a pattern.
+    assert names(query="%") == []
+    assert names(team="nowhere") == []
+
 def test_a_pushed_skill_is_seen_by_nobody_else(session_factory, dimitris, maria):
     _push(session_factory, dimitris)
 

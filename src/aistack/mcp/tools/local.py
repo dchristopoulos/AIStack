@@ -8,8 +8,9 @@ every other session on this computer wait.
 
 import logging
 from dataclasses import replace
+from inspect import cleandoc
 from pathlib import Path
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from aistack.bootstrap.context.application_context import (
     get_local_principal,
@@ -23,10 +24,12 @@ from aistack.bootstrap.context.application_context import (
     restored_here,
 )
 from aistack.bundled import SYNC_SKILL_NAME, local_sync_skill_document
+from aistack.commons.exceptions import Conflict, NotFound, ValidationError
+from aistack.commons.text import loggable
 from aistack.mcp import local_dashboard
 from aistack.mcp.local import local_mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
-from aistack.mcp.tools.skills import ListSkillsResult, SkillListing
+from aistack.mcp.tools.skills import ListSkillsResult, RefusedEntry, SkillListing, one_or_many
 from aistack.mcp.tools.sync import SyncResult, sync_result
 from aistack.services import library_log, local_skills, skill_service, sync_service
 from aistack.services.harnesses import HarnessKey, validated_harness
@@ -54,15 +57,15 @@ class LocalListSkillsResult(ListSkillsResult):
 
 
 @local_mcp.tool(
-    description="""Compare one skills folder on this computer with the user's Library.
+    description=cleandoc("""Compare one skills folder on this computer with the user's Library.
 
     Use when the user says "sync aistack" or starts work. It reads the folder itself and
     changes nothing but AIStack's own sync-aistack skill, which it keeps current. Then, per
     field, passing the same harness to each tool:
       - install and update: call get_skill for each, without asking. Then say what
         updated, between which revisions.
-      - backup: skills on this computer not yet in the Library. push_skill each, without
-        asking: the Library is private and mirrors this computer.
+      - backup: skills on this computer not yet in the Library. push_skill them all as
+        names, without asking: the Library is private and mirrors this computer.
       - ask: put each to the user and act only on their answer. desired: enabled,
         disabled, or undecided here; local: current, stale, or unknown (edited). Offer
         exactly the listed options. overwrites_local: say local files will be replaced;
@@ -84,7 +87,7 @@ class LocalListSkillsResult(ListSkillsResult):
     Args:
         harness: claude_code (~/.claude/skills) or agents (~/.agents/skills, read by Codex,
                  Gemini CLI, Cursor and others). Omit for the computer's first folder.
-    """)
+    """))
 @handle_mcp_errors
 def sync(harness: HarnessKey | None = None) -> LocalSyncResult:
     library_before_read(force=True)
@@ -126,22 +129,26 @@ def sync(harness: HarnessKey | None = None) -> LocalSyncResult:
 
 
 @local_mcp.tool(
-    description="""List the skills in the user's Library.
+    description=cleandoc("""List the skills in the user's Library.
 
     Use when the user asks what they have, or is looking for a skill to do something: this
     listing is the search. To put one on this computer, call get_skill.
+
+    Args:
+        query: Only skills whose name or description contains these words, in any case.
 
     Returns:
         LocalListSkillsResult containing:
             - skills: by name, each with its description, latest revision, and who pushed it
             - library_reachable: false when the Library's GitHub repository could not be
               reached, so this is this computer's copy. Tell the user library_problem.
-    """)
+    """))
 @handle_mcp_errors
-def list_skills() -> LocalListSkillsResult:
+def list_skills(query: str | None = None) -> LocalListSkillsResult:
     library_before_read()
     with get_read_session_factory().begin() as session:
-        skills = skill_service.list_skills(session, get_local_principal().user_id)
+        skills = skill_service.list_skills(session, get_local_principal().user_id,
+                                           query=query)
 
     problem = library_problem()
     return LocalListSkillsResult(library_reachable=problem is None, library_problem=problem,
@@ -163,7 +170,7 @@ class LocalGetSkillResult(TypedDict):
 
 
 @local_mcp.tool(
-    description="""Install the latest revision of a skill from the Library into a skills
+    description=cleandoc("""Install the latest revision of a skill from the Library into a skills
     folder on this computer.
 
     Use to install a skill, update it, restore an edited copy, or re-enable a disabled one.
@@ -183,7 +190,7 @@ class LocalGetSkillResult(TypedDict):
             - version: the author's version string, or null
             - pushed_by: who uploaded this revision, not necessarily its author
             - folder: where it was installed
-    """)
+    """))
 @handle_mcp_errors
 def get_skill(name: str, harness: HarnessKey = "claude_code") -> LocalGetSkillResult:
     library_before_read()
@@ -215,16 +222,26 @@ def get_skill(name: str, harness: HarnessKey = "claude_code") -> LocalGetSkillRe
     )
 
 
-class LocalPushSkillResult(TypedDict):
+class PushedEntry(TypedDict):
     name: str
     revision: int
     created: bool
     unchanged: bool
+
+
+class LocalPushSkillResult(TypedDict):
+    # With name: that skill. With names: each in pushed, or in refused with why.
+    name: NotRequired[str]
+    revision: NotRequired[int]
+    created: NotRequired[bool]
+    unchanged: NotRequired[bool]
+    pushed: NotRequired[list[PushedEntry]]
+    refused: NotRequired[list[RefusedEntry]]
     shared: bool
 
 
 @local_mcp.tool(
-    description="""Back up a skill folder on this computer to the user's Library.
+    description=cleandoc("""Back up a skill folder on this computer to the user's Library.
 
     Use for a skill sync listed under backup, and after the user edits one of their skills.
     The Library is private. Pushing a name it already has adds a revision; nothing is
@@ -233,6 +250,7 @@ class LocalPushSkillResult(TypedDict):
 
     Args:
         name: The skill's folder name, the same as the 'name' in its SKILL.md frontmatter.
+        names: Instead of name, every skill sync listed under backup: one call, one push.
         origin: The http(s) URL the skill came from, when you know it. Omit it for a skill
                the user wrote themselves.
         harness: The skills folder it is in, as given to sync. Omit for claude_code.
@@ -243,18 +261,43 @@ class LocalPushSkillResult(TypedDict):
             - created: true when it was new to the Library
             - unchanged: true when these exact files were already stored, so no revision
               was added. Only content counts: a chmod alone is not a change.
+            - pushed, refused: with names, the above for each, and each refused with why
             - shared: false when the Library is on GitHub and this computer could not reach
               it. The revision is kept here and goes out with a later call that reaches it;
               tell the user their other computers get it only then.
-    """)
+    """))
 @handle_mcp_errors
-def push_skill(name: str, origin: str | None = None,
+def push_skill(name: str | None = None, names: list[str] | None = None,
+               origin: str | None = None,
                harness: HarnessKey = "claude_code") -> LocalPushSkillResult:
     refuse_when_moved()
+    many = one_or_many(name, names)
+    origin = validated_origin(origin)
+    if many is None:
+        pushed = _push_one(name, origin, harness)
+        shared = library_after_write()
+        return LocalPushSkillResult(name=pushed.name, revision=pushed.revision,
+                                    created=pushed.created, unchanged=pushed.unchanged,
+                                    shared=shared)
+
+    # Each its own transaction, so one refusal keeps the rest; the Library is shared once,
+    # at the end: one commit and one push to GitHub, however many there are (IMP-11).
+    done, refused = [], []
+    for each in many:
+        try:
+            pushed = _push_one(each, origin, harness)
+        except (ValidationError, NotFound, Conflict) as error:
+            refused.append(RefusedEntry(name=loggable(str(each)), reason=error.message))
+            continue
+        done.append(PushedEntry(name=pushed.name, revision=pushed.revision,
+                                created=pushed.created, unchanged=pushed.unchanged))
+    return LocalPushSkillResult(pushed=done, refused=refused, shared=library_after_write())
+
+
+def _push_one(name: str, origin: str | None, harness: str) -> skill_service.PushedSkill:
     caller = get_local_principal()
     # Validated before it is joined to a path, so a name cannot leave the skills folder.
     name = validated_skill_name(name)
-    origin = validated_origin(origin)
     packed = local_skills.archive(_folder(harness), name)
 
     with get_session_factory().begin() as session:
@@ -270,11 +313,8 @@ def push_skill(name: str, origin: str | None = None,
                 session, caller.machine_id, library_log.SKILL_PLACED, name=pushed.name,
                 harness=harness, enabled=True, revision=pushed.revision))
 
-    shared = library_after_write()
     logger.info(f"Skill pushed. Skill: '{pushed.name}'. Revision: '{pushed.revision}'.")
-    return LocalPushSkillResult(name=pushed.name, revision=pushed.revision,
-                                created=pushed.created, unchanged=pushed.unchanged,
-                                shared=shared)
+    return pushed
 
 
 class LocalDisableSkillResult(TypedDict):
@@ -284,7 +324,7 @@ class LocalDisableSkillResult(TypedDict):
 
 
 @local_mcp.tool(
-    description="""Remove a skill from one skills folder on this computer, and stop sync
+    description=cleandoc("""Remove a skill from one skills folder on this computer, and stop sync
     installing it there.
 
     Use when the user wants a skill off this computer ("remove wizard"). Its folder is
@@ -300,7 +340,7 @@ class LocalDisableSkillResult(TypedDict):
             - name: the skill
             - enabled: always false
             - removed: whether a folder was there to delete
-    """)
+    """))
 @handle_mcp_errors
 def disable_skill(name: str, harness: HarnessKey = "claude_code") -> LocalDisableSkillResult:
     refuse_when_moved()
@@ -327,7 +367,7 @@ class LocalDashboardResult(TypedDict):
 
 
 @local_mcp.tool(
-    description="""Open the user's Library in their browser, signed in.
+    description=cleandoc("""Open the user's Library in their browser, signed in.
 
     Use when the user wants to see or manage their skills on a screen ("open my aistack
     dashboard"): every skill in their Library and which of their computers has it. It opens
@@ -340,7 +380,7 @@ class LocalDashboardResult(TypedDict):
                    opened is false.
             - expires_in_seconds: how long the link can be used to sign in
             - opened: whether a browser opened it
-    """)
+    """))
 @handle_mcp_errors
 def open_dashboard() -> LocalDashboardResult:
     library_before_read()

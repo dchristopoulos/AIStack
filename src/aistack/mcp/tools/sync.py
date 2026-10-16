@@ -1,4 +1,5 @@
 import logging
+from inspect import cleandoc
 from time import perf_counter
 from typing import TypedDict
 
@@ -91,7 +92,7 @@ class SyncResult(TypedDict):
 
 
 @mcp.tool(
-    description="""Compare one skills folder on this machine with the user's own skills.
+    description=cleandoc("""Compare one skills folder on this machine with the user's own skills.
 
     Use when the user says "sync aistack" or starts work. It changes nothing. Send every
     skill folder in <folder> (harness claude_code: ~/.claude/skills; agents:
@@ -101,8 +102,8 @@ class SyncResult(TypedDict):
     Per result field, passing the same harness and project on:
       - install and update: get_skill and install each, without asking. Say what
         updated, between which revisions, and who pushed it.
-      - backup: local skills not yet in the user's own. push_skill each, without asking:
-        that space is private.
+      - backup: local skills not yet in the user's own. push_skill them all as names,
+        without asking: that space is private.
       - ask: put each to the user; act only on their answer. desired: enabled,
         disabled, or undecided here; local: current, stale, or unknown (edited). Offer
         exactly the listed options. overwrites_local: say local files will be replaced;
@@ -122,7 +123,7 @@ class SyncResult(TypedDict):
         local: {skill folder: {relative file path: sha256 hex}}. {} if there are none.
         harness: Which folder this is. Omit for claude_code.
         here, project, repository: a project's folder, as the sync-aistack skill says.
-    """)
+    """))
 @handle_mcp_errors
 def sync(local: dict[str, dict[str, str]],
          harness: HarnessKey = "claude_code", here: Here | None = None,

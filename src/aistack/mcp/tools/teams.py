@@ -1,4 +1,5 @@
 import logging
+from inspect import cleandoc
 from time import perf_counter
 from typing import TypedDict
 
@@ -33,7 +34,7 @@ class ListTeamsResult(TypedDict):
 
 
 @mcp.tool(
-    description="""List the teams the user is in.
+    description=cleandoc("""List the teams the user is in.
 
     Use when the user asks which teams they have, or before share_skill to name one. These
     are the teams they created or joined, all of kind SHARED. Their own skills are not a
@@ -46,7 +47,7 @@ class ListTeamsResult(TypedDict):
                 - kind: SHARED
                 - role: ADMIN or MEMBER, the user's role in it
                 - members: how many people are in it
-    """)
+    """))
 @handle_mcp_errors
 def list_teams() -> ListTeamsResult:
     with get_session_factory().begin() as session:
@@ -64,7 +65,7 @@ class CreateTeamResult(TypedDict):
 
 
 @mcp.tool(
-    description="""Create a team, with the user as its admin.
+    description=cleandoc("""Create a team, with the user as its admin.
 
     Use when the user wants a place to share skills with particular people ("create a team
     called backend"). The team starts with only them in it. To let others in, call
@@ -78,7 +79,7 @@ class CreateTeamResult(TypedDict):
         CreateTeamResult containing:
             - name: the team that was created
             - role: always ADMIN
-    """)
+    """))
 @handle_mcp_errors
 def create_team(name: str) -> CreateTeamResult:
     with get_session_factory().begin() as session:
@@ -93,7 +94,7 @@ class InviteResult(TypedDict):
 
 
 @mcp.tool(
-    description="""Make a new invite code for a team. Its admins can, and members an admin
+    description=cleandoc("""Make a new invite code for a team. Its admins can, and members an admin
     has let invite.
 
     Use when the user wants to let someone into a team they administer. Show the link to
@@ -115,7 +116,7 @@ class InviteResult(TypedDict):
             - team: the team the code admits to
             - code: the invite code
             - link: the invite link, a page on this server for the person being invited
-    """)
+    """))
 @handle_mcp_errors
 def invite_to_team(team: str) -> InviteResult:
     caller = current_machine()
@@ -132,7 +133,7 @@ class JoinTeamResult(TypedDict):
 
 
 @mcp.tool(
-    description="""Join a team with an invite code someone gave the user.
+    description=cleandoc("""Join a team with an invite code someone gave the user.
 
     Use when the user has a team invite code (it starts with 'aistinv_') and says to join.
     This is not the server's invite code, which they used once to connect this computer.
@@ -145,7 +146,7 @@ class JoinTeamResult(TypedDict):
     Returns:
         JoinTeamResult containing:
             - team: the team they are now in
-    """)
+    """))
 @handle_mcp_errors
 def join_team(code: str) -> JoinTeamResult:
     try:
@@ -166,7 +167,7 @@ class DashboardResult(TypedDict):
 
 
 @mcp.tool(
-    description="""Get a link that opens the user's AIStack dashboard in a browser, signed in.
+    description=cleandoc("""Get a link that opens the user's AIStack dashboard in a browser, signed in.
 
     Use when the user wants to see or manage their skills and teams on a screen ("open my
     aistack dashboard"): which skills each of their computers has, sharing with a team,
@@ -178,7 +179,7 @@ class DashboardResult(TypedDict):
         DashboardResult containing:
             - url: the link to open. A credential: show it to the user only.
             - expires_in_seconds: how long the link can be used to sign in
-    """)
+    """))
 @handle_mcp_errors
 def open_dashboard() -> DashboardResult:
     started_at = perf_counter()

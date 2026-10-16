@@ -109,9 +109,10 @@ join(username, machine_name, os, full_name?)
 add_machine(name, os)         → registers another machine for this user; returns a
                                 paste-ready Claude Code command and Codex config
                                 block, each with that machine's token
-list_skills                   → the caller's own skills, then every team skill they may
+list_skills(team?, query?)    → the caller's own skills, then every team skill they may
                                 see (this is also the search, and the only discovery
-                                mechanism, sync is not)
+                                mechanism, sync is not); team keeps one team's, query
+                                those whose name or description holds the words
 get_skill(name, team?, harness?, replace?, project?)
                               → with a team, first takes that team's latest revision into
                                 the caller's own skills; a skill of theirs of that name
@@ -124,8 +125,11 @@ get_skill(name, team?, harness?, replace?, project?)
                                 restore, re-enable, adopt all resolve to it. With a
                                 project, the folder is that project's, relative to its
                                 top level
-push_skill(name, origin?, harness?, project?)
-                              → returns a signed upload URL for that skill name. The
+push_skill(name | names, origin?, harness?, project?)
+                              → returns a signed upload URL for that skill name, or with
+                                names one per valid name and the rest refused, so a
+                                whole backup list is one call (local mode: one push to
+                                a GitHub Library). The
                                 upload creates the revision in the caller's own skills
                                 (existing name = new revision) and enables the skill in
                                 that harness of the calling machine, or in that

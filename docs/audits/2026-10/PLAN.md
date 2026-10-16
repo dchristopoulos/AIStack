@@ -81,7 +81,8 @@ How to work through it:
 - [x] 39. See what changed before taking an update, and get an older revision back (6b65ccd)
 - [ ] 39b. Restore an older revision, and bring back a removed skill, in local mode (a reader release, then a writer a week later)
 - [x] 40. Sync reports what is true: nested .git, unsubscribed groups, removed skills, skills that cannot be backed up (06269bf)
-- [ ] 40b. Fewer calls per sync: one push for many skills, download URLs in the report, smaller results
+- [ ] 40b. Fewer calls per sync: one push for many skills, a listing that narrows, room in the descriptions
+- [ ] 40d. Sync without copying digests or running seven commands per skill (trust boundary; get_skill's smaller result waits for a minor release)
 - [ ] 40c. A session start that stays quiet when nothing changed
 - [ ] 41. Audit trail, logs and an export
 - [ ] 41b. The operator can forget a person
@@ -867,14 +868,29 @@ Tests: a `.git` inside a skill folder does not make it 'unknown'; an unsubscribe
 
 ### 40b. Fewer calls per sync
 
-Closes: [AUTO-18](automation.md#auto-18-a-server-mode-sync-makes-the-model-copy-every-file-digest-and-run-about-seven-commands-per-installed-skill), [IMP-11](improvements.md#imp-11-a-first-sync-with-many-skills-costs-one-tool-call-per-backup-and-in-a-github-library-one-commit-and-push-per-skill), [IMP-12](improvements.md#imp-12-tool-results-and-listings-spend-the-agents-context-on-what-it-never-uses-and-two-descriptions-have-no-room-left).
+Closes: [IMP-11](improvements.md#imp-11-a-first-sync-with-many-skills-costs-one-tool-call-per-backup-and-in-a-github-library-one-commit-and-push-per-skill), and [IMP-12](improvements.md#imp-12-tool-results-and-listings-spend-the-agents-context-on-what-it-never-uses-and-two-descriptions-have-no-room-left) but get_skill's result (step 40d).
 Largest effort among them: M.
 
-Files: src/aistack/mcp/tools/sync.py and skills.py; src/aistack/services/library_sharing.py (one push per sync, not per skill); bundled sync skills.
+Files: src/aistack/mcp/tools/sync.py, skills.py and local.py (`push_skill(names=...)`, `list_skills(team, query)`, descriptions dedented); bundled sync skills.
 
 ADR: none needed.
 
-Tests: A first sync of 50 skills in a GitHub Library makes one push; get_skill for a 100-file skill returns under 1 KB; the sync description has 100 characters of headroom.
+Tests: one push_skill call backs up a list, refusing the bad names; in local mode the Library is shared once for it; list_skills narrows by team and words; every description keeps 100 characters free.
+
+### 40d. Sync without copying digests or running seven commands per skill
+
+Split from 40b: it changes what a transfer ticket can do, so it is a **trust boundary**, and part of it waits for a release.
+
+Closes: [AUTO-18](automation.md#auto-18-a-server-mode-sync-makes-the-model-copy-every-file-digest-and-run-about-seven-commands-per-installed-skill), and the get_skill half of [IMP-12](improvements.md#imp-12-tool-results-and-listings-spend-the-agents-context-on-what-it-never-uses-and-two-descriptions-have-no-room-left).
+Largest effort among them: M.
+
+Two questions to settle first. A download URL in sync's `install` and `update` entries skips get_skill, which is where the revision a folder last installed is recorded (`edited_from` reads it): the download route would have to record it, so its ticket carries the harness and the project folder. And an observe ticket, a five-minute upload URL for the shasum output, is a new transfer route that parses text: it gets push validation's rigor. Dropping `files` and `content_hash` from get_skill's result removes result fields, which the versioning rule makes a new minor (AGENTS.md, Operations): do it in the release that moves to 0.2, with `file_count` added a release before.
+
+Files: src/aistack/mcp/tools/sync.py; src/aistack/mcp/routes/transfer.py; src/aistack/services/transfer_ticket.py; bundled sync skills.
+
+ADR: none needed, unless the download route records installs: then a short one, since today only get_skill does.
+
+Tests: One sync with three missing skills installs all three from the URLs it returned, byte for byte, and records each folder's revision; a sync through the observe URL returns the same report as the same digests passed as arguments.
 
 ### 40c. A session start that stays quiet when nothing changed
 

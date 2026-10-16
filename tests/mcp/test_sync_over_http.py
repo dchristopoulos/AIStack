@@ -4,6 +4,7 @@ import pathlib
 import httpx
 import pytest
 from fastmcp.client import BearerAuth, Client, StreamableHttpTransport
+from fastmcp.exceptions import ToolError
 
 from aistack.services.skill_archive import ArchivedFile
 from aistack.services.skill_validation import validated_skill
@@ -18,6 +19,23 @@ pytestmark = pytest.mark.anyio
 
 SYNC_SKILL = (pathlib.Path(__file__).parents[2] / "src" / "aistack" / "bundled" / "skills"
               / "sync-aistack")
+
+
+async def test_a_whole_backup_list_is_one_push_skill_call(server_url):
+    """IMP-11: a first sync with many skills cost one tool call per backup."""
+    token = await _join(server_url)
+
+    issued = await _call(server_url, token, "push_skill", names=["wizard", "notes", "Bad Name"])
+
+    assert [entry["name"] for entry in issued["uploads"]] == ["wizard", "notes"]
+    assert [entry["name"] for entry in issued["refused"]] == ["Bad Name"]
+    async with httpx.AsyncClient() as http:
+        for entry in issued["uploads"]:
+            stored = (await http.put(entry["upload_url"],
+                                     content=skill_archive(entry["name"]))).json()
+            assert stored["revision"] == 1
+    with pytest.raises(ToolError, match="either name"):
+        await _call(server_url, token, "push_skill", name="wizard", names=["notes"])
 
 
 async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(server_url):

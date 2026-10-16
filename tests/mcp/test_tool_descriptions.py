@@ -9,6 +9,9 @@ pytestmark = pytest.mark.anyio
 # is an instruction the agent never reads, and the last lines of a description are where the
 # return value is explained.
 DESCRIPTION_LIMIT = 2048
+# Room left under it for the next wording fix, so a sentence can be clarified without first
+# finding another to cut (IMP-12).
+HEADROOM = 100
 
 
 @pytest.mark.parametrize("server", [mcp, local_mcp], ids=["server", "local"])
@@ -17,9 +20,9 @@ async def test_every_tool_description_fits_what_the_client_keeps(server):
     assert tools
 
     for tool in tools:
-        assert len(tool.description) <= DESCRIPTION_LIMIT, (
+        assert len(tool.description) <= DESCRIPTION_LIMIT - HEADROOM, (
             f"{tool.name} is {len(tool.description)} characters; the client keeps "
-            f"{DESCRIPTION_LIMIT}.")
+            f"{DESCRIPTION_LIMIT}, and {HEADROOM} are kept free.")
 
 
 async def test_add_machine_says_its_command_is_a_permanent_key():
