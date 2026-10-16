@@ -80,7 +80,7 @@ How to work through it:
 - [x] 38. Bring DESIGN.md, OPERATING.md and the README back in line with the code (#158)
 - [x] 39. See what changed before taking an update, and get an older revision back (6b65ccd)
 - [ ] 39b. Restore an older revision, and bring back a removed skill, in local mode (a reader release, then a writer a week later)
-- [ ] 40. Sync reports what is true: nested .git, unsubscribed groups, removed skills, skills that cannot be backed up
+- [x] 40. Sync reports what is true: nested .git, unsubscribed groups, removed skills, skills that cannot be backed up (06269bf)
 - [ ] 40b. Fewer calls per sync: one push for many skills, download URLs in the report, smaller results
 - [ ] 40c. A session start that stays quiet when nothing changed
 - [ ] 41. Audit trail, logs and an export
