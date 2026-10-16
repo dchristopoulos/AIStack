@@ -69,7 +69,7 @@ How to work through it:
 - [x] 27. Project placements in the services, and a removed skill wanted nowhere (#159)
 - [x] 28. Replay project events before anything records them (bridge release) (#160)
 - [x] 29. Sync a project folder (#168)
-- [ ] 30. Server-mode tools take a project
+- [x] 30. Server-mode tools take a project (#169)
 - [ ] 31. Teach the server's sync-aistack skill the project steps
 - [ ] 32. Local mode: git-hardened project folders
 - [ ] 33. Dashboard API for project folders

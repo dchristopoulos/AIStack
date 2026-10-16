@@ -119,7 +119,7 @@ async def test_no_file_content_crosses_mcp(server_url):
     async with client_for(server_url, token) as client:
         push_skill = next(tool for tool in await client.list_tools() if tool.name == "push_skill")
 
-    assert set(push_skill.inputSchema["properties"]) == {"name", "origin", "harness"}
+    assert set(push_skill.inputSchema["properties"]) == {"name", "origin", "harness", "project"}
 
 
 @pytest.mark.parametrize("name", ["Wizard", "../wizard", "code review", "x" * 65])
@@ -285,7 +285,7 @@ async def test_an_unexpected_failure_is_masked(server_url, monkeypatch):
     def explode(*args, **kwargs):
         raise RuntimeError("psycopg.OperationalError: password authentication failed for 'x'")
 
-    monkeypatch.setattr("aistack.services.skill_service.push", explode)
+    monkeypatch.setattr("aistack.services.skill_service.store", explode)
 
     response = await _put(url, skill_archive())
 

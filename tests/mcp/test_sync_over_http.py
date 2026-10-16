@@ -32,7 +32,8 @@ async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(serv
     skill_url = f"{server_url.removesuffix('/mcp')}/setup/sync-aistack/SKILL.md"
     assert before == {"install": [], "update": [], "ask": [], "backup": [],
                       "team_updates": [], "up_to_date": 1, "sync_skill_url": skill_url,
-                      "first_sync": True}
+                      "first_sync": True, "project": None, "left_to_repository": [],
+                      "from_other_computers": []}
 
     await _push(server_url, machine_a, files={"notes.md": "two\n"})
 
@@ -47,6 +48,9 @@ async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(serv
         "up_to_date": 0,
         "sync_skill_url": skill_url,
         "first_sync": False,
+        "project": None,
+        "left_to_repository": [],
+        "from_other_computers": [],
     }
 
 
@@ -77,7 +81,8 @@ async def test_sync_takes_digests_and_nothing_else(server_url):
     async with client_for(server_url, token) as client:
         sync = next(tool for tool in await client.list_tools() if tool.name == "sync")
 
-    assert set(sync.inputSchema["properties"]) == {"local", "harness"}
+    assert set(sync.inputSchema["properties"]) == {"local", "harness", "here", "project",
+                                                   "repository"}
     assert sync.inputSchema["required"] == ["local"]
     # The agent sees which folders there are, and what omitting one means.
     assert sync.inputSchema["properties"]["harness"]["enum"] == ["claude_code", "agents"]
@@ -221,7 +226,8 @@ async def test_a_codex_only_computer_added_with_add_machine_gets_the_sync_skill(
 
 
 async def test_the_sync_description_lists_files_the_way_the_skill_does(server_url):
-    """An agent with only the description must not send what the description says to skip."""
+    """The digest commands live in the skill, which every computer is given; the description
+    keeps what to skip, so an agent without the skill still sends nothing it should not."""
     async with client_for(server_url, await _join(server_url)) as client:
         description = next(tool.description for tool in await client.list_tools()
                            if tool.name == "sync")
@@ -229,7 +235,8 @@ async def test_the_sync_description_lists_files_the_way_the_skill_does(server_ur
 
     for exclusion in ("! -name .DS_Store", "! -path './.*'", "! -path './synced/*'"):
         assert exclusion in document
-        assert exclusion in description
+    assert "Skip 'synced', dot-folders, and .DS_Store." in description
+    assert "as the sync-aistack skill says" in description
 
 
 async def test_a_skill_backed_up_from_the_agents_folder_stays_in_that_folder(server_url):
