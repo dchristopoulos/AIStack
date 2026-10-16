@@ -1,9 +1,11 @@
 """The dashboard from a browser's side: sign in with a link, then the JSON routes."""
 
 import hashlib
+import io
 import logging
 import re
 import secrets
+import tarfile
 import uuid
 from contextlib import asynccontextmanager
 
@@ -97,9 +99,13 @@ async def test_the_page_may_load_nothing_from_anywhere_else(server_url):
     assert "frame-ancestors 'none'" in policy
     assert page.headers["referrer-policy"] == "no-referrer"
     assert page.headers["cache-control"] == "no-store"
+    # STD-13: only the page's own scripts run, by hash, and no banner names the server.
+    scripts = re.search(r"script-src ([^;]*);", policy).group(1).split()
+    assert scripts and all(source.startswith("'sha256-") for source in scripts)
+    assert "server" not in page.headers
 
 
-@pytest.mark.parametrize("path", ["/app", "/api/state"])
+@pytest.mark.parametrize("path", ["/app", "/api/state", "/api/library.tar.gz"])
 async def test_nothing_is_served_without_a_session(server_url, path):
     async with httpx.AsyncClient(base_url=_base(server_url)) as stranger:
         response = await stranger.get(path)
@@ -107,6 +113,34 @@ async def test_nothing_is_served_without_a_session(server_url, path):
     assert response.status_code == 401
     assert "open my aistack dashboard" in response.text
     assert "dimitris" not in response.text
+
+
+async def test_a_person_downloads_their_library_as_its_skills_folders(server_url):
+    """STD-15: on a server, nobody could take their Library elsewhere."""
+    token = await _join(server_url, "dimitris")
+    await _push(server_url, token, "wizard", files={"scripts/run.sh": "echo hi\n"},
+                executable=frozenset({"scripts/run.sh"}))
+    await _push(server_url, token, "notes")
+    async with _browser(server_url, token) as browser:
+        response = await browser.get("/api/library.tar.gz")
+        state = await _state(browser)
+
+    assert response.status_code == 200
+    assert "aistack-library.tar.gz" in response.headers["content-disposition"]
+    with tarfile.open(fileobj=io.BytesIO(response.content), mode="r:gz") as archive:
+        members = {member.name: member for member in archive.getmembers()}
+        digests: dict[str, dict[str, str]] = {}
+        for name, member in members.items():
+            skill, path = name.split("/", 1)
+            digests.setdefault(skill, {})[path] = hashlib.sha256(
+                archive.extractfile(member).read()).hexdigest()
+    assert members["wizard/scripts/run.sh"].mode & 0o111
+    stored = {skill["name"]: skill for skill in state["skills"]}
+    assert sorted(digests) == sorted(stored) == ["notes", "wizard"]
+    # Each folder is exactly the latest revision: it hashes to what the Library holds.
+    async with client_for(server_url, token) as client:
+        report = (await client.call_tool("sync", {"local": digests})).structured_content
+    assert report["up_to_date"] == 2 and report["ask"] == [] and report["backup"] == []
 
 
 async def test_the_servers_address_leads_a_stranger_to_how_to_connect(server_url):

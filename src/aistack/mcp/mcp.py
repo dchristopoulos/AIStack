@@ -7,7 +7,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastmcp.server.middleware import AuthMiddleware
 
-from aistack.bootstrap.context.application_context import get_failure_limiter
+from aistack.bootstrap.context.application_context import get_failure_limiter, get_public_url
 from aistack.commons.release import release
 from aistack.mcp.argument_errors import ArgumentErrors
 from aistack.mcp.auth.failure_limiter import CredentialGuard
@@ -50,8 +50,9 @@ def http_server_config(path: str, log_level: str, **bind) -> uvicorn.Config:
     # restart or a second replica never strands a client on a session that is gone, and
     # a new machine can call `join` with one HTTP request before it has an MCP client.
     app = mcp.http_app(path=path, transport="http", stateless_http=True, json_response=True)
+    https = (get_public_url() or "").startswith("https://")
     # Inside uvicorn's proxy-header handling, so the address it sees is the resolved client.
-    return _uvicorn_config(CredentialGuard(app, get_failure_limiter), log_level, **bind)
+    return _uvicorn_config(CredentialGuard(app, get_failure_limiter), log_level, https, **bind)
 
 
 def dashboard_server_config(log_level: str) -> uvicorn.Config:
@@ -68,10 +69,15 @@ def dashboard_server_config(log_level: str) -> uvicorn.Config:
     return _uvicorn_config(app, log_level)
 
 
-def _uvicorn_config(app, log_level: str, **bind) -> uvicorn.Config:
+def _uvicorn_config(app, log_level: str, https: bool = False, **bind) -> uvicorn.Config:
     return uvicorn.Config(
         app,
         log_level=log_level.lower(),
+        # No banner naming the server software on every response (STD-13).
+        server_header=False,
+        # Served over https, a browser is told to come back only that way, so a network that
+        # strips TLS cannot take the session cookie on a later visit.
+        headers=[("Strict-Transport-Security", "max-age=31536000")] if https else [],
         # Use the root logger's timestamp and logger-name format.
         log_config=None,
         # A transfer URL carries its ticket in the path (ADR-0010), and an access log line

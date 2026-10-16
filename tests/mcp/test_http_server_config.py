@@ -38,6 +38,29 @@ def test_the_server_refuses_to_be_built_without_a_token_verifier(context, monkey
         http_server_config(path="/mcp", log_level="INFO")
 
 
+def test_an_https_server_tells_browsers_to_stay_on_https_and_names_no_software(sqlite_url):
+    """STD-13."""
+    application_context.build_application_context(Settings(
+        _env_file=None,
+        database_url=sqlite_url,
+        aistack_invite_code="a-real-invite-code-of-enough-length",
+        aistack_public_url="https://aistack.example.com",
+    ))
+    try:
+        config = http_server_config(path="/mcp", log_level="INFO")
+    finally:
+        application_context.dispose_application_context()
+
+    assert ("Strict-Transport-Security", "max-age=31536000") in config.headers
+    assert config.server_header is False
+
+
+def test_a_plain_http_server_sends_no_hsts(context):
+    config = http_server_config(path="/mcp", log_level="INFO")
+
+    assert not [name for name, _ in config.headers if name == "Strict-Transport-Security"]
+
+
 def test_the_bind_address_is_passed_through(context):
     config = http_server_config(path="/mcp", log_level="DEBUG", host="127.0.0.1", port=9123)
 

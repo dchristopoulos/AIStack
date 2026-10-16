@@ -100,6 +100,8 @@ aistack.example.com {
 }
 ```
 
+With `AISTACK_PUBLIC_URL` on https, AIStack itself sends `Strict-Transport-Security`, so a browser that opened the dashboard once never comes back over plain HTTP. Behind a proxy without that setting, add it at the proxy: in Caddy, `header Strict-Transport-Security "max-age=31536000"` inside the site block.
+
 **For one person** the cheapest dependable setup is the first pattern on a machine you already own that stays on (a desktop, a mini PC, a NAS), with SQLite and `tailscale serve` in front for HTTPS inside your tailnet. It costs nothing and nothing sleeps. A laptop does not work as the host, because it sleeps. Without such a machine, a single Fly.io Machine with a volume for SQLite costs a few dollars a month. [docs/research/free-personal-hosting.md](research/free-personal-hosting.md) compares the free databases and hosts, with sources.
 
 `GET /health` answers `{"status": "ok"}` without a token when the server can reach its database, and 503 when it cannot. The container's own health check uses it.
