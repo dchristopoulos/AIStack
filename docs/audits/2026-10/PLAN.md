@@ -43,7 +43,7 @@ How to work through it:
 - [x] 11. Throttle failed credentials and keep caller text out of the log (#142)
 - [x] 12a. Backups that restore, and a snapshot before every upgrade (#141)
 - [x] 12b. Operator tasks are `aistack admin` commands, not Python copied from Markdown (#162)
-- [ ] 12c. The operator renames a user, and join says when a team holds the name
+- [x] 12c. The operator renames a user, and join says a team may hold the name (#166)
 - [x] 13. Scope the 'latest revision' queries and batch the dashboard's team queries (#151)
 - [x] 14. Reads that change nothing stop taking SQLite's write lock (#143)
 - [x] 15. Answer every conflict and limit with a sentence (#155)
@@ -296,16 +296,18 @@ ADR: none needed.
 
 Tests: tests/bootstrap/test_admin_cli.py runs every subcommand against SQLite and PostgreSQL; an unknown username exits with a sentence; OPERATING.md contains no Python blocks.
 
-### 12c. The operator renames a user, and join says when a team holds the name
+### 12c. The operator renames a user, and join says a team may hold the name
 
-Closes: [PH-16](plot-holes.md#ph-16-a-username-is-permanent-shares-a-namespace-with-team-names-and-a-taken-one-is-always-explained-as-this-is-you-on-a-new-computer). Step 23 links it for setup's handle question; the rename and the join sentence are here.
+Closes: [PH-16](plot-holes.md#ph-16-a-username-is-permanent-shares-a-namespace-with-team-names-and-a-taken-one-is-always-explained-as-this-is-you-on-a-new-computer). Step 23 used to link it; the rename and the join sentence are here.
 Largest effort among them: S. **Trust boundary** (it changes who a name points at).
 
-Files: src/aistack/services/operator_service.py (`rename_user`: the user and their personal team together, refused when a user or a team holds the new name); src/aistack/bootstrap/admin_cli.py (`aistack admin rename-user OLD NEW`); src/aistack/services/onboarding_service.py (`join` tells a name a team holds from one a user holds, and words each); docs/OPERATING.md (a handle is permanent except through this command).
+Files: src/aistack/services/operator_service.py (`rename_user`: the user and their personal team together, refused when a user or a team holds the new name); src/aistack/bootstrap/admin_cli.py (`aistack admin rename-user OLD NEW`); src/aistack/services/onboarding_service.py (`join`'s refusal says a user or a team holds the name, and no longer reads as "you on a new computer" alone); docs/OPERATING.md (a handle is permanent except through this command).
 
 ADR: none needed. Provenance stores `user_id`, so every `pushed_by` follows the new name.
 
-Tests: tests/bootstrap/test_admin_cli.py renames a user on both databases, and their revisions then show the new name; a rename onto a taken user or team name changes nothing; joining with a team's name says a team uses it, not "this is you on a new computer".
+Tests: tests/bootstrap/test_admin_cli.py renames a user on both databases, and their revisions then show the new name; a rename onto a taken user or team name changes nothing; joining with a team's name gives the same sentence as joining with a user's, and it names both.
+
+The audit proposed telling the two apart. `create_team` deliberately does not say which one holds a name, because a team's name is its members' to know, and a test pins that. So `join` names both instead.
 
 ### 13. Scope the 'latest revision' queries and batch the dashboard's team queries
 

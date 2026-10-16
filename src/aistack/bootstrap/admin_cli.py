@@ -67,6 +67,10 @@ def _run(session, parsed: argparse.Namespace, endpoint: str | None) -> list[str]
         rows = operator_service.teams(session)
         return [f"{row.team}  {row.username}  {row.role.lower()}" for row in rows] or [
             "There are no teams on this server."]
+    if command == "rename-user":
+        operator_service.rename_user(session, parsed.username, parsed.new)
+        return [f"Renamed {parsed.username} to {parsed.new}. Every revision they pushed now "
+                "shows the new name; their computers keep working."]
     if command == "name-admin":
         operator_service.name_admin(session, parsed.team, parsed.username)
         return [f"{parsed.username} is an admin of {parsed.team}."]
@@ -102,6 +106,10 @@ def _parser() -> argparse.ArgumentParser:
                                                "when AISTACK_PUBLIC_URL is not set")
 
     commands.add_parser("teams", help="list shared teams and who is in them")
+
+    rename = commands.add_parser("rename-user", help="give someone a new username")
+    rename.add_argument("username")
+    rename.add_argument("new", help="the new username")
 
     admin = commands.add_parser("name-admin",
                                 help="make a member the admin of a team whose admins are gone")

@@ -188,6 +188,16 @@ docker exec aistack aistack admin register-machine maria new-laptop --os macos
 
 **Never delete a user.** Every skill and revision records who pushed it, and their teams and memberships point at them. Deleting someone either fails or destroys that record, and the record is how a team knows whose instructions their agents are running.
 
+### Rename a user
+
+A username is what teammates see beside each skill, and nothing but this command changes it:
+
+```bash
+docker exec aistack aistack admin rename-user maria maria.k
+```
+
+Their computers, sessions and teams keep working, and every revision they pushed shows the new name, because revisions record who pushed them by id. A name a user or a team already has is refused.
+
 ### Someone left: take them off the server
 
 ```bash

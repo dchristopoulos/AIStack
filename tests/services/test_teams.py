@@ -106,10 +106,16 @@ def test_joining_puts_a_user_in_their_own_team_and_no_other(session_factory, dim
     assert memberships == [("maria", TeamKind.PERSONAL, TeamRole.ADMIN)]
 
 
-def test_a_username_that_is_already_a_team_is_taken(session_factory, dimitris, acme):
+def test_a_username_that_is_already_a_team_is_taken(session_factory, dimitris, maria, acme):
     """A personal team carries its user's name, so the two share one namespace."""
-    with pytest.raises(Conflict, match="already taken"):
+    with pytest.raises(Conflict, match="already taken, by a user or by a team") as as_a_team:
         _join(session_factory, "acme")
+    with pytest.raises(Conflict) as as_a_user:
+        _join(session_factory, "maria")
+
+    # PH-16: a team's name is not explained as "you on a new computer" alone, and which of the
+    # two holds a name is not said, as `create_team` does not say it.
+    assert str(as_a_team.value).replace("acme", "X") == str(as_a_user.value).replace("maria", "X")
 
 
 # --- my skills are mine ---------------------------------------------------------------------
