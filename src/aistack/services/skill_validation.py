@@ -45,6 +45,9 @@ _WINDOWS_DEVICE_NAMES = frozenset(
     + [f"com{number}" for number in range(1, 10)]
     + [f"lpt{number}" for number in range(1, 10)]
 )
+# NTFS gives a long name a short alias such as SCRIPT~1.SH. A file named like one can land on
+# another file of the skill on Windows, so what installs there differs from what was reviewed.
+_SHORT_NAME = re.compile(r"[^.]*~[0-9]", re.ASCII)
 # Windows also reserves COM¹, COM², COM³ and their LPT twins.
 _SUPERSCRIPT_DIGITS = str.maketrans("¹²³", "123")
 
@@ -241,6 +244,12 @@ def _validate_segment(segment: str, shown_path: str) -> None:
         raise ValidationError(
             f"The path '{shown_path}' has a name ending in a dot or a space, which Windows "
             "silently strips. Rename the file."
+        )
+    if _SHORT_NAME.match(segment):
+        raise ValidationError(
+            f"The path '{shown_path}' is named like a Windows short name (a '~' and a digit "
+            "before the extension), which can stand for another file of the skill there. "
+            "Rename the file."
         )
     if _device_stem(segment) in _WINDOWS_DEVICE_NAMES:
         raise ValidationError(

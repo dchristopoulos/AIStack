@@ -315,3 +315,38 @@ def test_no_damaged_archive_ever_raises_anything_but_a_rejection():
             read_archive(gzip.compress(bytes(damaged)))
         except ValidationError:
             pass
+
+
+# --- archives built to pass for something else (step 43) ----------------------------------
+
+def _pax_record(key: str, value: str) -> bytes:
+    body = f" {key}={value}\n".encode()
+    length = len(body) + 1
+    length += len(str(length + len(body))) - 1
+    return f"{length}{body.decode()}".encode()
+
+
+def _validated(archive: bytes):
+    from aistack.services.skill_validation import validated_skill
+    return validated_skill("wizard", read_archive(archive))
+
+
+def test_a_global_pax_header_that_renames_every_member_is_refused():
+    """A global header's path applies to every member after it: they all become one file."""
+    block, records = _pax_member(_pax_record("path", "SKILL.md"), tarfile.XGLTYPE)
+    archive = _with_leading_header(block, records, [
+        ("SKILL.md", b"---\nname: wizard\ndescription: x\n---\n"), ("other.md", b"evil")])
+
+    with pytest.raises(ValidationError, match="are the same file"):
+        _validated(archive)
+
+
+@pytest.mark.parametrize("path", ["../outside.md", "/etc/passwd", "docs/../../x.md"])
+def test_a_pax_path_that_leaves_the_skill_is_refused(path):
+    """tarfile takes a member's name from its pax header, so that name is the one checked."""
+    block, records = _pax_member(_pax_record("path", path))
+    archive = _with_leading_header(block, records, [
+        ("innocent.md", b"x"), ("SKILL.md", b"---\nname: wizard\ndescription: x\n---\n")])
+
+    with pytest.raises(ValidationError, match=r"'\.\.' segment|absolute"):
+        _validated(archive)

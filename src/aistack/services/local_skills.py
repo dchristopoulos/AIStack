@@ -7,13 +7,15 @@ send, and an install writes only what passed push validation and re-hashed to th
 recorded hash, because anything holding the database's credential could have written it.
 """
 
+import contextlib
 import hashlib
 import os
 import shutil
+import uuid
 from collections.abc import Iterable
 from pathlib import Path
 
-from aistack.commons.exceptions import NotFound, ValidationError
+from aistack.commons.exceptions import Busy, NotFound, ValidationError
 from aistack.commons.text import loggable
 from aistack.db.models.harness import Harness
 from aistack.services.harnesses import HARNESSES
@@ -29,6 +31,8 @@ from aistack.services.skill_validation import validated_skill
 # The same staging folder the server mode install steps use: a dot-folder, so neither a
 # harness nor sync takes it for a skill, and on the target's filesystem, so a rename is atomic.
 STAGING_FOLDER = ".aistack-staging"
+# Renames to retry when concurrent installs of one skill keep landing between ours.
+_SWAP_ATTEMPTS = 5
 
 # Claude Code's own folder for claude.ai skills, which sync's shell listing also leaves out.
 _CLAUDE_CODE_SYNCED = "synced"
@@ -139,22 +143,39 @@ def install(folder: Path, name: str, packed: bytes, content_hash: str) -> None:
 
     staging = folder / STAGING_FOLDER
     staging.mkdir(parents=True, exist_ok=True)
-    staged = staging / name
-    _discard(staged)
-    for file in skill.files:
-        # Validated paths: relative, no '..', no drive, no device name.
-        target = staged / file.path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(file.content.encode("utf-8"))
-        target.chmod(0o755 if file.executable else 0o644)
+    # A folder of its own per install: two sessions installing one skill at once must not
+    # write into, or discard, each other's half-written copy and move it into place.
+    staged = staging / f"{name}.{uuid.uuid4().hex}"
+    try:
+        for file in skill.files:
+            # Validated paths: relative, no '..', no drive, no device name.
+            target = staged / file.path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(file.content.encode("utf-8"))
+            target.chmod(0o755 if file.executable else 0o644)
+        _swap_in(staged, folder / name, staging)
+    finally:
+        _discard(staged)
 
-    destination = folder / name
-    replaced = staging / f"{name}.replaced"
-    _discard(replaced)
-    if destination.is_symlink() or destination.exists():
-        destination.rename(replaced)
-    staged.rename(destination)
-    _discard(replaced)
+
+def _swap_in(staged: Path, destination: Path, staging: Path) -> None:
+    """Put `staged` at `destination` by renames on one filesystem, so the folder is always a
+    whole revision. A concurrent install can put its own copy there between the two renames;
+    that one is moved out in turn."""
+    for _ in range(_SWAP_ATTEMPTS):
+        replaced = staging / f"{destination.name}.{uuid.uuid4().hex}.replaced"
+        try:
+            if destination.is_symlink() or destination.exists():
+                with contextlib.suppress(FileNotFoundError):
+                    destination.rename(replaced)
+            staged.rename(destination)
+            return
+        except OSError:
+            continue
+        finally:
+            _discard(replaced)
+    raise Busy(f"Another session kept installing '{destination.name}' at the same moment. "
+               "Try again.")
 
 
 def refresh(folder: Path, name: str, document: str) -> None:
@@ -176,7 +197,7 @@ def remove(folder: Path, name: str) -> bool:
     target = folder / name
     if not (target.is_symlink() or target.exists()):
         return False
-    removed = folder / STAGING_FOLDER / f"{name}.removed"
+    removed = folder / STAGING_FOLDER / f"{name}.{uuid.uuid4().hex}.removed"
     removed.parent.mkdir(parents=True, exist_ok=True)
     _discard(removed)
     target.rename(removed)

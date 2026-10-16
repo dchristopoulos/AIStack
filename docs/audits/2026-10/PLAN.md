@@ -90,7 +90,7 @@ How to work through it:
 - [ ] 41b. The operator can forget a person
 - [x] 41c. Metrics for the operator, behind a token (f5e9ff3)
 - [x] 42. Tests and checks the code is missing (1a1109a)
-- [ ] 43. Finish the security pass this audit could not
+- [x] 43. Finish the security pass this audit could not (0986ae4)
 
 ## Unblock newcomers and the supply chain
 

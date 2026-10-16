@@ -167,6 +167,13 @@ def test_paths_are_stored_normalized():
     ("LPT9/notes.md", "reserves for a device"),
     ("aux.tar.gz", "reserves for a device"),
     ("a/" * 8 + "deep.md", "9 levels deep, and the limit is 8"),
+    # Invisible and direction-changing characters: a name that reads as another (step 43).
+    ("docs/report\u202egnp.sh", "control characters"),
+    (".g\u200dit/hooks/pre-commit", "control characters"),
+    ("docs/zero\u200bwidth.md", "control characters"),
+    # NTFS short names, which can alias another file of the skill on Windows (step 43).
+    ("SCRIPT~1.SH", "Windows short name"),
+    ("docs/notes~2.md", "Windows short name"),
     ("d/" + "n" * 254, "256 characters long, and the limit is 255"),
 ])
 def test_a_path_some_machine_could_not_hold_is_rejected(path, expected):
@@ -177,6 +184,7 @@ def test_a_path_some_machine_could_not_hold_is_rejected(path, expected):
 
 
 @pytest.mark.parametrize("path", ["console.md", "com10.md", "nullable.md", "docs/a.b.c.md",
+                                  "backup~.md", "docs/v1.0~beta.md",
                                   ".hidden", "a/b/c/d/e/f/g/eight.md", "n" * 255,
                                   "naïve résumé.md", "日本語.md"])
 def test_a_path_every_machine_can_hold_is_accepted(path):
