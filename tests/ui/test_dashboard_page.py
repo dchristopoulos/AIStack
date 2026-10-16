@@ -483,6 +483,45 @@ async def test_an_admin_makes_a_group_inside_a_group(sign_in):
     assert "developers/backend/frontend" in [group["path"] for group in aistack["groups"]]
 
 
+
+async def test_an_admin_moves_a_team_skill_into_a_group(sign_in):
+    """IMP-04: no browser test opened Move…."""
+    dimitris = await sign_in("dimitris")
+    await _open_team(dimitris, "aistack")
+    page = dimitris.page
+
+    await page.get_by_role("button", name="Manage release-notes").click()
+    await page.get_by_role("menuitem", name="Move to group…").click()
+    dialog = page.get_by_role("dialog", name="Move release-notes")
+    await dialog.get_by_role("radio", name="developers", exact=True).check()
+    await dialog.get_by_role("button", name="Move").click()
+
+    await expect(page.get_by_text("Moved release-notes to")).to_be_visible()
+    moved = _skill(_team(await dimitris.state(), "aistack"), "release-notes")
+    assert moved["group"] == "developers"
+
+
+async def test_an_admin_makes_an_existing_group_private_and_open_again(sign_in):
+    """IMP-04: the privacy switch of a group that already exists never ran."""
+    dimitris = await sign_in("dimitris")
+    await _open_team(dimitris, "aistack")
+    page = dimitris.page
+    await page.get_by_role("tab", name="Groups").click()
+    switch = page.get_by_role("switch", name="developers is private", exact=True)
+
+    def private() -> bool:
+        return next(group["private"] for group in _team(state, "aistack")["groups"]
+                    if group["path"] == "developers")
+
+    await switch.click()
+    await expect(switch).to_be_checked()
+    state = await dimitris.state()
+    assert private() is True
+    await switch.click()
+    await expect(switch).not_to_be_checked()
+    state = await dimitris.state()
+    assert private() is False
+
 async def test_a_member_is_shown_no_private_group_and_no_admin_control(sign_in):
     alex = await sign_in("alex")
     page = alex.page
@@ -615,6 +654,7 @@ async def test_an_admin_deletes_a_team_and_members_keep_what_they_took(sign_in):
     assert dimitris.console_errors == []
 
 
+@pytest.mark.console_errors_expected
 async def test_an_admin_renames_a_group_and_deletes_only_an_empty_one(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
@@ -754,6 +794,7 @@ async def test_coming_back_to_the_tab_shows_what_changed_meanwhile(sign_in, retu
     assert maria.console_errors == []
 
 
+@pytest.mark.console_errors_expected
 async def test_coming_back_after_the_session_ended_says_so_before_any_click(sign_in):
     maria = await sign_in("maria")
 
@@ -1180,6 +1221,7 @@ async def test_the_phone_drawer_keeps_focus_inside_until_it_is_closed(sign_in):
     await expect(opener).to_be_focused()
 
 
+@pytest.mark.console_errors_expected
 @_SQLITE_ONLY
 async def test_toasts_are_said_after_the_dialog_and_stay_until_dismissed(sign_in):
     dimitris = await sign_in("dimitris")

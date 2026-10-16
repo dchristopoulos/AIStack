@@ -62,6 +62,29 @@ jobs:
           poetry run python -m pip freeze --exclude-editable > requirements.txt
           pipx run pip-audit==2.10.1 --strict --no-deps --disable-pip -r requirements.txt
 
+      # Unused imports, undefined names, likely bugs and import order; pyproject sets the rules.
+      - run: poetry run ruff check src tests scripts
+
+      # The page's script is checked for what only a browser visiting the one view would
+      # otherwise find: a syntax error, or a name that is defined nowhere (IMP-17).
+      - name: The page's script parses and uses no undefined name
+        run: |
+          mkdir -p "$RUNNER_TEMP/page-lint"
+          python3 -c "
+          import re, sys
+          page = open('src/aistack/bundled/dashboard.html', encoding='utf-8').read()
+          for i, script in enumerate(re.findall(r'<script>(.*?)</script>', page, re.S)):
+              open(f'{sys.argv[1]}/page{i}.js', 'w', encoding='utf-8').write(script)
+          " "$RUNNER_TEMP/page-lint"
+          cd "$RUNNER_TEMP/page-lint"
+          cat > eslint.config.mjs <<'CONFIG'
+          import globals from "globals";
+          export default [{ files: ["*.js"], languageOptions: { ecmaVersion: "latest",
+            sourceType: "script", globals: globals.browser }, rules: { "no-undef": "error" } }];
+          CONFIG
+          npm install --no-save --silent eslint@9.39.1 globals@16.5.0
+          npx eslint page*.js
+
       # The dashboard's own tests open the page in a real browser. Locally they skip when the
       # browser is missing; here it is installed, so a skip cannot hide them.
       - run: poetry run playwright install --with-deps chromium
@@ -138,6 +161,25 @@ jobs:
 
       - run: poetry run pytest tests/bundled/test_sync_listing.py tests/mcp/test_local_mode.py tests/mcp/test_library_log.py tests/mcp/test_library_github.py tests/api/test_local_dashboard.py tests/services tests/bootstrap tests/db -q -p no:cacheprovider --no-header -rs
 
+  # Local mode has paths only macOS takes: the hardware id from system_profiler, and gh and uv
+  # under /opt/homebrew. The same tests as on Windows (IMP-01).
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - run: pipx install poetry==2.4.1
+
+      - run: poetry install
+
+      - run: poetry run pytest tests/bundled/test_sync_listing.py tests/mcp/test_local_mode.py tests/mcp/test_library_log.py tests/mcp/test_library_github.py tests/api/test_local_dashboard.py tests/services tests/bootstrap tests/db -q -p no:cacheprovider --no-header -rs
+
   container:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -173,6 +215,13 @@ jobs:
       - run: poetry install
 
       - run: docker build -t aistack:ci .
+
+      # Known vulnerabilities in the image's packages, reported and not yet failing the job:
+      # it fails once there is an allowlist of findings that do not apply (STD-07).
+      - name: Scan the image (report only)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.76.0 \
+            image --exit-code 0 --severity HIGH,CRITICAL --ignore-unfixed aistack:ci
 
       - name: Start on a fresh volume (SQLite)
         run: |
@@ -276,7 +325,7 @@ jobs:
   # main, or a version tag. A pull request never publishes, whatever its branch holds.
   publish:
     if: github.event_name == 'push' || github.event_name == 'schedule'
-    needs: [pytest, browsers, windows, container]
+    needs: [pytest, browsers, windows, macos, container]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -346,7 +395,7 @@ jobs:
   # CHANGELOG.md, merge that, then tag the commit `v<version>` and push the tag. The image gets the same version from the same tag.
   pypi:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [pytest, browsers, windows, container]
+    needs: [pytest, browsers, windows, macos, container]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Named on pypi.org's trusted publisher, so only this job, in this environment, can upload.

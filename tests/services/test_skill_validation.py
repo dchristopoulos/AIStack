@@ -367,7 +367,7 @@ def test_yaml_cannot_construct_objects():
 def test_an_alias_bomb_is_refused_without_being_expanded():
     """Nine levels of nine references: 387 million nodes described in under a kilobyte."""
     levels = ["a: &a [x, x, x, x, x, x, x, x, x]"]
-    for previous, current in zip("abcdefgh", "bcdefghi"):
+    for previous, current in zip("abcdefgh", "bcdefghi", strict=True):
         levels.append(f"{current}: &{current} [" + ", ".join([f"*{previous}"] * 9) + "]")
     document = "---\nname: wizard\ndescription: x\n" + "\n".join(levels) + "\n---\n"
 

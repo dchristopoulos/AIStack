@@ -48,6 +48,8 @@ dev = [
     "playwright>=1.50,<2.0",
     # axe-core, which the browser tests run on every screen of the page.
     "axe-playwright-python>=0.1.8,<0.2.0",
+    # Unused imports, undefined names, likely bugs and import order (IMP-17); CI runs it.
+    "ruff>=0.14.0,<0.15.0",
 ]
 
 [tool.poetry]
@@ -56,6 +58,16 @@ packages = [{include = "aistack", from = "src"}]
 [build-system]
 requires = ["poetry-core>=2.2.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["F", "E9", "B", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aistack", "tests", "scripts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

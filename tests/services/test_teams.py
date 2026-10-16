@@ -8,9 +8,9 @@ from sqlalchemy import delete, event, func, select
 
 from aistack.commons.exceptions import Conflict, NotFound, ValidationError
 from aistack.db.engine import build_session_factory
-from aistack.db.models.skill import Skill
 from aistack.db.models.invite import Invite
 from aistack.db.models.machine import Machine
+from aistack.db.models.skill import Skill
 from aistack.db.models.team import GroupUnsubscribed, Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc, utc_now
 from aistack.services import (

@@ -7,8 +7,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from aistack.commons.exceptions import Busy
-from aistack.db.models.user import User
 from aistack.db.engine import build_engine
+from aistack.db.models.user import User
 
 
 def test_sqlite_connections_get_wal_busy_timeout_and_foreign_keys(engine: Engine):

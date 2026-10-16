@@ -9,14 +9,36 @@ from tests.local_dashboard import local_dashboard
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture(name="browser")
+async def watched_browser_fixture(browser):
+    """The same browser, with every page these tests open checked at the end for a console
+    error or an uncaught exception (IMP-04)."""
+    errors: list[str] = []
+
+    def watch(page) -> None:
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.on("console", lambda message: errors.append(message.text)
+                if message.type == "error" else None)
+
+    original = browser.new_context
+
+    async def new_context(*arguments, **options):
+        context = await original(*arguments, **options)
+        context.on("page", watch)
+        return context
+
+    browser.new_context = new_context
+    yield browser
+    browser.new_context = original
+    assert errors == []
+
+
 async def test_the_local_dashboard_shows_the_library_and_nothing_a_team_needs(browser, tmp_path,
                                                                               sqlite_url):
     """`aistack dashboard`: the same page, with no way to start a team that has no server."""
     async with local_dashboard(tmp_path, sqlite_url) as (base, link):
         context = await browser.new_context()
         page = await context.new_page()
-        errors = []
-        page.on("pageerror", lambda error: errors.append(str(error)))
 
         await page.goto(link)
         await page.get_by_role("heading", name="Library", level=1).wait_for()
@@ -38,7 +60,6 @@ async def test_the_local_dashboard_shows_the_library_and_nothing_a_team_needs(br
         await context.close()
 
     assert state["server"] is False
-    assert errors == []
 
 
 async def test_the_page_says_where_the_library_lives(browser, tmp_path, sqlite_url):

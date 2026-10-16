@@ -9,9 +9,8 @@ import asyncio
 import pathlib
 import sys
 
-from playwright.async_api import async_playwright
-
 import demo_seed
+from playwright.async_api import async_playwright
 
 IMAGES = pathlib.Path(__file__).parents[1] / "docs" / "images"
 WIDE = {"width": 1440, "height": 900}

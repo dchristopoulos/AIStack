@@ -6,11 +6,11 @@ shape the agent gave it. The answer and the log line here say which fields faile
 and what the tool takes.
 """
 
-from pydantic import ValidationError as PydanticValidationError
 from fastmcp.exceptions import ToolError, ValidationError
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools import ToolResult
 from mcp import types
+from pydantic import ValidationError as PydanticValidationError
 
 from aistack.commons.text import sanitized
 

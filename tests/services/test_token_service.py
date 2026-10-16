@@ -1,7 +1,11 @@
 from pydantic import SecretStr
 
-from aistack.services.token_service import (TOKEN_PREFIX, generate_machine_token, hash_token,
-                                            matches_invite_code)
+from aistack.services.token_service import (
+    TOKEN_PREFIX,
+    generate_machine_token,
+    hash_token,
+    matches_invite_code,
+)
 
 
 def test_generated_tokens_are_prefixed_and_unique():

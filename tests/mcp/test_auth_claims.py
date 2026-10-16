@@ -9,12 +9,12 @@ from pydantic import SecretStr
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from aistack.db.models.machine import Machine
 from aistack.mcp.auth.aistack_token_verifier import AIStackTokenVerifier
 from aistack.mcp.auth.failure_limiter import FAILURE_LIMIT, FAILURE_WINDOW_SECONDS, FailureLimiter
 from aistack.mcp.auth.scopes import BOOTSTRAP_SCOPE, MACHINE_SCOPE
 from aistack.mcp.mcp import mcp
 from aistack.services import onboarding_service, team_service
-from aistack.db.models.machine import Machine
 from aistack.services.token_service import hash_token
 from tests.conftest import INVITE_CODE
 from tests.mcp.conftest import client_for

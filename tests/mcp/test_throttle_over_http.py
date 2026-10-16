@@ -97,7 +97,7 @@ async def test_wrong_invite_links_count_toward_the_same_limit(server_url, caplog
     assert bearer_after.status_code == 429
     # Health answers anyway, so a throttled address can tell it apart from a server that is down.
     assert health.status_code == 200
-    assert any(f"Invite page refused" in record.getMessage()
+    assert any("Invite page refused" in record.getMessage()
                and f"Client: '{GUESSER}'" in record.getMessage() for record in caplog.records)
 
 

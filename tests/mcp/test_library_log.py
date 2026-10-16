@@ -5,11 +5,15 @@ import contextlib
 import random
 import uuid
 
+import httpx
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from sqlalchemy import select
+from starlette.applications import Starlette
 
+from aistack.api import dashboard
+from aistack.api.dashboard import REQUEST_HEADER
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings
 from aistack.bootstrap.context import application_context
 from aistack.commons.exceptions import AIStackError
@@ -28,8 +32,8 @@ from aistack.db.models.user import User
 from aistack.db.schema import migrate_schema
 from aistack.mcp import local_dashboard
 from aistack.mcp.local import local_mcp
+from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH
 from aistack.services import (
-    dashboard_service,
     library_log,
     local_identity,
     onboarding_service,
@@ -158,8 +162,30 @@ async def _call(client, tool, **arguments):
     return (await client.call_tool(tool, arguments)).structured_content
 
 
+@contextlib.asynccontextmanager
+async def _dashboard():
+    """The localhost dashboard's own routes, signed in, in this process and this context: its
+    writes go through the real route, which must record its event (IMP-03)."""
+    app = Starlette(routes=dashboard.LOCAL_ROUTES)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url="http://127.0.0.1:8765") as browser:
+        holder = application_context.get_local_principal().dashboard_holder()
+        ticket = application_context.get_ticket_signer().sign_dashboard_link(holder)
+        assert (await browser.get(f"{DASHBOARD_LOGIN_PATH}/{ticket}")).status_code == 303
+        yield browser
+
+
+async def _post(browser, path: str, **body) -> httpx.Response:
+    return await browser.post(path, json=body, headers={REQUEST_HEADER: "1"})
+
+
 async def _random_changes(client, home, seed: int, steps: int = 25) -> None:
     """What a person does over weeks, in a random order: back up, edit, install, remove."""
+    async with _dashboard() as browser:
+        await _random_changes_with(client, browser, home, seed, steps)
+
+
+async def _random_changes_with(client, browser, home, seed: int, steps: int) -> None:
     chance = random.Random(seed)
     for step in range(steps):
         name = chance.choice(NAMES)
@@ -177,6 +203,12 @@ async def _random_changes(client, home, seed: int, steps: int = 25) -> None:
                 await _call(client, "disable_skill", name=name)
             elif action == "sync":
                 await _call(client, "sync", harness=chance.choice(["claude_code", "agents"]))
+            elif action == "remove":
+                await _post(browser, f"/api/skills/{name}/remove")
+            elif action == "place":
+                machine = application_context.get_local_principal().machine_id
+                await _post(browser, f"/api/skills/{name}/machines/{machine}",
+                            enabled=chance.random() < 0.5, harness="agents")
             else:
                 caller = application_context.get_local_principal()
                 with application_context.get_session_factory().begin() as session:
@@ -198,23 +230,39 @@ async def _random_changes(client, home, seed: int, steps: int = 25) -> None:
                             session, caller.machine_id, other))
                         onboarding_service.remove_machine(session, caller.user_id,
                                                           str(other.machine_id))
-                    elif action == "remove":
-                        removed = skill_service.remove_from_my_skills(session, caller.user_id,
-                                                                      name)
-                        library_log.record(session, library_log.new_event(
-                            session, caller.machine_id, library_log.SKILL_REMOVED,
-                            name=removed))
-                    else:
-                        placed = dashboard_service.set_on_machine(
-                            session, caller.user_id, name, str(caller.machine_id),
-                            chance.random() < 0.5, "agents")
-                        library_log.record(session, library_log.new_event(
-                            session, caller.machine_id, library_log.SKILL_PLACED,
-                            name=placed.name, harness=placed.harness, enabled=placed.enabled,
-                            target_machine_id=str(placed.machine_id)))
         except (ToolError, AIStackError):
             # A refusal (no such skill yet, nothing to disable) changes nothing and logs nothing.
             pass
+
+
+# Every POST the localhost dashboard serves, with a body that works: each changes the Library,
+# so each must record an event. A new local action fails the test below until it is here.
+LOCAL_WRITES = {
+    "/api/skills/{name}/machines/{machine_id}": {"enabled": True, "harness": "agents"},
+    "/api/skills/{name}/remove": {},
+}
+# The POSTs that change only this browser's session, not the Library.
+SESSION_ONLY = {"/api/logout", "/app/login/{ticket}"}
+
+
+async def test_every_localhost_dashboard_write_records_its_event(computer):
+    """IMP-03: a route that forgot its event was caught by nothing."""
+    posts = {route.path for route in dashboard.LOCAL_ROUTES if "POST" in route.methods}
+    assert posts == set(LOCAL_WRITES) | SESSION_ONLY
+
+    async with computer("laptop") as (laptop, home):
+        _write(home, "wizard", "first")
+        await _call(laptop, "push_skill", name="wizard")
+        machine = application_context.get_local_principal().machine_id
+        async with _dashboard() as browser:
+            for path, body in LOCAL_WRITES.items():
+                with application_context.get_session_factory().begin() as session:
+                    before = len(_events(session))
+                response = await _post(browser, path.format(name="wizard", machine_id=machine),
+                                       **body)
+                assert response.status_code == 200, (path, response.text)
+                with application_context.get_session_factory().begin() as session:
+                    assert len(_events(session)) > before, path
 
 
 @pytest.mark.parametrize("seed", range(6))
