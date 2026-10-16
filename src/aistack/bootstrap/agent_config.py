@@ -30,9 +30,9 @@ PLACE_VARIABLES = ("AISTACK_LIBRARY_REPO", "AISTACK_DATABASE_URL", "AISTACK_HOME
 # person's own Library. Everything else still asks.
 CODEX_APPROVED_TOOLS = ("sync", "list_skills", "get_skill", "push_skill")
 
-HOOK_COMMAND = "echo AIStack: before the first task, run the sync-aistack skill."
-_HOOK_ENTRY = {"matcher": "startup",
-               "hooks": [{"type": "command", "command": HOOK_COMMAND, "timeout": 10}]}
+HOOK_REMINDER = "AIStack: before the first task, run the sync-aistack skill."
+# Server mode's hook, which setup writes by hand: it says the reminder at every start.
+HOOK_COMMAND = f"echo {HOOK_REMINDER}"
 
 
 class NotConnected(Exception):
@@ -138,19 +138,32 @@ def connect_codex(program: Path, place: dict[str, str]) -> None:
         path.write_text(updated, encoding="utf-8")
 
 
-def add_session_start_hook(agent: str) -> Path:
-    """Add the SessionStart hook that reminds the agent to sync, once, keeping everything else."""
+def hook_command(program: Path, agent: str) -> str:
+    """Local mode's hook: the program says the reminder only when sync has something to do,
+    so a session where nothing changed starts without a sync (AUTO-24)."""
+    return f'"{program}" status --hook --agent {agent}'
+
+
+def add_session_start_hook(agent: str, command: str = HOOK_COMMAND) -> Path:
+    """Add the SessionStart hook that reminds the agent to sync, once, in place of an earlier
+    AIStack one, keeping everything else."""
     path = (Path.home() / ".claude" / "settings.json" if agent == "claude-code"
             else codex_home() / "hooks.json")
     settings = _read_json(path)
     entries = settings.setdefault("hooks", {}).setdefault("SessionStart", [])
-    present = any(hook.get("command") == HOOK_COMMAND
-                  for entry in entries if isinstance(entry, dict)
-                  for hook in entry.get("hooks", []) if isinstance(hook, dict))
-    if not present:
-        entries.append(_HOOK_ENTRY)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+
+    def commands(entry) -> list[str]:
+        return [hook.get("command", "") for hook in entry.get("hooks", [])
+                if isinstance(hook, dict)] if isinstance(entry, dict) else []
+
+    if any(commands(entry) == [command] for entry in entries):
+        return path
+    entries[:] = [entry for entry in entries if not any(
+        known == HOOK_COMMAND or " status --hook" in known for known in commands(entry))]
+    entries.append({"matcher": "startup",
+                    "hooks": [{"type": "command", "command": command, "timeout": 10}]})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     return path
 
 

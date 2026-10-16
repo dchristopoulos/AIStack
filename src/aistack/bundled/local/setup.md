@@ -69,7 +69,7 @@ AISTACK_LIBRARY_REPO='<owner>/aistack-library' <aistack-mcp> connect claude-code
 
 In Codex, `connect codex` instead of `connect claude-code`. Leave out `--hook` if the user said no. On Windows PowerShell, set the variable first, as for the check, and run `& <aistack-mcp> connect claude-code --hook`.
 
-It checks the Library again, installs the `sync-aistack` skill, connects the agent with AIStack's full path, and with `--hook` adds a reminder to sync when a session starts. It keeps everything else in the agent's settings, and running it again changes nothing. It refuses a settings file that is not valid JSON or TOML and says which; fix that file and run it again.
+It checks the Library again, installs the `sync-aistack` skill, connects the agent with AIStack's full path, and with `--hook` adds a reminder to sync when a session starts, which speaks only when there is something to sync. It keeps everything else in the agent's settings, and running it again changes nothing. It refuses a settings file that is not valid JSON or TOML and says which; fix that file and run it again.
 
 In Codex, tell the user in one line that the connection approves four AIStack tools without asking: comparing, listing the Library, installing, and backing up to their own Library. Everything else still asks. Codex also asks them once, in `/hooks`, to trust the new hook.
 

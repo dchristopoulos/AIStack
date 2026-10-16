@@ -18,6 +18,7 @@ from fastmcp.exceptions import ToolError
 from sqlalchemy import select, text, update
 
 from aistack.bootstrap import agent_config
+from aistack.bootstrap.__main__ import sync_would_act
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings
 from aistack.bundled import local_sync_skill_document
 from aistack.bootstrap.context import application_context
@@ -235,6 +236,21 @@ async def test_a_whole_backup_list_is_one_call_and_one_push_to_the_library(compu
         ("wizard", 1), ("notes", 1)]
     assert [entry["name"] for entry in result["refused"]] == ["missing"]
     assert shares == [1]
+
+
+async def test_the_session_start_hook_speaks_only_when_sync_has_something_to_do(computer):
+    """AUTO-24: every session began with a full sync, even when nothing had changed."""
+    async with computer("laptop") as (laptop, home):
+        _write_skill(home)
+        assert sync_would_act()
+
+        await _call(laptop, "sync")
+        await _call(laptop, "push_skill", name="wizard")
+        assert not sync_would_act()
+
+        notes = _write_skill(home, "notes")
+        (notes / "SKILL.md").write_text("---\nname: notes\ndescription: Notes.\n---\n")
+        assert sync_would_act()
 
 
 async def test_push_refuses_a_name_that_leaves_the_folder(computer):
