@@ -28,8 +28,10 @@ def _block(language: str, marker: str) -> str:
 
 
 def _listed(output: str) -> dict[str, str]:
-    lines = (line.split(None, 1) for line in output.splitlines() if line.strip())
-    return {path.replace("\\", "/").removeprefix("./"): digest.lower() for digest, path in lines}
+    # A line without a digest still lists its path, so a failure shows what was printed.
+    lines = (line.strip().rpartition("  ") for line in output.splitlines() if line.strip())
+    return {path.replace("\\", "/").removeprefix("./"): digest.lower()
+            for digest, _, path in lines}
 
 
 @pytest.fixture(name="folder")
@@ -59,7 +61,7 @@ def test_the_bash_listing_leaves_out_only_what_push_leaves_out(folder):
 def test_the_powershell_listing_leaves_out_only_what_push_leaves_out(folder):
     shell = shutil.which("powershell") or shutil.which("pwsh")
     command = _block("powershell", "Get-FileHash").replace("<folder>", str(folder))
-    output = subprocess.run([shell, "-NoProfile", "-Command", command], capture_output=True,
-                            text=True, check=True).stdout
+    done = subprocess.run([shell, "-NoProfile", "-Command", command], capture_output=True,
+                          text=True, check=True)
 
-    assert _listed(output) == _digests(folder)
+    assert _listed(done.stdout) == _digests(folder), (done.stdout, done.stderr)

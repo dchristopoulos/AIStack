@@ -53,12 +53,10 @@ Windows (PowerShell):
 
 ```powershell
 $root = (Get-Item -LiteralPath "<folder>").FullName.TrimEnd('\')
-Get-ChildItem $root -Recurse -File -Force | ForEach-Object {
+Get-ChildItem -LiteralPath $root -Recurse -File -Force | Where-Object {
   $rel = $_.FullName.Substring($root.Length + 1)
-  if ($rel -match '\\' -and $rel -notmatch '^(synced|\.[^\\]*)\\|\\\.git\\' -and $_.Name -ne '.DS_Store') {
-    "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)  .\$rel"
-  }
-}
+  $rel -match '\\' -and $rel -notmatch '^(synced|\.[^\\]*)\\|\\\.git\\' -and $_.Name -ne '.DS_Store'
+} | Get-FileHash -Algorithm SHA256 | ForEach-Object { $_.Hash + '  .\' + $_.Path.Substring($root.Length + 1) }
 ```
 
 Each line is a digest and a path. The first folder in the path is the skill; the rest is the file's path inside it. `./wizard/scripts/run.sh` belongs to skill `wizard` as `scripts/run.sh`.
