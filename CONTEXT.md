@@ -8,6 +8,18 @@ A self-hosted, open-source control plane for AI development configuration. Each 
 A skills folder with a name, which the coding agents that read it load skills from (ADR-0018). Two exist: `claude_code` (`~/.claude/skills`, read by Claude Code) and `agents` (`~/.agents/skills`, read by Codex, Gemini CLI, Kimi Code, opencode, Cursor, GitHub Copilot CLI, and Amp). A skill is placed in a harness on a computer, and sync runs one harness at a time.
 _Avoid_: Agent (that means a subagent definition), provider, IDE, "Codex" for the `agents` folder (it reaches every agent that reads it)
 
+**Project**:
+A git repository, known by its remote written as `host/path` (`github.com/dchristopoulos/aistack`), so the same repository is one project on every computer wherever its clone sits (ADR-0026, proposed). A repository with no remote, or whose remote is a path on disk, is a project of one computer. A folder outside git, or a repository whose top level is the home folder, is not one. A person's project is recorded only once they add it.
+_Avoid_: Workspace, repo (in prose), checkout, folder
+
+**Project folder**:
+A harness's skills folder at a project's top level: `.claude/skills` for `claude_code`, `.agents/skills` for `agents`. A skill is placed in a project folder on a computer as it is placed in a global one, and every clone and worktree of the project on that computer shares the placements. AIStack writes only skill folders git ignores there.
+_Avoid_: Project skills directory, local folder, repo folder
+
+**Repository's skill**:
+A skill folder inside a project folder that git tracks, or would commit because it is untracked and not ignored. It belongs to the repository: AIStack never reads, writes, backs up or replaces it, and installs no Library skill of that name there.
+_Avoid_: Repo skill, checkout skill, committed skill, team skill (that is a skill shared into a team)
+
 **Resource**:
 The umbrella term for anything AIStack manages: a skill, rule, agent, hook, or MCP server definition.
 _Avoid_: Config item, asset
