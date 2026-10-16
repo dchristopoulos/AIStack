@@ -6,18 +6,29 @@ tools and routes a real user's agent and browser would use, so it is also an end
 
     python scripts/demo_seed.py http://127.0.0.1:8000 <invite code>
 
-Run it once, against a server nobody has joined yet.
+Run it once, against a server nobody has joined yet. It keeps the three machine tokens in
+`.aistack-demo.json` (git ignores it), so once the links have expired
+
+    python scripts/demo_seed.py --links
+
+prints a fresh one for each person.
 """
 
 import asyncio
+import json
+import os
 import sys
+from pathlib import Path
 
 import httpx
 from fastmcp.client import BearerAuth, Client, StreamableHttpTransport
+from fastmcp.exceptions import ToolError
 
 from aistack.services.skill_archive import build_archive
 
 REQUEST_HEADER = {"X-AIStack-Request": "1"}
+# Machine tokens are credentials: this file is readable by its owner only, and ignored by git.
+TOKENS_FILE = Path(".aistack-demo.json")
 
 # The longest names the server accepts, for checking that the page still fits around them.
 LONG_USERNAME = "maximilian-alexandros-papadopoulos-konstantinidis-from-thessalia"
@@ -98,10 +109,12 @@ class Person:
         return response.json()
 
 
-async def seed(base_url: str, invite_code: str, long_names: bool = False) -> dict[str, str]:
+async def seed(base_url: str, invite_code: str, long_names: bool = False,
+               tokens: dict[str, str] | None = None) -> dict[str, str]:
     """Fill the server and return a dashboard link per person, each good for five minutes.
 
     With `long_names`, a fourth person adds every name at its longest: see `seed_long_names`.
+    `tokens`, when given, receives each person's machine token.
     """
     dimitris, maria, alex = (Person(base_url, name) for name in ("dimitris", "maria", "alex"))
     await dimitris.join(invite_code, "macbook", "MACOS")
@@ -166,7 +179,20 @@ async def seed(base_url: str, invite_code: str, long_names: bool = False) -> dic
         people.append(await seed_long_names(base_url, invite_code, dimitris))
     for person in people:
         await person.browser.aclose()
+    if tokens is not None:
+        tokens.update({person.username: person.token for person in people})
     return {person.username: await person.dashboard_link() for person in people}
+
+
+async def fresh_links(base_url: str, tokens: dict[str, str]) -> dict[str, str]:
+    """A new dashboard link per person, from the machine tokens a seed kept."""
+    links = {}
+    for username, token in tokens.items():
+        person = Person(base_url, username)
+        person.token = token
+        links[username] = await person.dashboard_link()
+        await person.browser.aclose()
+    return links
 
 
 async def seed_long_names(base_url: str, invite_code: str, dimitris: Person) -> Person:
@@ -200,11 +226,34 @@ async def seed_long_names(base_url: str, invite_code: str, dimitris: Person) -> 
 
 
 def main() -> None:
-    links = asyncio.run(seed(sys.argv[1].rstrip("/"), sys.argv[2]))
+    if sys.argv[1:] == ["--links"]:
+        if not TOKENS_FILE.exists():
+            sys.exit(f"No {TOKENS_FILE} here: run the seed first, from this folder.")
+        kept = json.loads(TOKENS_FILE.read_text())
+        print_links(asyncio.run(fresh_links(kept["server"], kept["tokens"])))
+        return
+    if len(sys.argv) != 3:
+        sys.exit(__doc__)
+    base_url, tokens = sys.argv[1].rstrip("/"), {}
+    try:
+        links = asyncio.run(seed(base_url, sys.argv[2], tokens=tokens))
+    except ToolError as error:
+        if "already taken" not in str(error):
+            raise
+        sys.exit("This server was seeded already: run `python scripts/demo_seed.py --links` "
+                 "for new sign-in links.")
+    descriptor = os.open(TOKENS_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w") as file:
+        json.dump({"server": base_url, "tokens": tokens}, file)
     print("Seeded: 3 people, 4 computers, teams 'aistack' and 'friends', 3 groups (one nested, "
           "one private).")
     print("Maria has an update to 'code-review' waiting. Alex is in 'aistack' and in no group, "
           "so the private 'security' group is hidden from him.\n")
+    print_links(links)
+    print(f"\nAfter five minutes, `python scripts/demo_seed.py --links` prints new ones.")
+
+
+def print_links(links: dict[str, str]) -> None:
     print("Dashboard links, each good for five minutes:")
     for username, link in links.items():
         print(f"  {username:<9} {link}")

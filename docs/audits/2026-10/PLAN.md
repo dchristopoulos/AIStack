@@ -74,7 +74,7 @@ How to work through it:
 - [ ] 35. Keyboard and screen reader
 - [ ] 36. The pages before sign-in, the icon, and local mode's remembered choices
 - [ ] 37. Shorter text, and words that say what is true
-- [ ] 38. Bring DESIGN.md, OPERATING.md and the README back in line with the code
+- [x] 38. Bring DESIGN.md, OPERATING.md and the README back in line with the code (#158)
 - [ ] 39. See what changed before taking an update, and get an older revision back
 - [ ] 40. Cheaper syncs
 - [ ] 41. Audit trail, logs and an export

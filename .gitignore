@@ -60,3 +60,5 @@ AGENTS.override.md
 
 # Design explorations: screenshots and throwaway copies of the page, never shipped.
 design-variants/
+# The machine tokens scripts/demo_seed.py keeps for `--links`.
+.aistack-demo.json

@@ -1,0 +1,37 @@
+# Architecture decisions
+
+Each file records one decision, why it was made, and what follows from it. A decision is reversed only by a new one. A status line at the top of each says whether it is proposed or accepted, and which decisions it amends.
+
+- [ADR-0001](0001-full-sync-over-runtime-proxy.md): Full local sync instead of runtime proxy skills
+- [ADR-0002](0002-sqlite-default-postgres-optional.md): SQLite by default, Postgres via DATABASE_URL
+- [ADR-0003](0003-token-auth-with-invite-code-join.md): Personal API tokens with invite-code join, no login system
+- [ADR-0004](0004-server-is-source-of-truth-per-machine.md): Server-side desired state per machine (reverses stateless sync)
+- [ADR-0005](0005-synchronous-sqlalchemy.md): Synchronous SQLAlchemy, not async
+- [ADR-0006](0006-explicit-disable-sync-never-deletes.md): Explicit disable; sync never deletes; ask only when data can be lost
+- [ADR-0007](0007-skill-specific-tables-generic-model-deferred.md): Skill-specific tables; the generic resource model is deferred
+- [ADR-0008](0008-single-admin-partial-index.md): One admin, enforced by a partial unique index
+- [ADR-0009](0009-length-prefixed-canonical-content-hash.md): Length-prefixed canonical content hash, not JSON
+- [ADR-0010](0010-signed-transfer-urls-for-skill-bytes.md): Skill bytes travel over signed transfer URLs, not through the model
+- [ADR-0011](0011-server-alone-computes-the-content-hash.md): The server alone computes the canonical content hash
+- [ADR-0012](0012-sync-returns-questions-as-data.md): Sync returns its questions as data; the agent asks them in chat
+- [ADR-0013](0013-stateless-streamable-http.md): The MCP endpoint is stateless
+- [ADR-0014](0014-sqlite-transactions-begin-immediate.md): SQLite transactions take the write lock at BEGIN
+- [ADR-0015](0015-teams-and-groups.md): A personal space per user, teams to share into, and groups inside a team
+- [ADR-0016](0016-alembic-migrations-in-one-transaction.md): Schema changes are Alembic migrations, applied at startup in one transaction
+- [ADR-0017](0017-dashboard-in-the-same-process.md): The dashboard is served by the server, and a link from chat signs you in
+- [ADR-0018](0018-one-account-for-every-coding-agent.md): One account for every coding agent on a computer, Codex first
+- [ADR-0019](0019-invites-are-the-way-in.md): Invites are the way in: an invite link creates the account and joins the team
+- [ADR-0020](0020-local-mode-and-where-the-library-lives.md): AIStack runs on your own computers, and you choose where your Library lives
+- [ADR-0021](0021-one-agent-syncs-every-folder.md): One connected agent syncs every skills folder on its computer
+- [ADR-0022](0022-invites-are-records.md): An invite is a record: one use, pending until accepted, and it expires
+- [ADR-0023](0023-every-computer-keeps-the-database-address.md): In local mode every computer keeps the database's own address
+- [ADR-0024](0024-older-releases-keep-working-through-additive-upgrades.md): Older releases keep working through additive upgrades
+- [ADR-0025](0025-a-github-library-is-a-log-each-computer-replays.md): A Library on GitHub is a log each computer replays
+- [ADR-0026](0026-skills-folders-inside-projects.md): Skills folders inside a project
+- [ADR-0027](0027-a-session-belongs-to-the-computer-that-opened-it.md): A dashboard session belongs to the computer that opened it, and its owner can remove that computer
+- [ADR-0028](0028-a-team-can-be-deleted.md): A team can be deleted, and nobody is kept in one
+- [ADR-0029](0029-sharing-over-a-groups-skill.md): Sharing over a group's skill takes being able to share into the group
+- [ADR-0030](0030-reads-begin-deferred-on-sqlite.md): On SQLite, a request that only reads begins deferred
+- [ADR-0031](0031-compatible-means-older-data-stays-meaningful.md): A compatible migration also keeps older releases' data meaningful
+- [ADR-0032](0032-a-library-log-is-ordered-by-a-hybrid-clock.md): A GitHub Library's log is ordered by a hybrid logical clock
+- [ADR-0033](0033-a-removed-computer-comes-back-when-it-changes-something.md): A removed computer comes back when it changes something

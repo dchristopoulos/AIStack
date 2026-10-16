@@ -1,6 +1,6 @@
 # AIStack design
 
-Scope, architecture, and schema for the MVP, settled 2026-08-21, revised 2026-08-24 after two external design reviews, 2026-10-13 after research into what the client can carry (ADR-0010 to ADR-0012), and 2026-10-14 for the personal space, teams, groups, migrations, and the dashboard (ADR-0015 to ADR-0017). Vocabulary lives in `CONTEXT.md`. Decisions and their reasoning live in `docs/adr/`. This document is the current plan, so where anything else disagrees with it, this wins.
+Scope, architecture, and schema for the MVP, settled 2026-08-21, revised 2026-08-24 after two external design reviews, 2026-10-13 after research into what the client can carry (ADR-0010 to ADR-0012), 2026-10-14 for the personal space, teams, groups, migrations, and the dashboard (ADR-0015 to ADR-0017), and 2026-10-16 to match the code after the October audit. Vocabulary lives in `CONTEXT.md`. Decisions and their reasoning live in `docs/adr/`. This document is the current plan, so where anything else disagrees with it, this wins.
 
 ## 1. What AIStack is
 
@@ -64,13 +64,19 @@ No FastAPI and no frontend framework: the dashboard is one HTML file with its ow
 - **ADR-0022: An invite is a record.** Each invite is its own row: one use, pending until accepted, seven days, and cancellable by its maker or an admin. Making another cancels nothing.
 - **ADR-0023: In local mode every computer keeps the database's own address.** No per-computer logins and no pairing: each computer's MCP configuration holds the provider's connection string, any computer migrates, and a lost laptop means resetting the database password and pasting the new one on the others. Teams stay on server mode with revocable machine tokens.
 - **ADR-0024: Older releases keep working through additive upgrades.** Each migration says whether releases before it still work. The database records the oldest schema that can use it, so an older computer keeps running on a schema that only grew, and is refused with one clear sentence (in local mode, through its agent) after a breaking change.
-- **ADR-0025 (proposed): A Library on GitHub is a log each computer replays.** Each computer keeps its own SQLite copy; the private repository holds one file per change, in a folder per computer, so git never conflicts. Replay goes through the same service calls, in a fixed order, and a copy that disagrees is rebuilt from the whole log.
-- **ADR-0026: Skills folders inside a project.** A project is a git repository known by its normalised remote, and its two skills folders at the top level are harnesses one level down, placed per computer in tables of their own. AIStack writes only skill folders git ignores there, hiding each from git through the clone's `.git/info/exclude`, and leaves the repository's own skills alone. The project tables are built; the remaining steps are in the October 2026 audit plan.
+- **ADR-0025: A Library on GitHub is a log each computer replays.** Each computer keeps its own SQLite copy; the private repository holds one file per change, in a folder per computer, so git never conflicts. Replay goes through the same service calls, in a fixed order, and a copy that disagrees is rebuilt from the whole log.
+- **ADR-0026: Skills folders inside a project.** A project is a git repository known by its normalised remote, and its two skills folders at the top level are harnesses one level down, placed per computer in tables of their own. AIStack writes only skill folders git ignores there, hiding each from git through the clone's `.git/info/exclude`, and leaves the repository's own skills alone. Project identity, tables, placements and event replay are built; the remaining steps are in the October 2026 audit plan.
+- **ADR-0027: A dashboard session belongs to the computer that opened it, and its owner can remove that computer.** Removing a computer, or giving it a new token, ends its token, its sessions and its transfer URLs at once.
+- **ADR-0028: A team can be deleted, and nobody is kept in one.** The last member leaving deletes the team; an admin can delete it. Members' Library copies stay.
+- **ADR-0029: Sharing over a group's skill takes being able to share into the group.**
+- **ADR-0030: On SQLite, a request that only reads begins deferred.** Read sessions refuse to write and neither wait for the writer nor make it wait.
+- **ADR-0031: A compatible migration also keeps older releases' data meaningful.** Additive shape alone is not enough: older releases must still write and read every value safely.
 - **ADR-0032: A GitHub Library's log is ordered by a hybrid logical clock.** An event's time is the later of the wall clock and just after the newest event its copy holds, so a computer whose clock runs ahead cannot sort its older edit after a newer one. A rebuild replays into a new file beside the copy and swaps the rows in, so other sessions keep reading meanwhile.
+- **ADR-0033: A removed computer comes back when it changes something.** In local mode, removal tidies the list: a later change from the removed computer adds it again, so replay never stops and nothing is lost. Cutting a computer off there means revoking its access to the repository.
 
 ## 4. What is built
 
-One Docker container. One volume (SQLite file + config). FastMCP served over streamable HTTP, plus plain HTTP routes on the same port: two that carry skill archives (ADR-0010), setup, health, and the dashboard with its JSON API (ADR-0017). No CLI, no daemon. The connected agent, Claude Code or Codex, syncs both skills folders on its computer: Claude Code's and the shared agents folder that Codex and others read (ADR-0018, ADR-0021).
+One Docker container. One volume (SQLite file + config). FastMCP served over streamable HTTP, plus plain HTTP routes on the same port: two that carry skill archives (ADR-0010), setup, health, and the dashboard with its JSON API (ADR-0017). The same package is also local mode (ADR-0020): `aistack` over stdio, started by the agent, with a few terminal commands beside it (§4 Local mode). Nothing syncs in the background; the only background work is local mode's daily check for a newer release. The connected agent, Claude Code or Codex, syncs both skills folders on its computer: Claude Code's and the shared agents folder that Codex and others read (ADR-0018, ADR-0021).
 
 ### State model (ADR-0004)
 
@@ -85,11 +91,11 @@ Two MCP principals, one centralized authorization rule enforced before any tool 
 
 The dashboard has its own credential and reaches no MCP tool: a session cookie holding a signed ticket for one user, set by opening the link `open_dashboard` returns (ADR-0017). `/app` and `/api/*` refuse without it, and a request that changes state must also carry a header a cross-site form cannot send.
 
-`join` creates the user and their first machine and returns the permanent machine token. The agent writes it into the MCP config; from then on it authenticates every connection silently. First user to join becomes the admin.
+`join` creates the user and their first machine and returns the permanent machine token. The agent writes it into the MCP config; from then on it authenticates every connection silently. The first user to join is marked the server's admin (`is_admin`), but no code reads that mark today, so it grants no power: server-level operations are documented scripts (`docs/OPERATING.md`).
 
 **Secrets rule.** Tokens appear exactly once: in the `join` / `add_machine` result (and therefore in the local Claude Code transcript, accepted for the MVP). They never appear in server logs, HTTP logs, error messages, or any other tool result. The invite code is never emitted in logs, errors, tool arguments, or tool results; it exists only as the bootstrap `Authorization` bearer and as operator-supplied config. A team's invite code is made by the server, stored only as a hash, and appears once, in the answer to the admin who asked for it. A dashboard link is a credential for five minutes and is never logged.
 
-**Revocation** (lost or stolen machine): the admin deletes the machine row: a documented one-line DB operation, no tool. If that was the user's only machine, recovery is inserting a replacement machine row (or rotating an existing machine's `token_hash`) for that same user. Never delete the user: `pushed_by` is a non-null FK from `SKILL` and `SKILL_VERSION`, so deleting a contributor either fails or destroys provenance.
+**Revocation** (lost or stolen machine): the user removes the computer on the dashboard, which ends its token, its dashboard sessions and its transfer URLs at once (ADR-0027); the user's last computer cannot be removed there. The operator can also delete the machine row with a documented script, no tool. If that was the user's only machine, recovery is inserting a replacement machine row (or rotating an existing machine's `token_hash`) for that same user. Never delete the user: `pushed_by` is a non-null FK from `SKILL` and `SKILL_VERSION`, so deleting a contributor either fails or destroys provenance.
 
 ### Tools (all thirteen, nothing else)
 
@@ -136,6 +142,36 @@ disable_skill(name, harness?) → enabled = false in that harness of this machin
 `harness` is `claude_code` (`~/.claude/skills`) or `agents` (`~/.agents/skills`), listed in the tool schema; the registry is `services/harnesses.py`, with each folder spelled per operating system. Omitted, it means `claude_code`, so a computer set up before harnesses existed keeps working with the skill file it already has (ADR-0018). An upload URL carries the harness it was issued for.
 
 There is no `delete_skill` tool. Removal is a dashboard action, in two forms. Removing a skill from the Library keeps its row as a marker (`archived`) and disables it on every machine, so each machine's next sync asks whether to delete the folder and does not back it up again. A team admin removing a skill from a team deletes the team's copy and its history; copies members already took are theirs and are untouched. Deleting a single revision is not offered: a fresh install after deleting the latest would silently receive an older one, and a safe version needs preview-confirm plus tombstones.
+
+### Local mode (ADR-0020)
+
+Local mode is the same package run by each computer for one person, with no server. `aistack` with no command serves the Library over stdio to the coding agent that started it (`mcp/local.py`). Over stdio the caller is whoever could start the process, so it has no authentication and registers only tools about that person's own Library: no team tool and no onboarding tool. The Library lives in a SQLite file on this computer, a PostgreSQL database every computer reaches (ADR-0023), or a private GitHub repository each computer replays as a log (ADR-0025, ADR-0032). Every change is also recorded as a `library_event` in the same transaction.
+
+Its tools do the disk work themselves, so no transfer URL is involved: each reads a skills folder before its transaction and writes one after it commits.
+
+```text
+sync(harness?)                → reads the folder itself and reports as the server's sync does,
+                                plus `folders` (every skills folder this computer has an
+                                agent for), `harness` (the one this call synced),
+                                `library_reachable` and `library_problem` (a GitHub Library
+                                that could not be reached), and `new_computer`. It keeps the
+                                sync-aistack skill current; `team_updates` is always empty
+list_skills                   → the skills in the Library, with `library_reachable` and
+                                `library_problem`
+get_skill(name, harness?)     → installs the latest revision into that folder, after
+                                checking the files against their stored hash; returns the
+                                skill, its revision, and the `folder`
+push_skill(name, origin?, harness?)
+                              → backs the folder up to the Library and enables it there;
+                                returns `revision`, `created`, `unchanged`, and `shared`
+                                (false when a GitHub Library could not be reached, so the
+                                revision waits on this computer)
+disable_skill(name, harness?) → disables the skill in that folder and deletes the folder
+open_dashboard                → starts the dashboard on 127.0.0.1 inside this process and
+                                returns a sign-in link
+```
+
+The `aistack` command (`bootstrap/__main__.py`) also takes these terminal commands: `serve` runs the server; `dashboard` serves the Library's dashboard on 127.0.0.1 and opens it; `setup` prints local mode's setup steps and `sync-skill` its sync skill (there is no server to fetch them from); `check` sets up this computer's side of the Library once and says whether it works; `github` signs in to GitHub and finds or creates the private repository a Library lives in; `export` writes every skill in the Library to a folder; `move github`, `move postgresql` or `move here` moves the Library with its history; `connect claude-code` or `connect codex` connects an agent to it. When local mode runs from a uv tool install, `bootstrap/self_update.py` checks for a newer release once a day in a background thread and installs it for the next start.
 
 ### Flows
 
@@ -280,12 +316,12 @@ The web application is the product; MCP connects an agent to the account. The da
 | View | What a user does there |
 |---|---|
 | Library | See every skill and which of their computers has it; add it to a computer or take it off one; share it with a team or group; take an offered update; remove it |
-| A computer | See what its coding agent has; add skills from the Library; copy what another computer has; take one off |
+| A computer | See what its coding agent has; add skills from the Library; copy what another computer has; take one off; rename or remove the computer (server only) |
 | A team | Browse its skills by group, with who pushed each; take one; unsubscribe from a group |
 | Team admin | Invite code; members, roles, and sight of every group; create groups and nest them; make one private; add people; move or remove a skill |
 | Teams | Create a team; join one with a code; leave one |
 
-**Two columns are the map.** A rail on the left holds the user's spaces, the way a chat application lists servers: *Personal* on top, then each team, the server-wide one last, then one *+* that creates a team or joins one with a code. The column beside it lists what is in the chosen space, and the account bar with sign-out runs under both at the bottom. For Personal that is the Library, with a blue dot and a count when updates are waiting, and then each computer as one row per coding agent on it, opening that agent's page at `#/f/<machine id>/<agent>`. The *+* beside the Computers heading says what to ask an already connected agent to add another computer. A computer's agents are the `harnesses` `/api/state` lists for it, and a skill is placed in one of them, not on the computer as a whole. For a team it is All skills, the team's groups nested a step in per level, then Members and Settings. A private group has a lock, every group shows how many skills are in it and below it, and a blue dot marks one with an update waiting for a skill the user took. Choosing a group opens the team's skills narrowed to that group and the groups under it, at `#/t/<team>/skills/<group path>`, an address that can be reloaded or sent to a teammate. The tree is built from the groups `/api/state` sends, so a private group the user is not in is absent from it, and its address opens the whole team exactly as an unknown one does.
+**Two columns are the map.** A rail on the left holds the user's spaces, the way a chat application lists servers: *Personal* on top, then each team, then one *+* that creates a team or joins one with a code. The column beside it lists what is in the chosen space, and the account bar with sign-out runs under both at the bottom. For Personal that is the Library, with a blue dot and a count when updates are waiting, and then each computer as one row per coding agent on it, opening that agent's page at `#/f/<machine id>/<agent>`. The *+* beside the Computers heading says what to ask an already connected agent to add another computer. A computer's agents are the `harnesses` `/api/state` lists for it, and a skill is placed in one of them, not on the computer as a whole. For a team it is All skills, the team's groups nested a step in per level, then Members and Settings. A private group has a lock, every group shows how many skills are in it and below it, and a blue dot marks one with an update waiting for a skill the user took. Choosing a group opens the team's skills narrowed to that group and the groups under it, at `#/t/<team>/skills/<group path>`, an address that can be reloaded or sent to a teammate. The tree is built from the groups `/api/state` sends, so a private group the user is not in is absent from it, and its address opens the whole team exactly as an unknown one does.
 
 **Placing a skill is three gestures over one route.** A tag per computer on a Library row, with a cross to take it off; Add to… on the row, a box per computer; and on a computer's page, Add skills and Copy from…, which adds what another computer has and removes nothing. Each is a series of `POST /api/skills/{name}/machines/{machine_id}` calls, one per change, and the page reloads its state once they are done.
 
@@ -323,7 +359,7 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/teams/{team}/invite` | `{}` | `code`, shown this once: a new invite, one use, seven days. Admins and members who can invite (ADR-0022) |
 | `POST /api/teams/{team}/invites/{invite_id}/cancel` | `{}` | `ok`. Its maker, or an admin |
 | `POST /api/teams/{team}/take` | `name`, `replace` (optional, true when the person agreed to replace their own unrelated skill of that name) | Copies the team's latest revision of that skill into the Library |
-| `POST /api/teams/{team}/members/{username}` | `role` (`ADMIN` or `MEMBER`) and/or `sees_all_groups` (true or false) | Admin only |
+| `POST /api/teams/{team}/members/{username}` | Any of `role` (`ADMIN` or `MEMBER`), `sees_all_groups` (true or false), `can_invite` (true or false) | Admin only |
 | `POST /api/teams/{team}/members/{username}/remove` | `{}` | Admin only |
 | `POST /api/teams/{team}/groups` | `name`, optional `parent` (a path), optional `private` | `path`. Admin only |
 | `POST /api/teams/{team}/group` | `path`, and `private` (admin only) and/or `subscribed` (anyone who sees the group) | |
@@ -332,6 +368,8 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/teams/{team}/skills/{name}/remove` | `{}` | Removes the team's copy. Admin only |
 
 A group's path contains slashes, so it always travels in the body and never in the address.
+
+**On the localhost dashboard** (`aistack dashboard`, or local mode's `open_dashboard`), only the sign-in routes, `GET /app`, `GET /api/state`, `POST /api/logout`, placing a skill and removing one from the Library are served. Sharing, the computer and account routes, and every team route are server only, because a team needs a server everyone reaches. There, each `POST` result also carries `shared`: false when a GitHub Library could not be reached, so the change waits on this computer.
 
 **`GET /api/state`.** One object, holding only what this user may see: `services/visibility.py` decided that before it was built, and the page filters nothing.
 
@@ -355,15 +393,17 @@ A group's path contains slashes, so it always travels in the body and never in t
       "source": {
         "team": "acme", "group": null,
         "revision": 2, "latest_revision": 3, "latest_pushed_by": "maria",
-        "update_available": true
+        "update_available": true, "own_changes": false
       }
     }
   ],
   "teams": [
     {
       "name": "acme", "kind": "SHARED", "role": "ADMIN", "sees_all_groups": false,
+      "can_invite": false,
       "members": [
-        {"username": "maria", "full_name": null, "role": "MEMBER", "sees_all_groups": false, "groups": ["backend"]}
+        {"username": "maria", "full_name": null, "role": "MEMBER", "sees_all_groups": false,
+         "can_invite": true, "groups": ["backend"]}
       ],
       "groups": [
         {"path": "backend/aistack", "private": false, "member": true, "subscribed": true}
@@ -375,6 +415,12 @@ A group's path contains slashes, so it always travels in the body and never in t
           "updated_on": "2026-10-14T00:43:56.161865+00:00",
           "in_library": true
         }
+      ],
+      "invites": [
+        {"id": "5d1e0c3a-…", "created_by": "dimitris",
+         "created_on": "2026-10-14T00:30:02.114091+00:00",
+         "expires_on": "2026-10-21T00:30:02.114091+00:00",
+         "status": "PENDING", "used_by": null}
       ]
     }
   ],
@@ -385,22 +431,28 @@ A group's path contains slashes, so it always travels in the body and never in t
 
 | Field | Meaning |
 |---|---|
-| `server` | False on `aistack dashboard` in local mode, where the page hides what only a server can do: creating, joining, and sharing with a team |
-| `library` | Where the Library lives: `{"kind": "server"}`, `{"kind": "this_computer"}`, or `{"kind": "postgresql", "provider": "Neon", "host": "…"}`. Never an address or a password |
-| `machines` | The user's computers, oldest first. `os` is `MACOS`, `WINDOWS`, or `LINUX` |
+| `server` | False on the localhost dashboard in local mode, where the page hides what only a server can do: creating, joining, and sharing with a team |
+| `library` | Where the Library lives, by `kind`: `{"kind": "server"}`, `{"kind": "this_computer"}`, `{"kind": "postgresql", "provider": "Neon", "host": "…"}`, or `{"kind": "github", "repository": "owner/name", "problem": null, "unpublished": 0}`. Never an address or a password |
+| `library.provider`, `host` | For a PostgreSQL Library: the provider recognised from the host (Neon, Supabase, or PostgreSQL), and the host |
+| `library.repository`, `problem`, `unpublished` | For a GitHub Library: the repository as owner/name, why it could not be reached the last time it was tried (null when it answered), and how many changes made here have not reached it yet |
+| `user` | The signed-in user: `username`, and `full_name` or null |
+| `machines` | The user's computers, oldest first. `id` is the machine id the routes take, `name` its name, and `os` is `MACOS`, `WINDOWS`, or `LINUX` |
 | `machines[].added_on`, `added_by` | When the computer was registered, and the name of the computer whose `add_machine` registered it: null for a first computer. `added_by_removed` is true when that computer has since been removed (ADR-0027) |
 | `machines[].last_synced` | Each of its harnesses, with when it last synced (UTC), or null for one that never has |
-| `machines[].harnesses` | The harnesses on that computer, in the server's order: those that have synced there and those holding a decision about a skill. `["claude_code"]` for a computer with neither, which has not synced since harnesses existed |
-| `skills` | The Library, by name, without the ones removed from it |
+| `machines[].harnesses` | The harnesses on that computer, in the server's order: those that have synced there and those holding a decision about a skill. `[]` for a computer with neither, which has never synced |
+| `skills` | The Library, by name, without the ones removed from it. Each has its `name` and `description` |
 | `skills[].revision`, `pushed_by`, `updated_on`, `files` | The latest revision of the user's own copy: its number, who pushed it, when (UTC), and how many files it has |
-| `skills[].placements` | Where the skill is switched on: each a computer's id and a harness, oldest computer first. On is a decision the server holds, not proof the files are there yet. `revision` is the one last installed or pushed there, null until it has synced |
+| `skills[].placements` | Where the skill is switched on: each a computer's id (`machine`) and a `harness`, oldest computer first. On is a decision the server holds, not proof the files are there yet. `revision` is the one last installed or pushed there, null until it has synced |
 | `skills[].source` | The team skill this copy was taken from or shared to, or null. Null also when the user can no longer see that skill: the copy is then simply theirs |
+| `source.team`, `group` | The team that skill is in, and its group's path, or null at team level |
 | `source.revision` | The team's revision this copy came from. `latest_revision` and `latest_pushed_by` describe the team's newest, and `update_available` is true when it is newer |
-| `teams` | The teams the user is in, by name. The Library is not among them. `kind` is `SHARED`: every team is one somebody created (ADR-0019) |
-| `teams[].role`, `sees_all_groups` | The user's own role in that team, `ADMIN` or `MEMBER`, and whether they were given sight of every group |
-| `teams[].members` | Everyone in the team. A member's private groups are listed only for an admin and for people in those groups |
-| `teams[].groups` | The groups the user may see, by path; an admin sees all of them. `member` is whether the user is in it, `subscribed` whether they are offered its updates |
-| `teams[].skills` | The team's skills the user may see, each with its latest revision. `group` is a path, or null at team level. `in_library` is true when one of the user's own skills was taken from it or shared to it |
+| `source.own_changes` | True when the user changed their copy since taking it, so taking the team's latest would replace those changes on every computer |
+| `teams` | The teams the user is in, by `name`. The Library is not among them. `kind` is `SHARED`: every team is one somebody created (ADR-0019) |
+| `teams[].role`, `sees_all_groups`, `can_invite` | The user's own role in that team, `ADMIN` or `MEMBER`, whether they were given sight of every group, and whether an admin let them make invite links |
+| `teams[].members` | Everyone in the team: `username`, `full_name`, `role`, `sees_all_groups`, `can_invite`, and `groups`. A member's private groups are listed only for an admin and for people in those groups |
+| `teams[].groups` | The groups the user may see, by `path`; an admin sees all of them. `private` is whether it is private, `member` whether the user is in it, `subscribed` whether they are offered its updates |
+| `teams[].skills` | The team's skills the user may see, each with its `name`, `description`, `team`, and latest revision (`revision`, `pushed_by`, `updated_on`). `group` is a path, or null at team level. `in_library` is true when one of the user's own skills was taken from it or shared to it |
+| `teams[].invites` | The team's invites made in the last 30 days, newest first: every one for an admin, their own for a member who can invite, none for anyone else. Each has its `id` (what the cancel route takes), `created_by` (a username), `created_on`, `expires_on`, `status` (`PENDING`, `ACCEPTED`, `CANCELLED`, or `EXPIRED`), and `used_by` (the username that accepted it, or null). Never the code |
 
 ### Schema
 
@@ -411,7 +463,8 @@ USER
   user_id       UUID PK
   username      VARCHAR(64)  NOT NULL UNIQUE
   full_name     VARCHAR(100)                          -- optional, what teammates read beside it
-  is_admin      BOOLEAN      NOT NULL DEFAULT FALSE   -- first user to join. Enforced by a unique
+  is_admin      BOOLEAN      NOT NULL DEFAULT FALSE   -- first user to join. Nothing reads it
+                                                      -- today, so it grants no power. Enforced by a unique
                                                       -- partial index on is_admin WHERE is_admin
                                                       -- (ADR-0008). The guarded UPDATE (... AND NOT
                                                       -- EXISTS (SELECT 1 FROM user WHERE is_admin))
@@ -427,6 +480,9 @@ MACHINE
   os            ENUM(MACOS, WINDOWS, LINUX) NOT NULL   -- varchar+check, not native enum
   token_hash    VARCHAR(64)  NOT NULL UNIQUE           -- sha256 of bearer token; the auth lookup
   created_on    TIMESTAMPTZ  NOT NULL
+  added_by_machine_id UUID   NULL                      -- the computer whose add_machine registered
+                                                       -- it; null for a first computer. No FK, so
+                                                       -- it outlives that computer (ADR-0027)
   UNIQUE (user_id, name)
 
 TEAM                                           -- ADR-0015
@@ -453,6 +509,8 @@ TEAM_MEMBER
   user_id       UUID FK → USER NOT NULL
   role          ENUM(ADMIN, MEMBER) NOT NULL
   sees_all_groups BOOLEAN    NOT NULL          -- reads every group, private ones included
+  can_invite    BOOLEAN      NOT NULL DEFAULT FALSE  -- may make invite links, nothing else an
+                                               -- admin can (ADR-0019, migration 0004)
   created_on    TIMESTAMPTZ  NOT NULL
   UNIQUE (team_id, user_id)
 
@@ -573,6 +631,22 @@ MACHINE_PROJECT_SKILL                          -- desired state in a project fol
   created_on        TIMESTAMPTZ  NOT NULL
   updated_on        TIMESTAMPTZ  NOT NULL
   UNIQUE (machine_project_id, skill_id)
+
+LIBRARY_EVENT                                  -- local mode: one change to the Library, as a
+  event_id          UUID PK                    -- GitHub Library's log holds it (ADR-0025).
+                                               -- Written in the change's own transaction
+  sort_key          VARCHAR(128) NOT NULL UNIQUE  -- time, machine id, event id: the replay
+                                               -- order (ADR-0032)
+  kind              VARCHAR(32)  NOT NULL
+  body              TEXT         NOT NULL      -- the whole event as JSON, as written to git
+  published         BOOLEAN      NOT NULL      -- false until it reached the repository
+
+SCHEMA_COMPATIBILITY                           -- one row (ADR-0024)
+  row_id            INTEGER PK                 -- always 1
+  oldest_compatible_revision VARCHAR(32) NOT NULL  -- the oldest schema a release may know and
+                                               -- still run on this database
+  written_by_release VARCHAR(64) NOT NULL
+  updated_on        TIMESTAMPTZ  NOT NULL      -- written by migrate_schema after each upgrade
 ```
 
 Every foreign key in the project tables cascades, because a release from before them rebuilds a GitHub Library's copy by deleting only the tables it knows (ADR-0025).
@@ -586,7 +660,7 @@ Trusted team, honestly stated:
 - A skill body is instructions to an agent, so a hostile revision needs no script: the real vector is text, not the executable bit. Mitigation is visibility at the moment of risk: sync reports what it is about to change and who pushed it, before the agent writes anything.
 - A machine updates to the latest revision of its user's own skill without confirmation. Only that user's pushes, and team revisions they chose to take, create such a revision. A teammate's change never arrives unasked: it is an offer that names who pushed it (ADR-0015).
 - Any member may share over a team's skill where they may share a new one: at team level anyone, in a group those who belong to it or to a group above it (ADR-0029). The revision carries their name, and nobody receives it without accepting it.
-- Machine tokens: sha256-hashed at rest, revocable by row deletion, never logged.
+- Machine tokens: sha256-hashed at rest, revocable by removing the computer on the dashboard or deleting its row, never logged.
 - The server's invite code is a static long-lived shared secret, from `AISTACK_INVITE_CODE` or the file `AISTACK_INVITE_CODE_FILE` names: rotate by writing a new one and recreating the container (OPERATING.md); share it over something better than a group chat. Startup refuses a code under 24 characters, with fewer than 10 different ones, or printed in AIStack's own documents.
 - Refused credentials are counted per client address in memory: after 20 in a minute the address gets 429 before any route runs, and each refusal is logged with the address and never with what was sent. A refused `join` for a taken name is limited to 5 an hour per address and per team code.
 - Usernames and team names share one server-wide namespace, so anyone holding an invite code, or any account through `create_team`, can learn whether a name is taken. That limit makes listing them slow, not impossible: a private team's name should not itself be a secret. A team's invite is a row with a hashed code (ADR-0022): it admits one person, expires after seven days, and can be cancelled on its own. Since ADR-0019 it also creates accounts, which the expiry bounds even when a link lands in a proxy's log.
@@ -596,7 +670,7 @@ Deferred deliberately: audit trail, signing, approval workflows, per-skill push 
 
 ### Explicitly not built
 
-No FastAPI, no CLI/daemon, no version pinning (always latest), no deleting a single revision (see §4 Tools), no project-scoped sync yet (global folders only; project folders are planned in ADR-0026), no rules/hooks/agents/MCP gateway/profiles, no OAuth/passwords, no binary files, no server-admin tools or pages (the `is_admin` column ships; its powers are documented scripts), no harness besides Claude Code and the shared agents folder (ADR-0018). From ADR-0015: no permission matrix of roles × groups, no automatic updates from a team, no merging when both copies changed, no one machine on two servers. Anything needing many typed parameters is a dashboard action, not a tool: chat must stay low-friction.
+No FastAPI, no background sync (local mode's daily release check is the only background work), no version pinning (always latest), no deleting a single revision (see §4 Tools), no project-scoped sync yet (global folders only; project folders are planned in ADR-0026), no rules/hooks/agents/MCP gateway/profiles, no OAuth/passwords, no binary files, no server-admin tools or pages (the `is_admin` column ships, but nothing reads it, so it grants no power; server-level operations are documented scripts), no harness besides Claude Code and the shared agents folder (ADR-0018). From ADR-0015: no permission matrix of roles × groups, no automatic updates from a team, no merging when both copies changed, no one machine on two servers. Anything needing many typed parameters is a dashboard action, not a tool: chat must stay low-friction.
 
 ### Proof of the MVP
 
@@ -609,15 +683,15 @@ The acceptance test the first release was held to, before teams. Push `wizard` a
 
 ## 5. Post-MVP roadmap (decided order of interest, not committed)
 
-1. **Second harness**: Codex first. Moved to the front on 2026-10-13: Claude Code now syncs a user's claude.ai skills on its own and has git-backed plugin marketplaces (§7), so one vault feeding several harnesses is where AIStack is not duplicated. The Agent Skills format is shared, so the adapter is mostly a target directory.
-2. **Dashboard**: built 2026-10-14 without FastAPI (ADR-0017). What remains of the original plan: server admin management (grant admin, revoke machines, recover locked-out users; the `is_admin` column already exists); version pinning; deleting a single revision (preview-confirm, tombstones so sync can say "deleted on purpose"); GitHub-link skill import; display names rendered from skill names.
+1. **Second harness**: built 2026-10-14 as the shared agents folder that Codex and others read (ADR-0018, ADR-0021). Moved to the front on 2026-10-13: Claude Code now syncs a user's claude.ai skills on its own and has git-backed plugin marketplaces (§7), so one vault feeding several harnesses is where AIStack is not duplicated. The Agent Skills format is shared, so the adapter is mostly a target directory.
+2. **Dashboard**: built 2026-10-14 without FastAPI (ADR-0017). A person can now remove and rename their own computers there (ADR-0027). What remains of the original plan: server admin management (grant admin, revoke other people's machines, recover locked-out users; the `is_admin` column exists and nothing reads it yet); version pinning; deleting a single revision (preview-confirm, tombstones so sync can say "deleted on purpose"); GitHub-link skill import; display names rendered from skill names.
 3. **Rules**: the second resource type. Canonical rules projected into `CLAUDE.md` / `AGENTS.md` / `.cursor/rules/` by adapters.
 4. **Background sync**: opportunistic (check on any MCP call) vs daemon; compare cost after the MVP.
 5. **Hooks, agents**: same adapter approach; harness support varies.
 6. **MCP gateway**: one AIStack MCP endpoint proxying enabled remote MCPs with central auth/policy.
 7. **Profiles**: named bundles ("Backend Developer") assigning many resources at once.
 8. **Teams and groups**: built 2026-10-14 (ADR-0015): a personal space per user, teams to share into, nested groups. Project-level precedence stays with item 9.
-9. **Project-scoped sync**: per-project desired state once projects become a real concept.
+9. **Project-scoped sync**: per-project desired state once projects become a real concept. ADR-0026 sets out how. Project identity, tables, placements and event replay are built; sync, tools and the dashboard follow the audit plan.
 10. **Secrets**: never sync plaintext credentials; store references (1Password, Vault, cloud secret stores).
 
 ## 6. Long-term direction (vision, not design)
@@ -647,10 +721,13 @@ src/aistack/
                            # (ADR-0017). Starlette routes, as thin as the tools
   bundled/                 # files served as they are: the setup instructions, the
                            # sync-aistack skill a new machine needs before it can ask the
-                           # server for anything, and the dashboard page
+                           # server for anything, and the dashboard page; local/ holds local
+                           # mode's setup steps and sync skill, which `aistack` prints
   bootstrap/               # app assembly & entrypoint
-    __main__.py            #   `aistack` (local mode), `dashboard`, `setup`, `sync-skill`,
-                           #   and `serve` (the server)
+    __main__.py            #   `aistack` (local mode), `serve` (the server), `dashboard`,
+                           #   `setup`, `sync-skill`, `check`, `github`, `export`, `move`,
+                           #   and `connect` (§4 Local mode)
+    self_update.py         #   local mode's daily upgrade, in a background thread
     configuration/
       settings/            #   env config: DATABASE_URL, invite code, etc.
     context/               #   application context / wiring
@@ -659,11 +736,12 @@ src/aistack/
   db/
     engine + session setup; schema.py applies the migrations (ADR-0016)
     migrations/versions/   # numbered Alembic migrations, shipped in the package
-    models/                # SQLAlchemy models for the fourteen tables
+    models/                # SQLAlchemy models for the eighteen tables
   mcp/                     # FastMCP server + auth
     local.py               # local mode's stdio server, with no auth (ADR-0020)
+    local_dashboard.py     # local mode's open_dashboard: the localhost page in this process
     tools/                 # the thirteen MCP tools (onboarding, skills, sync, teams),
-                           # and local.py: local mode's five, doing the disk work itself
+                           # and local.py: local mode's six, doing the disk work itself
     routes/                # plain HTTP beside MCP: the two transfer routes (ADR-0010),
                            # setup, and health; as thin as the tools
   services/                # business logic: push validation, sync reconciliation,

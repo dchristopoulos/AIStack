@@ -4,17 +4,31 @@ One per process, on 127.0.0.1 and a port the system picks, started the first tim
 for. It runs as long as the agent session that started this process, and goes with it.
 """
 
+import html
+import json
+import os
+import secrets
 import socket
 import threading
 import time
+import webbrowser
+from pathlib import Path
 
 import uvicorn
 
-from aistack.bootstrap.context.application_context import get_local_principal, get_ticket_signer
+from aistack.bootstrap.context.application_context import (
+    get_local_home,
+    get_local_principal,
+    get_ticket_signer,
+)
 from aistack.mcp.mcp import dashboard_server_config
 from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH
 
 _STARTUP_SECONDS = 5
+# How long the page that forwards the browser to a sign-in link stays on disk: long enough for
+# a browser that is still starting to read it, and no longer than the link itself works.
+_FORWARD_PAGE_SECONDS = 60
+_FORWARD_PAGE_PREFIX = "open-dashboard-"
 
 _lock = threading.Lock()
 _server: uvicorn.Server | None = None
@@ -50,3 +64,43 @@ def stop_dashboard() -> None:
         if _server is not None:
             _server.should_exit = True
         _server, _port = None, None
+
+
+def open_in_browser(link: str) -> bool:
+    """Open a sign-in link in the browser without putting it on a command line.
+
+    A browser is started with its URL in its arguments, which any account on the computer can
+    read while it runs, and the link is a credential (SEC-13). The browser opens instead a
+    page in AISTACK_HOME that only this account can read and that forwards to the link; the
+    page is deleted a minute later. False when no browser could be opened.
+    """
+    folder = get_local_home().resolve()
+    _remove_forward_pages(folder, older_than=_FORWARD_PAGE_SECONDS)
+    page = folder / f"{_FORWARD_PAGE_PREFIX}{secrets.token_hex(8)}.html"
+    escaped = html.escape(link, quote=True)
+    descriptor = os.open(page, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+        # Chromium follows a script from a file to http, and not a meta refresh.
+        file.write(f'<!doctype html><meta charset="utf-8"><title>AIStack</title>'
+                   f'<script>location.replace({json.dumps(link).replace("</", "<\\/")})</script>'
+                   f'<meta http-equiv="refresh" content="0;url={escaped}">'
+                   f'<a href="{escaped}">Open the AIStack dashboard</a>')
+    timer = threading.Timer(_FORWARD_PAGE_SECONDS, page.unlink, kwargs={"missing_ok": True})
+    timer.daemon = True
+    timer.start()
+    try:
+        return webbrowser.open(page.as_uri())
+    except webbrowser.Error:
+        page.unlink(missing_ok=True)
+        return False
+
+
+def _remove_forward_pages(folder: Path, older_than: float) -> None:
+    """Pages a process that ended early left behind."""
+    cutoff = time.time() - older_than
+    for page in folder.glob(f"{_FORWARD_PAGE_PREFIX}*.html"):
+        try:
+            if page.stat().st_mtime < cutoff:
+                page.unlink()
+        except OSError:
+            pass
