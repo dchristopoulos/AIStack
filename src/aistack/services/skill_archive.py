@@ -256,6 +256,12 @@ def _gunzipped(body: bytes) -> bytes:
     return bytes(output)
 
 
+def in_git_folder(path: str) -> bool:
+    """A file of a `.git` folder inside a skill: push leaves it out (`tar --exclude .git`), so
+    sync's listing must too, or a skill that is a git clone never matches its revision."""
+    return ".git" in path.split("/")
+
+
 def is_filesystem_noise(name: str) -> bool:
     """Entries the operating system made, not the skill's author.
 

@@ -202,6 +202,21 @@ async def test_push_refuses_a_link_inside_a_skill(computer):
             await _call(laptop, "push_skill", name="wizard")
 
 
+async def test_sync_says_which_skill_no_push_would_take_and_why(computer):
+    """IMP-16: local mode reads the folder, so it checks everything push would."""
+    async with computer("laptop") as (laptop, home):
+        _write_skill(home)
+        logo = _write_skill(home, "logo-maker")
+        (logo / "SKILL.md").write_text("---\nname: logo-maker\ndescription: Logos.\n---\n")
+        (logo / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff")
+
+        report = await _call(laptop, "sync")
+
+    assert report["backup"] == ["wizard"]
+    assert [entry["name"] for entry in report["cannot_back_up"]] == ["logo-maker"]
+    assert "logo.png" in report["cannot_back_up"][0]["reason"]
+
+
 async def test_push_refuses_a_name_that_leaves_the_folder(computer):
     async with computer("laptop") as (laptop, home):
         _write_skill(home)

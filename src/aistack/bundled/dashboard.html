@@ -622,6 +622,8 @@ a.link:hover { text-decoration-color: var(--text); }
 .revisions { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .revisions li { display: flex; align-items: center; gap: 10px; }
 .revisions .grow { flex: 1; }
+.removed { margin-top: 16px; font-size: 13px; }
+.removed summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
 .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 16px; margin: 16px 0 0; font-size: 13px; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
@@ -1690,8 +1692,24 @@ function libraryView() {
       unplaced.length || updating.length ? el('div', { class: 'stats' },
         unplaced.length ? stat('Not on any computer', unplaced.length, unplaced.map(s => s.name).join(', ')) : null,
         updating.length ? stat('Updates', updating.length, updating.map(s => s.name).join(', '), el('span', { class: 'dot accent' })) : null) : null,
-      list),
+      list,
+      removedList()),
   ];
+}
+
+// Skills removed from the Library, and the way back (PH-11).
+function removedList() {
+  const removed = state.removed || [];
+  if (!removed.length) return null;
+  return el('details', { class: 'removed' },
+    el('summary', null, `Removed from your library (${removed.length})`),
+    state.server === false ? el('p', { class: 'help' }, 'To bring one back, ask your coding agent to install it by name.') : null,
+    el('ul', { class: 'revisions' }, removed.map(name => el('li', null,
+      el('span', { class: 'name grow' }, name),
+      state.server !== false && btn('Bring back', { class: 'btn sm', 'aria-label': 'Bring back ' + name, on: { click: ev => run(ev.currentTarget, async () => {
+        await api(`/api/skills/${enc(name)}/bring-back`, {});
+        return `${name} is back in your library, on no computer yet.`;
+      }) } })))));
 }
 
 // A Library kept on this computer only is lost with it. Said once, with the way out, and quiet

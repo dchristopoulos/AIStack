@@ -31,6 +31,7 @@ async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(serv
     before = await _call(server_url, machine_b, "sync", local=on_machine_b)
     skill_url = f"{server_url.removesuffix('/mcp')}/setup/sync-aistack/SKILL.md"
     assert before == {"install": [], "update": [], "ask": [], "backup": [],
+                      "cannot_back_up": [],
                       "team_updates": [], "up_to_date": 1, "sync_skill_url": skill_url,
                       "first_sync": True, "project": None, "left_to_repository": [],
                       "from_other_computers": []}
@@ -44,6 +45,7 @@ async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(serv
                     "pushed_by": "dimitris"}],
         "ask": [],
         "backup": [],
+        "cannot_back_up": [],
         "team_updates": [],
         "up_to_date": 0,
         "sync_skill_url": skill_url,
@@ -116,6 +118,7 @@ async def test_every_answer_to_a_question_is_an_existing_tool(server_url, sessio
             {"choice": "push", "overwrites_local": False, "loses_local_edits": False},
             {"choice": "skip", "overwrites_local": False, "loses_local_edits": False},
         ],
+        "removed_from_library": False,
     }]
 
     # Answer "push": the edit becomes revision 2 and the question is gone.
@@ -233,9 +236,10 @@ async def test_the_sync_description_lists_files_the_way_the_skill_does(server_ur
                            if tool.name == "sync")
     document = (SYNC_SKILL / "SKILL.md").read_text()
 
-    for exclusion in ("! -name .DS_Store", "! -path './.*'", "! -path './synced/*'"):
+    for exclusion in ("! -name .DS_Store", "! -path './.*'", "! -path './synced/*'",
+                      "! -path '*/.git/*'"):
         assert exclusion in document
-    assert "Skip 'synced', dot-folders, and .DS_Store." in description
+    assert "Skip 'synced', dot-folders, .git and .DS_Store." in description
     assert "as the sync-aistack skill says" in description
 
 

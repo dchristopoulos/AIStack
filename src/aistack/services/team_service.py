@@ -761,6 +761,9 @@ def _drop_member(session: Session, team_id: uuid.UUID, user_id: uuid.UUID) -> No
     in_team = select(TeamGroup.group_id).where(TeamGroup.team_id == team_id)
     session.execute(delete(GroupMember).where(GroupMember.user_id == user_id,
                                               GroupMember.group_id.in_(in_team)))
+    # Mutes go with the membership: someone who comes back starts hearing everything (DB-13).
+    session.execute(delete(GroupUnsubscribed).where(GroupUnsubscribed.user_id == user_id,
+                                                    GroupUnsubscribed.group_id.in_(in_team)))
 
 
 def _cancel_invites_by(session: Session, team_id: uuid.UUID, user_id: uuid.UUID) -> None:

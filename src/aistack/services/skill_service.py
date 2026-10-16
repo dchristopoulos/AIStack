@@ -517,6 +517,14 @@ def remove_from_my_skills(session: Session, user_id: uuid.UUID, name: str) -> st
     return skill.name
 
 
+def bring_back(session: Session, user_id: uuid.UUID, name: str) -> str:
+    """Put a skill the user removed back in their Library, on no computer: each folder that
+    answered the removal keeps its answer until the user adds it there again (PH-11)."""
+    skill = visibility.required_my_skill(session, user_id, name, removed_too=True)
+    _bring_back(session, skill)
+    return skill.name
+
+
 def disable_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
                   name: str, harness: str | None = None,
                   project_folder: MachineProject | None = None) -> str:
@@ -535,6 +543,11 @@ def disable_skill(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
                            "user wants it gone, delete the folder.")
         return skill.name
     decision = _machine_skill(session, machine_id, harness, skill.skill_id)
+    if decision is None and skill.archived:
+        # Removed from the Library: sync asks every computer, decided or not, whether to
+        # delete the folder, and this records the answer (PH-11).
+        set_enabled(session, machine_id, harness, skill.skill_id, enabled=False)
+        return skill.name
     if decision is None:
         where = folder(harness, session.get(Machine, machine_id).os)
         raise NotFound(

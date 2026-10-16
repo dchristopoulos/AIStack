@@ -165,6 +165,52 @@ def test_finder_and_appledouble_files_do_not_make_a_skill_look_modified(session_
     assert _sync(session_factory, dimitris, {"wizard": local}).up_to_date == 1
 
 
+def test_a_skill_folder_that_is_a_git_clone_is_current(session_factory, dimitris):
+    """ENT-05: push leaves .git out, so a listing that kept it never matched a revision."""
+    _push(session_factory, dimitris, files={".github/workflows/ci.yml": "on: push\n"})
+    local = {**local_digests(files={".github/workflows/ci.yml": "on: push\n"}),
+             ".git/HEAD": "c" * 64, "scripts/.git/config": "d" * 64}
+
+    report = _sync(session_factory, dimitris, {"wizard": local})
+
+    assert (report.up_to_date, report.ask) == (1, ())
+
+
+def test_a_removed_skill_is_asked_about_as_removed_on_a_computer_that_never_chose_it(
+        session_factory, dimitris, desktop):
+    """PH-11: it was asked enable or skip forever, and enable quietly brought it back."""
+    _push(session_factory, dimitris)
+    with session_factory.begin() as session:
+        skill_service.remove_from_my_skills(session, dimitris.user.user_id, "wizard")
+
+    question, = _sync(session_factory, desktop, {"wizard": local_digests()}).ask
+
+    assert (question.desired, question.removed_from_library) == (Desired.DISABLED, True)
+    assert Choice.REMOVE in [option.choice for option in question.options]
+    # Removing it there is a decision that computer can record, which stops the question.
+    with session_factory.begin() as session:
+        skill_service.disable_skill(session, desktop.machine.machine_id,
+                                    dimitris.user.user_id, "wizard")
+    assert _sync(session_factory, desktop, {}).ask == ()
+
+
+def test_a_skill_no_push_would_take_is_reported_once_with_why_and_not_for_backup(
+        session_factory, dimitris):
+    """IMP-16: it was listed under backup on every sync, and every push of it failed."""
+    local = {"logo-maker": {"SKILL.md": "a" * 64, ".env": "b" * 64},
+             "My Notes": {"SKILL.md": "c" * 64},
+             "no-document": {"README.md": "d" * 64},
+             "fine": {"SKILL.md": "e" * 64, ".git/HEAD": "f" * 64}}
+
+    report = _sync(session_factory, dimitris, local)
+
+    assert report.backup == ("fine",)
+    reasons = {entry.name: entry.reason for entry in report.cannot_back_up}
+    assert sorted(reasons) == ["My Notes", "logo-maker", "no-document"]
+    assert "environment file" in reasons["logo-maker"]
+    assert "no SKILL.md" in reasons["no-document"]
+
+
 def test_matching_the_latest_revision_wins_over_matching_an_older_one(session_factory,
                                                                      dimitris):
     """A → B → A: the local copy equals revisions 1 and 3. It is current, not stale."""
@@ -570,11 +616,12 @@ def test_an_orphan_is_reported_and_never_pushed(session_factory, dimitris):
         assert session.scalar(select(func.count()).select_from(MachineSkill)) == 0
 
 
-def test_a_folder_name_the_vault_could_never_hold_is_still_just_an_orphan(session_factory,
-                                                                        dimitris):
+def test_a_folder_name_the_vault_could_never_hold_is_said_once_and_not_backed_up(
+        session_factory, dimitris):
     report = _sync(session_factory, dimitris, {"My Skill (copy)": local_digests()})
 
-    assert report.backup == ("My Skill (copy)",)
+    assert report.backup == ()
+    assert [entry.name for entry in report.cannot_back_up] == ["My Skill (copy)"]
 
 
 def test_a_renamed_local_folder_is_one_install_plus_one_orphan(session_factory, dimitris):

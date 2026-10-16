@@ -74,7 +74,7 @@ def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
                 for group in team.groups
             ],
             "skills": [
-                {key: value for key, value in skill.items() if key != "id"}
+                {key: value for key, value in skill.items() if key not in ("id", "muted")}
                 | {"in_library": skill["id"] in taken}
                 for skill in team_skills.get(team.summary.name, [])
             ],
@@ -94,6 +94,10 @@ def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
         "machines": _machines(session, user_id),
         "skills": [{key: value for key, value in skill.items() if key != "source_id"}
                    for skill in mine],
+        # Removed from the Library, by name: what Bring back can return (PH-11).
+        "removed": list(session.scalars(
+            visibility.my_skills(user_id).with_only_columns(Skill.name)
+            .where(Skill.archived.is_(True)).order_by(bytewise(Skill.name)))),
         "teams": teams,
     }
 
@@ -310,16 +314,21 @@ def _team_skills(session: Session, user_id: uuid.UUID,
     newest = _newest(select(visible.c.skill_id))
     rows = session.execute(
         select(visible.c.skill_id, visible.c.name, visible.c.description, visible.c.team,
-               visible.c.group, newest.c.revision, newest.c.pushed_by, newest.c.created_on)
+               visible.c.group, visible.c.group_id, newest.c.revision, newest.c.pushed_by,
+               newest.c.created_on)
         .join(newest, newest.c.skill_id == visible.c.skill_id)
         .order_by(bytewise(visible.c.team), bytewise(visible.c.group), bytewise(visible.c.name))
     ).all()
     by_team: dict[str, list[dict[str, Any]]] = {}
-    for skill_id, name, description, team, group, revision, pushed_by, pushed_on in rows:
+    for (skill_id, name, description, team, group, group_id, revision, pushed_by,
+         pushed_on) in rows:
         by_team.setdefault(team, []).append({
             "id": skill_id, "name": name, "description": description, "team": team,
             "group": group, "revision": revision, "pushed_by": pushed_by,
             "updated_on": as_utc(pushed_on).isoformat(),
+            # In a group the user unsubscribed from: its updates are offered nowhere, as in
+            # sync (IMP-02).
+            "muted": group_id in access.unsubscribed,
         })
     return by_team
 
@@ -386,7 +395,8 @@ def _my_skills(session: Session, user_id: uuid.UUID,
                 "revision": source_revision,
                 "latest_revision": source["revision"],
                 "latest_pushed_by": source["pushed_by"],
-                "update_available": source["revision"] > source_revision,
+                "update_available": (source["revision"] > source_revision
+                                     and not source["muted"]),
                 # Taking the team's latest would replace the user's edits since they took it.
                 "own_changes": skill_id in changed,
                 # A share put a different skill of the same name over the one they took.

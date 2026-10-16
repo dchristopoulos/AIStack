@@ -46,6 +46,12 @@ class AskEntry(TypedDict):
     latest_revision: int
     pushed_by: str
     options: list[OptionEntry]
+    removed_from_library: bool
+
+
+class CannotBackUpEntry(TypedDict):
+    name: str
+    reason: str
 
 
 class TeamUpdateEntry(TypedDict):
@@ -74,6 +80,7 @@ class SyncResult(TypedDict):
     update: list[UpdateEntry]
     ask: list[AskEntry]
     backup: list[str]
+    cannot_back_up: list[CannotBackUpEntry]
     team_updates: list[TeamUpdateEntry]
     up_to_date: int
     sync_skill_url: str | None
@@ -89,27 +96,27 @@ class SyncResult(TypedDict):
     Use when the user says "sync aistack" or starts work. It changes nothing. Send every
     skill folder in <folder> (harness claude_code: ~/.claude/skills; agents:
     ~/.agents/skills, or the same under a project's top level) with the sha256 of each
-    file, as the sync-aistack skill says. Skip 'synced', dot-folders, and .DS_Store.
+    file, as the sync-aistack skill says. Skip 'synced', dot-folders, .git and .DS_Store.
 
-    Per field of the result, passing the same harness and project to each tool:
+    Per result field, passing the same harness and project on:
       - install and update: get_skill and install each, without asking. Say what
         updated, between which revisions, and who pushed it.
       - backup: local skills not yet in the user's own. push_skill each, without asking:
         that space is private.
-      - ask: put each to the user and act only on their answer. desired: enabled,
+      - ask: put each to the user; act only on their answer. desired: enabled,
         disabled, or undecided here; local: current, stale, or unknown (edited). Offer
         exactly the listed options. overwrites_local: say local files will be replaced;
         loses_local_edits: say their edits will be lost. edited_from < latest_revision:
         say push replaces another computer's newer edit. enable, restore = get_skill
         and install; push = push_skill; remove = delete the folder; skip = nothing.
-      - team_updates: a team has a newer version of a skill the user took from it. Ask.
-        Yes = get_skill with that team, and install.
+      - team_updates: a team's newer version of a skill the user took. Ask; yes =
+        get_skill with that team, and install.
       - up_to_date: how many enabled skills match.
       - sync_skill_url: when set, curl -sS --create-dirs -o <folder>/sync-aistack/SKILL.md
         it, without asking.
-      - first_sync: true the first time this folder syncs here. Do step 5 of
-        <folder>/sync-aistack/SKILL.md.
-      - project, left_to_repository, from_other_computers: as the sync-aistack skill says.
+      - first_sync: do step 5 of <folder>/sync-aistack/SKILL.md.
+      - cannot_back_up, project, left_to_repository, from_other_computers, and
+        removed_from_library in ask: as the sync-aistack skill says.
 
     Args:
         local: {skill folder: {relative file path: sha256 hex}}. {} if there are none.
@@ -169,10 +176,13 @@ def sync_result(report: sync_service.SyncReport, sync_skill_url: str | None) -> 
                                      overwrites_local=option.overwrites_local,
                                      loses_local_edits=option.loses_local_edits)
                          for option in question.options],
+                removed_from_library=question.removed_from_library,
             )
             for question in report.ask
         ],
         backup=list(report.backup),
+        cannot_back_up=[CannotBackUpEntry(name=entry.name, reason=entry.reason)
+                        for entry in report.cannot_back_up],
         team_updates=[TeamUpdateEntry(name=entry.name, team=entry.team,
                                       from_revision=entry.from_revision,
                                       to_revision=entry.to_revision,

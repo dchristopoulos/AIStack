@@ -79,8 +79,8 @@ How to work through it:
 - [x] 37. Shorter text, and words that say what is true
 - [x] 38. Bring DESIGN.md, OPERATING.md and the README back in line with the code (#158)
 - [x] 39. See what changed before taking an update, and get an older revision back (6b65ccd)
-- [ ] 39b. Restore an older revision in local mode (a reader release, then a writer a week later)
-- [ ] 40. Sync reports what is true: nested .git, unsubscribed groups, removed skills, skills that cannot be backed up
+- [ ] 39b. Restore an older revision, and bring back a removed skill, in local mode (a reader release, then a writer a week later)
+- [x] 40. Sync reports what is true: nested .git, unsubscribed groups, removed skills, skills that cannot be backed up (06269bf)
 - [ ] 40b. Fewer calls per sync: one push for many skills, download URLs in the report, smaller results
 - [ ] 40c. A session start that stays quiet when nothing changed
 - [ ] 41. Audit trail, logs and an export
@@ -842,11 +842,11 @@ ADR: none needed.
 
 Tests: An update offer shows the changed lines; restoring revision 1 makes revision 3 with revision 1's files and every computer updates on its next sync.
 
-### 39b. Restore an older revision in local mode
+### 39b. Restore an older revision, and bring back a removed skill, in local mode
 
-Split from step 39, which shipped History and Restore on a server only. A restore in local mode is a change to the Library, so it is recorded as an event (ADR-0025), and a new event kind is replayed by one release before any release records it (ADR-0026). So: a `skill_restored` event carrying the skill's name and the restored archive goes into `library_log._REPLAY_ONLY`, applied through `skill_service.restore_revision`'s storing half, in one release; the localhost dashboard gets the routes, and the event is recorded, in a release at least a week later.
+Split from step 39, which shipped History and Restore on a server only; step 40 did the same with Bring back. Bringing back a skill is `skill_service.bring_back`, with an event of its own under the same rule. A restore in local mode is a change to the Library, so it is recorded as an event (ADR-0025), and a new event kind is replayed by one release before any release records it (ADR-0026). So: a `skill_restored` event carrying the skill's name and the restored archive goes into `library_log._REPLAY_ONLY`, applied through `skill_service.restore_revision`'s storing half, in one release; the localhost dashboard gets the routes, and the event is recorded, in a release at least a week later.
 
-Files: src/aistack/services/library_log.py; src/aistack/api/dashboard.py (`local=True` on the history and restore routes); tests/mcp/test_library_log.py.
+Files: src/aistack/services/library_log.py; src/aistack/api/dashboard.py (`local=True` on the history, restore and bring-back routes); tests/mcp/test_library_log.py.
 
 ADR: none needed.
 

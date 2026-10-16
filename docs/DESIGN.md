@@ -358,6 +358,7 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/machines/{machine_id}/projects` | `project` (a key), optional `harness` | Starts managing one of the user's projects, already known from another computer, on this computer. Its path is unknown until it syncs there. Server only |
 | `POST /api/machines/{machine_id}/projects/remove` | `project`, optional `harness` (every harness when omitted) | Stops managing that project on this computer; its placements there go with it. The files on disk, the Library and the other computers are untouched. Answers `removed`, the number of folders. Server only |
 | `POST /api/skills/{name}/share` | `team`, `group` (a path, or null for team level) | `team`, `group`, `revision`, `created`, `unchanged`, `previous_pushed_by`, `possibly_unrelated`, `overwrote_revision`, `updates_from`: what `share_skill` returns |
+| `POST /api/skills/{name}/bring-back` | `{}` | `name`. Puts a skill removed from the Library back, on no computer. Server only |
 | `GET /api/skills/{name}/history` | | `revisions`, newest first: each `revision`, `pushed_by`, `pushed_on` (UTC), and `files`. Server only |
 | `POST /api/skills/{name}/restore` | `revision` | `revision`, the new one, and `unchanged`. Stores that revision's files as the newest, pushed by the user; every computer that has the skill installs it at its next sync. Server only |
 | `GET /api/teams/{team}/skills/{name}/changes` | | What taking the team's latest would change in the user's copy: `from_revision` (theirs), `to_revision`, `pushed_by`, `files` (each `path`, `change` as `added`, `removed` or `changed`, and a unified `diff`), and `truncated` when the diff was cut |
@@ -416,6 +417,7 @@ A group's path contains slashes, so it always travels in the body and never in t
       }
     }
   ],
+  "removed": ["old-notes"],
   "teams": [
     {
       "name": "acme", "kind": "SHARED", "role": "ADMIN", "sees_all_groups": false,
@@ -463,6 +465,7 @@ A group's path contains slashes, so it always travels in the body and never in t
 | `machines[].harnesses` | The harnesses on that computer, in the server's order: those that have synced there, those holding a decision about a skill, and those with a project folder. `[]` for a computer with none, which has never synced |
 | `machines[].projects` | The projects this computer manages (ADR-0026), by name: each with its `key` and `name`, and its `folders`, one per harness, with the top level last seen there (`path`, null until that folder syncs, and shown only) and `last_synced_on` |
 | `skills` | The Library, by name, without the ones removed from it. Each has its `name` and `description` |
+| `removed` | The names of the skills removed from the Library, which Bring back can return |
 | `skills[].revision`, `pushed_by`, `updated_on`, `files` | The latest revision of the user's own copy: its number, who pushed it, when (UTC), and how many files it has |
 | `skills[].placements` | Where the skill is switched on: each a computer's id (`machine`) and a `harness`, oldest computer first. On is a decision the server holds, not proof the files are there yet. `revision` is the one last installed or pushed there, null until it has synced. `project` is the key of the project folder it is in, or null for the computer's own folder |
 | `skills[].source` | The team skill this copy was taken from or shared to, or null. Null also when the user can no longer see that skill: the copy is then simply theirs |

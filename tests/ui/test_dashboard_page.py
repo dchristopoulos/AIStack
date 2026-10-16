@@ -139,6 +139,26 @@ async def test_your_own_version_comes_back_from_history_after_taking_the_teams(s
     assert (mine["revision"], mine["pushed_by"]) == (3, "alex")
     assert alex.console_errors == []
 
+
+async def test_a_skill_removed_from_the_library_can_be_brought_back(sign_in):
+    """PH-11: once removed, a skill could not be found anywhere on the page."""
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    await page.get_by_role("button", name="Details of meeting-notes").click()
+    await page.get_by_role("dialog", name="meeting-notes").get_by_role(
+        "button", name="Remove from library…").click()
+    await page.get_by_role("dialog", name="Remove meeting-notes from your library?").get_by_role(
+        "button", name="Remove").click()
+    assert (await dimitris.state())["removed"] == ["meeting-notes"]
+
+    await page.get_by_text("Removed from your library (1)").click()
+    await page.get_by_role("button", name="Bring back meeting-notes").click()
+
+    await expect(page.get_by_text("meeting-notes is back in your library")).to_be_visible()
+    state = await dimitris.state()
+    assert state["removed"] == [] and "meeting-notes" in [s["name"] for s in state["skills"]]
+    assert dimitris.console_errors == []
+
 async def test_the_share_dialog_says_what_sharing_would_go_over_before_it_does(sign_in):
     alex = await sign_in("alex")
     await alex.page.get_by_role("button", name="Details of release-notes").click()
@@ -720,7 +740,7 @@ async def _come_back_to_the_tab(page):
 async def test_coming_back_to_the_tab_shows_what_changed_meanwhile(sign_in, return_event):
     maria = await sign_in("maria")
     name = (await maria.state())["skills"][0]["name"]
-    listed = maria.page.get_by_role("main").get_by_text(name, exact=True)
+    listed = maria.page.get_by_role("table", name="Library").get_by_text(name, exact=True)
     await expect(listed.first).to_be_visible()
 
     # Removed somewhere else while this tab sat in the background.

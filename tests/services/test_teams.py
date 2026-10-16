@@ -11,7 +11,7 @@ from aistack.db.engine import build_session_factory
 from aistack.db.models.skill import Skill
 from aistack.db.models.invite import Invite
 from aistack.db.models.machine import Machine
-from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
+from aistack.db.models.team import GroupUnsubscribed, Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc, utc_now
 from aistack.services import (
     dashboard_service,
@@ -1062,8 +1062,14 @@ def test_unsubscribing_from_a_group_stops_its_updates_and_those_under_it(session
     local = {name: local_digests(name) for name in ("sql-style", "api-notes", "top")}
 
     def offered():
-        return sorted(update.name for update in _sync(session_factory, maria,
-                                                      local).team_updates)
+        by_sync = sorted(update.name for update in _sync(session_factory, maria,
+                                                         local).team_updates)
+        # IMP-02: the dashboard offers exactly what sync offers.
+        by_page = sorted(skill["name"] for skill in _do(
+            session_factory, dashboard_service.state, maria.user.user_id)["skills"]
+            if skill["source"] and skill["source"]["update_available"])
+        assert by_page == by_sync
+        return by_sync
 
     assert offered() == ["api-notes", "sql-style", "top"]
 
@@ -1076,6 +1082,23 @@ def test_unsubscribing_from_a_group_stops_its_updates_and_those_under_it(session
     _do(session_factory, team_service.set_subscribed, maria.user.user_id, groups, "backend",
         True)
     assert offered() == ["api-notes", "sql-style", "top"]
+
+
+def test_leaving_a_team_takes_its_mutes_along(session_factory, dimitris, maria, groups):
+    """DB-13: a member who came back silently missed the updates they once muted."""
+    _do(session_factory, team_service.set_subscribed, maria.user.user_id, groups, "backend",
+        False)
+    _do(session_factory, team_service.leave_team, maria.user.user_id, groups)
+    with session_factory.begin() as session:
+        assert session.scalar(select(func.count()).select_from(GroupUnsubscribed)
+                              .where(GroupUnsubscribed.user_id == maria.user.user_id)) == 0
+
+    code = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, groups)
+    _do(session_factory, team_service.join_team, maria.user.user_id, code)
+
+    backend = next(group for group in _do(session_factory, team_service.groups,
+                                          maria.user.user_id, groups) if group.path == "backend")
+    assert backend.subscribed is True
 
 
 def test_groups_nest_as_deep_as_is_useful_and_no_deeper(session_factory, dimitris, acme):
