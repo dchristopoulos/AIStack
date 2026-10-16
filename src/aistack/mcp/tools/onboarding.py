@@ -5,6 +5,7 @@ from typing import Literal, TypedDict
 from fastmcp.server.dependencies import get_access_token, get_http_request
 
 from aistack.bootstrap.context.application_context import get_join_limiter, get_session_factory
+from aistack.commons.connect_commands import claude_code_command, codex_config
 from aistack.commons.exceptions import Conflict, TooManyAttempts
 from aistack.commons.text import loggable
 from aistack.mcp.auth.failure_limiter import client_address
@@ -165,8 +166,8 @@ def add_machine(name: str, os: Literal["MACOS", "WINDOWS", "LINUX"]) -> AddMachi
         result = AddMachineResult(
             machine_name=added.machine.name,
             os=added.machine.os.value,
-            command=_connect_command(endpoint, added.token),
-            codex_config=_codex_config(endpoint, added.token),
+            command=claude_code_command(endpoint, added.token),
+            codex_config=codex_config(endpoint, added.token),
         )
 
     # Log identities explicitly; result contains the plaintext token.
@@ -176,27 +177,3 @@ def add_machine(name: str, os: Literal["MACOS", "WINDOWS", "LINUX"]) -> AddMachi
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
     return result
-
-
-def _connect_command(endpoint: str, token: str) -> str:
-    """The one line that turns another computer into a registered machine.
-
-    `--scope user` because Claude Code's default scope is a single project, and a vault that
-    only answers in the folder where it was set up is not the product. Double quotes around
-    the header are read the same way by sh, PowerShell, and cmd.
-    """
-    return (f"claude mcp add --transport http --scope user aistack {endpoint} "
-            f'--header "Authorization: Bearer {token}"')
-
-
-def _codex_config(endpoint: str, token: str) -> str:
-    """Setup's Codex block: `codex mcp add` cannot set a header, so it is pasted by hand.
-
-    The four approvals are the ones setup writes, so sync runs without a prompt there too.
-    """
-    return (f'[mcp_servers.aistack]\nurl = "{endpoint}"\n'
-            f'http_headers = {{ "Authorization" = "Bearer {token}" }}\n'
-            'tools.sync.approval_mode = "approve"\n'
-            'tools.list_skills.approval_mode = "approve"\n'
-            'tools.get_skill.approval_mode = "approve"\n'
-            'tools.push_skill.approval_mode = "approve"\n')
