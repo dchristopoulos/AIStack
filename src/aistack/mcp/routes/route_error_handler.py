@@ -7,6 +7,7 @@ from traceback import format_exc
 from starlette.requests import ClientDisconnect, Request
 from starlette.responses import JSONResponse, Response
 
+from aistack.commons import metrics
 from aistack.commons.exceptions import (
     AIStackError,
     Busy,
@@ -46,22 +47,27 @@ def handle_route_errors(func: RouteHandler) -> RouteHandler:
     async def wrapper(request: Request) -> Response:
         started_at = perf_counter()
         try:
-            return await func(request)
+            response = await func(request)
         except AIStackError as error:
+            metrics.count("route", func.__name__, "refused")
             route_logger.info(_failure_message(func.__name__, error.message, started_at))
             return error_response(error.message, _STATUS_CODES.get(type(error), 400))
         except ClientDisconnect:
+            metrics.count("route", func.__name__, "disconnected")
             # The client hung up before its body arrived: a flaky network, not a fault here.
             # Nothing was stored, and nobody is left to read a response.
             route_logger.info(f"{func.__name__}: the client hung up before its request "
                               "finished. Nothing was changed.")
             return Response(status_code=400)
         except Exception:
+            metrics.count("route", func.__name__, "error")
             # logger.exception() would append the raw exception chain after our escaped text.
             route_logger.error(_failure_message(func.__name__, format_exc(), started_at))
             # The page shows this sentence, so it names no function; the log has the detail.
             return error_response("Something went wrong on the server. Its log says what.",
                                   500)
+        metrics.count("route", func.__name__, "ok")
+        return response
 
     return wrapper
 

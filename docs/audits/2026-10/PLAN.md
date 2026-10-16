@@ -88,7 +88,7 @@ How to work through it:
 - [x] 41d. Download your Library, and the headers an https server sends (d29e8e4)
 - [ ] 41e. The page's words in one table
 - [ ] 41b. The operator can forget a person
-- [ ] 41c. Metrics for the operator, behind a token
+- [x] 41c. Metrics for the operator, behind a token (f5e9ff3)
 - [ ] 42. Tests and checks the code is missing
 - [ ] 43. Finish the security pass this audit could not
 

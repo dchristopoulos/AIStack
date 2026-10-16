@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from pydantic import SecretStr
 from sqlalchemy import Engine, make_url
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
@@ -21,6 +22,7 @@ from aistack.bootstrap.configuration.settings.settings_config import (
     LocalSettings,
     Settings,
     resolved_invite_code,
+    validate_invite_code,
 )
 from aistack.bootstrap.hardware import hardware_id
 from aistack.commons.exceptions import AIStackError, Conflict, NeedsNewerRelease
@@ -88,6 +90,8 @@ def build_application_context(settings: Settings) -> None:
     global _settings, _engine, _session_factory, _read_session_factory, _ticket_signer
 
     invite_code = resolved_invite_code(settings)
+    if settings.metrics_token is not None:
+        validate_invite_code(settings.metrics_token, "AISTACK_METRICS_TOKEN")
 
     _settings = settings
     _engine = build_engine(settings.database_url)
@@ -333,6 +337,11 @@ def _described(database_url: str) -> dict[str, str]:
     provider = next((name for suffix, name in _PROVIDERS.items() if host.endswith(suffix)),
                     "PostgreSQL")
     return {"kind": "postgresql", "provider": provider, "host": host}
+
+
+def get_metrics_token() -> SecretStr | None:
+    """The bearer `/metrics` answers to; None when the operator set none, or in local mode."""
+    return None if _settings is None or is_local_mode() else _settings.metrics_token
 
 
 def get_public_url() -> str | None:

@@ -6,6 +6,7 @@ from typing import Callable, ParamSpec, TypeVar
 
 from fastmcp.exceptions import ToolError
 
+from aistack.commons import metrics
 from aistack.commons.exceptions import AIStackError
 from aistack.commons.text import bounded_failure
 
@@ -24,14 +25,18 @@ def handle_mcp_errors(func: Callable[P, T]) -> Callable[P, T]:
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         started_at = perf_counter()
         try:
-            return func(*args, **kwargs)
+            result = func(*args, **kwargs)
         except AIStackError as error:
+            metrics.count("tool", func.__name__, "refused")
             tool_logger.info(_failure_message(func.__name__, error.message, started_at))
             raise ToolError(error.message) from error
         except Exception as error:
+            metrics.count("tool", func.__name__, "error")
             # logger.exception() would append the raw exception chain after our escaped text.
             tool_logger.error(_failure_message(func.__name__, format_exc(), started_at))
             raise ToolError(f"{func.__name__} failed unexpectedly.") from error
+        metrics.count("tool", func.__name__, "ok")
+        return result
 
     return wrapper
 

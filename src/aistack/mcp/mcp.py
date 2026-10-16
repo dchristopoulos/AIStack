@@ -8,6 +8,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastmcp.server.middleware import AuthMiddleware
 
 from aistack.bootstrap.context.application_context import get_failure_limiter, get_public_url
+from aistack.commons import request_id
 from aistack.commons.release import release
 from aistack.mcp.argument_errors import ArgumentErrors
 from aistack.mcp.auth.failure_limiter import CredentialGuard
@@ -25,7 +26,7 @@ mcp = FastMCP(
 )
 
 # Register tools and routes before building the HTTP app.
-from aistack.mcp.routes import health, invite, setup, transfer  # noqa: F401, E402
+from aistack.mcp.routes import health, invite, metrics, setup, transfer  # noqa: F401, E402
 from aistack.mcp.tools import onboarding, skills, sync, teams  # noqa: F401, E402
 
 # The dashboard's routes, registered last: they import the login path from the tools.
@@ -52,7 +53,22 @@ def http_server_config(path: str, log_level: str, **bind) -> uvicorn.Config:
     app = mcp.http_app(path=path, transport="http", stateless_http=True, json_response=True)
     https = (get_public_url() or "").startswith("https://")
     # Inside uvicorn's proxy-header handling, so the address it sees is the resolved client.
-    return _uvicorn_config(CredentialGuard(app, get_failure_limiter), log_level, https, **bind)
+    guarded = CredentialGuard(app, get_failure_limiter)
+    return _uvicorn_config(_with_request_id(guarded), log_level, https, **bind)
+
+
+def _with_request_id(app):
+    """Every HTTP request gets an id that its log lines carry (STD-19)."""
+    async def identified(scope, receive, send):
+        if scope["type"] != "http":
+            await app(scope, receive, send)
+            return
+        started = request_id.new()
+        try:
+            await app(scope, receive, send)
+        finally:
+            request_id.end(started)
+    return identified
 
 
 def dashboard_server_config(log_level: str) -> uvicorn.Config:

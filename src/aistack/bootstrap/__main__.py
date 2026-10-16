@@ -28,6 +28,7 @@ from aistack.bootstrap.context.application_context import (
     needs_newer_release,
 )
 from aistack.bundled import local_setup_instructions, local_sync_skill_document
+from aistack.commons import request_id
 from aistack.commons.exceptions import AIStackError
 from aistack.commons.release import release
 from aistack.commons.text import loggable
@@ -38,7 +39,8 @@ from aistack.db.schema import ForeignDatabase, NewerSchema
 
 logger = logging.getLogger(__name__)
 
-LOG_FORMAT = "%(asctime)s %(levelname)-8s [%(name)s.%(funcName)s] %(message)s"
+# The request id ties together the lines one HTTP request wrote; '-' outside one.
+LOG_FORMAT = "%(asctime)s %(levelname)-8s %(request_id)s [%(name)s.%(funcName)s] %(message)s"
 # RFC 3339 with the offset, so a line read on another computer or beside another log is not
 # off by a time zone (STD-11).
 LOG_DATE_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
@@ -64,6 +66,7 @@ ARGUMENT_ECHO_LOGGER = "fastmcp.server.server"
 
 
 def configure_logging(log_level: str) -> None:
+    request_id.install()
     logging.basicConfig(level=log_level, format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT, force=True)
     _route_fastmcp_through_root()
     chosen = logging.getLevelName(log_level)
@@ -482,6 +485,8 @@ def run() -> None:
     # down. The default one ends the process on the spot, past the `finally` below that
     # closes the database; this one exits through it.
     signal.signal(signal.SIGTERM, _exit_on_terminate)
+    # Before anything logs with LOG_FORMAT, which names the request id.
+    request_id.install()
     if sys.argv[1:2] == ["admin"]:
         admin_cli.run(sys.argv[2:])
         return

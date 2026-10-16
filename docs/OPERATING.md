@@ -69,6 +69,7 @@ All of it is environment variables.
 | `AISTACK_PORT` | `8000` | Port to listen on |
 | `AISTACK_MCP_PATH` | `/mcp` | Path of the MCP endpoint |
 | `AISTACK_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` |
+| `AISTACK_METRICS_TOKEN` | unset | The bearer `/metrics` answers to. Unset, `/metrics` answers 404 to everyone. Checked as the invite code is |
 
 ### Why `AISTACK_PUBLIC_URL` matters
 
@@ -339,9 +340,25 @@ There is no downgrade. The way back from an upgrade you regret is the backup you
 
 ## What is in the logs
 
-Who joined, which skill was pushed at which revision, what sync reported, and how long each call took. Never the server's invite code, a team's invite code, a machine token, a transfer link, or a dashboard link. The HTTP access log is off for the last two: both links carry their credential in the URL path.
+One line per line of text, each starting with an RFC 3339 time and its offset, the level, and an eight-character request id that every line one HTTP request wrote shares (`-` outside a request). Who joined, which skill was pushed at which revision, what sync reported, how long each call took, and one line for every change a person makes on the dashboard or through their agent, naming the change, the team and the user's id. Never the server's invite code, a team's invite code, a machine token, a transfer link, or a dashboard link. The HTTP access log is off for the last two: both links carry their credential in the URL path.
 
 At `DEBUG`, AIStack's own lines add arguments such as names. The third-party libraries that print raw protocol payloads, FastMCP among them, stay at `INFO` regardless, because a `join` result is a token on the wire and a `join_team` call carries a team's invite code.
+
+## Metrics
+
+Set `AISTACK_METRICS_TOKEN` to a long random value (`openssl rand -base64 24`) and point Prometheus, or anything that reads its text format, at `/metrics` with that bearer:
+
+```yaml
+scrape_configs:
+  - job_name: aistack
+    authorization:
+      credentials: <the metrics token>
+    static_configs:
+      - targets: ["aistack.example.com"]
+    scheme: https
+```
+
+It counts tool calls by tool and outcome (`ok`, `refused` with a sentence for the caller, `error` for a fault here) as `aistack_tool_calls_total`, requests to AIStack's own routes the same way as `aistack_route_requests_total`, and names the release in `aistack_info`. The counts live in memory and start again at a restart. Without the setting or the bearer it answers 404, like a path that does not exist, and a wrong bearer counts toward the throttle below. `/health` stays as it is: it answers without a credential, so it says nothing but `ok` or `unavailable`.
 
 ### Refused credentials, and fail2ban
 
