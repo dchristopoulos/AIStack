@@ -1142,3 +1142,36 @@ async def test_a_switch_says_the_same_word_on_or_off_and_why_it_cannot_be_turned
     await page.keyboard.press("Escape")
     assert await parent.evaluate(tip) == "none"
     assert dimitris.console_errors == []
+
+
+@_SQLITE_ONLY
+async def test_the_pages_before_sign_in_pass_axe_and_follow_the_theme(browser, server_url, links,
+                                                                       sign_in):
+    """UI-17, STD-18: a language, a main landmark and the dashboard's colours in both themes,
+    on the pages a newcomer or a signed-out person meets first."""
+    base = server_url.removesuffix("/mcp")
+    dimitris = await sign_in("dimitris")
+    invite = await dimitris.page.request.post(f"{base}/api/teams/aistack/invite",
+                                              headers={"X-AIStack-Request": "1"})
+    code = (await invite.json())["code"]
+    problems, backgrounds = {}, {}
+    for scheme in ("light", "dark"):
+        context = await browser.new_context(color_scheme=scheme)
+        page = await context.new_page()
+        for name, path in (("signed out", "/app"), ("link used", links["maria"]),
+                           ("invite", f"/invite/{code}"), ("wrong invite", "/invite/aistinv_x")):
+            await page.goto(path if path.startswith("http") else base + path)
+            if name == "link used":
+                # The seed's link for maria, spent here once, then opened by a new browser.
+                await context.clear_cookies()
+                await page.goto(path)
+            await expect(page.get_by_role("main")).to_be_visible()
+            assert await page.evaluate("document.documentElement.lang") == "en"
+            problems[(scheme, name)] = await _axe_violations(page)
+            backgrounds[(scheme, name)] = await page.evaluate(
+                "getComputedStyle(document.body).backgroundColor")
+        await context.close()
+
+    assert {where: found for where, found in problems.items() if found} == {}
+    assert {colour for (scheme, _), colour in backgrounds.items() if scheme == "dark"} == {
+        "rgb(22, 23, 25)"}

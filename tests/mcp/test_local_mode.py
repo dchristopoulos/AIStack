@@ -444,7 +444,7 @@ async def test_open_dashboard_serves_the_library_for_this_session(
     import httpx
 
     opened = []
-    monkeypatch.setattr("webbrowser.open", opened.append)
+    monkeypatch.setattr("webbrowser.open", lambda uri: opened.append(uri) or True)
     async with computer("laptop") as (laptop, home):
         _write_skill(home)
         await _call(laptop, "push_skill", name="wizard")
@@ -472,6 +472,8 @@ async def test_open_dashboard_serves_the_library_for_this_session(
 
     assert second["url"].startswith(base + "/")
     assert first["url"].startswith("http://127.0.0.1:")
+    # Opened in a browser, so the agent does not also show a link the browser will spend.
+    assert first["opened"] is True
     assert [skill["name"] for skill in state["skills"]] == ["wizard"]
 
 
@@ -574,3 +576,21 @@ def test_a_computer_whose_hardware_cannot_be_read_keeps_its_id(tmp_path, monkeyp
     claimed = application_context._claimed_machine_id(tmp_path / "machine-id")
     assert application_context._this_computer(tmp_path, claimed) == claimed
     assert [path.name for path in tmp_path.iterdir()] == ["machine-id"]
+
+
+def test_a_library_home_keeps_its_dashboard_port_while_it_is_free(tmp_path, monkeypatch):
+    """UI-09: a browser keeps the theme and picked agents per origin, so a second dashboard
+    of the same Library asks for the same port; one already taken falls back to any."""
+    monkeypatch.setattr(local_dashboard, "get_local_home", lambda: tmp_path)
+    first = local_dashboard.listen()
+    port = first.getsockname()[1]
+    first.close()
+
+    second = local_dashboard.listen()
+    taken = local_dashboard.listen()
+    try:
+        assert second.getsockname()[1] == port
+        assert taken.getsockname()[1] != port
+    finally:
+        second.close()
+        taken.close()

@@ -17,7 +17,7 @@ from aistack.bootstrap.context.application_context import (
     get_failure_limiter,
     get_read_session_factory,
 )
-from aistack.bundled import ICON_LINK
+from aistack.bundled import plain_page
 from aistack.commons.exceptions import NotFound
 from aistack.mcp.auth.failure_limiter import client_address, note_failure
 from aistack.mcp.mcp import mcp
@@ -37,13 +37,6 @@ _HEADERS = {
     "Cache-Control": "no-store",
 }
 
-_PAGE = """<!doctype html><meta charset=utf-8>
-<meta name=viewport content="width=device-width,initial-scale=1"><title>{title}, AIStack</title>
-{icon}
-<body style="font:16px/1.5 system-ui;margin:12vh auto;max-width:36rem;padding:0 1rem">
-{body}"""
-
-
 @mcp.custom_route(INVITE_PATH + "/{code}", methods=["GET"])
 @handle_route_errors
 async def invite(request: Request) -> Response:
@@ -56,7 +49,7 @@ async def invite(request: Request) -> Response:
         logger.info(f"Invite page refused: not an invite code that works. Client: '{address}'.")
         note_failure(get_failure_limiter(), address, "invite link")
         return _page("Invite not found", 404,
-                     "<h1 style=\"font-size:1.25rem\">This invite link does not work</h1>"
+                     "<h1>This invite link does not work</h1>"
                      "<p>An invite link lets one person in and lasts seven days. This one has "
                      "been used, cancelled, or has run out.</p>"
                      "<p>If you used it yourself, you are already in the team: ask your coding "
@@ -71,14 +64,12 @@ async def invite(request: Request) -> Response:
     dashboard = f"{server}{APP_PATH}#/join/{quote(code, safe='')}"
     return _page(
         f"Join {team}", 200,
-        f"<h1 style=\"font-size:1.25rem\">You are invited to <code>{escape(team)}</code></h1>"
+        f"<h1>You are invited to <code>{escape(team)}</code></h1>"
         "<p>Paste this into Claude Code or Codex, with the name you want to go by. It creates "
         "your account, connects this computer, and puts you in the team.</p>"
-        f"<pre style=\"white-space:pre-wrap;padding:12px;border:1px solid #8884;"
-        f"border-radius:8px\">{escape(sentence)}</pre>"
+        f"<pre>{escape(sentence)}</pre>"
         "<p>Already have an account? Say this to your coding agent instead:</p>"
-        f"<pre style=\"white-space:pre-wrap;padding:12px;border:1px solid #8884;"
-        f"border-radius:8px\">{escape(join)}</pre>"
+        f"<pre>{escape(join)}</pre>"
         f"<p>Or <a href=\"{escape(dashboard)}\">join in your dashboard</a>, if this browser "
         "is signed in to it.</p>")
 
@@ -89,5 +80,5 @@ def _team_name(code: str) -> str:
 
 
 def _page(title: str, status: int, body: str) -> Response:
-    return HTMLResponse(_PAGE.format(title=escape(title), icon=ICON_LINK, body=body), status_code=status,
+    return HTMLResponse(plain_page(f"{escape(title)}, AIStack", body), status_code=status,
                         headers=_HEADERS)

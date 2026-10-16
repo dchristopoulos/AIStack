@@ -315,6 +315,7 @@ def disable_skill(name: str, harness: HarnessKey = "claude_code") -> LocalDisabl
 class LocalDashboardResult(TypedDict):
     url: str
     expires_in_seconds: int
+    opened: bool
 
 
 @local_mcp.tool(
@@ -322,19 +323,23 @@ class LocalDashboardResult(TypedDict):
 
     Use when the user wants to see or manage their skills on a screen ("open my aistack
     dashboard"): every skill in their Library and which of their computers has it. It opens
-    the browser itself; also give the user the link, in case it did not. The link signs in
-    for a few minutes, and the page runs on this computer for as long as this session does.
+    the browser itself. The link signs in once, within five minutes, and the page runs on
+    this computer for as long as this session does.
 
     Returns:
         LocalDashboardResult containing:
-            - url: the sign-in link. A credential: show it to the user only.
+            - url: the sign-in link. A credential: show it to the user only, and only when
+                   opened is false.
             - expires_in_seconds: how long the link can be used to sign in
+            - opened: whether a browser opened it
     """)
 @handle_mcp_errors
 def open_dashboard() -> LocalDashboardResult:
     library_before_read()
     url = local_dashboard.dashboard_link()
-    # When no browser opens, the agent hands the link over instead.
-    local_dashboard.open_in_browser(url)
-    logger.info("Dashboard link issued.")
-    return LocalDashboardResult(url=url, expires_in_seconds=DASHBOARD_LINK_LIFETIME_SECONDS)
+    # When no browser opens, the agent hands the link over instead. Handed over as well, it
+    # would be clicked after the browser had used it (UX-02).
+    opened = local_dashboard.open_in_browser(url)
+    logger.info(f"Dashboard link issued. Opened: '{opened}'.")
+    return LocalDashboardResult(url=url, expires_in_seconds=DASHBOARD_LINK_LIFETIME_SECONDS,
+                                opened=opened)

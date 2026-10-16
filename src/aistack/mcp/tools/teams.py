@@ -171,8 +171,8 @@ class DashboardResult(TypedDict):
     Use when the user wants to see or manage their skills and teams on a screen ("open my
     aistack dashboard"): which skills each of their computers has, sharing with a team,
     members, groups, and invites. Give the user the link to click. It signs in whoever
-    opens it as this user, so it goes to them and nobody else. It can be used to sign in
-    for a few minutes; after that, ask for a new one.
+    opens it as this user, so it goes to them and nobody else. It signs in once, within five
+    minutes; after that, ask for a new one.
 
     Returns:
         DashboardResult containing:

@@ -75,7 +75,7 @@ How to work through it:
 - [ ] 33. Dashboard API for project folders
 - [ ] 34. Dashboard page: projects in the computer tree
 - [x] 35. Keyboard and screen reader (#161)
-- [ ] 36. The pages before sign-in, the icon, and local mode's remembered choices
+- [x] 36. The pages before sign-in, the icon, and local mode's remembered choices (#173)
 - [ ] 37. Shorter text, and words that say what is true
 - [x] 38. Bring DESIGN.md, OPERATING.md and the README back in line with the code (#158)
 - [ ] 39. See what changed before taking an update, and get an older revision back
