@@ -14,8 +14,28 @@ services:
     restart: unless-stopped
     # Time to finish requests and close the database; Docker's default 10s is shorter.
     stop_grace_period: 25s
+
+    # Published on this computer only: Docker's published ports bypass ufw and firewalld, so
+    # "8000:8000" would put plain HTTP on the internet beside the proxy's HTTPS. A reverse
+    # proxy or `tailscale serve` on this host reaches it here. To serve a private network
+    # directly, set AISTACK_BIND to this computer's address on it, such as its tailnet IP.
     ports:
-      - "8000:8000"
+      - "${AISTACK_BIND:-127.0.0.1}:8000:8000"
+    # The server writes only to /data, so everything else can be read-only and unprivileged.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Docker keeps container logs without limit by default, and a guessing run writes a line
+    # for each refusal until it is throttled.
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
     environment:
       # Required. The team's shared secret for joining; the server never prints it.
       AISTACK_INVITE_CODE: ${AISTACK_INVITE_CODE:?Set AISTACK_INVITE_CODE to a secret of your own}

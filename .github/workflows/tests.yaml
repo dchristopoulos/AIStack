@@ -175,7 +175,10 @@ jobs:
 
       - name: Start on a fresh volume (SQLite)
         run: |
-          docker run -d --name aistack -p 8000:8000 \
+          # The flags OPERATING.md documents, so an image that needs a writable root or a
+          # capability fails here.
+          docker run -d --name aistack -p 127.0.0.1:8000:8000 \
+            --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
             -e AISTACK_INVITE_CODE="$INVITE_CODE" \
             -v aistack-ci:/data aistack:ci
           scripts/wait_until_healthy.sh aistack
@@ -220,6 +223,7 @@ jobs:
         run: |
           docker rm -f aistack
           docker run -d --name aistack-postgres --network host \
+            --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
             -e AISTACK_INVITE_CODE="$INVITE_CODE" \
             -e AISTACK_PORT=8001 \
             -e DATABASE_URL=postgresql+psycopg://aistack:aistack@127.0.0.1:5434/aistack_container \

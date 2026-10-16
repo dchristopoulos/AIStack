@@ -133,5 +133,5 @@ Enabling a skill on this machine that already exists both on disk and in the Lib
 _Avoid_: Auto-enable, link
 
 **Admin**:
-The server's operator role, distinct from a team admin: the first user to join (`is_admin`). The server can only observe join order, not who deployed it: in practice the operator joins first, alone, before sharing the invite code. Server-level powers are documented scripts in `docs/OPERATING.md` (revoke a machine, recover a locked-out user); the dashboard has no page for them.
+The server's operator role, distinct from a team admin: the first user to join (`is_admin`). Nothing reads it today, so it grants no power. The server can only observe join order, not who deployed it: in practice the operator joins first, alone, before sharing the invite code. Server-level powers are documented scripts in `docs/OPERATING.md` (revoke a machine, recover a locked-out user); the dashboard has no page for them.
 _Avoid_: Owner, superuser

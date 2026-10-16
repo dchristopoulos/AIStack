@@ -95,18 +95,19 @@ AISTACK_HOST=127.0.0.1 AISTACK_INVITE_CODE="$CODE" poetry run aistack serve &
 poetry run python scripts/demo_seed.py http://127.0.0.1:8000 "$CODE"
 ```
 
-It prints a one-time sign-in link for each of three demo users.
+It prints a one-time sign-in link for each of three demo users. Each works for five minutes; `poetry run python scripts/demo_seed.py --links` prints new ones.
 
 ## Running a server
 
 ```bash
 openssl rand -base64 24 > invite-code.txt && chmod 600 invite-code.txt
-docker run -d --name aistack -p 8000:8000 \
+docker run -d --name aistack -p 127.0.0.1:8000:8000 \
+  --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
   -e AISTACK_INVITE_CODE="$(cat invite-code.txt)" \
   -v aistack-data:/data ghcr.io/dchristopoulos/aistack:0.1
 ```
 
-`invite-code.txt` is the server's invite code, which you join with first; keep it.
+`invite-code.txt` is the server's invite code, which you join with first; keep it. The port is published on this computer only, for a reverse proxy with TLS or `tailscale serve` in front; [Operating AIStack](docs/OPERATING.md#reaching-it-from-other-machines) says how to reach it from other machines.
 
 One container, one volume, one port, with SQLite inside. Set `DATABASE_URL` to use PostgreSQL instead ([ADR-0002](docs/adr/0002-sqlite-default-postgres-optional.md)). The image is built for amd64 and arm64 and published only from commits that passed CI; `0.1` follows the releases of 0.1, and `edge` follows `main`. Upgrading is starting the new image: the server migrates its database at startup in a single transaction ([ADR-0016](docs/adr/0016-alembic-migrations-in-one-transaction.md)).
 
@@ -188,7 +189,7 @@ The stack is Python 3.13, FastMCP, Starlette, SQLAlchemy 2, Alembic, PyJWT, and 
 ```bash
 poetry install
 poetry run playwright install chromium   # once, for the dashboard tests
-poetry run pytest
+poetry run pytest -rs   # -rs names every skipped test and why
 ```
 
 PostgreSQL tests skip without a database. To run them:
@@ -225,7 +226,7 @@ Current limits: a skill is text files only (at most 100 files, 256 KiB each, 1 M
 
 AIStack collects nothing and has no hosted service. A server makes no outbound connections, and the dashboard loads nothing from other sites. In local mode AIStack contacts only PyPI (a daily update check, which installs a newer release of the same minor version; `AISTACK_AUTO_UPDATE=off` in the agent's settings for AIStack turns it off), your own GitHub repository, or your own database.
 
-A server stores each user's username and optional full name; their computers, by name and operating system, with a hash of each machine token; the skills they back up and share, with every revision and who pushed it; which skill is enabled in which folder of which computer; and teams, groups, memberships, and invites (as hashes of their codes). Logs record names and ids, never IP addresses, tokens, invite codes, or links. Whoever runs a server is responsible for its users' data, and can remove a user as described in [docs/OPERATING.md](docs/OPERATING.md).
+A server stores each user's username and optional full name; their computers, by name and operating system, with a hash of each machine token; the skills they back up and share, with every revision and who pushed it; which skill is enabled in which folder of which computer; and teams, groups, memberships, and invites (as hashes of their codes). Logs record names and ids, and the address a refused credential came from; never tokens, invite codes, or links. Whoever runs a server is responsible for its users' data, and can remove a user as described in [docs/OPERATING.md](docs/OPERATING.md).
 
 ## Contributing
 

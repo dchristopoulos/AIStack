@@ -7,7 +7,6 @@ every other session on this computer wait.
 """
 
 import logging
-import webbrowser
 from pathlib import Path
 from typing import TypedDict
 
@@ -332,10 +331,7 @@ class LocalDashboardResult(TypedDict):
 def open_dashboard() -> LocalDashboardResult:
     library_before_read()
     url = local_dashboard.dashboard_link()
-    try:
-        webbrowser.open(url)
-    except webbrowser.Error:
-        # No browser this process can reach; the agent hands the link over instead.
-        pass
+    # When no browser opens, the agent hands the link over instead.
+    local_dashboard.open_in_browser(url)
     logger.info("Dashboard link issued.")
     return LocalDashboardResult(url=url, expires_in_seconds=DASHBOARD_LINK_LIFETIME_SECONDS)

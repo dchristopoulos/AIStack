@@ -16,6 +16,9 @@ from aistack.mcp.server_url import mcp_endpoint_url, server_base_url
 SETUP_PATH = "/setup"
 
 _MARKDOWN = "text/markdown; charset=utf-8"
+# Without AISTACK_PUBLIC_URL the addresses in the text come from the request's Host, so a
+# shared cache that ignored it could hand one client's address to everyone (SEC-11).
+_UNCACHED = {"Cache-Control": "no-store", "Vary": "Host"}
 
 
 @mcp.custom_route(SETUP_PATH, methods=["GET"])
@@ -29,10 +32,10 @@ async def setup(request: Request) -> Response:
     instructions = (setup_instructions()
                     .replace("{server_url}", server_base_url(request))
                     .replace("{mcp_url}", mcp_endpoint_url(request)))
-    return PlainTextResponse(instructions, media_type=_MARKDOWN)
+    return PlainTextResponse(instructions, media_type=_MARKDOWN, headers=_UNCACHED)
 
 
 @mcp.custom_route(f"{SETUP_PATH}/{SYNC_SKILL_NAME}/SKILL.md", methods=["GET"])
 @handle_route_errors
 async def sync_skill(request: Request) -> Response:
-    return PlainTextResponse(sync_skill_document(), media_type=_MARKDOWN)
+    return PlainTextResponse(sync_skill_document(), media_type=_MARKDOWN, headers=_UNCACHED)

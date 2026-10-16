@@ -9,7 +9,9 @@ Make the server's invite code once, into a file you keep, then start the contain
 ```bash
 openssl rand -base64 24 > invite-code.txt && chmod 600 invite-code.txt
 docker run -d --name aistack \
-  -p 8000:8000 \
+  -p 127.0.0.1:8000:8000 \
+  --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
+  --log-driver local --log-opt max-size=10m --log-opt max-file=3 \
   -e AISTACK_INVITE_CODE="$(cat invite-code.txt)" \
   -v aistack-data:/data \
   --restart unless-stopped \
@@ -18,6 +20,12 @@ docker run -d --name aistack \
 ```
 
 `--stop-timeout 25` gives the server time to finish its requests and close the database when the container stops. Docker's default of 10 seconds is shorter than the server's own 20.
+
+The flags are deliberate:
+
+- `-p 127.0.0.1:8000:8000` publishes the port on this computer only. Docker's published ports bypass host firewalls such as ufw and firewalld, so a bare `-p 8000:8000` puts plain HTTP on every interface, next to the HTTPS your proxy serves. "Reaching it from other machines" below says what to put in front.
+- `--read-only`, `--tmpfs /tmp`, `--cap-drop ALL` and `--security-opt no-new-privileges` hold because the server writes nothing outside `/data` and needs no privilege. CI runs the image with them.
+- The `local` log driver with a size limit keeps the logs from filling the disk; Docker's default keeps them without limit. To feed fail2ban instead, use `--log-driver journald`, which journald rotates on its own (see "Refused credentials, and fail2ban").
 
 The image is published by CI, for `linux/amd64` and `linux/arm64`, only from commits that passed the tests. Its tags:
 
@@ -44,7 +52,7 @@ The file is where the code lives: the server never prints it, and there is no co
 
 The volume at `/data` holds the SQLite database, which is every user, machine, team, group, skill, and revision. Stopping, removing, and recreating the container keeps all of it as long as the volume stays.
 
-Then join first, alone, before you share the code: the first user to join becomes the server's admin. The README has the one-paste setup. After that, people usually arrive through a team's invite link, which creates their account; your own code is for admitting someone directly.
+Then join first, alone, before you share the code. The first user to join is recorded as the server's admin (`is_admin`), but nothing reads that today: it grants no power in a tool or on the dashboard, and the server's own operations are the scripts below, which need access to the container, not an account. The README has the one-paste setup. After that, people usually arrive through a team's invite link, which creates their account; your own code is for admitting someone directly.
 
 ## Configuration
 
@@ -72,13 +80,13 @@ AIStack ships a container and does not solve hosting. Whatever you choose, run *
 
 Two patterns that work:
 
-**A private network (Tailscale, WireGuard, a VPN).** Run the container on any machine in the network and use its private address. Nothing is exposed to the internet, and plain HTTP inside an encrypted tunnel is fine. This is the least work for a solo developer or a small team.
+**A private network (Tailscale, WireGuard, a VPN).** Run the container on any machine in the network and use its private address. Nothing is exposed to the internet, and plain HTTP inside an encrypted tunnel is fine. This is the least work for a solo developer or a small team. Publish the port on the network's address rather than on every interface, with `-p 100.101.102.103:8000:8000` (the computer's tailnet address) or `AISTACK_BIND=100.101.102.103` with Compose, or keep `127.0.0.1` and put `tailscale serve` in front.
 
 ```text
 AISTACK_PUBLIC_URL=http://aistack.your-tailnet.ts.net:8000
 ```
 
-**A VPS behind a reverse proxy with TLS.** Put Caddy, nginx, or Traefik in front, terminate HTTPS there, and forward everything to port 8000. Forward all paths, not only `/mcp`: skill files travel over `/transfer/...`, setup is served from `/setup`, and the dashboard is `/app` and `/api/...`. Do not serve AIStack over plain HTTP on the public internet. Machine tokens, transfer links, dashboard links, and the dashboard's session cookie are bearer credentials, and anyone on the path could read them.
+**A VPS behind a reverse proxy with TLS.** Put Caddy, nginx, or Traefik in front on the same host, terminate HTTPS there, and forward everything to `127.0.0.1:8000`, where the commands above publish the port. Forward all paths, not only `/mcp`: skill files travel over `/transfer/...`, setup is served from `/setup`, and the dashboard is `/app` and `/api/...`. Do not serve AIStack over plain HTTP on the public internet. Machine tokens, transfer links, dashboard links, and the dashboard's session cookie are bearer credentials, and anyone on the path could read them.
 
 ```text
 AISTACK_PUBLIC_URL=https://aistack.example.com
@@ -346,7 +354,8 @@ Then start the older release with the `docker run` from the top of this page, na
 The same image runs against PostgreSQL. Nothing else changes:
 
 ```bash
-docker run -d --name aistack -p 8000:8000 \
+docker run -d --name aistack -p 127.0.0.1:8000:8000 \
+  --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
   -e AISTACK_INVITE_CODE="..." \
   -e DATABASE_URL="postgresql+psycopg://aistack:password@db.internal:5432/aistack" \
   ghcr.io/dchristopoulos/aistack:0.1
@@ -425,4 +434,4 @@ findtime = 1h
 bantime  = 1d
 ```
 
-`journalmatch` assumes Docker's `journald` log driver; with a log file, use `logpath` instead.
+`journalmatch` assumes Docker's `journald` log driver (`--log-driver journald`, or `driver: journald` in `compose.yaml`); the `local` driver the commands above use writes a format fail2ban cannot read. With a log file, use `logpath` instead.

@@ -120,6 +120,10 @@ def build_local_context(settings: LocalSettings) -> None:
 
     _local_settings = settings
     settings.home.mkdir(parents=True, exist_ok=True)
+    # The Library, its copy of the repository and this computer's id are one person's: on a
+    # computer other accounts use, the default umask leaves them readable to all (SEC-13).
+    if os.name == "posix":
+        settings.home.chmod(0o700)
     _local_home = settings.home
     if settings.library_repo:
         try:
@@ -321,6 +325,12 @@ def _described(database_url: str) -> dict[str, str]:
 def get_public_url() -> str | None:
     """The server's configured address; local mode has none, and serves on 127.0.0.1."""
     return None if is_local_mode() else get_settings().public_url
+
+
+def get_local_home() -> Path:
+    if _local_home is None:
+        raise RuntimeError("Local mode has not been set up in this process.")
+    return _local_home
 
 
 def get_local_principal() -> MachinePrincipal:
