@@ -164,6 +164,21 @@ async def test_a_skill_is_taken_off_a_computer_from_its_details_and_stays_in_the
     assert "release-notes" in [skill["name"] for skill in state["skills"]]
 
 
+
+async def test_ticks_in_a_skills_details_are_kept_when_another_button_leaves_it(sign_in):
+    """UX-19: a tick, then "Share with a team…", used to drop the tick without a word."""
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    await page.get_by_role("button", name="Details of release-notes").click()
+    details = page.get_by_role("dialog", name="release-notes")
+
+    await details.get_by_role("checkbox", name="desktop / Claude Code").check()
+    await details.get_by_role("button", name="Share with a team…").click()
+
+    await expect(page.get_by_role("dialog", name="Share release-notes")).to_be_visible()
+    assert _on(await dimitris.state(), "release-notes") == ["desktop", "macbook"]
+    assert dimitris.console_errors == []
+
 async def test_a_computer_page_lists_what_it_has_and_removes_one(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
@@ -267,7 +282,7 @@ async def test_adding_a_computer_says_what_to_ask_the_agent(sign_in):
     sentence = page.get_by_role("dialog").get_by_role("textbox", name="What to say")
     await expect(sentence).to_have_value("add my Windows PC to aistack")
     # UX-20: what the agent answers is a credential, and the person carries it.
-    await expect(page.get_by_role("dialog").get_by_text("holds a permanent key for that computer")).to_be_visible()
+    await expect(page.get_by_role("dialog").get_by_text("holds that computer's key")).to_be_visible()
     await page.get_by_role("dialog").get_by_role("button", name="Done").click()
     await expect(page.get_by_role("dialog")).to_have_count(0)
 
@@ -295,6 +310,34 @@ async def test_an_agent_is_added_to_a_computer_and_given_a_skill(sign_in):
     assert _placed(_skill(state, "meeting-notes")["placements"], desktop, "agents")
     assert dimitris.console_errors == []
 
+
+
+async def test_an_agent_picked_by_mistake_is_taken_off_the_list(sign_in):
+    """UI-20: an agent added in this browser could not be removed again."""
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    navigation = page.get_by_role("navigation", name="Main")
+    await navigation.get_by_role("button", name="Add an agent to desktop").click()
+    dialog = page.get_by_role("dialog")
+    await dialog.get_by_role("radio", name="Agents folder").check()
+    await dialog.get_by_role("button", name="Open its folder").click()
+
+    await page.get_by_role("button", name="Remove from this list").click()
+
+    await expect(navigation.get_by_role("link", name="desktop / Agents folder")).to_have_count(0)
+    await page.reload()
+    await expect(navigation.get_by_role("link", name="desktop / Claude Code")).to_be_visible()
+    await expect(navigation.get_by_role("link", name="desktop / Agents folder")).to_have_count(0)
+    assert dimitris.console_errors == []
+
+
+async def test_a_private_library_on_a_server_says_only_you_see_it(sign_in):
+    """UX-04: Where it lives said everyone on the server shares it."""
+    dimitris = await sign_in("dimitris")
+    await dimitris.page.goto(f"{dimitris.base_url}/app#/storage")
+
+    await expect(dimitris.page.get_by_text("only you see it")).to_be_visible()
+    await expect(dimitris.page.get_by_text("Everyone on this server shares it")).to_have_count(0)
 
 async def test_appearance_is_chosen_in_settings_and_kept_in_this_browser(sign_in):
     dimitris = await sign_in("dimitris")
@@ -420,7 +463,7 @@ async def test_a_team_is_created_and_joined_with_its_invite_code(sign_in):
     response = await page.request.get(link)
     assert response.status == 200 and "design" in await response.text()
     # This server is on 127.0.0.1, so the link opens only on this computer, and it says so.
-    await expect(page.get_by_role("dialog").get_by_text("Only this computer can open this link")).to_be_visible()
+    await expect(page.get_by_role("dialog").get_by_text("Only this computer can open it")).to_be_visible()
     await page.get_by_role("dialog").get_by_role("button", name="Done").click()
 
     alex = await sign_in("alex")
@@ -487,7 +530,8 @@ async def test_an_invite_is_listed_as_pending_and_cancelled_from_the_list(sign_i
     invites = page.get_by_role("table", name="Invites")
     await expect(invites.get_by_text("Pending")).to_be_visible()
 
-    await invites.get_by_role("button", name="Cancel the invite dimitris made").click()
+    await invites.get_by_role(
+        "button", name=re.compile(r"^Cancel invite #\w{4}, made by dimitris$")).click()
 
     await expect(invites.get_by_text("Cancelled")).to_be_visible()
     assert [invite["status"] for invite in _team(await dimitris.state(), "aistack")["invites"]
@@ -583,6 +627,26 @@ async def test_someone_new_with_no_team_is_shown_how_to_get_one(browser, server_
     await expect(page.get_by_text('choose "Add a team" to create one or join')).to_be_visible()
     await context.close()
 
+
+
+async def test_add_skills_with_an_empty_library_offers_nothing_to_add(browser, server_url, links):
+    """UX-14: it said everything was here already, and still offered Add."""
+    token = await join(server_url, "newbie", "laptop")
+    await call(server_url, token, "sync", local={}, harness="agents")
+    context = await browser.new_context()
+    page = await context.new_page()
+    await page.goto((await call(server_url, token, "open_dashboard"))["url"])
+    await page.get_by_role("navigation", name="Main").get_by_role(
+        "link", name="laptop / Agents folder").click()
+
+    await page.get_by_role("button", name="Add skills").first.click()
+
+    dialog = page.get_by_role("dialog")
+    await expect(dialog.get_by_text("Your library is empty.")).to_be_visible()
+    await expect(dialog.get_by_role("button", name="Add", exact=True)).to_have_count(0)
+    await dialog.get_by_role("button", name="Done").click()
+    await expect(page.get_by_role("dialog")).to_have_count(0)
+    await context.close()
 
 async def test_a_computer_that_never_synced_shows_no_agent_until_it_does(browser, server_url,
                                                                        links):
@@ -777,10 +841,11 @@ async def test_the_longest_names_fit_without_scrolling_sideways(sign_in):
 
 @_SQLITE_ONLY
 async def test_the_library_figures_are_read_in_full_on_a_phone(sign_in):
-    dimitris = await sign_in("dimitris", viewport=(390, 844))
+    # A figure shows only when it asks for something: Maria has an update waiting.
+    maria = await sign_in("maria", viewport=(390, 844))
 
-    for label in ("In your library", "Not on any computer", "Updates"):
-        figure = dimitris.page.get_by_text(label, exact=True).locator("..")
+    for label in ("Updates",):
+        figure = maria.page.get_by_text(label, exact=True).locator("..")
         await expect(figure).to_be_visible()
         cut = await figure.evaluate(
             "tile => [...tile.children].some(line => line.scrollWidth > line.clientWidth)")
@@ -1045,8 +1110,8 @@ async def test_a_confirmation_opens_on_cancel_and_a_held_enter_does_not_answer_i
 async def test_the_phone_drawer_keeps_focus_inside_until_it_is_closed(sign_in):
     dimitris = await sign_in("dimitris", viewport=(390, 844))
     page = dimitris.page
-    await expect(page.get_by_role("link", name="Library: Server, connected")).to_be_visible()
     opener = page.get_by_role("button", name="Open navigation")
+    await expect(opener).to_be_visible()
 
     await opener.click()
     outside = []

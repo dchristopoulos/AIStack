@@ -179,6 +179,11 @@ one entry per place the Library can live.
   versioned keys (`aistack.appearance.v1`, `aistack.picked-agents.v1`), every access in
   try/catch. The page works without them.
 - **Destructive actions confirm** and say what is not lost ("It stays in your library").
+- **One line on the surface, the rest one click away.** A page, card or dialog says what it
+  is for in one short line. The explanation goes in the confirmation of the action it
+  explains, or behind a disclosure. A dialog's text before its first control is at most 25
+  words, a page subtitle is one sentence, nothing under a table repeats a confirmation, and a
+  figure shows only when it asks for something.
 
 ## Keyboard and screen reader
 

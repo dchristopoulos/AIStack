@@ -34,6 +34,7 @@ from aistack.bootstrap.context.application_context import (
 )
 from aistack.bundled import dashboard_page, plain_page
 from aistack.commons.exceptions import InvalidTicket, NotFound, SignedOut, ValidationError
+from aistack.commons.release import release
 from aistack.mcp.auth.failure_limiter import client_address, note_failure
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.request_body import bounded_body
@@ -214,7 +215,8 @@ async def state(request: Request) -> Response:
     shown = await asyncio.to_thread(_in_transaction, _as_user(dashboard_service.state), holder,
                                     read_only=True)
     # The page hides what only a server can do, such as creating a team, when this is false.
-    return _json(shown | {"server": not is_local_mode(), "library": library_description()})
+    return _json(shown | {"server": not is_local_mode(), "library": library_description(),
+                          "release": release()})
 
 
 @_route(API_PATH + "/logout", methods=["POST"])
@@ -369,8 +371,10 @@ def delete_team(session, user_id, path, body):
 
 @_action("/teams/{team}/invite", local=False)
 def new_invite_code(session, user_id, path, body):
-    # Returned to the admin who asked, once, and never logged.
-    return {"code": team_service.new_invite_code(session, user_id, path["team"])}
+    # Returned to the admin who asked, once, and never logged. The id is not secret: the page
+    # names the invite by it in the list of invites.
+    code, invite_id = team_service.new_invite(session, user_id, path["team"])
+    return {"code": code, "id": str(invite_id)}
 
 
 @_action("/teams/{team}/invites/{invite_id}/cancel", local=False)

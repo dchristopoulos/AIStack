@@ -176,7 +176,8 @@ def test_get_skill_on_an_unknown_name_says_where_to_look(session_factory, dimitr
         _get(session_factory, dimitris.machine.machine_id, "sorcerer")
 
     assert "no skill named 'sorcerer'" in str(rejection.value)
-    assert "list_skills" in str(rejection.value)
+    # In words the dashboard and local mode can use too: no tool's name (UX-09).
+    assert "list_skills" not in str(rejection.value)
     assert _decisions(session_factory) == {}
 
 
@@ -188,7 +189,7 @@ def test_get_skill_without_a_team_names_the_teams_that_share_it(session_factory,
     with pytest.raises(NotFound) as rejection, session_factory.begin() as session:
         skill_service.get_skill(session, maria.machine.machine_id, maria.user.user_id, "wizard")
 
-    assert f"call get_skill with team '{SERVER_TEAM}'" in str(rejection.value)
+    assert f"Take it from team '{SERVER_TEAM}'" in str(rejection.value)
     assert maria.machine.machine_id not in _decisions(session_factory)
 
 
@@ -209,7 +210,7 @@ def test_the_hint_never_names_a_team_or_group_the_caller_cannot_see(session_fact
         skill_service.get_skill(session, maria.machine.machine_id, maria.user.user_id, "wizard")
 
     assert "secret" not in str(rejection.value) and "open" not in str(rejection.value)
-    assert "You have no skill named 'wizard'." in str(rejection.value)
+    assert "You have no skill named 'wizard' in your Library." in str(rejection.value)
 
 
 @pytest.mark.parametrize("name", ["Wizard", "../wizard", "wizard\nFORGED", ""])
@@ -260,7 +261,7 @@ def test_disabling_a_skill_this_machine_never_enabled_is_refused(session_factory
     with pytest.raises(NotFound) as rejection:
         _disable(session_factory, desktop)
 
-    assert "was never enabled on this machine" in str(rejection.value)
+    assert "was never enabled in ~/.claude/skills on this computer" in str(rejection.value)
     # No row is still no decision: the refusal must not create one.
     assert _decisions(session_factory) == {dimitris.machine.machine_id: True}
 

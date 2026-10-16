@@ -139,7 +139,7 @@ async def test_get_skill_on_an_unknown_name_is_a_tool_error_that_says_where_to_l
         with pytest.raises(ToolError) as rejection:
             await client.call_tool("get_skill", {"name": "sorcerer"})
 
-    assert "list_skills" in str(rejection.value)
+    assert "in your Library" in str(rejection.value)
 
 
 async def test_remove_then_reinstall(server_url, session_factory):
@@ -165,7 +165,7 @@ async def test_disabling_a_skill_never_enabled_here_is_refused(server_url):
         with pytest.raises(ToolError) as rejection:
             await client.call_tool("disable_skill", {"name": "wizard"})
 
-    assert "never enabled on this machine" in str(rejection.value)
+    assert "never enabled in ~/.claude/skills on this computer" in str(rejection.value)
 
 
 async def test_the_download_ticket_appears_in_no_log_line(server_url, caplog):

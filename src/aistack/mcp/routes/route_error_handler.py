@@ -59,7 +59,9 @@ def handle_route_errors(func: RouteHandler) -> RouteHandler:
         except Exception:
             # logger.exception() would append the raw exception chain after our escaped text.
             route_logger.error(_failure_message(func.__name__, format_exc(), started_at))
-            return error_response(f"{func.__name__} failed unexpectedly.", 500)
+            # The page shows this sentence, so it names no function; the log has the detail.
+            return error_response("Something went wrong on the server. Its log says what.",
+                                  500)
 
     return wrapper
 

@@ -157,7 +157,7 @@ def test_a_skill_only_one_harness_decided_about_is_undecided_in_the_other(sessio
 def test_disabling_in_a_harness_that_never_had_it_is_refused(session_factory, dimitris):
     _push(session_factory, dimitris)
 
-    with pytest.raises(NotFound, match="never enabled on this machine in harness 'agents'"):
+    with pytest.raises(NotFound, match="never enabled in ~/.agents/skills on this computer"):
         _disable(session_factory, dimitris, harness=AGENTS)
 
     assert _decisions(session_factory) == [(Harness.CLAUDE_CODE, True)]

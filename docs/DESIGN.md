@@ -100,10 +100,12 @@ The dashboard has its own credential and reaches no MCP tool: a session cookie h
 ### Tools (all thirteen, nothing else)
 
 ```text
-join(username, machine_name, os) → creates user + first machine; returns the machine token
+join(username, machine_name, os, full_name?)
+                              → creates user + first machine; returns the machine token
                                 (bootstrap principal only; first user becomes admin.
                                 `os` is required: MACHINE.os is NOT NULL and MCP cannot
-                                reveal the client's platform)
+                                reveal the client's platform; `full_name` is what
+                                teammates read beside the username)
 add_machine(name, os)         → registers another machine for this user; returns a
                                 paste-ready Claude Code command and Codex config
                                 block, each with that machine's token
@@ -364,7 +366,7 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/teams/join` | `code` (a team's invite code) | `team` |
 | `POST /api/teams/{team}/leave` | `{}` | The last member leaving deletes the team (ADR-0028) |
 | `POST /api/teams/{team}/delete` | `{}` | Deletes the team, its copies of its skills, its groups and its invites. Members' Library copies stay. Admin only (ADR-0028) |
-| `POST /api/teams/{team}/invite` | `{}` | `code`, shown this once: a new invite, one use, seven days. Admins and members who can invite (ADR-0022) |
+| `POST /api/teams/{team}/invite` | `{}` | `code`, shown this once: a new invite, one use, seven days, and its `id`, which the page shows a short tag of. Admins and members who can invite (ADR-0022) |
 | `POST /api/teams/{team}/invites/{invite_id}/cancel` | `{}` | `ok`. Its maker, or an admin |
 | `POST /api/teams/{team}/take` | `name`, `replace` (optional, true when the person agreed to replace their own unrelated skill of that name) | Copies the team's latest revision of that skill into the Library |
 | `POST /api/teams/{team}/members/{username}` | Any of `role` (`ADMIN` or `MEMBER`), `sees_all_groups` (true or false), `can_invite` (true or false) | Admin only |
@@ -439,12 +441,14 @@ A group's path contains slashes, so it always travels in the body and never in t
     }
   ],
   "server": true,
-  "library": {"kind": "server"}
+  "library": {"kind": "server"},
+  "release": "0.1.0"
 }
 ```
 
 | Field | Meaning |
 |---|---|
+| `release` | The AIStack release serving the page, as the startup log names it (Settings shows it) |
 | `server` | False on the localhost dashboard in local mode, where the page hides what only a server can do: creating, joining, and sharing with a team |
 | `library` | Where the Library lives, by `kind`: `{"kind": "server"}`, `{"kind": "this_computer"}`, `{"kind": "postgresql", "provider": "Neon", "host": "…"}`, or `{"kind": "github", "repository": "owner/name", "problem": null, "unpublished": 0}`. Never an address or a password |
 | `library.provider`, `host` | For a PostgreSQL Library: the provider recognised from the host (Neon, Supabase, or PostgreSQL), and the host |
