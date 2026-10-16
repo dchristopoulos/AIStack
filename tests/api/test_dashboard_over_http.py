@@ -154,6 +154,21 @@ async def test_a_link_signs_a_browser_in_once(server_url):
 
     assert used.status_code == 303 and "set-cookie" in used.headers
     assert again.status_code == 401 and "set-cookie" not in again.headers
+    assert "has been used" in again.text and "Not connected yet" not in again.text
+
+
+async def test_a_link_opened_again_by_the_browser_it_signed_in_leads_to_the_page(server_url):
+    """UX-02: the browser opens the link and the person clicks it too."""
+    token = await _join(server_url, "dimitris")
+    link = httpx.URL((await _call(server_url, token, "open_dashboard"))["url"]).path
+    async with httpx.AsyncClient(base_url=_base(server_url)) as browser:
+        await browser.get(link)
+        again = await browser.get(link)
+        state = await browser.get("/api/state")
+
+    assert again.status_code == 303 and again.headers["location"] == "/app"
+    assert "set-cookie" not in again.headers
+    assert state.status_code == 200
 
 
 async def test_a_transfer_url_is_not_a_way_in(server_url):

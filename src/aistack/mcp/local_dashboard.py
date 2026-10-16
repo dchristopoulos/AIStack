@@ -1,9 +1,10 @@
 """The dashboard a local mode process serves for `open_dashboard` (ADR-0020).
 
-One per process, on 127.0.0.1 and a port the system picks, started the first time it is asked
-for. It runs as long as the agent session that started this process, and goes with it.
+One per process, on 127.0.0.1, started the first time it is asked for. It runs as long as the
+agent session that started this process, and goes with it.
 """
 
+import hashlib
 import html
 import json
 import os
@@ -30,6 +31,12 @@ _STARTUP_SECONDS = 5
 _FORWARD_PAGE_SECONDS = 60
 _FORWARD_PAGE_PREFIX = "open-dashboard-"
 
+# A browser keeps the theme, the accent and picked agents per origin, and the port is part of
+# it, so each Library home asks for the same port every time (UI-09). In the range nothing
+# assigns, and only a preference: a port already taken means one the system picks.
+_PORT_RANGE_START = 49152
+_PORT_RANGE_SIZE = 10000
+
 _lock = threading.Lock()
 _server: uvicorn.Server | None = None
 _port: int | None = None
@@ -41,7 +48,7 @@ def dashboard_link() -> str:
     principal = get_local_principal()
     with _lock:
         if _server is None:
-            listener = socket.create_server(("127.0.0.1", 0))
+            listener = listen()
             server = uvicorn.Server(dashboard_server_config(log_level="WARNING"))
             # uvicorn installs no signal handlers off the main thread, so the stdio server
             # keeps its own; a daemon thread ends with the process.
@@ -55,6 +62,17 @@ def dashboard_link() -> str:
             _server, _port = server, listener.getsockname()[1]
     ticket = get_ticket_signer().sign_dashboard_link(principal.dashboard_holder())
     return f"http://127.0.0.1:{_port}{DASHBOARD_LOGIN_PATH}/{ticket}"
+
+
+def listen() -> socket.socket:
+    """A socket on 127.0.0.1 at this Library home's own port, or any free one when that is
+    taken, such as by a second dashboard of the same home."""
+    home = str(get_local_home().resolve()).encode("utf-8")
+    preferred = _PORT_RANGE_START + int(hashlib.sha256(home).hexdigest(), 16) % _PORT_RANGE_SIZE
+    try:
+        return socket.create_server(("127.0.0.1", preferred))
+    except OSError:
+        return socket.create_server(("127.0.0.1", 0))
 
 
 def stop_dashboard() -> None:

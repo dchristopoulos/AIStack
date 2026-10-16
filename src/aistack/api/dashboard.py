@@ -32,7 +32,7 @@ from aistack.bootstrap.context.application_context import (
     library_description,
     refuse_when_moved,
 )
-from aistack.bundled import ICON_LINK, dashboard_page
+from aistack.bundled import dashboard_page, plain_page
 from aistack.commons.exceptions import InvalidTicket, NotFound, SignedOut, ValidationError
 from aistack.mcp.auth.failure_limiter import client_address, note_failure
 from aistack.mcp.mcp import mcp
@@ -94,18 +94,22 @@ def _route(path: str, methods: list[str], local: bool = True):
 async def sign_in(request: Request) -> Response:
     """Turn a link from `open_dashboard` into a session, then leave the link behind.
 
-    The redirect takes the ticket out of the address bar. A link that is wrong, has expired,
-    or comes from a computer no longer connected gets the same page as no session at all. A
-    browser already signed in as someone else is asked first: a link anyone sends could
-    otherwise sign it in to their account (ADR-0027).
+    The redirect takes the ticket out of the address bar. A link works once: opened again in
+    a browser that it already signed in, it leads to the page; anywhere else, a link that was
+    used, has expired, or comes from a computer no longer connected says so. A browser
+    already signed in as someone else is asked first: a link anyone sends could otherwise
+    sign it in to their account (ADR-0027).
     """
     try:
         holder = get_ticket_signer().verified_dashboard_link(request.path_params["ticket"])
         joining = await asyncio.to_thread(_in_transaction, _username, holder)
     except (InvalidTicket, SignedOut):
+        # A browser opens the link it was handed and the person clicks it too (UX-02).
+        if await _current_user(request) is not None:
+            return RedirectResponse(APP_PATH, status_code=303, headers=_PAGE_HEADERS)
         _refused(request, "Dashboard sign-in refused: the link was not valid or had expired.",
                  "dashboard link")
-        return _signed_out_page(request)
+        return _link_spent_page()
 
     current = await _current_user(request)
     if current is not None and current.user_id != holder.user_id:
@@ -170,11 +174,9 @@ def _switch_page(holder: DashboardHolder, joining: str, current: str) -> Respons
     """Ask before replacing a session. The link was spent on the way here, so the button
     carries a fresh one, good for the same few minutes and only once."""
     switch = f"{DASHBOARD_LOGIN_PATH}/{get_ticket_signer().sign_dashboard_link(holder)}"
-    return HTMLResponse(
-        "<!doctype html><meta charset=utf-8>"
-        "<meta name=viewport content=\"width=device-width,initial-scale=1\"><title>AIStack</title>"
-        "<body style=\"font:16px/1.5 system-ui;margin:15vh auto;max-width:32rem;padding:0 1rem\">"
-        "<h1 style=\"font-size:1.25rem\">Switch account?</h1>"
+    return HTMLResponse(plain_page(
+        "Switch account?, AIStack",
+        "<h1>Switch account?</h1>"
         f"<p>This browser is signed in as <strong>{escape(current)}</strong>. The link you "
         f"opened signs it in as <strong>{escape(joining)}</strong>.</p>"
         "<p>If someone else sent you this link, stay with your own account.</p>"
@@ -182,7 +184,7 @@ def _switch_page(holder: DashboardHolder, joining: str, current: str) -> Respons
         f"<a href=\"{APP_PATH}\">Stay signed in as {escape(current)}</a></p>"
         "<script>document.getElementById('switch').onclick=async()=>{"
         f"await fetch({json.dumps(switch)},{{method:'POST',headers:{{'{REQUEST_HEADER}':'1'}}}});"
-        f"location.href={json.dumps(APP_PATH)}}}</script>",
+        f"location.href={json.dumps(APP_PATH)}}}</script>"),
         headers=_PAGE_HEADERS,
     )
 
@@ -531,15 +533,26 @@ def _json(payload: dict[str, Any]) -> JSONResponse:
 
 
 def _signed_out_page(request: Request) -> Response:
-    return HTMLResponse(
-        "<!doctype html><meta charset=utf-8>"
-        "<meta name=viewport content=\"width=device-width,initial-scale=1\"><title>AIStack</title>"
-        + ICON_LINK +
-        "<body style=\"font:16px/1.5 system-ui;margin:15vh auto;max-width:32rem;padding:0 1rem\">"
-        "<h1 style=\"font-size:1.25rem\">You are not signed in</h1>"
+    return HTMLResponse(plain_page(
+        "Signed out, AIStack",
+        "<h1>You are not signed in</h1>"
         "<p>Ask your coding agent to <strong>open my aistack dashboard</strong>. It will "
-        "give you a link that signs you in. A link works for five minutes.</p>"
-        + _not_connected_yet(request),
+        "give you a link that signs you in. A link works once, within five minutes.</p>"
+        + _not_connected_yet(request)),
+        status_code=401,
+        headers=_PAGE_HEADERS,
+    )
+
+
+def _link_spent_page() -> Response:
+    """A sign-in link opened a second time, or too late, in a browser it did not sign in.
+    The person is connected already, so the setup sentence is not offered."""
+    return HTMLResponse(plain_page(
+        "Sign-in link used, AIStack",
+        "<h1>This sign-in link has been used</h1>"
+        "<p>A link works once, within five minutes, and this one has already been used or has "
+        "expired. Ask your coding agent to <strong>open my aistack dashboard</strong> for a "
+        "new one.</p>"),
         status_code=401,
         headers=_PAGE_HEADERS,
     )
@@ -561,8 +574,7 @@ def _not_connected_yet(request: Request) -> str:
                 "and my name is <your name>.")
     return ("<p>Not connected yet? Paste this into Claude Code or Codex, with the invite code "
             "you were given, a short username and your name filled in:</p>"
-            "<pre style=\"white-space:pre-wrap;padding:12px;border:1px solid #8884;"
-            f"border-radius:8px\">{escape(sentence)}</pre>")
+            f"<pre>{escape(sentence)}</pre>")
 
 
 def _served_over_https(request: Request) -> bool:

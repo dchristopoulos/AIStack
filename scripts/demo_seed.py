@@ -117,7 +117,8 @@ class Person:
 
 async def seed(base_url: str, invite_code: str, long_names: bool = False,
                tokens: dict[str, str] | None = None) -> dict[str, str]:
-    """Fill the server and return a dashboard link per person, each good for five minutes.
+    """Fill the server and return a dashboard link per person, each good once, within five
+    minutes.
 
     With `long_names`, a fourth person adds every name at its longest: see `seed_long_names`.
     `tokens`, when given, receives each person's machine token.
