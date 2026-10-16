@@ -4,7 +4,6 @@ import logging
 import os
 import shutil
 import signal
-import socket
 import sys
 import time
 from pathlib import Path
@@ -150,21 +149,22 @@ async def serve_dashboard() -> None:
         get_local_principal,
         get_ticket_signer,
     )
-    from aistack.mcp.local_dashboard import open_in_browser
+    from aistack.mcp.local_dashboard import listen, open_in_browser
     from aistack.mcp.mcp import dashboard_server_config
     from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH
 
-    # Port 0: the system picks a free one, so a second dashboard or another program on a
-    # fixed port never stops this one starting. The link names whichever it picked.
-    listener = socket.create_server(("127.0.0.1", 0))
+    # This Library's own port when it is free, so the browser keeps its choices; another
+    # otherwise. The link names whichever it got.
+    listener = listen()
     port = listener.getsockname()[1]
     ticket = get_ticket_signer().sign_dashboard_link(get_local_principal().dashboard_holder())
     link = f"http://127.0.0.1:{port}{DASHBOARD_LOGIN_PATH}/{ticket}"
 
     # The link is a credential, so it goes to this terminal and the browser, never a log.
+    opened = open_in_browser(link)
     print(f"AIStack dashboard: http://127.0.0.1:{port}/app (Ctrl-C stops it)\n"
-          f"Sign-in link, good for five minutes: {link}", flush=True)
-    open_in_browser(link)
+          + ("Opened it in your browser. " if opened else "")
+          + f"Sign-in link, which works once within five minutes: {link}", flush=True)
     await uvicorn.Server(dashboard_server_config(settings.log_level)).serve(sockets=[listener])
 
 
