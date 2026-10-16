@@ -99,3 +99,18 @@ async def test_a_moved_library_refuses_the_page_and_its_changes(dashboard):
     with application_context.get_session_factory().begin() as session:
         assert [skill.name for skill in skill_service.list_skills(session, caller.user_id)] \
             == ["wizard"]
+
+
+async def test_a_project_folder_is_not_placed_into_from_the_local_dashboard_yet(dashboard):
+    """Its log event is replayed by this release and recorded by a later one (ADR-0026)."""
+    base, link = dashboard
+    async with _signed_in(base, link) as client:
+        machine = (await client.get("/api/state")).json()["machines"][0]["id"]
+        refused = await client.post(f"/api/skills/wizard/machines/{machine}",
+                                    json={"enabled": True, "project": "github.com/a/b"},
+                                    headers=REQUEST_HEADER)
+        added = await client.post(f"/api/machines/{machine}/projects",
+                                  json={"project": "github.com/a/b"}, headers=REQUEST_HEADER)
+
+    assert refused.status_code == 400 and "on an AIStack server for now" in refused.json()["error"]
+    assert added.status_code == 404
