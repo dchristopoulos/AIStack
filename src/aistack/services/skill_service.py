@@ -167,8 +167,25 @@ class InstallableSkill:
     changed: bool = True
 
 
-def list_skills(session: Session, user_id: uuid.UUID) -> list[SkillSummary]:
-    """The caller's own skills, then every team skill they may see. The listing is the search."""
+# A search is a few words; anything longer is not one.
+_QUERY_MAX_LENGTH = 100
+
+
+def list_skills(session: Session, user_id: uuid.UUID, team: str | None = None,
+                query: str | None = None) -> list[SkillSummary]:
+    """The caller's own skills, then every team skill they may see. The listing is the search:
+    `team` keeps that team's skills only, and `query` those whose name or description holds
+    it, in any case (IMP-12)."""
+    if query is not None and (not isinstance(query, str) or len(query) > _QUERY_MAX_LENGTH):
+        raise ValidationError(f"query is a few words of at most {_QUERY_MAX_LENGTH} "
+                              "characters, matched against names and descriptions.")
+    needle = None if not query or not query.strip() else query.strip().lower()
+
+    def matching(skills):
+        if needle is None:
+            return skills
+        return skills.where(func.lower(Skill.name).contains(needle, autoescape=True)
+                            | func.lower(Skill.description).contains(needle, autoescape=True))
 
     def described(skills) -> list:
         chosen = skills.subquery()
@@ -187,8 +204,10 @@ def list_skills(session: Session, user_id: uuid.UUID) -> list[SkillSummary]:
             .order_by(*order)
         ).all()
 
-    mine = described(visibility.my_skills(user_id).where(Skill.archived.is_(False)))
-    shared = described(visibility.team_skills(session, user_id))
+    mine = [] if team is not None else described(matching(
+        visibility.my_skills(user_id).where(Skill.archived.is_(False))))
+    teams = visibility.team_skills(session, user_id)
+    shared = described(matching(teams if team is None else teams.where(Team.name == team)))
     return [SkillSummary(*row) for row in (*mine, *shared)]
 
 

@@ -1,4 +1,5 @@
 import logging
+from inspect import cleandoc
 from time import perf_counter
 from typing import Literal, TypedDict
 
@@ -30,7 +31,7 @@ class JoinResult(TypedDict):
 @mcp.tool(
     # The only tool an invite code may reach; the policy reads this tag, not the name.
     tags={ONBOARDING_TAG},
-    description="""Register a new user and their first machine on this AIStack server.
+    description=cleandoc("""Register a new user and their first machine on this AIStack server.
 
     Call this once per person, from the machine they are setting up, while connected with an
     invite code as the bearer token: the server's own, or a team's (it starts with 'aistinv_'),
@@ -57,7 +58,7 @@ class JoinResult(TypedDict):
                     tell the user to restart their harness once. It is shown exactly here and
                     never again: the server stores only a hash of it.
             - team: the team they joined with its invite code, or null for the server's code.
-    """)
+    """))
 @handle_mcp_errors
 def join(username: str, machine_name: str, os: Literal["MACOS", "WINDOWS", "LINUX"],
          full_name: str | None = None) -> JoinResult:
@@ -120,7 +121,7 @@ class AddMachineResult(TypedDict):
 
 
 @mcp.tool(
-    description="""Register another computer for the user who is already connected.
+    description=cleandoc("""Register another computer for the user who is already connected.
 
     Call this from a machine that has joined, when the user wants AIStack on a second computer
     ("add my Windows PC"). It returns what connects that other computer's coding agent:
@@ -150,7 +151,7 @@ class AddMachineResult(TypedDict):
             the agent, and say "sync aistack": the first sync installs the sync skill and
             offers their Library. The token is shown here and never again: the server
             stores only a hash of it.
-    """)
+    """))
 @handle_mcp_errors
 def add_machine(name: str, os: Literal["MACOS", "WINDOWS", "LINUX"]) -> AddMachineResult:
     started_at = perf_counter()

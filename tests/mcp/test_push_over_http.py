@@ -119,7 +119,10 @@ async def test_no_file_content_crosses_mcp(server_url):
     async with client_for(server_url, token) as client:
         push_skill = next(tool for tool in await client.list_tools() if tool.name == "push_skill")
 
-    assert set(push_skill.inputSchema["properties"]) == {"name", "origin", "harness", "project"}
+    properties = push_skill.inputSchema["properties"]
+    assert set(properties) == {"name", "names", "origin", "harness", "project"}
+    # Several names at once, and still only names (IMP-11).
+    assert {"type": "array", "items": {"type": "string"}} in properties["names"]["anyOf"]
 
 
 @pytest.mark.parametrize("name", ["Wizard", "../wizard", "code review", "x" * 65])

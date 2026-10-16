@@ -27,6 +27,7 @@ from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.user import User
 from aistack.mcp import local_dashboard
 from aistack.mcp.local import local_mcp
+from aistack.mcp.tools import local as local_tools
 from aistack.services import onboarding_service, skill_service
 from aistack.services.skill_archive import ArchivedFile
 from aistack.services.skill_validation import validated_skill
@@ -215,6 +216,25 @@ async def test_sync_says_which_skill_no_push_would_take_and_why(computer):
     assert report["backup"] == ["wizard"]
     assert [entry["name"] for entry in report["cannot_back_up"]] == ["logo-maker"]
     assert "logo.png" in report["cannot_back_up"][0]["reason"]
+
+
+async def test_a_whole_backup_list_is_one_call_and_one_push_to_the_library(computer,
+                                                                           monkeypatch):
+    """IMP-11: in a GitHub Library each push was its own commit and push."""
+    shares = []
+    monkeypatch.setattr(local_tools, "library_after_write", lambda: shares.append(1) or True)
+    async with computer("laptop") as (laptop, home):
+        _write_skill(home)
+        _write_skill(home, "notes")
+        (home / ".claude" / "skills" / "notes" / "SKILL.md").write_text(
+            "---\nname: notes\ndescription: Notes.\n---\n")
+
+        result = await _call(laptop, "push_skill", names=["wizard", "notes", "missing"])
+
+    assert [(entry["name"], entry["revision"]) for entry in result["pushed"]] == [
+        ("wizard", 1), ("notes", 1)]
+    assert [entry["name"] for entry in result["refused"]] == ["missing"]
+    assert shares == [1]
 
 
 async def test_push_refuses_a_name_that_leaves_the_folder(computer):
