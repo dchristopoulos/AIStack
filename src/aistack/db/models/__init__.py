@@ -4,8 +4,11 @@ from aistack.db.models.invite import Invite
 from aistack.db.models.library_event import LibraryEvent
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
+from aistack.db.models.machine_project import MachineProject
+from aistack.db.models.machine_project_skill import MachineProjectSkill
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.operating_system import OperatingSystem
+from aistack.db.models.project import Project
 from aistack.db.models.schema_compatibility import SchemaCompatibility
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
@@ -33,8 +36,11 @@ __all__ = [
     "LibraryEvent",
     "Machine",
     "MachineHarness",
+    "MachineProject",
+    "MachineProjectSkill",
     "MachineSkill",
     "OperatingSystem",
+    "Project",
     "SchemaCompatibility",
     "Skill",
     "SkillFile",

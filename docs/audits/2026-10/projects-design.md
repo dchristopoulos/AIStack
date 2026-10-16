@@ -1,6 +1,6 @@
 # Skill folders inside projects: the design
 
-The decision is [ADR-0026 (proposed)](../../adr/0026-skills-folders-inside-projects.md); the build steps are in [PLAN.md](PLAN.md#skill-folders-inside-projects). This document holds the detail behind both. Where it says `<next>`, read the next free migration number when the work starts.
+The decision is [ADR-0026](../../adr/0026-skills-folders-inside-projects.md); the build steps are in [PLAN.md](PLAN.md#skill-folders-inside-projects). This document holds the detail behind both. Where it says `<next>`, read the next free migration number when the work starts.
 
 # Project skills folders: design notes (companion to ADR-0026)
 

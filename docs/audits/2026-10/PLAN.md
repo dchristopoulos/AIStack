@@ -60,8 +60,8 @@ How to work through it:
 - [ ] 22. A second computer gets the sync skill and the session-start hook, whatever its agent
 - [ ] 23. Setup can be run again, and a stopped setup can finish
 - [x] 24. Record the decision: ADR-0026 and the glossary (#152)
-- [ ] 25. Identify a project from its remote or its path
-- [ ] 26. Add the project tables (one compatible migration)
+- [x] 25. Identify a project from its remote or its path (#153)
+- [x] 26. Add the project tables (one compatible migration) (#156)
 - [ ] 27. Project placements in the services, and a removed skill wanted nowhere
 - [ ] 28. Replay project events before anything records them (bridge release)
 - [ ] 29. Sync a project folder
