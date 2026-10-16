@@ -364,6 +364,8 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/teams/{team}/groups` | `name`, optional `parent` (a path), optional `private` | `path`. Admin only |
 | `POST /api/teams/{team}/group` | `path`, and `private` (admin only) and/or `subscribed` (anyone who sees the group) | |
 | `POST /api/teams/{team}/group/members` | `path`, `username`, `member` (true or false) | Admin only |
+| `POST /api/teams/{team}/group/rename` | `path`, `name` | Admin only. The groups under it follow; answers the new `path` |
+| `POST /api/teams/{team}/group/delete` | `path` | Admin only, and only a group with no skills and no groups inside it |
 | `POST /api/teams/{team}/skills/{name}/move` | `group` (a path, or null for team level) | Admin only |
 | `POST /api/teams/{team}/skills/{name}/remove` | `{}` | Removes the team's copy. Admin only |
 

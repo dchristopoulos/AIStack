@@ -512,6 +512,44 @@ async def test_an_admin_deletes_a_team_and_members_keep_what_they_took(sign_in):
     assert dimitris.console_errors == []
 
 
+async def test_an_admin_renames_a_group_and_deletes_only_an_empty_one(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    await _open_team(dimitris, "aistack")
+    await page.get_by_role("tab", name="Groups").click()
+
+    await page.get_by_role("button", name="Manage developers", exact=True).click()
+    await page.get_by_role("menuitem", name="Rename…").click()
+    rename = page.get_by_role("dialog", name="Rename developers")
+    await rename.get_by_label("New name").fill("engineering")
+    await rename.get_by_role("button", name="Rename").click()
+    await expect(page.get_by_role("button", name="Manage engineering/backend")).to_be_visible()
+    paths = [group["path"] for group in _team(await dimitris.state(), "aistack")["groups"]]
+    assert "engineering/backend" in paths and "developers" not in paths
+
+    await page.get_by_role("button", name="Manage security", exact=True).click()
+    await page.get_by_role("menuitem", name="Delete group").click()
+    refused = page.get_by_role("dialog", name="Delete security?")
+    await refused.get_by_role("button", name="Delete group").click()
+    await expect(refused.get_by_role("alert")).to_contain_text("still has skills")
+    await refused.get_by_role("button", name="Cancel").click()
+
+    await page.get_by_role("button", name="New group").first.click()
+    create = page.get_by_role("dialog", name="New group in aistack")
+    await create.get_by_label("Name").fill("typo")
+    await create.get_by_role("button", name="Create group").click()
+    await page.get_by_role("button", name="Manage typo", exact=True).click()
+    await page.get_by_role("menuitem", name="Delete group").click()
+    await page.get_by_role("dialog", name="Delete typo?").get_by_role(
+        "button", name="Delete group").click()
+
+    await expect(page.get_by_role("button", name="Manage typo", exact=True)).to_have_count(0)
+    paths = [group["path"] for group in _team(await dimitris.state(), "aistack")["groups"]]
+    assert "typo" not in paths and "security" in paths
+    # The refusal's own answer is the one error a browser reports.
+    assert [error for error in dimitris.console_errors if "409" not in error] == []
+
+
 async def test_the_only_member_leaving_a_team_deletes_it(sign_in):
     alex = await sign_in("alex")
     page = alex.page

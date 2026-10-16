@@ -548,6 +548,61 @@ def set_group(session: Session, user_id: uuid.UUID, team: str, group: str,
     _group(session, found, group).private = bool(private)
 
 
+def rename_group(session: Session, user_id: uuid.UUID, team: str, group: str,
+                 name: str) -> str:
+    """Give a group a new name in the same place. The groups under it follow, and its
+    skills, members and subscriptions stay with it. Admins only. Returns the new path."""
+    found, _ = _as_admin(session, user_id, team)
+    target = _group(session, found, group)
+    name = _validated(name, "group name", GROUP_NAME_MAX_LENGTH)
+    parent, _, _ = target.path.rpartition("/")
+    new_path = f"{parent}/{name}" if parent else name
+    moving = [row for row in _all_groups(session, found)
+              if row.path == target.path or row.path.startswith(f"{target.path}/")]
+    longest = max(len(new_path) + len(row.path) - len(target.path) for row in moving)
+    if longest > GROUP_PATH_MAX_LENGTH:
+        raise ValidationError(f"With that name a group under '{target.path}' would have a "
+                              f"path longer than {GROUP_PATH_MAX_LENGTH} characters.")
+    old_path = target.path
+    try:
+        # A savepoint, so a taken name is a sentence and the caller's transaction survives.
+        with session.begin_nested():
+            for row in moving:
+                row.path = new_path + row.path[len(old_path):]
+            session.flush()
+    except IntegrityError as error:
+        raise Conflict(f"Team '{found.name}' already has a group '{new_path}'.") from error
+    logger.info(f"Group renamed. Team: '{found.team_id}'. Group: '{target.group_id}'. "
+                f"By: '{user_id}'.")
+    return new_path
+
+
+def delete_group(session: Session, user_id: uuid.UUID, team: str, group: str) -> None:
+    """Delete an empty group. Admins only.
+
+    One that still holds a skill or a group is refused: moving a private group's skills up
+    would show them to people it kept them from, and deleting them is a separate choice.
+    """
+    found, _ = _as_admin(session, user_id, team)
+    target = _group(session, found, group)
+    if any(row.path.startswith(f"{target.path}/") for row in _all_groups(session, found)):
+        raise Conflict(f"Group '{target.path}' has groups inside it. Delete or rename those "
+                       "first.")
+    if session.scalar(select(Skill.skill_id).where(Skill.group_id == target.group_id)
+                      .limit(1)) is not None:
+        raise Conflict(f"Group '{target.path}' still has skills. Move them to another group "
+                       "or remove them from the team first.")
+    # Its members and subscriptions go with it, by cascade.
+    session.execute(delete(TeamGroup).where(TeamGroup.group_id == target.group_id))
+    session.expunge(target)
+    logger.info(f"Group deleted. Team: '{found.team_id}'. Group: '{target.group_id}'. "
+                f"By: '{user_id}'.")
+
+
+def _all_groups(session: Session, team: Team) -> list[TeamGroup]:
+    return list(session.scalars(select(TeamGroup).where(TeamGroup.team_id == team.team_id)))
+
+
 def set_group_member(session: Session, user_id: uuid.UUID, team: str, group: str,
                      username: str, member: bool) -> None:
     """Add someone to a group or take them out. Admins only; the person must be in the team."""
