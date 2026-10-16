@@ -90,6 +90,17 @@ def remove_folder(session: Session, user_id: uuid.UUID, machine_id: uuid.UUID, k
     return count
 
 
+def folder_by_id(session: Session, machine_id: uuid.UUID, project_id: uuid.UUID,
+                 harness: Harness) -> MachineProject:
+    """The folder an upload URL was minted for, still managed by its computer. One removed
+    since refuses the upload before anything is stored."""
+    folder = _folder(session, machine_id, project_id, harness)
+    if folder is None:
+        raise NotFound("This project is no longer managed on this computer, so nothing was "
+                       "stored.")
+    return folder
+
+
 def required_folder(session: Session, user_id: uuid.UUID, machine_id: uuid.UUID, key: str,
                     harness: Harness) -> MachineProject:
     """A folder this computer manages. An unknown project, another user's, and one this
@@ -122,6 +133,16 @@ def set_enabled(session: Session, folder: MachineProject, skill_id: uuid.UUID, e
     if revision is not None:
         decision.revision = revision
     return changed
+
+
+def disable(session: Session, folder: MachineProject, skill_id: uuid.UUID) -> bool:
+    """Record that this folder should not have the skill. False when it never had a
+    decision here, which leaves nothing to disable."""
+    decision = _decision(session, folder.machine_project_id, skill_id)
+    if decision is None:
+        return False
+    decision.enabled = False
+    return True
 
 
 def decisions(session: Session, folder: MachineProject) -> dict[str, tuple[bool, int | None]]:

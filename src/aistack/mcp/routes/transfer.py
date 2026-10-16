@@ -16,8 +16,9 @@ from aistack.bootstrap.context.application_context import get_session_factory, g
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.request_body import bounded_body
 from aistack.mcp.routes.route_error_handler import handle_route_errors
-from aistack.services import skill_service
-from aistack.services.skill_archive import MAX_ARCHIVE_BYTES
+from aistack.services import project_service, skill_service
+from aistack.services.skill_archive import MAX_ARCHIVE_BYTES, read_archive
+from aistack.services.skill_validation import validated_skill
 from aistack.services.transfer_ticket import DownloadTicket, UploadTicket
 
 logger = logging.getLogger(__name__)
@@ -53,16 +54,22 @@ async def upload_skill(request: Request) -> Response:
 
 def _store_upload(ticket: UploadTicket, archive: bytes) -> skill_service.PushedSkill:
     """One upload, one transaction: the revision lands whole or not at all."""
+    # Validated before the transaction: parsing is slow, and SQLite's write lock is held from
+    # the first statement.
+    uploaded = validated_skill(ticket.skill_name, read_archive(archive))
     with get_session_factory().begin() as session:
-        return skill_service.push(
+        # Checked again here: the folder may have stopped being managed since the URL.
+        folder = None if ticket.project_id is None else project_service.folder_by_id(
+            session, ticket.machine_id, ticket.project_id, ticket.harness)
+        return skill_service.store(
             session,
             machine_id=ticket.machine_id,
             user_id=ticket.user_id,
-            name=ticket.skill_name,
+            uploaded=uploaded,
             origin=ticket.origin,
-            archive=archive,
             harness=ticket.harness,
             token_prefix=ticket.token_prefix,
+            project_folder=folder,
         )
 
 
