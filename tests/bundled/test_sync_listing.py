@@ -1,6 +1,7 @@
 """The sync skill's own listing commands, run on a skill folder that is a git clone."""
 
 import hashlib
+import os
 import pathlib
 import re
 import shutil
@@ -56,17 +57,19 @@ def test_the_bash_listing_leaves_out_only_what_push_leaves_out(folder):
     assert _listed(output) == _digests(folder)
 
 
-@pytest.mark.skipif(shutil.which("powershell") is None and shutil.which("pwsh") is None,
-                    reason="the PowerShell listing runs on Windows, and where pwsh is")
+@pytest.mark.skipif(sys.platform != "win32", reason="the PowerShell listing is for Windows paths")
 def test_the_powershell_listing_leaves_out_only_what_push_leaves_out(folder, tmp_path):
-    shell = shutil.which("powershell") or shutil.which("pwsh")
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    # Windows PowerShell started from another PowerShell inherits a module path it cannot load
+    # its own cmdlets from; a person's shell has its own.
+    environment = {name: value for name, value in os.environ.items() if name != "PSModulePath"}
     # From a file, as a person's shell runs it: through -Command, Windows' quoting of the
     # command line mangles the script's double quotes before PowerShell sees them.
     script = tmp_path.parent / f"{tmp_path.name}-listing.ps1"
     script.write_text(_block("powershell", "Get-FileHash").replace("<folder>", str(folder)),
                       encoding="utf-8-sig")
     done = subprocess.run([shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                           str(script)], capture_output=True, text=True)
+                           str(script)], capture_output=True, text=True, env=environment)
 
     assert done.returncode == 0, done.stderr
     assert _listed(done.stdout) == _digests(folder), (done.stdout, done.stderr)
