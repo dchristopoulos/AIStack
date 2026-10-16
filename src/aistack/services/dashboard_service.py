@@ -328,7 +328,10 @@ def _team_skills(session: Session, user_id: uuid.UUID,
                visible.c.group, visible.c.group_id, newest.c.revision, newest.c.pushed_by,
                newest.c.created_on)
         .join(newest, newest.c.skill_id == visible.c.skill_id)
-        .order_by(bytewise(visible.c.team), bytewise(visible.c.group), bytewise(visible.c.name))
+        # Team level first, then by group: PostgreSQL sorts a NULL group last and SQLite
+        # first, and the page must read the same on both.
+        .order_by(bytewise(visible.c.team), visible.c.group.is_not(None),
+                  bytewise(visible.c.group), bytewise(visible.c.name))
     ).all()
     by_team: dict[str, list[dict[str, Any]]] = {}
     for (skill_id, name, description, team, group, group_id, revision, pushed_by,
