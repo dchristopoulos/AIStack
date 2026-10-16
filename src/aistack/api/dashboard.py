@@ -536,9 +536,10 @@ def _not_connected_yet(request: Request) -> str:
     except ValidationError:
         return ""
     sentence = (f"Set up AIStack: fetch {server}/setup and follow it.\n"
-                "Invite code: <the invite code>. Call me <your name>.")
+                "Invite code: <the invite code>. My username is <a short handle like maria>, "
+                "and my name is <your name>.")
     return ("<p>Not connected yet? Paste this into Claude Code or Codex, with the invite code "
-            "you were given and the name you want to go by:</p>"
+            "you were given, a short username and your name filled in:</p>"
             "<pre style=\"white-space:pre-wrap;padding:12px;border:1px solid #8884;"
             f"border-radius:8px\">{escape(sentence)}</pre>")
 

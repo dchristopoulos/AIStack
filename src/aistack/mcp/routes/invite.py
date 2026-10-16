@@ -65,15 +65,16 @@ async def invite(request: Request) -> Response:
 
     server = server_base_url(request)
     sentence = (f"Set up AIStack: fetch {server}/setup and follow it.\n"
-                f"Invite code: {code}. Call me <your name>.")
+                f"Invite code: {code}. My username is <a short handle like maria>, and my "
+                "name is <your name>.")
     join = f"Join the AIStack team {team} with invite code {code}."
     # In the fragment, which the browser never sends: the dashboard reads it and drops it.
     dashboard = f"{server}{APP_PATH}#/join/{quote(code, safe='')}"
     return _page(
         f"Join {team}", 200,
         f"<h1 style=\"font-size:1.25rem\">You are invited to <code>{escape(team)}</code></h1>"
-        "<p>Paste this into Claude Code or Codex, with the name you want to go by. It creates "
-        "your account, connects this computer, and puts you in the team.</p>"
+        "<p>Paste this into Claude Code or Codex, with a short username and your name filled "
+        "in. It creates your account, connects this computer, and puts you in the team.</p>"
         f"<pre style=\"white-space:pre-wrap;padding:12px;border:1px solid #8884;"
         f"border-radius:8px\">{escape(sentence)}</pre>"
         "<p>Already have an account? Say this to your coding agent instead:</p>"

@@ -52,7 +52,7 @@ The file is where the code lives: the server never prints it, and there is no co
 
 The volume at `/data` holds the SQLite database, which is every user, machine, team, group, skill, and revision. Stopping, removing, and recreating the container keeps all of it as long as the volume stays.
 
-Then join first, alone, before you share the code. The first user to join is recorded as the server's admin (`is_admin`), but nothing reads that today: it grants no power in a tool or on the dashboard, and the server's own operations are the scripts below, which need access to the container, not an account. The README has the one-paste setup. After that, people usually arrive through a team's invite link, which creates their account; your own code is for admitting someone directly.
+Then join with it yourself, as anyone would; the order does not matter. The first user to join is recorded as the server's admin (`is_admin`), but nothing reads that today: it grants no power in a tool or on the dashboard, and the server's own operations are the `aistack admin` commands below, which need access to the container, not an account. The README has the one-paste setup. After that, people usually arrive through a team's invite link, which creates their account; your own code is for admitting someone directly.
 
 ## Configuration
 
