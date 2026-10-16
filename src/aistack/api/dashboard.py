@@ -6,8 +6,11 @@ Nothing is decided here about who may see or change what; the services decide.
 """
 
 import asyncio
+import base64
+import hashlib
 import json
 import logging
+import re
 import uuid
 from collections.abc import Callable
 from functools import wraps
@@ -47,6 +50,7 @@ from aistack.services import (
     skill_service,
     team_service,
 )
+from aistack.services.skill_archive import build_archive
 from aistack.services.transfer_ticket import DASHBOARD_SESSION_LIFETIME_SECONDS, DashboardHolder
 
 logger = logging.getLogger(__name__)
@@ -63,17 +67,26 @@ _BODY_READ_TIMEOUT_SECONDS = 10
 _SIGNED_OUT = ("You are not signed in to this dashboard. Ask your coding agent to \"open my "
                "aistack dashboard\" for a new link.")
 
-# The page loads nothing from anywhere else and may only talk to this server. Its styles and
-# script are inline because it is one file.
-_PAGE_HEADERS = {
-    "Content-Security-Policy": (
-        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
-        "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; "
-        "frame-ancestors 'none'"),
-    "X-Content-Type-Options": "nosniff",
-    "Referrer-Policy": "no-referrer",
-    "Cache-Control": "no-store",
-}
+def _page_headers(*scripts: str) -> dict[str, str]:
+    """A page loads nothing from anywhere else and may only talk to this server. Its styles
+    and scripts are inline because it is one file; the scripts run only as these exact texts,
+    by their hashes, so markup someone slipped into a skill's description runs nothing
+    (STD-13). The styles stay inline-allowed for the page's style attributes."""
+    sources = " ".join(
+        f"'sha256-{base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()}'"
+        for script in scripts) or "'none'"
+    return {
+        "Content-Security-Policy": (
+            f"default-src 'none'; style-src 'unsafe-inline'; script-src {sources}; "
+            "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; "
+            "frame-ancestors 'none'"),
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "Cache-Control": "no-store",
+    }
+
+
+_PAGE_HEADERS = _page_headers(*re.findall(r"<script>(.*?)</script>", dashboard_page(), re.S))
 _API_HEADERS = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 
 # The routes `aistack dashboard` serves on 127.0.0.1 (ADR-0020): the person's own Library and
@@ -175,6 +188,10 @@ def _switch_page(holder: DashboardHolder, joining: str, current: str) -> Respons
     """Ask before replacing a session. The link was spent on the way here, so the button
     carries a fresh one, good for the same few minutes and only once."""
     switch = f"{DASHBOARD_LOGIN_PATH}/{get_ticket_signer().sign_dashboard_link(holder)}"
+    script = ("document.getElementById('switch').onclick=async()=>{"
+              f"await fetch({json.dumps(switch)},"
+              f"{{method:'POST',headers:{{'{REQUEST_HEADER}':'1'}}}});"
+              f"location.href={json.dumps(APP_PATH)}}}")
     return HTMLResponse(plain_page(
         "Switch account?, AIStack",
         "<h1>Switch account?</h1>"
@@ -183,10 +200,8 @@ def _switch_page(holder: DashboardHolder, joining: str, current: str) -> Respons
         "<p>If someone else sent you this link, stay with your own account.</p>"
         f"<p><button id=switch>Sign in as {escape(joining)}</button> "
         f"<a href=\"{APP_PATH}\">Stay signed in as {escape(current)}</a></p>"
-        "<script>document.getElementById('switch').onclick=async()=>{"
-        f"await fetch({json.dumps(switch)},{{method:'POST',headers:{{'{REQUEST_HEADER}':'1'}}}});"
-        f"location.href={json.dumps(APP_PATH)}}}</script>"),
-        headers=_PAGE_HEADERS,
+        f"<script>{script}</script>"),
+        headers=_page_headers(script),
     )
 
 
@@ -235,6 +250,26 @@ async def team_update_changes(request: Request) -> Response:
     return _json(await asyncio.to_thread(
         _in_transaction, _as_user(dashboard_service.update_changes), holder,
         request.path_params["team"], request.path_params["name"], read_only=True))
+
+
+@_route(API_PATH + "/library.tar.gz", methods=["GET"])
+@handle_route_errors
+async def download_library(request: Request) -> Response:
+    """The person's whole Library as one archive, a folder per skill, as `aistack export`
+    writes it: their data, theirs to take elsewhere (STD-15)."""
+    holder = _signed_in(request)
+    if is_local_mode():
+        await asyncio.to_thread(library_before_read)
+    skills = await asyncio.to_thread(_in_transaction, _as_user(skill_service.export_library),
+                                     holder, read_only=True)
+    # Packed after the transaction: on SQLite a read must not hold anything while it works.
+    # ponytail: built in memory, a few MB for a real Library; stream it if Libraries grow.
+    archive = await asyncio.to_thread(build_archive, (
+        (f"{skill.name}/{path}", content, executable)
+        for skill in skills for path, content, executable in skill.files),
+        max((skill.modified_at for skill in skills), default=0))
+    return Response(archive, media_type="application/gzip", headers=_API_HEADERS | {
+        "Content-Disposition": 'attachment; filename="aistack-library.tar.gz"'})
 
 
 @_route(API_PATH + "/logout", methods=["POST"])

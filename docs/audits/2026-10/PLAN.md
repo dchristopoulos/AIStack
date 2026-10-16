@@ -85,7 +85,7 @@ How to work through it:
 - [ ] 40d. Sync without copying digests or running seven commands per skill (trust boundary; get_skill's smaller result waits for a minor release)
 - [x] 40c. A session start that stays quiet when nothing changed (f43f3b1)
 - [x] 41. One log: a line for every change, one format, no SDK chatter (14907f9)
-- [ ] 41d. Download your Library, and the headers an https server sends
+- [x] 41d. Download your Library, and the headers an https server sends (d29e8e4)
 - [ ] 41e. The page's words in one table
 - [ ] 41b. The operator can forget a person
 - [ ] 41c. Metrics for the operator, behind a token

@@ -2745,7 +2745,10 @@ function settingsView() {
             fact('Computers', String(state.machines.length)),
             fact('Library', el('a', { class: 'link', href: '#/storage' }, STORAGE[library().kind].title)),
             state.server !== false && fact('Teams', String(state.teams.length)),
-            state.release && fact('AIStack', el('span', { class: 'mono' }, state.release)))))),
+            state.release && fact('AIStack', el('span', { class: 'mono' }, state.release)))),
+        // Your data, to take anywhere: every skill as a folder, as `aistack export` writes them (STD-15).
+        !DEMO && el('div', { class: 'card-foot' }, el('span', null, 'Every skill in your library, a folder each.'),
+          el('a', { class: 'btn', href: '/api/library.tar.gz', download: 'aistack-library.tar.gz' }, 'Download my library')))),
   ];
 }
 

@@ -357,6 +357,7 @@ The page is the only client these were written for, and they are documented so t
 | Route | Body | Returns |
 |---|---|---|
 | `GET /api/state` | | Everything the page shows, below |
+| `GET /api/library.tar.gz` | | The whole Library as one archive, a folder per skill at its latest revision, as `aistack export` writes it; on the localhost dashboard too |
 | `POST /api/logout` | `{}` | Ends the session, wherever its cookie was copied, and clears the cookie |
 | `POST /api/skills/{name}/machines/{machine_id}` | `enabled` (true or false), optional `harness` (`claude_code`, the default, or `agents`), optional `project` (a key that computer manages) | Switches one of the user's own skills on or off in one harness of one of their computers, or in that project's folder there (server only). The files move at that folder's next sync there |
 | `POST /api/machines/{machine_id}/projects` | `project` (a key), optional `harness` | Starts managing one of the user's projects, already known from another computer, on this computer. Its path is unknown until it syncs there. Server only |
