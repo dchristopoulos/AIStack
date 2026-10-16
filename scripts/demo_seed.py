@@ -62,6 +62,12 @@ SKILLS = {
 }
 
 
+# A repository on the macbook, as its sync skill reports it.
+PROJECT_HERE = {"path": "/Users/dimitris/code/aistack",
+                "remote": "git@github.com:dchristopoulos/AIStack.git"}
+PROJECT_KEY = "github.com/dchristopoulos/aistack"
+
+
 def archive(name: str, extra: str = "") -> bytes:
     description, files = SKILLS[name]
     document = f"---\nname: {name}\ndescription: {description}\n---\n\n# {name}\n\n{extra}"
@@ -139,6 +145,12 @@ async def seed(base_url: str, invite_code: str, long_names: bool = False,
     await dimitris.tool("sync", local={}, harness="agents")
     for name in ("commit-messages", "meeting-notes"):
         await dimitris.page(f"/skills/{name}/machines/{macbook}", enabled=True, harness="agents")
+
+    # The aistack repository on the macbook is a project: its Claude Code folder synced once,
+    # and holds one skill of its own (ADR-0026).
+    await dimitris.tool("sync", local={}, here=PROJECT_HERE, project=PROJECT_KEY)
+    await dimitris.page(f"/skills/aistack-api-notes/machines/{macbook}", enabled=True,
+                        project=PROJECT_KEY)
 
     # A company team, with a group per discipline and a narrower one inside it.
     await dimitris.page("/teams", name="aistack")
@@ -246,7 +258,7 @@ def main() -> None:
     with os.fdopen(descriptor, "w") as file:
         json.dump({"server": base_url, "tokens": tokens}, file)
     print("Seeded: 3 people, 4 computers, teams 'aistack' and 'friends', 3 groups (one nested, "
-          "one private).")
+          "one private), and the aistack repository as a project on the macbook.")
     print("Maria has an update to 'code-review' waiting. Alex is in 'aistack' and in no group, "
           "so the private 'security' group is hidden from him.\n")
     print_links(links)

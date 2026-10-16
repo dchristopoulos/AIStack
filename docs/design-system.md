@@ -159,8 +159,17 @@ one entry per place the Library can live.
   (ticks per computer and agent), its revision and files, Share, Remove.
 - **Where something is, is information.** Computers and agents are listed as words with links
   to that folder. Removal happens in the panel or on the folder page, never by clicking a tag.
-- **Computers are a folder tree**: computer, then each coding agent, then its folders. Today
-  each agent has one, Global (its home skills folder). Project folders go beside Global.
+- **Computers are a folder tree**: computer, then each coding agent, then its folders: Global
+  (its home skills folder), then each project the computer manages, by the repository's name
+  in monospace with the `repo` icon.
+- **A project folder reads as "<agent> in <project>"** everywhere a folder is named: the
+  picker, "Where it is", page titles. Its page says the folder relative to the repository
+  (`.claude/skills`), where the repository was last seen on that computer, and, until it
+  syncs there, a card saying how its skills arrive. A skill also in the global folder gets one
+  help line saying which copy the agent uses. "Add a project" offers two cards: a project
+  another computer manages, added at once, and a new repository, which starts with a sentence
+  said inside it. "Stop managing…" confirms and says the files stay. Project folders are a
+  server's for now: the localhost dashboard shows no "Add a project".
 - **Adding an agent is local until it matters.** A picked agent shows on its computer at once
   (kept in this browser), and becomes real when a skill is placed there or it syncs.
 - **Say what is true for this setup.** Text that depends on where the Library lives, or on
