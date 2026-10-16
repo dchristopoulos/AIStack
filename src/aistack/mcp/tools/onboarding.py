@@ -136,10 +136,15 @@ class AddMachineResult(TypedDict):
                       permanent token, to run in a terminal there for Claude Code.
             - codex_config: the same connection for Codex, to add to ~/.codex/config.toml
                            there, keeping what the file already holds.
-            Show the one for the agent they use on that computer, or both if you do not
-            know, exactly as returned in a code block, and tell them to start that agent
-            there and say "sync aistack". The token is shown here and never again: the
-            server stores only a hash of it.
+            Ask which agent that computer uses, then show its one exactly as returned in a
+            code block, or both if they do not know. Tell them, in one line, that it holds
+            a permanent key for that computer: paste it only there, and delete it from
+            anywhere it was carried. If it leaks, the operator revokes the machine
+            (docs/OPERATING.md). Then tell them to create the skills folder there first
+            (mkdir -p ~/.claude/skills for Claude Code, ~/.agents/skills for Codex), start
+            the agent, and say "sync aistack": the first sync installs the sync skill and
+            offers their Library. The token is shown here and never again: the server
+            stores only a hash of it.
     """)
 @handle_mcp_errors
 def add_machine(name: str, os: Literal["MACOS", "WINDOWS", "LINUX"]) -> AddMachineResult:

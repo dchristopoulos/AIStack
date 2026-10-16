@@ -201,6 +201,25 @@ async def test_sync_hands_out_the_servers_sync_skill_until_the_machine_has_it(se
     assert (await _call(server_url, machine, "sync", local=installed))["sync_skill_url"] is None
 
 
+async def test_a_codex_only_computer_added_with_add_machine_gets_the_sync_skill(server_url):
+    """PH-06: Codex is the agent connected there, so the shared folder is where it goes."""
+    first = await _join(server_url)
+    await _push(server_url, first)
+    codex_box = await second_machine(server_url, first, "codex-box")
+
+    report = await _call(server_url, codex_box, "sync", local={}, harness="agents")
+    async with httpx.AsyncClient() as http:
+        document = (await http.get(report["sync_skill_url"])).content
+    installed = {"sync-aistack": {"SKILL.md": hashlib.sha256(document).hexdigest()}}
+
+    assert report["first_sync"] is True
+    # The skill's first-sync step is what offers the Library's wizard here.
+    assert "## 5. The first sync on this computer" in document.decode()
+    assert (await _call(server_url, codex_box, "list_skills"))["skills"][0]["name"] == "wizard"
+    assert (await _call(server_url, codex_box, "sync", local=installed,
+                        harness="agents"))["sync_skill_url"] is None
+
+
 async def test_the_sync_description_lists_files_the_way_the_skill_does(server_url):
     """An agent with only the description must not send what the description says to skip."""
     async with client_for(server_url, await _join(server_url)) as client:

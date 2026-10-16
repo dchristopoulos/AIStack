@@ -46,6 +46,17 @@ async def test_the_invite_page_names_the_team_and_what_to_paste(server_url):
     assert "default-src 'none'" in response.headers["content-security-policy"]
 
 
+async def test_the_invite_page_gives_someone_with_an_account_a_sentence_of_their_own(server_url):
+    """AUTO-22: they need not pick the code out of the setup sentence."""
+    invite = await _invite(server_url)
+
+    response = await _get(invite["link"])
+
+    assert f"Join the AIStack team acme with invite code {invite['code']}." in response.text
+    # In the fragment, which the browser does not send, and only to this server.
+    assert f'href="{_base(server_url)}/app#/join/{invite["code"]}"' in response.text
+
+
 async def test_a_wrong_or_used_code_reads_exactly_like_any_other_wrong_code(server_url):
     dimitris = await join(server_url)
     maria = await join(server_url, "maria", "laptop")

@@ -128,6 +128,20 @@ async def test_the_sync_skill_is_served_exactly_as_shipped(server_url):
     assert response.text.startswith("---\nname: sync-aistack\n")
 
 
+async def test_a_computer_that_skipped_setup_is_offered_the_same_hook_at_its_first_sync(
+        server_url):
+    """AUTO-09: one connected with "add my other computer" never saw setup's step 5."""
+    setup = (await _get(f"{_base(server_url)}/setup")).text
+    document = sync_skill_document()
+    first_sync = document[document.index("## 5. The first sync"):document.index("## 6.")]
+    hook = re.search(r"```json\n(\{\"matcher\".*?)\n```", first_sync, re.S).group(1)
+
+    assert hook in setup
+    # Found by the command, so a hook setup already wrote is not offered twice.
+    assert json.loads(hook)["hooks"][0]["command"].endswith("run the sync-aistack skill.")
+    assert "contains `run the sync-aistack skill`" in first_sync
+
+
 def test_the_sync_skill_stops_when_aistack_is_not_connected():
     """Without the tools, an agent left to improvise reached the server with a token it read
     from its own configuration. The skill stops it first and says what to check instead."""

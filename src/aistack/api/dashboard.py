@@ -37,7 +37,7 @@ from aistack.mcp.auth.failure_limiter import client_address, note_failure
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.request_body import bounded_body
 from aistack.mcp.routes.route_error_handler import handle_route_errors
-from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH, server_base_url
+from aistack.mcp.server_url import APP_PATH, DASHBOARD_LOGIN_PATH, server_base_url
 from aistack.services import (
     dashboard_service,
     library_log,
@@ -49,7 +49,6 @@ from aistack.services.transfer_ticket import DASHBOARD_SESSION_LIFETIME_SECONDS,
 
 logger = logging.getLogger(__name__)
 
-APP_PATH = "/app"
 API_PATH = "/api"
 
 SESSION_COOKIE = "aistack_session"

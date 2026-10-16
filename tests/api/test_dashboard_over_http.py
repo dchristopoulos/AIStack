@@ -647,7 +647,8 @@ async def test_each_computer_says_when_it_was_added_from_where_and_when_it_last_
 
     assert before["laptop"]["added_by"] is None and before["desktop"]["added_by"] == "laptop"
     assert before["laptop"]["last_synced"]["claude_code"] is not None
-    assert before["desktop"]["last_synced"] == {"claude_code": None}
+    # It never synced, so it shows no folder at all (UX-07).
+    assert before["desktop"]["last_synced"] == {}
     assert before["laptop"]["added_on"] <= before["desktop"]["added_on"]
     # The computer that added it is gone, and that is still worth saying.
     assert after["desktop"]["added_by"] is None and after["desktop"]["added_by_removed"]

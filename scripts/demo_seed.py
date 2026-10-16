@@ -105,7 +105,10 @@ async def seed(base_url: str, invite_code: str, long_names: bool = False) -> dic
     """
     dimitris, maria, alex = (Person(base_url, name) for name in ("dimitris", "maria", "alex"))
     await dimitris.join(invite_code, "macbook", "MACOS")
-    await dimitris.tool("add_machine", name="desktop", os="LINUX")
+    added = await dimitris.tool("add_machine", name="desktop", os="LINUX")
+    # The desktop ran the command it was given and synced once, so it shows Claude Code.
+    desktop_token = added["command"].split("Bearer ")[1].rstrip('"')
+    await dimitris.call(desktop_token, "sync", local={})
     await maria.join(invite_code, "work-laptop", "LINUX")
     await alex.join(invite_code, "thinkpad", "WINDOWS")
 
