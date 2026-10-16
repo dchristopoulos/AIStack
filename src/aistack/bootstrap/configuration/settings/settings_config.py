@@ -60,6 +60,13 @@ class Settings(DatabaseSettings):
                     "(ADR-0003). Operator-supplied; never generated, printed, or logged."
     )
 
+    metrics_token: SecretStr | None = Field(
+        default=None,
+        validation_alias="aistack_metrics_token",
+        description="The bearer `/metrics` answers to (STD-19). Unset, `/metrics` answers 404 "
+                    "to everyone. Checked as the invite code is; never printed or logged."
+    )
+
     invite_code_file: Path | None = Field(
         default=None,
         validation_alias="aistack_invite_code_file",

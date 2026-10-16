@@ -176,7 +176,7 @@ def test_the_sdks_lines_around_every_request_stay_out_and_error_means_error():
 
 def test_a_line_carries_the_time_with_its_offset():
     configure_logging("INFO")
-    record = logging.LogRecord("aistack", logging.INFO, __file__, 1, "x", None, None)
+    record = logging.getLogRecordFactory()("aistack", logging.INFO, __file__, 1, "x", None, None)
 
     stamp = logging.getLogger().handlers[0].formatter.format(record).split(" ")[0]
 

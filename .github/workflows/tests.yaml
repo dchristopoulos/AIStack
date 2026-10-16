@@ -158,6 +158,7 @@ jobs:
     env:
       # A throwaway secret for a throwaway container. Long enough to pass the startup check.
       INVITE_CODE: ci-container-invite-code-not-a-secret
+      METRICS_TOKEN: ci-container-metrics-token-not-a-secret
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -179,11 +180,17 @@ jobs:
           # capability fails here.
           docker run -d --name aistack -p 127.0.0.1:8000:8000 \
             --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
-            -e AISTACK_INVITE_CODE="$INVITE_CODE" \
+            -e AISTACK_INVITE_CODE="$INVITE_CODE" -e AISTACK_METRICS_TOKEN="$METRICS_TOKEN" \
             -v aistack-ci:/data aistack:ci
           scripts/wait_until_healthy.sh aistack
 
       - run: poetry run python scripts/container_smoke.py fresh http://127.0.0.1:8000 "$INVITE_CODE" state.json
+
+      - name: The operator's bearer reads the counts, and nobody else's does
+        run: |
+          curl -fsS -H "Authorization: Bearer $METRICS_TOKEN" http://127.0.0.1:8000/metrics \
+            | grep -F 'aistack_tool_calls_total{tool="join",outcome="ok"}'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/metrics)" = 404
 
       - name: Restart, and find everything still there
         run: |
@@ -201,6 +208,7 @@ jobs:
           docker logs aistack > container.log 2>&1
           cat container.log
           ! grep -F "$INVITE_CODE" container.log
+          ! grep -F "$METRICS_TOKEN" container.log
           ! grep -E "aist_[A-Za-z0-9_-]{20,}" container.log
           ! grep -E "aistinv_[A-Za-z0-9_-]{20,}" container.log
           ! grep -E "eyJ[A-Za-z0-9_-]{10,}\." container.log
