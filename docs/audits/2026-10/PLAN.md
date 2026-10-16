@@ -57,7 +57,7 @@ How to work through it:
 - [ ] 21b. A server notices a machine token copied to another computer
 - [ ] 22. A second computer gets the sync skill and the session-start hook, whatever its agent
 - [ ] 23. Setup can be run again, and a stopped setup can finish
-- [ ] 24. Record the decision: ADR-0026 and the glossary
+- [x] 24. Record the decision: ADR-0026 and the glossary (#152)
 - [ ] 25. Identify a project from its remote or its path
 - [ ] 26. Add the project tables (one compatible migration)
 - [ ] 27. Project placements in the services, and a removed skill wanted nowhere
