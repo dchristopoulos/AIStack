@@ -417,6 +417,8 @@ OUTSIDER_ROUTES = {
     "/teams/{team}/groups": {"name": "x"},
     "/teams/{team}/group": {"path": "x", "subscribed": False},
     "/teams/{team}/group/members": {"path": "x", "username": "dimitris", "member": True},
+    "/teams/{team}/group/rename": {"path": "x", "name": "y"},
+    "/teams/{team}/group/delete": {"path": "x"},
     "/teams/{team}/skills/{name}/move": {"group": None},
     "/teams/{team}/skills/{name}/remove": {},
     "/skills/{name}/share": {"team": "{team}"},

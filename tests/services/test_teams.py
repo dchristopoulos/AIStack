@@ -1085,6 +1085,67 @@ def test_groups_nest_as_deep_as_is_useful_and_no_deeper(session_factory, dimitri
         _do(session_factory, team_service.create_group, admin, acme, "sub")
 
 
+def _group_paths(session_factory, joined, team) -> list[str]:
+    return [group.path for group in _do(session_factory, team_service.groups,
+                                        joined.user.user_id, team)]
+
+
+def test_renaming_a_group_takes_the_groups_under_it_along(session_factory, dimitris, maria,
+                                                          groups):
+    """PH-04: a mistyped group can be put right, and keeps its skills and members."""
+    admin = dimitris.user.user_id
+
+    assert _do(session_factory, team_service.rename_group, admin, groups, "backend",
+               "server") == "server"
+
+    assert _group_paths(session_factory, dimitris, groups) == [
+        "security", "server", "server/aistack"]
+    assert ("acme", "server/aistack", "api-notes") in _listing(session_factory, maria)
+    assert ("acme", "server", "sql-style") in _listing(session_factory, maria)
+
+
+def test_a_group_cannot_be_renamed_onto_a_taken_name(session_factory, dimitris, groups):
+    admin = dimitris.user.user_id
+
+    with pytest.raises(Conflict, match="already has a group 'security'"):
+        _do(session_factory, team_service.rename_group, admin, groups, "backend", "security")
+    with pytest.raises(ValidationError, match="lowercase letters"):
+        _do(session_factory, team_service.rename_group, admin, groups, "backend", "a/b")
+
+    assert _group_paths(session_factory, dimitris, groups) == [
+        "backend", "backend/aistack", "security"]
+
+
+def test_only_an_empty_group_is_deleted(session_factory, dimitris, groups):
+    """Moving a private group's skills up would show them to people it kept them from."""
+    admin = dimitris.user.user_id
+    _do(session_factory, team_service.create_group, admin, groups, "typo")
+
+    _do(session_factory, team_service.delete_group, admin, groups, "typo")
+
+    with pytest.raises(Conflict, match="has groups inside it"):
+        _do(session_factory, team_service.delete_group, admin, groups, "backend")
+    with pytest.raises(Conflict, match="still has skills"):
+        _do(session_factory, team_service.delete_group, admin, groups, "security")
+    assert _group_paths(session_factory, dimitris, groups) == [
+        "backend", "backend/aistack", "security"]
+
+
+def test_only_an_admin_renames_or_deletes_a_group(session_factory, dimitris, maria,
+                                                  groups):
+    admin = dimitris.user.user_id
+    _do(session_factory, team_service.create_group, admin, groups, "typo")
+
+    for call, arguments in ((team_service.rename_group, ("typo", "other")),
+                            (team_service.delete_group, ("typo",))):
+        with pytest.raises(ValidationError, match="Only an admin"):
+            _do(session_factory, call, maria.user.user_id, groups, *arguments)
+    with pytest.raises(NotFound, match="no group 'missing'"):
+        _do(session_factory, team_service.delete_group, admin, groups, "missing")
+
+    assert "typo" in _group_paths(session_factory, dimitris, groups)
+
+
 # --- removing from my skills ----------------------------------------------------------------
 
 def test_removing_a_skill_from_my_skills_does_not_come_back_as_a_new_one(session_factory,
