@@ -43,7 +43,7 @@ macOS and Linux:
 
 ```bash
 cd <folder> 2>/dev/null && find -L . -mindepth 2 -type f \
-  ! -name .DS_Store ! -path './.*' ! -path './synced/*' \
+  ! -name .DS_Store ! -path './.*' ! -path './synced/*' ! -path '*/.git/*' \
   -exec shasum -a 256 {} +
 ```
 
@@ -52,14 +52,18 @@ If `shasum` is missing, use `sha256sum` with the same arguments.
 Windows (PowerShell):
 
 ```powershell
-Get-ChildItem "<folder>" -Recurse -File |
-  Where-Object { $_.FullName -notmatch '\\(synced|\.[^\\]*)\\' } |
-  Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $($_.Path)" }
+$root = (Get-Item -LiteralPath "<folder>").FullName.TrimEnd('\')
+Get-ChildItem $root -Recurse -File -Force | ForEach-Object {
+  $rel = $_.FullName.Substring($root.Length + 1)
+  if ($rel -match '\\' -and $rel -notmatch '^(synced|\.[^\\]*)\\|\\\.git\\' -and $_.Name -ne '.DS_Store') {
+    "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)  .\$rel"
+  }
+}
 ```
 
 Each line is a digest and a path. The first folder in the path is the skill; the rest is the file's path inside it. `./wizard/scripts/run.sh` belongs to skill `wizard` as `scripts/run.sh`.
 
-Leave out the `synced` folder (Claude Code manages it for claude.ai skills) and any folder starting with a dot. No output means no local skills, which is a valid answer.
+Leave out the `synced` folder (Claude Code manages it for claude.ai skills), any folder at the top starting with a dot, and any `.git` folder inside a skill, as push does. No output means no local skills, which is a valid answer.
 
 ## 3. Call `sync`
 
@@ -79,7 +83,7 @@ Work through the fields in this order, passing the same harness to every tool yo
 
 1. **`sync_skill_url`**: usually `null`. When it is a URL, this folder's copy of this skill is missing or differs from the server's. Download it only if `<folder>` is the folder this very file, `sync-aistack/SKILL.md`, was loaded from: `curl -sS --create-dirs -o <folder>/sync-aistack/SKILL.md "<sync_skill_url>"`, without asking. It is AIStack's own file, so nothing of the user's is lost. For any other folder, ignore the URL and never create `sync-aistack` there: the agents reading that folder are not connected to AIStack, and the skill would tell them to sync. Step 5 never copies it either.
 2. **`install`** and **`update`**: call `get_skill` with each entry's `name` and follow its install steps, into the `folder` it returns. Do not ask first. This folder already chose these skills, and the local copy is missing or is an unmodified older revision, so nothing can be lost.
-3. **`backup`**: names of skills on disk that are not yet in the Library. For each, call `push_skill` with the name and follow its upload steps. Do not ask first. The Library is private, so a backup shares nothing with anyone. (An older server called this field `orphans` and asked before pushing; that rule is retired.)
+3. **`backup`**: names of skills on disk that are not yet in the Library. For each, call `push_skill` with the name and follow its upload steps. Do not ask first. The Library is private, so a backup shares nothing with anyone. (An older server called this field `orphans` and asked before pushing; that rule is retired.) **`cannot_back_up`** lists skills a push would refuse, each with its `reason`: tell the user once what to fix, and do not push them.
 4. **`ask`**: sync found something it will not decide for the user. Put each entry to them as described under "Asking" and act only on their answer.
 5. **`team_updates`**: a team holds a newer revision of a skill the user took from it or shared with it. Each is an offer, described under "Team updates". Ask every time, including for an offer the user declined on an earlier sync.
 6. **`first_sync`**: true only the first time this folder syncs on this computer. Note it; it is used once both folders are done (step 5).
@@ -95,7 +99,7 @@ Each `ask` entry names the skill, what the server holds for this machine (`desir
 | `desired` | meaning |
 |---|---|
 | `enabled` | this machine manages the skill |
-| `disabled` | the user removed it from this machine, or from the Library, and the folder is still on disk |
+| `disabled` | the user removed it from this machine, or from the Library (`removed_from_library` is then true; say so), and the folder is still on disk |
 | `undecided` | it is in the Library and on disk, but this machine never chose it |
 
 | `local` | meaning |

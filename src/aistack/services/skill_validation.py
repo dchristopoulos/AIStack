@@ -24,7 +24,7 @@ from aistack.db.models.skill import (
 from aistack.db.models.skill_file import SKILL_FILE_PATH_MAX_LENGTH
 from aistack.db.models.skill_version import SKILL_VERSION_MAX_LENGTH
 from aistack.services.content_hash import canonical_content_hash, file_digest, normalized_path
-from aistack.services.skill_archive import ArchivedFile
+from aistack.services.skill_archive import MAX_FILE_COUNT, ArchivedFile
 
 SKILL_DOCUMENT = "SKILL.md"
 MAX_PATH_DEPTH = 8
@@ -161,6 +161,26 @@ def validated_skill(name: str, archived: Sequence[ArchivedFile]) -> ValidatedSki
         files=files,
         content_hash=canonical_content_hash({file.path: file.sha256 for file in files}),
     )
+
+
+def refusal_from_listing(name: str, paths: Sequence[str]) -> str | None:
+    """Why a push of the skill `name` with these files would be refused, as far as the name
+    and paths alone show, or None. Sync says it once instead of listing the skill for a backup
+    that cannot succeed (IMP-16); the push itself still checks everything."""
+    try:
+        validated_skill_name(name)
+        if len(paths) > MAX_FILE_COUNT:
+            raise ValidationError(f"It holds {len(paths)} files, and a skill may hold "
+                                  f"{MAX_FILE_COUNT}. If a node_modules folder is inside it, "
+                                  "move that out.")
+        checked = [_validated_path(path) for path in paths]
+        _reject_colliding_paths(checked)
+        if SKILL_DOCUMENT not in checked:
+            raise ValidationError(f"It has no {SKILL_DOCUMENT} at its top level, so it is not "
+                                  "a skill.")
+    except ValidationError as error:
+        return error.message
+    return None
 
 
 def _validated_files(archived: Sequence[ArchivedFile]) -> tuple[ValidatedFile, ...]:

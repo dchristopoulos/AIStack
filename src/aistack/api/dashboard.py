@@ -323,6 +323,12 @@ def share_skill(session, user_id, path, body):
 
 
 # Server only for now: local mode records it once a release replays its event (ADR-0026).
+@_action("/skills/{name}/bring-back", local=False)
+def bring_back(session, user_id, path, body):
+    return {"name": skill_service.bring_back(session, user_id, path["name"])}
+
+
+# Server only for now, as bring-back is.
 @_action("/skills/{name}/restore", local=False)
 def restore_revision(session, user_id, path, body):
     restored = skill_service.restore_revision(session, user_id, path["name"],

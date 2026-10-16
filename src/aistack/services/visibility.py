@@ -59,6 +59,10 @@ def required_my_skill(session: Session, user_id: uuid.UUID, name: str,
     bring it back or finish removing it."""
     skill = my_skill(session, user_id, validated_skill_name(name))
     if skill is None or (skill.archived and not removed_too):
+        if skill is not None:
+            # Their own, so saying it exists tells them nothing new (PH-11).
+            raise NotFound(f"You removed '{name}' from your Library. Install it by name on a "
+                           "computer to bring it back.")
         # Only teams the caller sees, so naming them reveals nothing a listing would not.
         teams = sorted({row.team for row in session.execute(
             team_skills(session, user_id).where(Skill.name == name))})

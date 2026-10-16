@@ -24,8 +24,8 @@ from aistack.services import project_service, projects, revisions, skill_service
 from aistack.services.content_hash import canonical_content_hash, normalized_path
 from aistack.services.harnesses import validated_harness
 from aistack.services.reconciliation import Desired, Observed, Option, Step, reconcile
-from aistack.services.skill_archive import is_filesystem_noise
-from aistack.services.skill_validation import CLAUDE_CODE_FOLDER
+from aistack.services.skill_archive import in_git_folder, is_filesystem_noise
+from aistack.services.skill_validation import CLAUDE_CODE_FOLDER, refusal_from_listing
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,16 @@ class Question:
     latest_revision: int
     pushed_by: str
     options: tuple[Option, ...]
+    # The user removed it from their Library: the question is whether to delete the folder.
+    removed_from_library: bool = False
+
+
+@dataclass(frozen=True)
+class CannotBackUp:
+    """A skill on disk, not in the Library, that a push would refuse, and why (IMP-16)."""
+
+    name: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -133,6 +143,8 @@ class SyncReport:
     # A project folder's first sync: skills enabled in this project on the user's other
     # computers, and in none of this folder's decisions or folders. Offered once.
     from_other_computers: tuple[str, ...] = ()
+    # Not in the Library and never accepted by a push as they are: said once, not pushed.
+    cannot_back_up: tuple[CannotBackUp, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -183,6 +195,7 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
     for name in left_alone:
         local_hashes.pop(name, None)
     revisions = _revisions(session, user_id, (set(local_hashes) | set(decisions)) - left_alone)
+    removed = _removed(session, user_id, set(revisions))
 
     install: list[Install] = []
     update: list[Update] = []
@@ -193,7 +206,8 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
         history = revisions[name]
         latest = history[-1]
         enabled, last_revision = decisions.get(name, (None, None))
-        desired = _desired(enabled)
+        # Removed from the Library means wanted in no folder, decided here or not (PH-11).
+        desired = _desired(False if name in removed else enabled)
         observed, local_revision = _observed(name in local_hashes, local_hashes.get(name),
                                              history)
         verdict = reconcile(desired, observed)
@@ -205,14 +219,19 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
         elif verdict.step is Step.ASK:
             edited_from = last_revision if observed is Observed.UNKNOWN else None
             ask.append(Question(name, desired, observed, local_revision, edited_from,
-                                latest.revision, latest.pushed_by, verdict.options))
+                                latest.revision, latest.pushed_by, verdict.options,
+                                removed_from_library=name in removed))
         elif desired is Desired.ENABLED and observed is Observed.CURRENT:
             up_to_date += 1
 
     # Setup wrote the sync skill from this server, so it is on every machine and needs no
     # backing up. Once the user pushes their own, it is in `revisions` like any other.
-    backup = tuple(sorted(name for name in local_hashes
-                          if name not in revisions and name != SYNC_SKILL_NAME))
+    candidates = sorted(name for name in local_hashes
+                        if name not in revisions and name != SYNC_SKILL_NAME)
+    refused = {name: reason for name in candidates
+               if (reason := refusal_from_listing(name, _pushed_paths(local[name]))) is not None}
+    backup = tuple(name for name in candidates if name not in refused)
+    cannot_back_up = tuple(CannotBackUp(name, reason) for name, reason in refused.items())
     enabled_here = {name for name, (enabled, _) in decisions.items() if enabled}
     team_updates = _team_updates(session, user_id, enabled_here - left_alone)
 
@@ -228,7 +247,7 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
                           refresh_sync_skill=False, first_sync=registered.first_sync,
                           project=where,
                           left_to_repository=tuple(sorted(enabled_here & blocked)),
-                          from_other_computers=offered)
+                          from_other_computers=offered, cannot_back_up=cannot_back_up)
 
     # A user who keeps their own sync skill manages it like any other; otherwise the server's
     # copy is the reference. It belongs in Claude Code's folder, and in the agents folder only
@@ -248,7 +267,7 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
     return SyncReport(install=tuple(install), update=tuple(update), ask=tuple(ask),
                       backup=backup, team_updates=team_updates, up_to_date=up_to_date,
                       refresh_sync_skill=refresh_sync_skill, first_sync=first_sync,
-                      project=where)
+                      project=where, cannot_back_up=cannot_back_up)
 
 
 def _log_reconciled(machine_id, harness, local_hashes, install, update, ask, backup,
@@ -322,11 +341,17 @@ def _local_hashes(local: Mapping[str, Mapping[str, str]]) -> dict[str, str | Non
     }
 
 
+def _pushed_paths(files: Mapping[str, str]) -> list[str]:
+    """The paths a push of this listing would upload."""
+    return [path for path in map(normalized_path, files)
+            if not is_filesystem_noise(path) and not in_git_folder(path)]
+
+
 def _canonical_hash(files: Mapping[str, str]) -> str | None:
     digests: dict[str, str] = {}
     for path, digest in files.items():
         path = normalized_path(path)
-        if is_filesystem_noise(path):
+        if is_filesystem_noise(path) or in_git_folder(path):
             continue
         if path in digests:
             # Two spellings of one path with different digests cannot both be on disk.
@@ -412,6 +437,14 @@ def _revisions(session: Session, user_id: uuid.UUID,
     for name, revision, content_hash, pushed_by in rows:
         history.setdefault(name, []).append(_Revision(revision, content_hash, pushed_by))
     return history
+
+
+def _removed(session: Session, user_id: uuid.UUID, names: set[str]) -> set[str]:
+    """Which of the named skills of the user's own were removed from their Library."""
+    if not names:
+        return set()
+    return set(session.scalars(visibility.my_skills(user_id).with_only_columns(Skill.name)
+                               .where(Skill.name.in_(names), Skill.archived.is_(True))))
 
 
 def _team_updates(session: Session, user_id: uuid.UUID,

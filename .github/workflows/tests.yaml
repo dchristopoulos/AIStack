@@ -136,7 +136,7 @@ jobs:
 
       - run: poetry install
 
-      - run: poetry run pytest tests/mcp/test_local_mode.py tests/mcp/test_library_log.py tests/mcp/test_library_github.py tests/api/test_local_dashboard.py tests/services tests/bootstrap tests/db -q -p no:cacheprovider --no-header -rs
+      - run: poetry run pytest tests/bundled/test_sync_listing.py tests/mcp/test_local_mode.py tests/mcp/test_library_log.py tests/mcp/test_library_github.py tests/api/test_local_dashboard.py tests/services tests/bootstrap tests/db -q -p no:cacheprovider --no-header -rs
 
   container:
     runs-on: ubuntu-latest

@@ -7,6 +7,7 @@ every other session on this computer wait.
 """
 
 import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import TypedDict
 
@@ -71,14 +72,14 @@ class LocalListSkillsResult(ListSkillsResult):
       - up_to_date: enabled skills that match.
       - folders: every skills folder this computer has an agent for, and harness the one
         this call synced. Sync each of the others too.
-      - first_sync: true the first time this folder syncs here. Then call list_skills and
-        ask once whether to install the user's own skills that are on no folder here: they
-        come from their other computers. See the sync-aistack skill.
+      - first_sync: true the first time this folder syncs here. Do step 4 of the
+        sync-aistack skill.
       - library_reachable: false when GitHub could not be reached, so this used this
         computer's copy. Tell the user library_problem first.
       - new_computer: true once, on a home folder restored from another computer.
         See the sync-aistack skill.
-    team_updates is always empty and sync_skill_url always null here.
+    cannot_back_up and removed_from_library: see the sync-aistack skill. team_updates is
+    always empty and sync_skill_url always null here.
 
     Args:
         harness: claude_code (~/.claude/skills) or agents (~/.agents/skills, read by Codex,
@@ -108,6 +109,13 @@ def sync(harness: HarnessKey | None = None) -> LocalSyncResult:
                 session, caller.machine_id, library_log.FOLDER_SYNCED, harness=harness))
 
     library_after_write()
+    # Read after the transaction: packing a folder is slow, and the server can check only
+    # what a listing shows. Here every rule push applies is checked before any push.
+    refused = local_skills.push_refusals(folder, report.backup)
+    report = replace(report, backup=tuple(name for name in report.backup if name not in refused),
+                     cannot_back_up=report.cannot_back_up + tuple(
+                         sync_service.CannotBackUp(name, reason)
+                         for name, reason in refused.items()))
     new_computer = restored_here()
     restore_reported()
     logger.info(f"Sync reported. Local skills: '{len(local)}'.")

@@ -10,6 +10,7 @@ recorded hash, because anything holding the database's credential could have wri
 import hashlib
 import os
 import shutil
+from collections.abc import Iterable
 from pathlib import Path
 
 from aistack.commons.exceptions import NotFound, ValidationError
@@ -74,6 +75,19 @@ def observed(folder: Path) -> dict[str, dict[str, str]]:
             if path.name != ".DS_Store" and path.is_file()
         }
     return listing
+
+
+def push_refusals(folder: Path, names: Iterable[str]) -> dict[str, str]:
+    """Why push would refuse each of these skill folders, for those it would: everything push
+    validation checks, read here before anyone calls push (IMP-16). The names have passed
+    `validated_skill_name`, since sync checked them first."""
+    refused = {}
+    for name in names:
+        try:
+            validated_skill(name, read_archive(archive(folder, name)))
+        except ValidationError as error:
+            refused[name] = error.message
+    return refused
 
 
 def archive(folder: Path, name: str) -> bytes:
