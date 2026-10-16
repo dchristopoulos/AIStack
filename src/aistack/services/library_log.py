@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from aistack.commons.exceptions import AIStackError, NeedsNewerRelease, ValidationError
@@ -32,7 +32,12 @@ SKILL_PUSHED = "skill_pushed"
 SKILL_PLACED = "skill_placed"
 SKILL_REMOVED = "skill_removed"
 FOLDER_SYNCED = "folder_synced"
-_KINDS = {MACHINE_ADDED, SKILL_PUSHED, SKILL_PLACED, SKILL_REMOVED, FOLDER_SYNCED}
+# Replayed by this release and recorded by none yet: a release that records them reaches
+# computers that have not updated, and they must read them first (ADR-0024).
+MACHINE_REMOVED = "machine_removed"
+MACHINE_RENAMED = "machine_renamed"
+_KINDS = {MACHINE_ADDED, SKILL_PUSHED, SKILL_PLACED, SKILL_REMOVED, FOLDER_SYNCED,
+          MACHINE_REMOVED, MACHINE_RENAMED}
 _AT_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 # Clocks disagree, but not by this much. A later time would sort every new event before it,
 # and each would rebuild the copy.
@@ -142,10 +147,7 @@ def apply(session: Session, event: Event,
                                 f"not know, '{event.kind}'. {UPDATE_AND_RESTART}")
     if event.kind == MACHINE_ADDED:
         return _add_machine(session, event)
-    machine = session.get(Machine, event.machine_id)
-    if machine is None:
-        raise ValidationError(f"The Library's log has a change from computer "
-                              f"'{event.machine_id}' before that computer was added.")
+    machine = _author(session, event.machine_id)
     data = event.data
     if event.kind == SKILL_PUSHED:
         if uploaded is not None:
@@ -157,7 +159,10 @@ def apply(session: Session, event: Event,
     if event.kind == SKILL_PLACED:
         # A computer can place a skill on another of the person's computers, from the
         # dashboard; the event is still filed under the computer that made the change.
-        target = uuid.UUID(data.get("target_machine_id") or str(machine.machine_id))
+        target = _target(data.get("target_machine_id") or str(machine.machine_id))
+        if session.get(Machine, target) is None:
+            # Placed while another computer removed it: nothing is left to place on.
+            return None
         skill = visibility.required_my_skill(session, machine.user_id, data["name"],
                                              removed_too=True)
         if data["enabled"]:
@@ -174,6 +179,11 @@ def apply(session: Session, event: Event,
     if event.kind == FOLDER_SYNCED:
         return sync_service.record_sync(session, machine.machine_id,
                                         validated_harness(data["harness"]))
+    if event.kind == MACHINE_REMOVED:
+        return _remove_machine(session, machine.user_id, _target(data["target_machine_id"]))
+    if event.kind == MACHINE_RENAMED:
+        return _rename_machine(session, machine.user_id, _target(data["target_machine_id"]),
+                               data["name"])
     raise AssertionError(f"Unhandled event kind '{event.kind}'.")
 
 
@@ -283,12 +293,108 @@ def _add_machine(session: Session, event: Event) -> Machine:
                                        user_id=uuid.UUID(data["user_id"])).machine
     # A Library is one person's. Two new computers that started at once each made the user,
     # and the one that sorts first is the person: the other computer joins them.
-    user_id = user.user_id
-    taken = set(session.scalars(select(Machine.name).where(Machine.user_id == user_id)))
-    name, number = data["machine_name"], 1
+    return onboarding_service.add_machine(
+        session,
+        user.user_id,
+        _free_name(session, user.user_id, data["machine_name"]),
+        data["os"],
+        machine_id=event.machine_id,
+    ).machine
+
+
+def removed(session: Session, machine_id: uuid.UUID, target: Machine) -> Event:
+    """`target` taken out of the Library, with what brings it back if it was still in use."""
+    return new_event(session, machine_id, MACHINE_REMOVED,
+                     target_machine_id=str(target.machine_id), name=target.name,
+                     os=target.os.value)
+
+
+def renamed(session: Session, machine_id: uuid.UUID, target: uuid.UUID, name: str) -> Event:
+    return new_event(session, machine_id, MACHINE_RENAMED, target_machine_id=str(target),
+                     name=name)
+
+
+def _author(session: Session, machine_id: uuid.UUID) -> Machine:
+    """The computer that made a change. One removed since comes back (ADR-0033): it was
+    offline when another computer removed it, and a change from it says it is still in use."""
+    machine = session.get(Machine, machine_id)
+    if machine is not None:
+        return machine
+    removal = _last_removal(session, machine_id)
+    if removal is None:
+        raise ValidationError(f"The Library's log has a change from computer "
+                              f"'{machine_id}' before that computer was added.")
+    user_id = session.scalar(select(User.user_id).limit(1))
+    return onboarding_service.add_machine(
+        session,
+        user_id,
+        _free_name(session, user_id, removal["name"]),
+        removal["os"],
+        machine_id=machine_id,
+    ).machine
+
+
+def _last_removal(session: Session, machine_id: uuid.UUID) -> dict[str, Any] | None:
+    """The data of the newest replayed removal of `machine_id`. Replay records each event as
+    it applies it, so the copy's log holds exactly what came before."""
+    bodies = session.scalars(select(LibraryEvent.body)
+                             .where(LibraryEvent.kind == MACHINE_REMOVED)
+                             .order_by(LibraryEvent.sort_key.desc()))
+    for body in bodies:
+        data = Event.from_json(body).data
+        if data.get("target_machine_id") == str(machine_id):
+            return data
+    return None
+
+
+def _remove_machine(session: Session, user_id: uuid.UUID, target: uuid.UUID) -> str | None:
+    """Two computers can remove the same one, or each other, while offline. Neither stops
+    replay: a computer already gone, or the last one left, stays as it is."""
+    machine = session.get(Machine, target)
+    if machine is None or machine.user_id != user_id:
+        return None
+    others = session.scalar(select(func.count()).select_from(Machine).where(
+        Machine.user_id == user_id, Machine.machine_id != target))
+    if not others:
+        return None
+    return onboarding_service.remove_machine(session, user_id, str(target))
+
+
+def _rename_machine(session: Session, user_id: uuid.UUID, target: uuid.UUID,
+                    name: str) -> str | None:
+    """A name another computer took meanwhile gets a suffix, as a new computer's does."""
+    machine = session.get(Machine, target)
+    if machine is None or machine.user_id != user_id:
+        return None
+    if not isinstance(name, str):
+        raise ValidationError("A change in the Library's log names a computer with something "
+                              "that is not text. Remove what was added to the repository by "
+                              "hand.")
+    return onboarding_service.rename_machine(
+        session,
+        user_id,
+        str(target),
+        _free_name(session, user_id, name, but=target),
+    )
+
+
+def _target(text: object) -> uuid.UUID:
+    try:
+        return uuid.UUID(str(text))
+    except ValueError as error:
+        raise ValidationError("A change in the Library's log names a computer by something "
+                              "that is not an id. Remove what was added to the repository by "
+                              "hand.") from error
+
+
+def _free_name(session: Session, user_id: uuid.UUID, wanted: str,
+               but: uuid.UUID | None = None) -> str:
+    """`wanted`, or `wanted-2`, `-3` and so on when another of the person's computers has it."""
+    taken = set(session.scalars(select(Machine.name).where(Machine.user_id == user_id,
+                                                           Machine.machine_id != but)))
+    name, number = wanted, 1
     while name in taken:
         number += 1
         suffix = f"-{number}"
-        name = data["machine_name"][:MACHINE_NAME_MAX_LENGTH - len(suffix)] + suffix
-    return onboarding_service.add_machine(session, user_id, name, data["os"],
-                                          machine_id=event.machine_id).machine
+        name = wanted[:MACHINE_NAME_MAX_LENGTH - len(suffix)] + suffix
+    return name
