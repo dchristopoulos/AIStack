@@ -33,6 +33,8 @@ On Windows, run `Test-Path` on the same paths under `$HOME`.
 
 Sync `claude_code` when `~/.claude` exists. Sync `agents` when `~/.agents/skills` exists or any of the other paths does. Do steps 2 to 4 for each of those folders in turn, `claude_code` first, then steps 5 and 6 once, and pass that folder's `harness` to every `sync`, `get_skill`, `push_skill`, and `disable_skill` call. Do not ask the user which folders to sync, and say nothing about a folder no agent here reads.
 
+When the session runs inside a git repository, find it first, as step 8 says: every `sync` call then names it, and step 8 syncs its own skills folders after the global ones.
+
 ## 2. List what is on disk
 
 Get the sha256 of every file in the folder (`<folder>` below) from a shell. Do not read the files yourself; you only need their digests.
@@ -67,7 +69,7 @@ Pass every skill, including ones that did not come from AIStack, and the folder'
 {"local": {"wizard": {"SKILL.md": "<sha256>", "scripts/run.sh": "<sha256>"}}, "harness": "claude_code"}
 ```
 
-With no local skills, pass `{"local": {}}` and the harness. Copy digests exactly as the shell printed them.
+With no local skills, pass `{"local": {}}` and the harness. Copy digests exactly as the shell printed them. Add `here` when step 8 found a repository.
 
 If `sync` fails with HTTP 413, "Request body too large", the listing was too big to send: a skill folder almost always holds a `node_modules` or `.git` folder with thousands of files. Find it with `find <folder> -mindepth 2 -type d \( -name node_modules -o -name .git \) -prune`, tell the user which skill it is in, and ask them to move it out of the skills folder. Then list and sync again.
 
@@ -167,4 +169,68 @@ Say so in one line.
 
 ## 7. Tell the user what happened
 
-One short summary per folder, naming the agents that read it: what was installed, what was updated, what was backed up, what was asked and decided, and which team updates were accepted or left. For each update, say which revision it moved from and to, and who pushed the new one; a skill is instructions to an agent, so the user should know whose instructions just changed. If nothing needed doing, say that everything is up to date and how many skills that covers.
+One short summary per folder, project folders included, naming the agents that read it: what was installed, what was updated, what was backed up, what was asked and decided, and which team updates were accepted or left. For each update, say which revision it moved from and to, and who pushed the new one; a skill is instructions to an agent, so the user should know whose instructions just changed. If nothing needed doing, say that everything is up to date and how many skills that covers.
+
+## 8. Skills folders inside a project
+
+Some skills belong to one repository. Its skills folders sit at its top level: `<top>/.claude/skills` is `claude_code`, and `<top>/.agents/skills` is `agents`. The agents read them from every folder of the repository. Do this step only when the `sync` tool's input schema has `here`: an older server refuses it.
+
+### Find the repository
+
+```bash
+git rev-parse --show-toplevel
+```
+
+If it prints nothing, or the home folder, the session is in no project: skip this step. Otherwise the path it printed is `<top>`. Then the remote, `origin` if `git -C <top> remote` lists it, otherwise the first one listed, with any credentials in it removed, so a token never leaves this computer:
+
+```bash
+git -C <top> config --get remote.<remote>.url | sed -E 's#^([a-z+]+://)[^/@]*@#\1#'
+```
+
+In PowerShell: `(git -C <top> config --get remote.<remote>.url) -replace '^([a-z+]+://)[^/@]*@','$1'`. With no remote, the remote is `null`.
+
+Pass `"here": {"path": "<top>", "remote": "<remote>"}` to every `sync` call, the global folders' too. The report's `project` then says the project's `key` and `name`, and whether this computer `managed` it already.
+
+### Sync its folders
+
+Sync a project's folders only when `project.managed` is true, or the user just said "add this project to aistack", which is how a project starts being managed on this computer. Do it for each harness step 1 chose, after the global folders, with `<folder>` being `.claude/skills` or `.agents/skills`.
+
+If `<top>/<folder>` exists, `(cd <top>/<folder> && pwd -P)` must print a path inside `<top>`. A folder that leads elsewhere, such as a link to the global one, is skipped.
+
+1. Sort its skill folders. Git decides which are the repository's and which are the user's:
+
+   ```bash
+   git -C <top> ls-files -- <folder>
+   git -C <top> ls-files --others --exclude-standard --directory -- <folder>
+   git -C <top> ls-files --others --ignored --exclude-standard --directory -- <folder>
+   ```
+
+   The first two list what the repository holds: what git tracks, and what it would commit. The name of each folder directly under `<folder>` in them goes in `repository`. The third lists the user's own folders, which git ignores whole. Only those are listed as in step 2 and sent in `local`.
+2. Call `sync` with `local`, `harness`, `here`, `project` set to the key, and `repository`.
+3. Act on the report as step 4 says, passing `project` to every `get_skill`, `push_skill` and `disable_skill` call, with these differences:
+   - Every install follows "Install into a project" below.
+   - `left_to_repository`: say once that the repository has its own skill of that name, so the Library's is not placed there.
+   - `first_sync` with `from_other_computers`: ask once: "Your other computers use <names> in <project name>. Install them here too?" Yes: `get_skill` each with `project`, and install. When both of this project's folders synced and one reported `first_sync`, ask once, as step 5 does, whether to use the same skills in both.
+   - `ask` with `undecided` and `unknown`: say that backing it up makes this copy the one every folder with that name gets. If it is about this repository, suggest renaming it `<project name>-<name>` first.
+   - `remove`: delete the folder only when `git -C <top> ls-files -- <folder>/<name>` prints nothing and `git -C <top> check-ignore -q <folder>/<name>/` succeeds.
+   - `sync-aistack` never goes in a project folder, and `sync_skill_url` is ignored there.
+
+To back up a folder git would commit, the user must ask for it by name. Write its exclude line as below first, then `push_skill` with `project`. A folder git tracks is never pushed from here.
+
+### Install into a project
+
+Before every install into `<top>/<folder>`, make git ignore the skill's folder and the staging folder in this clone, and check that it does. The exclude file is the clone's own, shared by every worktree, and git never commits it. Never edit `.gitignore`.
+
+```bash
+excl=$(git -C <top> rev-parse --path-format=absolute --git-path info/exclude)
+mkdir -p "$(dirname "$excl")"
+grep -qxF '/<folder>/<name>/' "$excl" || echo '/<folder>/<name>/' >> "$excl"
+grep -qxF '/<folder>/.aistack-staging/' "$excl" || echo '/<folder>/.aistack-staging/' >> "$excl"
+git -C <top> ls-files -- <folder>/<name>
+git -C <top> check-ignore -q <folder>/<name>/ && echo ignored
+```
+
+In PowerShell, read the same path into `$excl` and add each line with `Add-Content` when `Select-String -SimpleMatch` does not find it. `ls-files` must print nothing and the last line must print `ignored`. Otherwise stop and tell the user: the repository holds that folder. Then install as `get_skill` says, with `<skills>` being `<top>/<folder>`.
+
+If `<top>/<folder>` did not exist before this install, tell the user to run `/reload-skills` in Claude Code, or to restart Codex if the skill does not appear.
+

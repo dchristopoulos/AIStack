@@ -110,7 +110,7 @@ add_machine(name, os)         → registers another machine for this user; retur
 list_skills                   → the caller's own skills, then every team skill they may
                                 see (this is also the search, and the only discovery
                                 mechanism, sync is not)
-get_skill(name, team?, harness?, replace?)
+get_skill(name, team?, harness?, replace?, project?)
                               → with a team, first takes that team's latest revision into
                                 the caller's own skills; a skill of theirs of that name
                                 that was not taken from it is refused unless replace is
@@ -119,12 +119,16 @@ get_skill(name, team?, harness?, replace?)
                                 latest revision's metadata, its file list, the folder to
                                 install into, and a signed download URL for the archive.
                                 The one "enable + give me the files" verb: install,
-                                restore, re-enable, adopt all resolve to it
-push_skill(name, origin?, harness?)
+                                restore, re-enable, adopt all resolve to it. With a
+                                project, the folder is that project's, relative to its
+                                top level
+push_skill(name, origin?, harness?, project?)
                               → returns a signed upload URL for that skill name. The
                                 upload creates the revision in the caller's own skills
                                 (existing name = new revision) and enables the skill in
-                                that harness of the calling machine. It shares nothing
+                                that harness of the calling machine, or in that
+                                project's folder, which the upload checks it still
+                                manages. It shares nothing
 share_skill(name, team, group?)
                               → copies the latest revision of one of the caller's own
                                 skills into a team or one of its groups
@@ -132,11 +136,13 @@ list_teams, create_team(name), invite_to_team(team), join_team(code)
                               → the teams the caller is in; make one; get its invite
                                 code (admins); join one with a code
 open_dashboard                → a short-lived link that signs a browser in (ADR-0017)
-sync(local: {name: {path: sha256}}, harness?)
+sync(local: {name: {path: sha256}}, harness?, here?, project?, repository?)
                               → reconcile desired vs actual for one harness; see the sync
-                                contract
-disable_skill(name, harness?) → enabled = false in that harness of this machine; the agent
-                                then deletes the local folder
+                                contract. `here` names the session's repository, and
+                                `project` syncs that project's folder instead (ADR-0026)
+disable_skill(name, harness?, project?)
+                              → enabled = false in that harness of this machine, or in
+                                that project's folder; the agent then deletes the folder
 ```
 
 `harness` is `claude_code` (`~/.claude/skills`) or `agents` (`~/.agents/skills`), listed in the tool schema; the registry is `services/harnesses.py`, with each folder spelled per operating system. Omitted, it means `claude_code`, so a computer set up before harnesses existed keeps working with the skill file it already has (ADR-0018). An upload URL carries the harness it was issued for.
@@ -191,7 +197,7 @@ The `aistack` command (`bootstrap/__main__.py`) also takes these terminal comman
 
 **Bulk import** ("move to AIStack"): not a tool. The first sync lists every local skill under `backup` and the agent pushes each one.
 
-**Install**: "install wizard": `get_skill` marks one of the caller's own skills enabled for this machine and returns a signed download URL. The agent downloads and extracts the archive under `<skills>/.aistack-staging/`, then renames it into the global skills directory, so a failed download never leaves half a skill where Claude Code is watching. Install = enable + materialize; "remove wizard" = `disable_skill` + the agent deletes the local folder. After install the skill is a plain native skill, usable immediately in the same session. (Sync manages only the global directory in the MVP; a project-local copy is a manual chat action the server doesn't track.)
+**Install**: "install wizard": `get_skill` marks one of the caller's own skills enabled for this machine and returns a signed download URL. The agent downloads and extracts the archive under `<skills>/.aistack-staging/`, then renames it into the global skills directory, so a failed download never leaves half a skill where Claude Code is watching. Install = enable + materialize; "remove wizard" = `disable_skill` + the agent deletes the local folder. After install the skill is a plain native skill, usable immediately in the same session. On a server, a project's skills folders are synced the same way once the person adds the project: the `sync-aistack` skill sorts their folders with git, and installs only where it has made git ignore the folder (ADR-0026).
 
 ### The sync contract
 
@@ -672,7 +678,7 @@ Deferred deliberately: audit trail, signing, approval workflows, per-skill push 
 
 ### Explicitly not built
 
-No FastAPI, no background sync (local mode's daily release check is the only background work), no version pinning (always latest), no deleting a single revision (see §4 Tools), no project-scoped sync yet (global folders only; project folders are planned in ADR-0026), no rules/hooks/agents/MCP gateway/profiles, no OAuth/passwords, no binary files, no server-admin tools or pages (the `is_admin` column ships, but nothing reads it, so it grants no power; server-level operations are `aistack admin` commands), no harness besides Claude Code and the shared agents folder (ADR-0018). From ADR-0015: no permission matrix of roles × groups, no automatic updates from a team, no merging when both copies changed, no one machine on two servers. Anything needing many typed parameters is a dashboard action, not a tool: chat must stay low-friction.
+No FastAPI, no background sync (local mode's daily release check is the only background work), no version pinning (always latest), no deleting a single revision (see §4 Tools), no project folders in local mode yet (a server syncs them; local mode follows once a release replays their events, ADR-0026), no rules/hooks/agents/MCP gateway/profiles, no OAuth/passwords, no binary files, no server-admin tools or pages (the `is_admin` column ships, but nothing reads it, so it grants no power; server-level operations are `aistack admin` commands), no harness besides Claude Code and the shared agents folder (ADR-0018). From ADR-0015: no permission matrix of roles × groups, no automatic updates from a team, no merging when both copies changed, no one machine on two servers. Anything needing many typed parameters is a dashboard action, not a tool: chat must stay low-friction.
 
 ### Proof of the MVP
 
