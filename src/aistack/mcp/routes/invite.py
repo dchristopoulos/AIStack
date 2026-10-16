@@ -8,6 +8,7 @@ A wrong or replaced code gets the same page as any other wrong one.
 import asyncio
 import logging
 from html import escape
+from urllib.parse import quote
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response
@@ -21,7 +22,7 @@ from aistack.commons.exceptions import NotFound
 from aistack.mcp.auth.failure_limiter import client_address, note_failure
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.route_error_handler import handle_route_errors
-from aistack.mcp.server_url import INVITE_PATH, server_base_url
+from aistack.mcp.server_url import APP_PATH, INVITE_PATH, server_base_url
 from aistack.services import team_service
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,9 @@ async def invite(request: Request) -> Response:
     server = server_base_url(request)
     sentence = (f"Set up AIStack: fetch {server}/setup and follow it.\n"
                 f"Invite code: {code}. Call me <your name>.")
+    join = f"Join the AIStack team {team} with invite code {code}."
+    # In the fragment, which the browser never sends: the dashboard reads it and drops it.
+    dashboard = f"{server}{APP_PATH}#/join/{quote(code, safe='')}"
     return _page(
         f"Join {team}", 200,
         f"<h1 style=\"font-size:1.25rem\">You are invited to <code>{escape(team)}</code></h1>"
@@ -72,8 +76,11 @@ async def invite(request: Request) -> Response:
         "your account, connects this computer, and puts you in the team.</p>"
         f"<pre style=\"white-space:pre-wrap;padding:12px;border:1px solid #8884;"
         f"border-radius:8px\">{escape(sentence)}</pre>"
-        "<p>Already have an account? Say <strong>join a team with this code</strong> to your "
-        "coding agent instead, with the invite code above.</p>")
+        "<p>Already have an account? Say this to your coding agent instead:</p>"
+        f"<pre style=\"white-space:pre-wrap;padding:12px;border:1px solid #8884;"
+        f"border-radius:8px\">{escape(join)}</pre>"
+        f"<p>Or <a href=\"{escape(dashboard)}\">join in your dashboard</a>, if this browser "
+        "is signed in to it.</p>")
 
 
 def _team_name(code: str) -> str:

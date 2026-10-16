@@ -74,17 +74,17 @@ class SyncResult(TypedDict):
     Use when the user says "sync aistack" or starts work. It changes nothing. Send every
     skill folder in <folder> (harness claude_code: ~/.claude/skills; agents:
     ~/.agents/skills) with the sha256 of each file, paths relative to the skill's folder.
-    Skip 'synced', dot-folders, and .DS_Store. Get digests from a shell:
+    Skip 'synced', dot-folders, and .DS_Store. Digests from a shell:
 
         cd <folder> && find -L . -mindepth 2 -type f ! -name .DS_Store \\
           ! -path './.*' ! -path './synced/*' -exec shasum -a 256 {} +
         Windows: Get-ChildItem <folder> -Recurse -File | Get-FileHash
 
-    Then, per field of the result, passing the same harness to each tool:
+    Per field of the result, passing the same harness to each tool:
       - install and update: get_skill and install each, without asking. Say what
         updated, between which revisions, and who pushed it.
       - backup: local skills not yet in the user's own. push_skill each, without asking:
-        that space is private and mirrors this computer.
+        that space is private.
       - ask: put each to the user and act only on their answer. desired: enabled,
         disabled, or undecided here; local: current, stale, or unknown (edited). Offer
         exactly the listed options. overwrites_local: say local files will be replaced;
@@ -94,9 +94,10 @@ class SyncResult(TypedDict):
       - team_updates: a team has a newer version of a skill the user took from it. Ask.
         Yes = get_skill with that team, and install.
       - up_to_date: how many enabled skills match.
-      - sync_skill_url: when set, curl -sS -o it to <folder>/sync-aistack/SKILL.md,
-        without asking.
-      - first_sync: true the first time this folder syncs here. See the sync-aistack skill.
+      - sync_skill_url: when set, curl -sS --create-dirs -o <folder>/sync-aistack/SKILL.md
+        it, without asking.
+      - first_sync: true the first time this folder syncs here. Do step 5 of
+        <folder>/sync-aistack/SKILL.md.
 
     Args:
         local: {skill folder: {relative file path: sha256 hex}}. {} if there are none.

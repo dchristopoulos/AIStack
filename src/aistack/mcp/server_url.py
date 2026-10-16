@@ -11,6 +11,8 @@ from aistack.commons.urls import is_plain_http_url
 # Where a link from `open_dashboard` signs a browser in. Here, with the other addresses the
 # server hands out, so the tool that builds the link and the route that answers it agree.
 DASHBOARD_LOGIN_PATH = "/app/login"
+# The dashboard page itself, which an invite page links to.
+APP_PATH = "/app"
 # Where a team's invite link lands (ADR-0019).
 INVITE_PATH = "/invite"
 

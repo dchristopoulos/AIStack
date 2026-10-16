@@ -171,10 +171,14 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
 
     # A user who keeps their own sync skill manages it like any other; otherwise the server's
     # copy is the reference. It belongs in Claude Code's folder, and in the agents folder only
-    # where an agent there talks to AIStack itself, which setup marked by putting it there:
-    # elsewhere it would tell an agent with no connection to sync (ADR-0021).
+    # where an agent there talks to AIStack itself: setup marked that by putting it there, and
+    # a computer whose Claude Code never synced is one where the caller is that agent, as on
+    # one added by add_machine with Codex alone. Elsewhere it would tell an agent with no
+    # connection to sync (ADR-0021).
+    talks_through_agents = (SYNC_SKILL_NAME in local_hashes
+                            or not _ever_synced_claude_code(session, machine_id))
     refresh_sync_skill = (SYNC_SKILL_NAME not in revisions
-                          and (harness is Harness.CLAUDE_CODE or SYNC_SKILL_NAME in local_hashes)
+                          and (harness is Harness.CLAUDE_CODE or talks_through_agents)
                           and local_hashes.get(SYNC_SKILL_NAME) != _bundled_sync_skill_hash())
     first_sync = record_sync(session, machine_id, harness)
 
@@ -270,6 +274,16 @@ def record_sync(session: Session, machine_id: uuid.UUID, harness: Harness) -> bo
             synced = _machine_harness(session, machine_id, harness)
     synced.last_synced_on = now
     return False
+
+
+def _ever_synced_claude_code(session: Session, machine_id: uuid.UUID) -> bool:
+    """Whether Claude Code's folder synced on this machine, or holds a decision from a release
+    that recorded decisions before it recorded syncs."""
+    if _machine_harness(session, machine_id, Harness.CLAUDE_CODE) is not None:
+        return True
+    return session.scalar(select(MachineSkill.machine_id).where(
+        MachineSkill.machine_id == machine_id,
+        MachineSkill.harness == Harness.CLAUDE_CODE).limit(1)) is not None
 
 
 def _machine_harness(session: Session, machine_id: uuid.UUID,

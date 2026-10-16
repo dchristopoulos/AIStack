@@ -23,7 +23,7 @@ from aistack.db.models.user import User
 from aistack.db.models.value_set import known
 from aistack.db.ordering import bytewise
 from aistack.services import onboarding_service, revisions, skill_service, team_service, visibility
-from aistack.services.harnesses import DEFAULT_HARNESS, validated_harness
+from aistack.services.harnesses import validated_harness
 from aistack.services.transfer_ticket import DashboardHolder, token_prefix
 
 
@@ -130,8 +130,8 @@ def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
     """The user's computers, oldest first, each with its harnesses: those that have synced
     there and those holding a decision about a skill.
 
-    A computer with neither has not synced since harnesses existed, and is shown with Claude
-    Code, the only harness there was before. Each says when it was added and from which
+    A computer with neither has never synced, and is shown with none, so nothing is placed in a
+    folder no agent there syncs (UX-07). Each says when it was added and from which
     computer, and when each harness last synced, so a computer nobody recognises, or one that
     stopped syncing, stands out (ADR-0027).
     """
@@ -159,7 +159,7 @@ def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
             .where(Machine.user_id == user_id, known(Machine.os))
             .order_by(Machine.created_on)).all():
         harnesses = [harness for harness in Harness
-                     if harness in harnesses_of.get(machine_id, {DEFAULT_HARNESS})]
+                     if harness in harnesses_of.get(machine_id, set())]
         shown.append({
             "id": str(machine_id), "name": name, "os": os.value,
             "harnesses": [harness.value for harness in harnesses],
