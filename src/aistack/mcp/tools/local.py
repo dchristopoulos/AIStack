@@ -17,6 +17,7 @@ from aistack.bootstrap.context.application_context import (
     library_after_write,
     library_before_read,
     library_problem,
+    refuse_when_moved,
     restore_reported,
     restored_here,
 )
@@ -241,6 +242,7 @@ class LocalPushSkillResult(TypedDict):
 @handle_mcp_errors
 def push_skill(name: str, origin: str | None = None,
                harness: HarnessKey = "claude_code") -> LocalPushSkillResult:
+    refuse_when_moved()
     caller = get_local_principal()
     # Validated before it is joined to a path, so a name cannot leave the skills folder.
     name = validated_skill_name(name)
@@ -293,6 +295,7 @@ class LocalDisableSkillResult(TypedDict):
     """)
 @handle_mcp_errors
 def disable_skill(name: str, harness: HarnessKey = "claude_code") -> LocalDisableSkillResult:
+    refuse_when_moved()
     caller = get_local_principal()
 
     with get_session_factory().begin() as session:

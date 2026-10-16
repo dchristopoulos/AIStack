@@ -1,8 +1,11 @@
 import contextlib
+import uuid
 
 import httpx
 import pytest
 
+from aistack.bootstrap.context import application_context
+from aistack.services import library_log, skill_service
 from tests.local_dashboard import local_dashboard
 
 pytestmark = pytest.mark.anyio
@@ -72,4 +75,27 @@ async def test_a_change_needs_the_pages_own_header(dashboard):
         response = await client.post("/api/skills/wizard/remove", json={})
         assert response.status_code == 400
         assert [skill["name"] for skill in (await client.get("/api/state")).json()["skills"]] \
+            == ["wizard"]
+
+
+async def test_a_moved_library_refuses_the_page_and_its_changes(dashboard):
+    """AUTO-05: a change made here after a move would reach none of the other computers."""
+    base, link = dashboard
+    caller = application_context.get_local_principal()
+    moved = library_log.Event(uuid.uuid4(), "2026-10-15T09:00:00.000000Z", caller.machine_id,
+                              library_log.LIBRARY_MOVED,
+                              {"place": {"kind": "github", "repository": "maria/skills"}})
+    with application_context.get_session_factory().begin() as session:
+        # As replay stores it: this release records no move of its own.
+        library_log._store_event(session, moved, published=True)
+
+    async with _signed_in(base, link) as client:
+        for response in (await client.get("/api/state"),
+                         await client.post("/api/skills/wizard/remove", json={},
+                                           headers=REQUEST_HEADER)):
+            assert response.status_code == 409
+            assert "moved to the GitHub repository maria/skills" in response.json()["error"]
+
+    with application_context.get_session_factory().begin() as session:
+        assert [skill.name for skill in skill_service.list_skills(session, caller.user_id)] \
             == ["wizard"]

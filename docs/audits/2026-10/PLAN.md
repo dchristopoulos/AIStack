@@ -56,7 +56,8 @@ How to work through it:
 - [x] 20. Every terminal command finds the agent's Library (#130)
 - [x] 20b. Moving a Library is one command that keeps history (#137)
 - [x] 20c. Say when GitHub cannot be reached, and nudge a Library kept on this computer only (#146)
-- [ ] 20d. A moved Library tells the computers still on the old place
+- [x] 20d. A moved Library tells the computers still on the old place: the reader (#163)
+- [ ] 20e. `aistack move` records where the Library went (after a release that carries 20d)
 - [x] 21. A restored home folder is a new computer (#148)
 - [ ] 21b. A server notices a machine token copied to another computer
 - [x] 22. A second computer gets the sync skill and the session-start hook, whatever its agent (#157)
@@ -466,6 +467,8 @@ Files: src/aistack/services/library_log.py; src/aistack/bootstrap/__main__.py; s
 ADR: none needed.
 
 Tests: a release that reads but does not write the event replays a log holding one; after a move recorded in a SQLite or PostgreSQL Library, a second process on the old Library gets the moved sentence from `sync`.
+
+Split into two PRs, one per release. 20d is the reader: replay stores `library_moved`, `record` refuses it (`_REPLAY_ONLY`), and every local tool and every local dashboard action answers with where the Library went. 20e is the writer: `aistack move` records the event in the old Library, and `library_moved` leaves `_REPLAY_ONLY`. It ships in a release after one that carries 20d, as 9c does after 9b.
 
 ### 21. A restored home folder is a new computer
 
