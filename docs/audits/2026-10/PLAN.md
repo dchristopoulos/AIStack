@@ -68,7 +68,7 @@ How to work through it:
 - [x] 26. Add the project tables (one compatible migration) (#156)
 - [x] 27. Project placements in the services, and a removed skill wanted nowhere (#159)
 - [x] 28. Replay project events before anything records them (bridge release) (#160)
-- [ ] 29. Sync a project folder
+- [x] 29. Sync a project folder (#168)
 - [ ] 30. Server-mode tools take a project
 - [ ] 31. Teach the server's sync-aistack skill the project steps
 - [ ] 32. Local mode: git-hardened project folders
