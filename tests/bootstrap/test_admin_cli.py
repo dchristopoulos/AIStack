@@ -14,7 +14,9 @@ from aistack.db.engine import build_session_factory
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
 from aistack.db.models.harness import Harness
-from aistack.services import onboarding_service, team_service
+from aistack.db.models.user import User
+from aistack.services import onboarding_service, skill_service, team_service, visibility
+from tests.archives import skill_archive
 from aistack.services.token_service import hash_token
 
 OPERATING = Path(__file__).parents[2] / "docs" / "OPERATING.md"
@@ -226,3 +228,28 @@ def test_a_database_failure_leaves_driver_details_out_of_the_error(
 
     assert "Check DATABASE_URL" in refusal
     assert "private-database-secret" not in refusal
+
+
+def test_rename_user_renames_their_personal_team_and_their_revisions_follow(server, capsys):
+    with server.begin() as session:
+        maria = session.scalar(select(User).where(User.username == "maria"))
+        skill_service.push(session, session.scalar(select(Machine.machine_id).where(
+            Machine.user_id == maria.user_id)), maria.user_id, "wizard", None,
+            skill_archive("wizard"))
+
+    assert "Renamed maria to maria.k" in _admin(capsys, "rename-user", "maria", "maria.k")
+
+    with server.begin() as session:
+        renamed = session.scalar(select(User).where(User.username == "maria.k"))
+        assert visibility.personal_team(session, renamed.user_id).name == "maria.k"
+        assert [skill.pushed_by for skill in skill_service.list_skills(
+            session, renamed.user_id)] == ["maria.k"]
+    assert "laptop" in _machines(server)
+
+
+@pytest.mark.parametrize("taken", ["dimitris", "acme"])
+def test_rename_user_refuses_a_name_a_user_or_a_team_has(server, capsys, taken):
+    assert "already called" in _refused(capsys, "rename-user", "maria", taken)
+
+    with server.begin() as session:
+        assert session.scalar(select(User).where(User.username == "maria")) is not None
