@@ -12,6 +12,7 @@ from aistack.commons.exceptions import Conflict, InvalidTicket, NotFound
 from aistack.commons.text import loggable
 from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
+from aistack.db.models.machine_project import MachineProject
 from aistack.db.models.machine_project_skill import MachineProjectSkill
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.skill import Skill
@@ -21,7 +22,13 @@ from aistack.db.models.team import Team, TeamGroup
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
 from aistack.db.ordering import bytewise
-from aistack.services import revisions, team_service, transfer_ticket, visibility
+from aistack.services import (
+    project_service,
+    revisions,
+    team_service,
+    transfer_ticket,
+    visibility,
+)
 from aistack.services.harnesses import folder, validated_harness
 from aistack.services.skill_archive import build_archive, read_archive
 from aistack.services.skill_validation import ValidatedFile, ValidatedSkill, validated_skill
@@ -55,7 +62,8 @@ class PushedSkill:
 
 def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
          origin: str | None, archive: bytes, harness: str | None = None,
-         token_prefix: str | None = None) -> PushedSkill:
+         token_prefix: str | None = None,
+         project_folder: MachineProject | None = None) -> PushedSkill:
     """Store an uploaded archive as the next revision of the user's own skill `name`, and
     enable it for the machine in the harness it was pushed from.
 
@@ -65,15 +73,17 @@ def push(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID, name: str,
 
     Everything about the archive is validated before the first query, so a rejected upload
     costs no database work and leaves no row. An upload URL passes the `token_prefix` it was
-    minted with, and lands only while its machine still holds that token (ADR-0027).
+    minted with, and lands only while its machine still holds that token (ADR-0027). A push
+    from a project folder passes that `project_folder`, and is placed there instead (ADR-0026).
     """
     return store(session, machine_id, user_id, validated_skill(name, read_archive(archive)),
-                 origin, harness, token_prefix)
+                 origin, harness, token_prefix, project_folder)
 
 
 def store(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
           uploaded: ValidatedSkill, origin: str | None,
-          harness: str | None = None, token_prefix: str | None = None) -> PushedSkill:
+          harness: str | None = None, token_prefix: str | None = None,
+          project_folder: MachineProject | None = None) -> PushedSkill:
     """`push`, for an archive validated before the caller's transaction opened: parsing one
     is slow, and nothing slow runs while SQLite's write lock is held."""
     started_at = perf_counter()
@@ -93,8 +103,12 @@ def store(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
     restored = skill.archived
     _bring_back(session, skill)
 
-    placed = set_enabled(session, machine_id, harness, skill.skill_id, enabled=True,
-                         revision=version.revision)
+    if project_folder is None:
+        placed = set_enabled(session, machine_id, harness, skill.skill_id, enabled=True,
+                             revision=version.revision)
+    else:
+        placed = project_service.set_enabled(session, project_folder, skill.skill_id, enabled=True,
+                                             revision=version.revision)
 
     logger.debug(
         f"Push persisted. Skill: '{skill.name}'. Revision: '{version.revision}'. "

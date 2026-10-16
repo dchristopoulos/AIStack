@@ -38,17 +38,7 @@ def register_folder(session: Session, user_id: uuid.UUID, machine_id: uuid.UUID,
     """Create or refresh this computer's folder in a project, adding the project to the
     user's own when it is new. This is what a project folder's sync writes, and all it
     writes."""
-    project = _project(session, user_id, key, name)
-    folder = _folder(session, machine_id, project.project_id, harness)
-    if folder is None:
-        try:
-            # A savepoint, so two first syncs at once cost a re-read and not the report.
-            with session.begin_nested():
-                folder = MachineProject(machine_id=machine_id, project_id=project.project_id,
-                                        harness=harness, path=path)
-                session.add(folder)
-        except IntegrityError:
-            folder = _folder(session, machine_id, project.project_id, harness)
+    folder = _managed(session, machine_id, _project(session, user_id, key, name), harness)
     now = utc_now()
     # Conditional, so a folder the dashboard added reports its first sync once even when two
     # syncs find it unsynced together: the second waits on the row and then matches nothing.
@@ -72,17 +62,15 @@ def add_folder(session: Session, user_id: uuid.UUID, machine_id: uuid.UUID, key:
     """Start managing one of the user's projects on one of their computers, from the
     dashboard. The caller has resolved `machine_id` to one of the user's own. The path stays
     unknown until that folder syncs."""
-    project = visibility.required_my_project(session, user_id, key)
-    folder = _folder(session, machine_id, project.project_id, harness)
-    if folder is None:
-        try:
-            with session.begin_nested():
-                folder = MachineProject(machine_id=machine_id, project_id=project.project_id,
-                                        harness=harness)
-                session.add(folder)
-        except IntegrityError:
-            folder = _folder(session, machine_id, project.project_id, harness)
-    return folder
+    return _managed(session, machine_id, visibility.required_my_project(session, user_id, key),
+                    harness)
+
+
+def folder_in(session: Session, user_id: uuid.UUID, machine_id: uuid.UUID, key: str,
+              name: str, harness: Harness) -> MachineProject:
+    """This computer's folder in a project, made if it is missing, without counting as a
+    sync: where replaying a push into a project places it, whatever replayed before."""
+    return _managed(session, machine_id, _project(session, user_id, key, name), harness)
 
 
 def remove_folder(session: Session, user_id: uuid.UUID, machine_id: uuid.UUID, key: str,
@@ -191,6 +179,21 @@ def _project(session: Session, user_id: uuid.UUID, key: str, name: str) -> Proje
         except IntegrityError:
             project = visibility.my_project(session, user_id, key)
     return project
+
+
+def _managed(session: Session, machine_id: uuid.UUID, project: Project,
+             harness: Harness) -> MachineProject:
+    folder = _folder(session, machine_id, project.project_id, harness)
+    if folder is None:
+        try:
+            # A savepoint, so two first syncs at once cost a re-read and not the report.
+            with session.begin_nested():
+                folder = MachineProject(machine_id=machine_id, project_id=project.project_id,
+                                        harness=harness)
+                session.add(folder)
+        except IntegrityError:
+            folder = _folder(session, machine_id, project.project_id, harness)
+    return folder
 
 
 def _folder(session: Session, machine_id: uuid.UUID, project_id: uuid.UUID,
