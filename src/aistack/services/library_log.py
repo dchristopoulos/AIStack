@@ -18,11 +18,13 @@ from sqlalchemy.orm import Session
 
 from aistack.commons.exceptions import (
     AIStackError,
+    Conflict,
     NeedsNewerRelease,
     NotFound,
     ValidationError,
 )
 from aistack.commons.release import UPDATE_AND_RESTART
+from aistack.commons.text import loggable
 from aistack.db.models import Base
 from aistack.db.models.library_event import LibraryEvent
 from aistack.db.models.machine import MACHINE_NAME_MAX_LENGTH, Machine
@@ -60,9 +62,12 @@ _PROJECT_KINDS = {
     SKILL_PLACED_IN_PROJECT,
     SKILL_PUSHED_TO_PROJECT,
 }
-_REPLAY_ONLY = _PROJECT_KINDS.copy()
+# Where `aistack move` says the Library went (AUTO-05), under the same rule. It names the place
+# and never a secret: the kind, and the repository, or the host and database.
+LIBRARY_MOVED = "library_moved"
+_REPLAY_ONLY = {*_PROJECT_KINDS, LIBRARY_MOVED}
 _KINDS = {MACHINE_ADDED, SKILL_PUSHED, SKILL_PLACED, SKILL_REMOVED, FOLDER_SYNCED,
-          MACHINE_REMOVED, MACHINE_RENAMED, *_PROJECT_KINDS}
+          MACHINE_REMOVED, MACHINE_RENAMED, LIBRARY_MOVED, *_PROJECT_KINDS}
 _AT_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 # Clocks disagree, but not by this much. A later time would sort every new event before it,
 # and each would rebuild the copy.
@@ -184,6 +189,9 @@ def apply(session: Session, event: Event,
                                 f"not know, '{event.kind}'. {UPDATE_AND_RESTART}")
     if event.kind == MACHINE_ADDED:
         return _add_machine(session, event)
+    if event.kind == LIBRARY_MOVED:
+        # It changes nothing in the Library: recorded, it makes every tool say where it went.
+        return None
     machine = _author(session, event.machine_id)
     data = event.data
     if event.kind == SKILL_PUSHED:
@@ -351,6 +359,38 @@ def removed(session: Session, machine_id: uuid.UUID, target: Machine) -> Event:
 def renamed(session: Session, machine_id: uuid.UUID, target: uuid.UUID, name: str) -> Event:
     return new_event(session, machine_id, MACHINE_RENAMED, target_machine_id=str(target),
                      name=name)
+
+
+def refuse_when_moved(session: Session) -> None:
+    """Refuse with where the Library went, once a move from this place is in its log: this
+    copy is left as it was, and a change made to it would reach none of the person's other
+    computers (AUTO-05)."""
+    body = session.scalar(select(LibraryEvent.body).where(LibraryEvent.kind == LIBRARY_MOVED)
+                          .order_by(LibraryEvent.sort_key.desc()).limit(1))
+    if body is None:
+        return
+    event = Event.from_json(body)
+    place, day = event.data.get("place"), event.at[:10]
+    kind = place.get("kind") if isinstance(place, dict) else None
+    follow = ("Set AIStack up again on this computer with that place to follow it. Nothing "
+              "was changed here.")
+    # Escaped and bounded: anyone who can write to the old repository chose these.
+    if kind == "github":
+        raise Conflict(f"Your Library moved to the GitHub repository "
+                       f"{loggable(place.get('repository'))} on {day}. {follow}")
+    if kind == "postgresql":
+        raise Conflict(f"Your Library moved to the PostgreSQL database "
+                       f"{loggable(place.get('database'))} at {loggable(place.get('host'))} "
+                       f"on {day}. {follow}")
+    if kind == "this_computer":
+        mover = session.get(Machine, event.machine_id)
+        name = f"'{mover.name}'" if mover is not None else "another computer"
+        raise Conflict(f"Your Library moved onto {name} alone on {day}, where this computer "
+                       f"cannot reach it. To share it again, run `aistack move github` or "
+                       f"`aistack move postgresql` there, then set AIStack up again here with "
+                       f"that place. Nothing was changed here.")
+    raise NeedsNewerRelease(f"Your Library moved on {day}, to a place this release cannot "
+                            f"name. {UPDATE_AND_RESTART}")
 
 
 def _author(session: Session, machine_id: uuid.UUID) -> Machine:

@@ -37,6 +37,7 @@ from aistack.mcp.auth.failure_limiter import (
     FailureLimiter,
 )
 from aistack.mcp.auth.principal import MachinePrincipal
+from aistack.services import library_log
 from aistack.services.library_repo import LibraryRepo, validate_repository
 from aistack.services.library_sharing import LibrarySharing
 from aistack.services.local_identity import local_machine
@@ -232,9 +233,11 @@ def _server_refusal(error: NewerSchema) -> AIStackError:
 
 
 def library_before_read(force: bool = False) -> None:
-    """For a GitHub Library: catch the copy up on what other computers pushed."""
+    """For a GitHub Library: catch the copy up on what other computers pushed. For any
+    Library: refuse once it has moved elsewhere."""
     global _local_principal
     if _sharing is None or _local_principal is None:
+        refuse_when_moved()
         return
     try:
         _sharing.catch_up(force)
@@ -250,6 +253,16 @@ def library_before_read(force: bool = False) -> None:
                 or token_prefix(machine.token_hash) != _local_principal.token_prefix):
             _local_principal = MachinePrincipal(machine.machine_id, machine.user_id,
                                                 token_prefix(machine.token_hash))
+    refuse_when_moved()
+
+
+def refuse_when_moved() -> None:
+    """In local mode, every tool's first check: a Library moved elsewhere says where, rather
+    than taking changes no other computer will see (AUTO-05)."""
+    if _local_settings is None or _read_session_factory is None:
+        return
+    with _read_session_factory.begin() as session:
+        library_log.refuse_when_moved(session)
 
 
 def library_after_write() -> bool:

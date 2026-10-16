@@ -30,6 +30,7 @@ from aistack.bootstrap.context.application_context import (
     library_after_write,
     library_before_read,
     library_description,
+    refuse_when_moved,
 )
 from aistack.bundled import ICON_LINK, dashboard_page
 from aistack.commons.exceptions import InvalidTicket, NotFound, SignedOut, ValidationError
@@ -244,6 +245,8 @@ def _action(path: str, local: bool = True,
         async def route(request: Request) -> Response:
             holder = _signed_in(request)
             _require_request_header(request)
+            if is_local_mode():
+                await asyncio.to_thread(refuse_when_moved)
             body = await _json_body(request)
             try:
                 result = await asyncio.to_thread(_in_transaction, _as_user(function), holder,
