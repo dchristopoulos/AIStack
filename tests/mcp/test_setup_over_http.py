@@ -138,6 +138,16 @@ def test_the_sync_skill_stops_when_aistack_is_not_connected():
     assert "claude mcp get aistack" in document and "codex mcp get aistack" in document
 
 
+def test_the_sync_skill_explains_a_listing_too_big_to_send():
+    """ENT-12: the MCP SDK refuses a body over 4 MiB with a bare 413, before sync's own
+    sentence about node_modules can run, so the skill says what that 413 means."""
+    document = sync_skill_document()
+    explained = document[document.index("HTTP 413"):]
+
+    assert "node_modules" in explained.split("\n", 1)[0]
+    assert "list and sync again" in explained.split("\n", 1)[0]
+
+
 async def test_the_documented_join_request_works_with_no_mcp_client(server_url):
     """One POST, no handshake, no session: what the stateless endpoint is for (ADR-0013)."""
     response = await _join_with_one_request(server_url, INVITE_CODE, username="maria",
