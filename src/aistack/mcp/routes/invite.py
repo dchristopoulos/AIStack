@@ -38,7 +38,7 @@ _HEADERS = {
 }
 
 _PAGE = """<!doctype html><meta charset=utf-8>
-<meta name=viewport content="width=device-width,initial-scale=1"><title>{title} · AIStack</title>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>{title}, AIStack</title>
 {icon}
 <body style="font:16px/1.5 system-ui;margin:12vh auto;max-width:36rem;padding:0 1rem">
 {body}"""
