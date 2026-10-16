@@ -352,7 +352,9 @@ The page is the only client these were written for, and they are documented so t
 |---|---|---|
 | `GET /api/state` | | Everything the page shows, below |
 | `POST /api/logout` | `{}` | Ends the session, wherever its cookie was copied, and clears the cookie |
-| `POST /api/skills/{name}/machines/{machine_id}` | `enabled` (true or false), optional `harness` (`claude_code`, the default, or `agents`) | Switches one of the user's own skills on or off in one harness of one of their computers. The files move at that harness's next sync there |
+| `POST /api/skills/{name}/machines/{machine_id}` | `enabled` (true or false), optional `harness` (`claude_code`, the default, or `agents`), optional `project` (a key that computer manages) | Switches one of the user's own skills on or off in one harness of one of their computers, or in that project's folder there (server only). The files move at that folder's next sync there |
+| `POST /api/machines/{machine_id}/projects` | `project` (a key), optional `harness` | Starts managing one of the user's projects, already known from another computer, on this computer. Its path is unknown until it syncs there. Server only |
+| `POST /api/machines/{machine_id}/projects/remove` | `project`, optional `harness` (every harness when omitted) | Stops managing that project on this computer; its placements there go with it. The files on disk, the Library and the other computers are untouched. Answers `removed`, the number of folders. Server only |
 | `POST /api/skills/{name}/share` | `team`, `group` (a path, or null for team level) | `team`, `group`, `revision`, `created`, `unchanged`, `previous_pushed_by`, `possibly_unrelated`, `overwrote_revision`, `updates_from`: what `share_skill` returns |
 | `POST /api/skills/{name}/remove` | `{}` | Removes the skill from the Library on every computer |
 | `POST /api/machines/{machine_id}/remove` | `{}` | `removed`: the computer's name. Its token, sessions and transfer URLs end at once. The user's last computer is refused with `409`. Server only (ADR-0027) |
@@ -387,7 +389,10 @@ A group's path contains slashes, so it always travels in the body and never in t
   "machines": [
     {"id": "af6c2628-…", "name": "macbook", "os": "MACOS", "harnesses": ["claude_code"],
      "added_on": "2026-10-13T09:12:01.402113+00:00", "added_by": null, "added_by_removed": false,
-     "last_synced": {"claude_code": "2026-10-14T00:40:12.513920+00:00"}}
+     "last_synced": {"claude_code": "2026-10-14T00:40:12.513920+00:00"},
+     "projects": [{"key": "github.com/dchristopoulos/aistack", "name": "aistack",
+                   "folders": [{"harness": "claude_code", "path": "/Users/dimitris/code/aistack",
+                                "last_synced_on": "2026-10-14T00:41:02.104771+00:00"}]}]}
   ],
   "skills": [
     {
@@ -397,7 +402,8 @@ A group's path contains slashes, so it always travels in the body and never in t
       "pushed_by": "dimitris",
       "updated_on": "2026-10-14T00:43:56.158183+00:00",
       "files": 2,
-      "placements": [{"machine": "af6c2628-…", "harness": "claude_code", "revision": 1}],
+      "placements": [{"machine": "af6c2628-…", "harness": "claude_code", "revision": 1,
+                      "project": null}],
       "source": {
         "team": "acme", "group": null,
         "revision": 2, "latest_revision": 3, "latest_pushed_by": "maria",
@@ -447,10 +453,11 @@ A group's path contains slashes, so it always travels in the body and never in t
 | `machines` | The user's computers, oldest first. `id` is the machine id the routes take, `name` its name, and `os` is `MACOS`, `WINDOWS`, or `LINUX` |
 | `machines[].added_on`, `added_by` | When the computer was registered, and the name of the computer whose `add_machine` registered it: null for a first computer. `added_by_removed` is true when that computer has since been removed (ADR-0027) |
 | `machines[].last_synced` | Each of its harnesses, with when it last synced (UTC), or null for one that never has |
-| `machines[].harnesses` | The harnesses on that computer, in the server's order: those that have synced there and those holding a decision about a skill. `[]` for a computer with neither, which has never synced |
+| `machines[].harnesses` | The harnesses on that computer, in the server's order: those that have synced there, those holding a decision about a skill, and those with a project folder. `[]` for a computer with none, which has never synced |
+| `machines[].projects` | The projects this computer manages (ADR-0026), by name: each with its `key` and `name`, and its `folders`, one per harness, with the top level last seen there (`path`, null until that folder syncs, and shown only) and `last_synced_on` |
 | `skills` | The Library, by name, without the ones removed from it. Each has its `name` and `description` |
 | `skills[].revision`, `pushed_by`, `updated_on`, `files` | The latest revision of the user's own copy: its number, who pushed it, when (UTC), and how many files it has |
-| `skills[].placements` | Where the skill is switched on: each a computer's id (`machine`) and a `harness`, oldest computer first. On is a decision the server holds, not proof the files are there yet. `revision` is the one last installed or pushed there, null until it has synced |
+| `skills[].placements` | Where the skill is switched on: each a computer's id (`machine`) and a `harness`, oldest computer first. On is a decision the server holds, not proof the files are there yet. `revision` is the one last installed or pushed there, null until it has synced. `project` is the key of the project folder it is in, or null for the computer's own folder |
 | `skills[].source` | The team skill this copy was taken from or shared to, or null. Null also when the user can no longer see that skill: the copy is then simply theirs |
 | `source.team`, `group` | The team that skill is in, and its group's path, or null at team level |
 | `source.revision` | The team's revision this copy came from. `latest_revision` and `latest_pushed_by` describe the team's newest, and `update_available` is true when it is newer |

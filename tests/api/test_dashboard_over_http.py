@@ -332,7 +332,8 @@ async def test_a_team_from_creation_to_an_update_taken_entirely_on_the_dashboard
         await _post(maria, f"/skills/code-review/machines/{machine}", enabled=True)
         mine = (await _state(maria))["skills"][0]
         assert (mine["name"], mine["placements"], mine["source"]["update_available"]) == (
-            "code-review", [{"machine": machine, "harness": "claude_code", "revision": None}],
+            "code-review", [{"machine": machine, "harness": "claude_code", "revision": None,
+                             "project": None}],
             False)
 
         # Dimitris changes it and shares again: Maria is offered it, and takes it.
@@ -491,15 +492,16 @@ async def test_removing_a_skill_and_switching_it_per_computer_and_harness(server
         state = await _state(browser)
         laptop, desktop = (machine["id"] for machine in state["machines"])
         assert state["skills"][0]["placements"] == [{"machine": laptop,
-                                                     "harness": "claude_code", "revision": 1}]
+                                                     "harness": "claude_code", "revision": 1,
+                                                     "project": None}]
 
         await _post(browser, f"/skills/wizard/machines/{desktop}", enabled=True)
         await _post(browser, f"/skills/wizard/machines/{desktop}", enabled=True,
                     harness="agents")
         await _post(browser, f"/skills/wizard/machines/{laptop}", enabled=False)
         assert (await _state(browser))["skills"][0]["placements"] == [
-            {"machine": desktop, "harness": "agents", "revision": None},
-            {"machine": desktop, "harness": "claude_code", "revision": None}]
+            {"machine": desktop, "harness": "agents", "revision": None, "project": None},
+            {"machine": desktop, "harness": "claude_code", "revision": None, "project": None}]
 
         unknown = await _post(browser, f"/skills/wizard/machines/{desktop}", enabled=True,
                               harness="cursor")

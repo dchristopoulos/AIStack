@@ -72,7 +72,7 @@ How to work through it:
 - [x] 30. Server-mode tools take a project (#169)
 - [x] 31. Teach the server's sync-aistack skill the project steps (#170)
 - [ ] 32. Local mode: git-hardened project folders
-- [ ] 33. Dashboard API for project folders
+- [x] 33. Dashboard API for project folders, on a server (#171)
 - [ ] 34. Dashboard page: projects in the computer tree
 - [x] 35. Keyboard and screen reader (#161)
 - [ ] 36. The pages before sign-in, the icon, and local mode's remembered choices
@@ -740,6 +740,8 @@ Tests: - /api/state lists only the caller's projects.
 - Removing a project folder cascades its placements and leaves the Library and the other computers untouched.
 - The route-documentation test passes.
 - A POST without X-AIStack-Request is refused.
+
+Outcome: built for a server. In local mode each action would record a project event, which waits for the release step 32 needs (ADR-0026), so the two new routes are server-only and the localhost dashboard refuses a placement with `project`. Local mode's half moves to step 32.
 
 ### 34. Dashboard page: projects in the computer tree
 
