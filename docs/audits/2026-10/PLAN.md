@@ -73,7 +73,7 @@ How to work through it:
 - [x] 31. Teach the server's sync-aistack skill the project steps (#170)
 - [ ] 32. Local mode: git-hardened project folders
 - [x] 33. Dashboard API for project folders, on a server (#171)
-- [ ] 34. Dashboard page: projects in the computer tree
+- [x] 34. Dashboard page: projects in the computer tree (#172)
 - [x] 35. Keyboard and screen reader (#161)
 - [ ] 36. The pages before sign-in, the icon, and local mode's remembered choices
 - [ ] 37. Shorter text, and words that say what is true
