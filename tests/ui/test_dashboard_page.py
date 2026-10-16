@@ -104,6 +104,41 @@ async def test_a_team_skill_named_like_one_of_yours_replaces_it_only_once_confir
     assert alex.console_errors == []
 
 
+
+async def test_an_offered_update_is_read_line_by_line_before_it_is_taken(sign_in):
+    """IMP-08: the offer said who and which revision, and nothing of what changed."""
+    maria = await sign_in("maria")
+    await maria.page.get_by_role("button", name="Review changes to code-review").click()
+
+    dialog = maria.page.get_by_role("dialog", name="Changes to code-review")
+    await expect(dialog.get_by_text("Also check that migrations are reviewed.")).to_be_visible()
+    await dialog.get_by_role("button", name="Done").click()
+    assert _skill(await maria.state(), "code-review")["source"]["update_available"] is True
+    assert maria.console_errors == []
+
+
+async def test_your_own_version_comes_back_from_history_after_taking_the_teams(sign_in):
+    """PH-08: 'yours stays in your history' had no way back."""
+    alex = await sign_in("alex")
+    await _open_team(alex, "aistack")
+    row = alex.page.get_by_role("row").filter(has_text="release-notes")
+    await row.get_by_role("button", name="Replace yours with the team's release-notes…").click()
+    await alex.page.get_by_role("dialog", name="Replace your release-notes?").get_by_role(
+        "button", name="Replace yours").click()
+    await expect(row.get_by_text("In your library")).to_be_visible()
+
+    await alex.page.goto(f"{alex.base_url}/app#/library")
+    await alex.page.get_by_role("button", name="Details of release-notes").click()
+    await alex.page.get_by_role("dialog", name="release-notes").get_by_role(
+        "button", name="History…").click()
+    await alex.page.get_by_role("dialog", name="History of release-notes").get_by_role(
+        "button", name="Restore r1").click()
+
+    await expect(alex.page.get_by_text("Restored r1 of release-notes as r3.")).to_be_visible()
+    mine = _skill(await alex.state(), "release-notes")
+    assert (mine["revision"], mine["pushed_by"]) == (3, "alex")
+    assert alex.console_errors == []
+
 async def test_the_share_dialog_says_what_sharing_would_go_over_before_it_does(sign_in):
     alex = await sign_in("alex")
     await alex.page.get_by_role("button", name="Details of release-notes").click()

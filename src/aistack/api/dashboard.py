@@ -219,6 +219,24 @@ async def state(request: Request) -> Response:
                           "release": release()})
 
 
+@_route(API_PATH + "/skills/{name}/history", methods=["GET"], local=False)
+@handle_route_errors
+async def skill_history(request: Request) -> Response:
+    holder = _signed_in(request)
+    return _json(await asyncio.to_thread(
+        _in_transaction, _as_user(dashboard_service.history), holder,
+        request.path_params["name"], read_only=True))
+
+
+@_route(API_PATH + "/teams/{team}/skills/{name}/changes", methods=["GET"], local=False)
+@handle_route_errors
+async def team_update_changes(request: Request) -> Response:
+    holder = _signed_in(request)
+    return _json(await asyncio.to_thread(
+        _in_transaction, _as_user(dashboard_service.update_changes), holder,
+        request.path_params["team"], request.path_params["name"], read_only=True))
+
+
 @_route(API_PATH + "/logout", methods=["POST"])
 @handle_route_errors
 async def sign_out(request: Request) -> Response:
@@ -302,6 +320,14 @@ def share_skill(session, user_id, path, body):
         "overwrote_revision": shared.overwrote_revision,
         "updates_from": shared.updates_from,
     }
+
+
+# Server only for now: local mode records it once a release replays its event (ADR-0026).
+@_action("/skills/{name}/restore", local=False)
+def restore_revision(session, user_id, path, body):
+    restored = skill_service.restore_revision(session, user_id, path["name"],
+                                              body.get("revision"))
+    return {"revision": restored.revision, "unchanged": restored.unchanged}
 
 
 @_action("/skills/{name}/remove")

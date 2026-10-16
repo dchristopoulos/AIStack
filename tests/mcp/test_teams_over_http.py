@@ -322,7 +322,7 @@ async def test_a_teammates_change_is_offered_and_becomes_an_update_only_once_tak
     assert pushed_only["team_updates"] == [] and pushed_only["up_to_date"] == 1
     assert offered["team_updates"] == [{"name": "wizard", "team": "acme", "from_revision": 1,
                                         "to_revision": 2, "pushed_by": "dimitris",
-                                        "own_changes": False}]
+                                        "own_changes": False, "different_skill": False}]
     assert offered["update"] == [] and offered["ask"] == []
     assert offered["up_to_date"] == 1
 

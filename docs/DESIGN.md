@@ -309,7 +309,7 @@ Three places hold skills, and they nest in that order of privacy.
 
 **The four verbs.** *Back up* (`push_skill`): a local skill goes into the Library. *Share* (`share_skill`, or a tick on the dashboard): the team gets a copy of the latest revision. *Take* (`get_skill` with a team): the team's latest revision is copied into the Library and installed. *Remove*: from one computer (`disable_skill`), from the Library on every computer (dashboard), or from a team (its admin).
 
-**Updates from a team are offers.** A personal skill remembers its team source and that source's revision. When the team's copy is newer, sync lists it under `team_updates` and the user answers each time; yes is *take*. Each offer says whether the user changed their copy since taking it (`own_changes`), because taking replaces those changes on every computer. A user who unsubscribes from a group is not offered its updates.
+**Updates from a team are offers.** A personal skill remembers its team source and that source's revision. When the team's copy is newer, sync lists it under `team_updates` and the user answers each time; yes is *take*. Each offer says whether the user changed their copy since taking it (`own_changes`), because taking replaces those changes on every computer, and whether a share since put a different skill of the same name in the team (`different_skill`, from `skill_version.shared_over_unrelated`). The dashboard shows the offer's changes as a diff before anything is taken. A user who unsubscribes from a group is not offered its updates.
 
 **What leaving a team changes:** what the user can list and take. Nothing they already took is touched, because their machines never ran the team's copy.
 
@@ -358,6 +358,9 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/machines/{machine_id}/projects` | `project` (a key), optional `harness` | Starts managing one of the user's projects, already known from another computer, on this computer. Its path is unknown until it syncs there. Server only |
 | `POST /api/machines/{machine_id}/projects/remove` | `project`, optional `harness` (every harness when omitted) | Stops managing that project on this computer; its placements there go with it. The files on disk, the Library and the other computers are untouched. Answers `removed`, the number of folders. Server only |
 | `POST /api/skills/{name}/share` | `team`, `group` (a path, or null for team level) | `team`, `group`, `revision`, `created`, `unchanged`, `previous_pushed_by`, `possibly_unrelated`, `overwrote_revision`, `updates_from`: what `share_skill` returns |
+| `GET /api/skills/{name}/history` | | `revisions`, newest first: each `revision`, `pushed_by`, `pushed_on` (UTC), and `files`. Server only |
+| `POST /api/skills/{name}/restore` | `revision` | `revision`, the new one, and `unchanged`. Stores that revision's files as the newest, pushed by the user; every computer that has the skill installs it at its next sync. Server only |
+| `GET /api/teams/{team}/skills/{name}/changes` | | What taking the team's latest would change in the user's copy: `from_revision` (theirs), `to_revision`, `pushed_by`, `files` (each `path`, `change` as `added`, `removed` or `changed`, and a unified `diff`), and `truncated` when the diff was cut |
 | `POST /api/skills/{name}/remove` | `{}` | Removes the skill from the Library on every computer |
 | `POST /api/machines/{machine_id}/remove` | `{}` | `removed`: the computer's name. Its token, sessions and transfer URLs end at once. The user's last computer is refused with `409`. Server only (ADR-0027) |
 | `POST /api/machines/{machine_id}/rename` | `name` | `name`, unique among the user's computers. Server only |
@@ -409,7 +412,7 @@ A group's path contains slashes, so it always travels in the body and never in t
       "source": {
         "team": "acme", "group": null,
         "revision": 2, "latest_revision": 3, "latest_pushed_by": "maria",
-        "update_available": true, "own_changes": false
+        "update_available": true, "own_changes": false, "different_skill": false
       }
     }
   ],
@@ -466,6 +469,7 @@ A group's path contains slashes, so it always travels in the body and never in t
 | `source.team`, `group` | The team that skill is in, and its group's path, or null at team level |
 | `source.revision` | The team's revision this copy came from. `latest_revision` and `latest_pushed_by` describe the team's newest, and `update_available` is true when it is newer |
 | `source.own_changes` | True when the user changed their copy since taking it, so taking the team's latest would replace those changes on every computer |
+| `source.different_skill` | True when a share since the copy was taken put a different skill of the same name in the team: the offer is not an edit of what the user took |
 | `teams` | The teams the user is in, by `name`. The Library is not among them. `kind` is `SHARED`: every team is one somebody created (ADR-0019) |
 | `teams[].role`, `sees_all_groups`, `can_invite` | The user's own role in that team, `ADMIN` or `MEMBER`, whether they were given sight of every group, and whether an admin let them make invite links |
 | `teams[].members` | Everyone in the team: `username`, `full_name`, `role`, `sees_all_groups`, `can_invite`, and `groups`. A member's private groups are listed only for an admin and for people in those groups |
@@ -584,6 +588,8 @@ SKILL_VERSION                                  -- immutable; a change is a new r
                                                -- SKILL_FILE is verbatim truth, never regenerate
   created_on        TIMESTAMPTZ  NOT NULL
   pushed_by         FK → USER    NOT NULL      -- who uploaded this revision
+  shared_over_unrelated BOOLEAN  NULL          -- true when a share put it over a different
+                                               -- skill of the same name (UX-06)
   UNIQUE (skill_id, revision)                  -- revisions are allocated inside the push
                                                -- transaction (SELECT MAX(revision)+1 for this
                                                -- skill, then INSERT); on unique violation the

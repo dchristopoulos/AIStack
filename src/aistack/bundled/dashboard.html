@@ -615,6 +615,13 @@ a.link:hover { text-decoration-color: var(--text); }
 .choices { margin: 12px 0; padding-left: 18px; }
 .choices li { margin: 0 0 10px; }
 .choices p { margin: 2px 0 0; color: var(--muted); }
+/* A unified diff, as text: what an update would change, line by line. */
+.diff { margin: 0; padding: 10px 12px; max-height: 50vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--head); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff .add { color: var(--ok); }
+.diff .del { color: var(--danger); }
+.revisions { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.revisions li { display: flex; align-items: center; gap: 10px; }
+.revisions .grow { flex: 1; }
 .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 16px; margin: 16px 0 0; font-size: 13px; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
@@ -1741,7 +1748,8 @@ function libraryRow(s) {
         el('span', { class: 'dot accent' }),
         el('strong', null, 'Update available'),
         el('span', { class: 'mono' }, `${src.team} r${src.revision} → r${src.latest_revision}`),
-        el('span', { class: 'grow' }, `pushed by ${src.latest_pushed_by}${src.own_changes ? `, over your changes in r${s.revision}` : ''}`),
+        el('span', { class: 'grow' }, `pushed by ${src.latest_pushed_by}${src.different_skill ? ', a different skill of the same name' : ''}${src.own_changes ? `, over your changes in r${s.revision}` : ''}`),
+        btn('Review changes', { class: 'btn sm', fk: 'changes:' + s.name, 'aria-label': `Review changes to ${s.name}`, on: { click: () => changesDialog(s) } }),
         btn('Take update', { class: 'btn primary sm', fk: 'take:' + s.name, 'data-next': 'open:' + s.name, 'aria-label': `Take update to ${s.name}`,
           on: { click: ev => takeSkill(ev.currentTarget, src.team, s.name) } }, 'up'))))];
 }
@@ -1800,7 +1808,8 @@ function skillSheet(s) {
       s.description && el('p', { class: 'lead' }, s.description),
       src && src.update_available && el('div', { class: 'update' },
         el('span', { class: 'dot accent' }), el('strong', null, 'Update available'),
-        el('span', { class: 'grow' }, `${src.team} r${src.revision} → r${src.latest_revision}, pushed by ${src.latest_pushed_by}${src.own_changes ? `. Taking it replaces your changes in r${s.revision}.` : ''}`)),
+        el('span', { class: 'grow' }, `${src.team} r${src.revision} → r${src.latest_revision}, pushed by ${src.latest_pushed_by}${src.different_skill ? ', a different skill of the same name' : ''}${src.own_changes ? `. Taking it replaces your changes in r${s.revision}.` : ''}`),
+        btn('Review changes', { class: 'btn sm', on: { click: after(changesDialog) } })),
       el('section', { class: 'sheet-sec', 'aria-label': 'About' },
         el('dl', { class: 'facts' },
           fact('Linked team', src ? el('a', { class: 'mono link', href: teamHash(src.team) }, teamLabel(src.team, src.group)) : 'None'),
@@ -1811,10 +1820,45 @@ function skillSheet(s) {
         state.machines.length ? picker : el('p', null, 'No computer is connected yet.')),
       el('section', { class: 'sheet-sec actions', 'aria-label': 'More' },
         state.server !== false && btn('Share with a team…', { on: { click: after(shareDialog) } }, 'share'),
+        state.server !== false && btn('History…', { on: { click: after(historyDialog) } }, 'layers'),
         btn('Remove from library…', { class: 'btn danger', on: { click: after(removeMineDialog) } }, 'trash')),
     ],
     onSubmit: save,
   });
+}
+
+// What taking a team's update would change in your copy, read before anything is taken (IMP-08).
+function changesDialog(s) {
+  const src = s.source;
+  const body = el('div', null, el('p', { class: 't2' }, 'Loading the changes…'));
+  openDialog({ title: `Changes to ${s.name}`, submitLabel: 'Done', cancelLabel: null, body });
+  // el() flattens the lists and drops what is false; replaceChildren would print them.
+  api(`/api/teams/${enc(src.team)}/skills/${enc(s.name)}/changes`).then(c => body.replaceChildren(el('div', null,
+    el('p', null, `${src.team} r${c.to_revision}, pushed by ${c.pushed_by}, against your r${c.from_revision}.`),
+    c.files.length ? c.files.map(f => el('section', { class: 'field', 'aria-label': f.path },
+      el('h3', { class: 'mono' }, `${f.path}, ${f.change}`),
+      el('pre', { class: 'diff' }, f.diff.replace(/\n$/, '').split('\n').map(line => el('span', {
+        class: /^\+(?!\+\+ )/.test(line) ? 'add' : /^-(?!-- )/.test(line) ? 'del' : null }, line + '\n')))))
+      : el('p', null, 'Its files are the same as yours.'),
+    c.truncated && el('p', { class: 'help' }, 'The rest is too long to show here.'))))
+    .catch(e => body.replaceChildren(el('p', { class: 'form-error', role: 'alert' }, e.message)));
+}
+
+// Every revision of one of your skills; restoring one stores it again as the newest (PH-08).
+function historyDialog(s) {
+  const list = el('div', null, el('p', { class: 't2' }, 'Loading the history…'));
+  openDialog({ title: `History of ${s.name}`, submitLabel: 'Done', cancelLabel: null, body: [
+    el('p', null, `Restoring a revision makes it the newest. Each computer that has ${s.name} installs it at its next sync.`), list] });
+  api(`/api/skills/${enc(s.name)}/history`).then(h => list.replaceChildren(el('ul', { class: 'revisions' },
+    h.revisions.map((r, i) => el('li', null,
+      el('span', { class: 'grow' }, el('strong', null, `r${r.revision}`), ` pushed by ${r.pushed_by}, `, when(r.pushed_on), `, ${plural(r.files, 'file')}`),
+      i ? btn('Restore', { class: 'btn sm', 'aria-label': `Restore r${r.revision}`, on: { click: ev => run(ev.currentTarget, async () => {
+        const res = await api(`/api/skills/${enc(s.name)}/restore`, { revision: r.revision });
+        document.querySelector('dialog[open]').close();
+        return res.unchanged ? `r${r.revision} is the same as the newest; nothing changed.`
+          : `Restored r${r.revision} of ${s.name} as r${res.revision}. Each computer installs it at its next ${SYNC}.`;
+      }) } }) : el('span', { class: 'badge' }, 'Newest'))))))
+    .catch(e => list.replaceChildren(el('p', { class: 'form-error', role: 'alert' }, e.message)));
 }
 
 function folderView(m, agent, project = null) {
@@ -3230,6 +3274,20 @@ const DEMO_ROUTES = [
     DB.machines.forEach(x => { if (x.added_by === m.name) x.added_by = name; });
     m.name = name;
     return { name };
+  }],
+  [/^\/api\/skills\/([^/]+)\/history$/, (b, name) => {
+    const s = dMine(name);
+    return { revisions: Array.from({ length: s.revision }, (_, i) => ({ revision: s.revision - i, pushed_by: s.pushed_by, pushed_on: s.updated_on, files: s.files })) };
+  }],
+  [/^\/api\/skills\/([^/]+)\/restore$/, (b, name) => {
+    const s = dMine(name);
+    Object.assign(s, { revision: s.revision + 1, pushed_by: dMe(), updated_on: dNow() });
+    return { revision: s.revision, unchanged: false };
+  }],
+  [/^\/api\/teams\/([^/]+)\/skills\/([^/]+)\/changes$/, (b, team, name) => {
+    const s = dMine(name), to = s.source.latest_revision;
+    return { from_revision: s.revision, to_revision: to, pushed_by: s.source.latest_pushed_by, truncated: false, files: [{ path: 'SKILL.md', change: 'changed',
+      diff: `--- yours r${s.revision}/SKILL.md\n+++ ${team} r${to}/SKILL.md\n@@ -4,1 +4,2 @@\n Read the change before the summary.\n+Also check that migrations are reviewed.\n` }] };
   }],
   [/^\/api\/logout$/, () => {}],
 ];

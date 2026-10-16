@@ -4,6 +4,7 @@ Everything here is read through `visibility` and `team_service`, so the page is 
 what its user may see and never has to hide anything itself.
 """
 
+import difflib
 import hmac
 import uuid
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from aistack.db.models.machine_project_skill import MachineProjectSkill
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.project import Project
 from aistack.db.models.skill import Skill
+from aistack.db.models.skill_file import SkillFile
+from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
 from aistack.db.models.value_set import known
@@ -142,6 +145,68 @@ def set_on_machine(session: Session, user_id: uuid.UUID, name: str, machine_id: 
                                                  projects.validated_key(project), harness)
         project_service.set_enabled(session, folder, skill.skill_id, enabled=bool(enabled))
     return Placed(skill.name, machine.machine_id, harness.value, bool(enabled))
+
+
+def history(session: Session, user_id: uuid.UUID, name: str) -> dict[str, Any]:
+    """Every revision of one of the user's own skills, newest first: what Restore can bring
+    back (PH-08)."""
+    skill = visibility.required_my_skill(session, user_id, name)
+    rows = session.execute(
+        select(SkillVersion.revision, User.username, SkillVersion.created_on,
+               revisions.file_count(SkillVersion.skill_version_id))
+        .join(User, User.user_id == SkillVersion.pushed_by)
+        .where(SkillVersion.skill_id == skill.skill_id)
+        .order_by(SkillVersion.revision.desc())).all()
+    return {"revisions": [{"revision": revision, "pushed_by": pushed_by,
+                           "pushed_on": as_utc(pushed_on).isoformat(), "files": files}
+                          for revision, pushed_by, pushed_on, files in rows]}
+
+
+# A diff longer than this is cut, and says so: a page shows it, and nobody reads further.
+_DIFF_MAX_CHARACTERS = 200_000
+
+
+def update_changes(session: Session, user_id: uuid.UUID, team: str,
+                   name: str) -> dict[str, Any]:
+    """What taking a team's latest revision would change in the user's own copy, file by
+    file, as unified diffs (IMP-08). It shows only what the user may already take."""
+    # The team's first, so a skill the caller cannot reach is refused like an unknown one.
+    source = visibility.team_skill(session, user_id, name, team)
+    mine = visibility.required_my_skill(session, user_id, source.name)
+    theirs, yours = _newest_version(session, source), _newest_version(session, mine)
+    before, after = _files_of(session, yours), _files_of(session, theirs)
+    files, left, truncated = [], _DIFF_MAX_CHARACTERS, False
+    for path in sorted(before.keys() | after.keys()):
+        if before.get(path) == after.get(path):
+            continue
+        diff = "".join(difflib.unified_diff(
+            _lines(before.get(path, "")), _lines(after.get(path, "")),
+            f"yours r{yours.revision}/{path}", f"{team} r{theirs.revision}/{path}"))
+        truncated = truncated or len(diff) > left
+        files.append({"path": path,
+                      "change": ("added" if path not in before
+                                 else "removed" if path not in after else "changed"),
+                      "diff": diff[:max(left, 0)]})
+        left -= len(diff)
+    return {"from_revision": yours.revision, "to_revision": theirs.revision,
+            "pushed_by": username(session, theirs.pushed_by), "files": files,
+            "truncated": truncated}
+
+
+def _lines(text: str) -> list[str]:
+    # A last line without a newline would run into the diff's next line.
+    return [line if line.endswith("\n") else line + "\n" for line in text.splitlines(True)]
+
+
+def _newest_version(session: Session, skill: Skill) -> SkillVersion:
+    return session.scalar(select(SkillVersion).where(SkillVersion.skill_id == skill.skill_id)
+                          .order_by(SkillVersion.revision.desc()).limit(1))
+
+
+def _files_of(session: Session, version: SkillVersion) -> dict[str, str]:
+    return dict(session.execute(
+        select(SkillFile.path, SkillFile.content)
+        .where(SkillFile.skill_version_id == version.skill_version_id)).all())
 
 
 def add_project(session: Session, user_id: uuid.UUID, machine_id: str, project: str,
@@ -297,9 +362,10 @@ def _my_skills(session: Session, user_id: uuid.UUID,
                                                     "harness": harness.value,
                                                     "revision": installed, "project": key})
 
-    changed = skill_service.changed_since_taken(
-        session, [(row.skill_id, row.source_skill_id, row.source_revision) for row in rows
-                  if row.source_skill_id in team_skills])
+    copies = [(row.skill_id, row.source_skill_id, row.source_revision) for row in rows
+              if row.source_skill_id in team_skills]
+    changed = skill_service.changed_since_taken(session, copies)
+    replaced = skill_service.replaced_since_taken(session, copies)
     skills = []
     for (skill_id, name, description, source_id, source_revision, revision, pushed_by,
          pushed_on, files) in rows:
@@ -323,6 +389,8 @@ def _my_skills(session: Session, user_id: uuid.UUID,
                 "update_available": source["revision"] > source_revision,
                 # Taking the team's latest would replace the user's edits since they took it.
                 "own_changes": skill_id in changed,
+                # A share put a different skill of the same name over the one they took.
+                "different_skill": skill_id in replaced,
             },
         })
     return skills
