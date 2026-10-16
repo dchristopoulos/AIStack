@@ -104,6 +104,20 @@ aistack.example.com {
 
 `GET /health` answers `{"status": "ok"}` without a token when the server can reach its database, and 503 when it cannot. The container's own health check uses it.
 
+## Changing the server's address
+
+Every computer's connection holds the address it was set up with, so moving the server (from a tailnet to a VPS, say, or to a new domain) leaves each one pointing at the old place. Tokens do not change with the address: each computer reconnects with the token it has.
+
+Set `AISTACK_PUBLIC_URL` to the new address and start the server there. Then, on each computer, for Claude Code, `claude mcp get aistack` shows the token in its `Authorization` header; remove the connection and add it again with the new address and the same header:
+
+```bash
+claude mcp remove aistack --scope user
+claude mcp add --transport http --scope user aistack https://new.example.com/mcp \
+  --header "Authorization: Bearer <the same token>"
+```
+
+For Codex, change `url` in the `[mcp_servers.aistack]` block of `~/.codex/config.toml`. Restart the agent once. A computer whose token is lost gets a new one with `aistack admin rotate` instead.
+
 ## The dashboard
 
 The dashboard is where people see their skills and manage teams, groups, and members. It needs nothing from you: it is served by the same process at `/app`, with its JSON API under `/api`, on the same port as everything else. There is no second service, no build step, and nothing to configure.
@@ -123,29 +137,16 @@ Users create teams and groups themselves and administer them. An admin can delet
 
 ## Admin operations
 
-No tool and no dashboard page performs the server's own admin operations. These are the ones an operator needs, as short scripts that run inside the container. They use the server's own database setup, so they work the same on SQLite and PostgreSQL.
-
-Save a script to a file, set the names at the top, and run it:
-
-```bash
-docker exec -i aistack python - < script.py
-```
+No tool and no dashboard page performs the server's own admin operations. They are `aistack admin` commands, run inside the container. Each one is a single transaction on the server's own database setup, so it works the same on SQLite and PostgreSQL, and a name that does not exist answers with a sentence and changes nothing. `docker exec aistack aistack admin --help` lists them.
 
 ### List users and machines
 
-```python
-from sqlalchemy import text
-from aistack.bootstrap.configuration.settings.settings_config import Settings
-from aistack.db.engine import build_engine
-
-with build_engine(Settings().database_url).begin() as connection:
-    for row in connection.execute(text('''
-        SELECT u.username, m.name, m.os, m.created_on
-        FROM machine m JOIN "user" u ON u.user_id = m.user_id
-        ORDER BY u.username, m.name
-    ''')):
-        print(*row)
+```bash
+docker exec aistack aistack admin machines
+docker exec aistack aistack admin machines maria
 ```
+
+Each line is a user, a computer, its operating system, when it was added, and when each of its coding agents last synced.
 
 ### A laptop was lost or stolen
 
@@ -153,141 +154,67 @@ The person can do this themselves while they still have another computer: on the
 
 ### Rotate a lost laptop's token
 
-This is the answer to both "revoke the old one" and "let the user back in". The old token stops working on its next request, the machine keeps its name and its enabled skills, and you hand the user the new token. Every dashboard session that laptop opened, and every transfer URL it was given, ends with the old token (ADR-0027).
-
-```python
-import hashlib, secrets
-from sqlalchemy import text
-from aistack.bootstrap.configuration.settings.settings_config import Settings
-from aistack.db.engine import build_engine
-
-USERNAME, MACHINE = "maria", "laptop"
-
-token = "aist_" + secrets.token_urlsafe(32)
-with build_engine(Settings().database_url).begin() as connection:
-    changed = connection.execute(text('''
-        UPDATE machine SET token_hash = :token_hash
-        WHERE name = :machine
-          AND user_id = (SELECT user_id FROM "user" WHERE username = :username)
-    '''), {"token_hash": hashlib.sha256(token.encode()).hexdigest(),
-           "machine": MACHINE, "username": USERNAME}).rowcount
-print(f"Rotated {changed} machine. New token: {token}" if changed else "No such machine.")
-```
-
-The user then reconnects the replacement computer with that token:
+This is the answer to both "revoke the old one" and "let the user back in". The old token stops working on its next request, the machine keeps its name and its enabled skills, and the user gets a new token. Every dashboard session that laptop opened, and every transfer URL it was given, ends with the old token (ADR-0027).
 
 ```bash
-claude mcp remove aistack --scope user
-claude mcp add --transport http --scope user aistack https://aistack.example.com/mcp \
-  --header "Authorization: Bearer <new token>"
+docker exec aistack aistack admin rotate maria laptop
 ```
 
-The token is printed once, in your terminal. Send it to the user over something private.
+It prints the new token inside what the user pastes on the replacement computer: the Claude Code commands that remove the old connection and add the new one, and the Codex block. It builds them from `AISTACK_PUBLIC_URL`; without it, add `--url https://aistack.example.com`, the address people type. The token is printed once, in your terminal, and never logged. Send it to the user over something private.
 
 Whoever holds the laptop may have used it before you rotated. Then:
 
-- **Computers it added.** List the user's machines with the query above. Any `created_on` after the loss that the user does not recognise was added with `add_machine` from the laptop: delete it with the script below. Its token, sessions and URLs end with it.
+- **Computers it added.** List the user's machines. Any added after the loss that the user does not recognise was added with `add_machine` from the laptop: remove it, below. Its token, sessions and URLs end with it.
 - **Skills it changed.** A machine installs its user's newest revision without asking. Have the user look over their Library on the dashboard and push their own copy back over anything they did not write.
 - **Invites it made.** If the user is a team admin or may invite, the team's admins check the team's pending invites on the dashboard and cancel any the user did not make.
 
-### A machine is gone for good: delete it
+### A machine is gone for good: remove it
 
-```python
-from sqlalchemy import text
-from aistack.bootstrap.configuration.settings.settings_config import Settings
-from aistack.db.engine import build_engine
-
-USERNAME, MACHINE = "maria", "old-desktop"
-
-with build_engine(Settings().database_url).begin() as connection:
-    removed = connection.execute(text('''
-        DELETE FROM machine
-        WHERE name = :machine
-          AND user_id = (SELECT user_id FROM "user" WHERE username = :username)
-    '''), {"machine": MACHINE, "username": USERNAME}).rowcount
-print(f"Removed {removed} machine.")
+```bash
+docker exec aistack aistack admin remove-machine maria old-desktop
 ```
 
-Its token is rejected from the next request on, and the record of which skills it had enabled goes with it. Do this through the script and not with a bare `sqlite3` shell: SQLite only cascades deletes when a per-connection setting is on, and the server's database setup turns it on.
+Its token is rejected from the next request on, and the record of which skills it had enabled goes with it. Unlike the dashboard, this removes a user's last computer too. Do this through the command and not with a bare `sqlite3` shell: SQLite only cascades deletes when a per-connection setting is on, and the server's database setup turns it on.
 
 ### A user has no machine left
 
-If their only machine was deleted, or their first join went through but its answer never reached them, they cannot call `add_machine`, and joining again is refused because the username exists. Register a machine for them:
+If their only machine was removed, or their first join went through but its answer never reached them, they cannot call `add_machine`, and joining again is refused because the username exists. Register a machine for them:
 
-```python
-from sqlalchemy import select
-from aistack.bootstrap.configuration.settings.settings_config import Settings
-from aistack.db.engine import build_engine, build_session_factory
-from aistack.db.models.user import User
-from aistack.services import onboarding_service
-
-USERNAME, MACHINE, OS = "maria", "new-laptop", "MACOS"   # OS: MACOS, WINDOWS, or LINUX
-
-with build_session_factory(build_engine(Settings().database_url)).begin() as session:
-    user = session.scalar(select(User).where(User.username == USERNAME))
-    added = onboarding_service.add_machine(session, user.user_id, MACHINE, OS)
-print(f"Registered '{MACHINE}' for {USERNAME}. Token: {added.token}")
+```bash
+docker exec aistack aistack admin register-machine maria new-laptop --os macos
 ```
+
+`--os` is `macos`, `windows` or `linux`. It prints the token and what to paste, as `rotate` does.
 
 **Never delete a user.** Every skill and revision records who pushed it, and their teams and memberships point at them. Deleting someone either fails or destroys that record, and the record is how a team knows whose instructions their agents are running.
 
 ### Someone left: take them off the server
 
-First take them out of their teams. A team they were the only admin of needs someone to take it over: name that member in `SUCCESSORS`, and the script refuses, changing nothing, while one is missing. A team they were the only member of is deleted. Their pending invites stop working.
-
-```python
-from aistack.bootstrap.configuration.settings.settings_config import Settings
-from aistack.db.engine import build_engine, build_session_factory
-from aistack.services import operator_service
-
-USERNAME = "maria"
-SUCCESSORS = {}   # team name -> the member who becomes its admin, e.g. {"acme": "dimitris"}
-
-with build_session_factory(build_engine(Settings().database_url)).begin() as session:
-    teams = operator_service.take_out_of_teams(session, USERNAME, SUCCESSORS)
-print(f"Took {USERNAME} out of: {', '.join(teams) or 'no team'}.")
+```bash
+docker exec aistack aistack admin offboard maria
 ```
 
-Then delete each of their machines with the script above. With no machine they have no token, so they can reach neither the MCP endpoint nor the dashboard, and a dashboard session they still hold ends with the machine that opened it. Their account, the skills they shared, and the `pushed_by` on each revision stay. Team invites they made stop working too: an invite works only while its maker is on the server and may still invite into its team. Then rotate the server's invite code, below.
+This takes them out of every team, then removes every computer of theirs. A team they were the only admin of needs someone to take it over, and the command refuses, changing nothing, until you name one: `--successor acme=dimitris`, once per team. A team they were the only member of is deleted. Their pending invites stop working: an invite works only while its maker is on the server and may still invite into its team.
+
+With no machine they have no token, so they can reach neither the MCP endpoint nor the dashboard, and a dashboard session they still hold ends with the machine that opened it. Their account, the skills they shared, and the `pushed_by` on each revision stay. Then rotate the server's invite code, below.
 
 A team's admin removes a person from that team in the dashboard. That cancels the invites the person made into the team, as leaving it does, and as losing the right to invite does. Leaving the server altogether is this operation.
 
 ### Name a team's admin
 
-For a team whose admins are all gone, for instance because one was taken off the server before the script above existed. The person must already be in the team.
+For a team whose admins are all gone, for instance because one was taken off the server before `offboard` handed teams over. The person must already be in the team.
 
-```python
-from aistack.bootstrap.configuration.settings.settings_config import Settings
-from aistack.db.engine import build_engine, build_session_factory
-from aistack.services import operator_service
-
-TEAM, USERNAME = "acme", "dimitris"
-
-with build_session_factory(build_engine(Settings().database_url)).begin() as session:
-    operator_service.name_admin(session, TEAM, USERNAME)
-print(f"{USERNAME} is an admin of {TEAM}.")
+```bash
+docker exec aistack aistack admin name-admin acme dimitris
 ```
 
 ### List teams and who is in them
 
-Personal teams are left out: each user has one, named after them, and it is their private space.
-
-```python
-from sqlalchemy import text
-from aistack.bootstrap.configuration.settings.settings_config import Settings
-from aistack.db.engine import build_engine
-
-with build_engine(Settings().database_url).begin() as connection:
-    for row in connection.execute(text('''
-        SELECT t.name, t.kind, u.username, tm.role
-        FROM team_member tm
-        JOIN team t ON t.team_id = tm.team_id
-        JOIN "user" u ON u.user_id = tm.user_id
-        WHERE t.kind <> 'PERSONAL'
-        ORDER BY t.name, u.username
-    ''')):
-        print(*row)
+```bash
+docker exec aistack aistack admin teams
 ```
+
+Personal teams are left out: each user has one, named after them, and it is their private space.
 
 ### Rotate the server's invite code
 

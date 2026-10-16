@@ -42,7 +42,7 @@ How to work through it:
 - [x] 10. Taking a team skill never silently replaces an unrelated skill of yours (#150)
 - [x] 11. Throttle failed credentials and keep caller text out of the log (#142)
 - [x] 12a. Backups that restore, and a snapshot before every upgrade (#141)
-- [ ] 12b. Operator tasks are `aistack admin` commands, not Python copied from Markdown
+- [x] 12b. Operator tasks are `aistack admin` commands, not Python copied from Markdown (#162)
 - [ ] 12c. The operator renames a user, and join says when a team holds the name
 - [x] 13. Scope the 'latest revision' queries and batch the dashboard's team queries (#151)
 - [x] 14. Reads that change nothing stop taking SQLite's write lock (#143)
@@ -290,7 +290,7 @@ Split from step 12, which was bigger than one PR: the commands below replace eve
 Closes: [AUTO-15](automation.md#auto-15-operator-tasks-are-python-copied-from-markdown-edited-by-hand-and-run-untested), and the rest of [PH-18](plot-holes.md#ph-18-operating-has-no-restore-procedure-no-guidance-for-a-new-server-address-and-a-recovery-script-that-crashes-on-a-typo) (a sentence for an unknown username, the reconnect command beside a new token, changing the server's address).
 Largest effort among them: M. **Trust boundary** (it mints and revokes tokens).
 
-Files: src/aistack/bootstrap/__main__.py (`aistack admin machines|rotate|remove-machine|register-machine|teams|offboard`); src/aistack/services/admin_service.py (new, reached only from the operator command); docs/OPERATING.md (no Python blocks; a "Changing the server's address" section).
+Files: src/aistack/bootstrap/admin_cli.py (`aistack admin machines|rotate|remove-machine|register-machine|teams|name-admin|offboard`, reached from __main__.py); src/aistack/services/operator_service.py (already the operator's service, which no tool or route reaches: it gains the computer commands, rather than a second module beside it); docs/OPERATING.md (no Python blocks; a "Changing the server's address" section).
 
 ADR: none needed.
 
