@@ -339,10 +339,10 @@ def move_library(destination: str, repository: str | None) -> None:
 
     try:
         application_context.get_local_principal()
+        # A GitHub Library is moved as the repository has it, not as this copy last saw it.
+        application_context.library_before_read(force=True)
     except AIStackError as refusal:
         sys.exit(f"The Library cannot be read, so nothing was moved. {refusal}")
-    # A GitHub Library is moved as the repository has it, not as this copy last saw it.
-    application_context.library_before_read(force=True)
     with application_context.get_session_factory().begin() as session:
         log = library_move.events(session)
         contents = library_move.contents(session)

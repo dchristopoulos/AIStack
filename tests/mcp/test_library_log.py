@@ -538,8 +538,8 @@ def test_project_events_converge_when_appended_or_rebuilt(
         assert _snapshot(session) == expected
 
 
-@pytest.mark.parametrize("kind", sorted(library_log._PROJECT_KINDS))
-def test_this_release_cannot_record_a_project_event(session_factory, kind):
+@pytest.mark.parametrize("kind", sorted(library_log._REPLAY_ONLY))
+def test_this_release_cannot_record_a_replay_only_event(session_factory, kind):
     event = _event(1, LAPTOP, kind)
     with pytest.raises(AssertionError, match="replays.*records none"):
         with session_factory.begin() as session:
@@ -587,3 +587,49 @@ def test_project_replay_checks_names_harnesses_and_paths(tmp_path, invalid):
     with pytest.raises(AIStackError) as refused:
         _replayed(tmp_path, [_added(1, LAPTOP, "laptop"), event])
     assert f"log/{event.path}" in str(refused.value)
+
+
+def _moves(second: int, by, **place) -> library_log.Event:
+    return _event(second, by, library_log.LIBRARY_MOVED, place=place)
+
+
+def test_a_library_that_moved_still_replays(tmp_path):
+    """AUTO-05: the release before the one that records a move must read it, or every
+    computer still on it stops at a change of a kind it does not know (ADR-0024)."""
+    replayed = _replayed(tmp_path, [
+        _added(1, LAPTOP, "laptop"), _synced(2, LAPTOP),
+        _moves(3, LAPTOP, kind="github", repository="maria/skills"), _synced(4, LAPTOP),
+    ])
+
+    assert _machines(replayed) == {LAPTOP: "laptop"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("place, sentence", [
+    ({"kind": "github", "repository": "maria/skills"},
+     "moved to the GitHub repository maria/skills on 2026-10-15. Set AIStack up again"),
+    ({"kind": "postgresql", "host": "db.example.com", "database": "library"},
+     "moved to the PostgreSQL database library at db.example.com on 2026-10-15."),
+    ({"kind": "this_computer"}, "moved onto '[^']+' alone on 2026-10-15"),
+    ({"kind": "the_moon"}, "a place this release cannot name"),
+])
+async def test_every_tool_on_a_moved_library_says_where_it_went(computer, place, sentence):
+    async with computer("laptop") as (laptop, home):
+        _write(home, "wizard", "Cast spells.")
+        await _call(laptop, "sync")
+        caller = application_context.get_local_principal()
+        moved = library_log.Event(uuid.uuid4(), "2026-10-15T09:00:00.000000Z",
+                                  caller.machine_id, library_log.LIBRARY_MOVED, {"place": place})
+        with application_context.get_session_factory().begin() as session:
+            # As replay stores it: this release records no move of its own.
+            library_log._store_event(session, moved, published=True)
+            before = _snapshot(session)
+
+        for tool, arguments in [("sync", {}), ("list_skills", {}), ("get_skill", {"name": "wizard"}),
+                                ("push_skill", {"name": "wizard"}),
+                                ("disable_skill", {"name": "wizard"}), ("open_dashboard", {})]:
+            with pytest.raises(ToolError, match=sentence):
+                await laptop.call_tool(tool, arguments)
+
+        with application_context.get_session_factory().begin() as session:
+            assert _snapshot(session) == before
