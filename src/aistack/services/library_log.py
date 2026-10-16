@@ -16,13 +16,25 @@ from typing import Any
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from aistack.commons.exceptions import AIStackError, NeedsNewerRelease, ValidationError
+from aistack.commons.exceptions import (
+    AIStackError,
+    NeedsNewerRelease,
+    NotFound,
+    ValidationError,
+)
 from aistack.commons.release import UPDATE_AND_RESTART
 from aistack.db.models import Base
 from aistack.db.models.library_event import LibraryEvent
 from aistack.db.models.machine import MACHINE_NAME_MAX_LENGTH, Machine
 from aistack.db.models.user import User
-from aistack.services import onboarding_service, skill_service, sync_service, visibility
+from aistack.services import (
+    onboarding_service,
+    project_service,
+    projects,
+    skill_service,
+    sync_service,
+    visibility,
+)
 from aistack.services.harnesses import validated_harness
 from aistack.services.skill_archive import read_archive
 from aistack.services.skill_validation import ValidatedSkill, validated_skill
@@ -36,8 +48,21 @@ FOLDER_SYNCED = "folder_synced"
 # computers that have not updated, and they must read them first (ADR-0024).
 MACHINE_REMOVED = "machine_removed"
 MACHINE_RENAMED = "machine_renamed"
+PROJECT_FOLDER_ADDED = "project_folder_added"
+PROJECT_FOLDER_REMOVED = "project_folder_removed"
+SKILL_PLACED_IN_PROJECT = "skill_placed_in_project"
+SKILL_PUSHED_TO_PROJECT = "skill_pushed_to_project"
+# Refused by `record`, so this release replays them and writes none. The release that records
+# them ships a week after it at the soonest, once every computer has updated itself (ADR-0026).
+_PROJECT_KINDS = {
+    PROJECT_FOLDER_ADDED,
+    PROJECT_FOLDER_REMOVED,
+    SKILL_PLACED_IN_PROJECT,
+    SKILL_PUSHED_TO_PROJECT,
+}
+_REPLAY_ONLY = _PROJECT_KINDS.copy()
 _KINDS = {MACHINE_ADDED, SKILL_PUSHED, SKILL_PLACED, SKILL_REMOVED, FOLDER_SYNCED,
-          MACHINE_REMOVED, MACHINE_RENAMED}
+          MACHINE_REMOVED, MACHINE_RENAMED, *_PROJECT_KINDS}
 _AT_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 # Clocks disagree, but not by this much. A later time would sort every new event before it,
 # and each would rebuild the copy.
@@ -110,8 +135,20 @@ def pushed(session: Session, machine_id: uuid.UUID, name: str, origin: str | Non
 
 def record(session: Session, event: Event, published: bool = False) -> None:
     """Add `event` to this Library's log, in the caller's transaction."""
-    session.add(LibraryEvent(event_id=event.event_id, sort_key=event.sort_key,
-                             kind=event.kind, body=event.to_json(), published=published))
+    if event.kind in _REPLAY_ONLY:
+        raise AssertionError(f"This release replays '{event.kind}' changes and records none.")
+    _store_event(session, event, published)
+
+
+def _store_event(session: Session, event: Event, published: bool) -> None:
+    """Remember an incoming event even when this release cannot create its kind yet."""
+    session.add(LibraryEvent(
+        event_id=event.event_id,
+        sort_key=event.sort_key,
+        kind=event.kind,
+        body=event.to_json(),
+        published=published,
+    ))
 
 
 # Pushes' archives read ahead of a transaction, by event id: each as the text in its event,
@@ -126,7 +163,7 @@ def prepared(events: list[Event]) -> Prepared:
     One that fails is left out, and `apply` reads it again, so the refusal names its file."""
     validated = {}
     for event in events:
-        if event.kind != SKILL_PUSHED:
+        if event.kind not in (SKILL_PUSHED, SKILL_PUSHED_TO_PROJECT):
             continue
         try:
             archive = event.data["archive"]
@@ -184,6 +221,8 @@ def apply(session: Session, event: Event,
     if event.kind == MACHINE_RENAMED:
         return _rename_machine(session, machine.user_id, _target(data["target_machine_id"]),
                                data["name"])
+    if event.kind in _PROJECT_KINDS:
+        return _apply_to_project(session, machine, event, uploaded)
     raise AssertionError(f"Unhandled event kind '{event.kind}'.")
 
 
@@ -231,7 +270,7 @@ def append(session: Session, new: list[Event],
         return False
     for event in new:
         _replay(session, event, validated or {})
-        record(session, event, published=True)
+        _store_event(session, event, published=True)
     return True
 
 
@@ -267,7 +306,7 @@ def rebuild(session: Session, events: list[Event], local: list[Event] | None = N
     session.expunge_all()
     for event in sorted(everything.values(), key=lambda event: event.sort_key):
         _replay(session, event, validated or {})
-        record(session, event, published=event.event_id in published_ids)
+        _store_event(session, event, published=event.event_id in published_ids)
 
 
 def unpublished(session: Session) -> list[Event]:
@@ -376,6 +415,63 @@ def _rename_machine(session: Session, user_id: uuid.UUID, target: uuid.UUID,
         str(target),
         _free_name(session, user_id, name, but=target),
     )
+
+
+def _apply_to_project(session: Session, machine: Machine, event: Event,
+                      uploaded: ValidatedSkill | None) -> Any:
+    """A change to a project folder (ADR-0026), with every value checked as the tool that
+    recorded it checks it: anyone who can write to the repository can forge one."""
+    data = event.data
+    key = projects.validated_key(data["project"])
+    harness = None if data.get("harness") is None else validated_harness(data["harness"])
+    if event.kind == SKILL_PUSHED_TO_PROJECT:
+        folder = project_service.folder_in(session, machine.user_id, machine.machine_id, key,
+                                           projects.validated_name(data["project_name"]),
+                                           validated_harness(harness))
+        if uploaded is None:
+            return skill_service.push(session, machine.machine_id, machine.user_id,
+                                      data["name"], data.get("origin"),
+                                      base64.b64decode(data["archive"]), harness.value,
+                                      project_folder=folder)
+        return skill_service.store(session, machine.machine_id, machine.user_id, uploaded,
+                                   data.get("origin"), harness.value, project_folder=folder)
+    # The dashboard changes another of the person's computers; a computer removed meanwhile
+    # has nothing left to change.
+    target = session.get(Machine, _target(data.get("target_machine_id")
+                                          or str(machine.machine_id)))
+    if target is None or target.user_id != machine.user_id:
+        return None
+    if event.kind == PROJECT_FOLDER_ADDED:
+        path = data.get("path")
+        if path is not None:
+            path = projects.validated_here(path, None).path
+        if target.machine_id == machine.machine_id and path is not None:
+            return project_service.register_folder(
+                session, machine.user_id, target.machine_id, key,
+                projects.validated_name(data["project_name"]), validated_harness(harness),
+                path).first_sync
+        return project_service.folder_in(session, machine.user_id, target.machine_id, key,
+                                         projects.validated_name(data["project_name"]),
+                                         validated_harness(harness))
+    try:
+        if event.kind == PROJECT_FOLDER_REMOVED:
+            return project_service.remove_folder(session, machine.user_id, target.machine_id,
+                                                 key, harness)
+        folder = project_service.required_folder(session, machine.user_id, target.machine_id,
+                                                 key, validated_harness(harness))
+    except NotFound:
+        # Another computer stopped managing it first: nothing is left to change.
+        return None
+    skill = visibility.required_my_skill(session, machine.user_id, data["name"],
+                                         removed_too=True)
+    if data["enabled"]:
+        skill.archived = False
+    revision = data.get("revision")
+    if revision is not None and type(revision) is not int:
+        raise ValidationError("A change in the Library's log names a revision that is not "
+                              "a number. Remove what was added to the repository by hand.")
+    return project_service.set_enabled(session, folder, skill.skill_id,
+                                       enabled=bool(data["enabled"]), revision=revision)
 
 
 def _target(text: object) -> uuid.UUID:

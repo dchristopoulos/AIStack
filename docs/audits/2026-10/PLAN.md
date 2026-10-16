@@ -63,7 +63,7 @@ How to work through it:
 - [x] 25. Identify a project from its remote or its path (#153)
 - [x] 26. Add the project tables (one compatible migration) (#156)
 - [x] 27. Project placements in the services, and a removed skill wanted nowhere (#159)
-- [ ] 28. Replay project events before anything records them (bridge release)
+- [x] 28. Replay project events before anything records them (bridge release) (#160)
 - [ ] 29. Sync a project folder
 - [ ] 30. Server-mode tools take a project
 - [ ] 31. Teach the server's sync-aistack skill the project steps
@@ -568,6 +568,8 @@ Effort M. **Trust boundary.**
 - A _REPLAY_ONLY set makes record() refuse these kinds.
 - Add the AGENTS.md rule: a new event kind is replayed one release before it is recorded.
 - Ship this as its own release, R1.
+
+Release gate: #160 supplies the reader. Keep project events replay-only until a release carrying it has been out for at least a week. The owner cuts both releases.
 
 Files: `src/aistack/services/library_log.py`; `AGENTS.md`; `tests/mcp/test_library_log.py`.
 

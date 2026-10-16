@@ -28,7 +28,7 @@ The reconciliation table (ADR-0007) and the rule that sync never deletes (ADR-00
 
 **A project's first sync offers what the person's other computers have there.** The report lists the skills placed in that project on their other computers, and the agent asks once, as it does at a computer's first sync (ADR-0021).
 
-**A new kind of log event is replayed one release before any release records it.** Local mode records project changes as five new event kinds (ADR-0025). A release that meets a kind it does not know stops reading the log until it is updated. So the release that replays these kinds ships first. The release that records them follows once computers have updated themselves, which `bootstrap/self_update.py` does daily. Adding a field to an existing kind is not an option: today's release would apply a project placement as a global one.
+**A new kind of log event is replayed one release before any release records it.** Local mode records project changes as four new event kinds (ADR-0025). A release that meets a kind it does not know stops reading the log until it is updated. So the release that replays these kinds ships first. The release that records them follows once computers have updated themselves, which `bootstrap/self_update.py` does daily. Adding a field to an existing kind is not an option: today's release would apply a project placement as a global one.
 
 ## Not doing
 
