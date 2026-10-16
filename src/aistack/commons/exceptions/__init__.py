@@ -42,8 +42,8 @@ class SignedOut(AIStackError):
 
 
 class Busy(AIStackError):
-    """The database could not grant a lock in time. Nothing was changed; the call can be
-    made again."""
+    """The database could not grant a lock in time, or another session kept taking what this
+    one needed. Nothing was changed; the call can be made again."""
 
 
 class TooManyAttempts(AIStackError):
