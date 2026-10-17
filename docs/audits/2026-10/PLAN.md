@@ -96,8 +96,9 @@ Session notes:
 - 2026-10-17: main was red because the pytest job ran past its 25 minutes with Chromium inside it; the browser tests now run in the `browsers` matrix beside it (32c6ccb).
 - 2026-10-17: 41b done (d6efb33): `aistack admin forget`, pseudonym `former-member-<4 hex>`, prefix reserved at join and rename; ADR-0034 accepted.
 - 2026-10-17: 41e done (dc8fdbe): every word of the dashboard in `WORDS`, counts through `Intl.PluralRules`; browser tests unchanged, demo text identical.
-- Next: Dependabot #136 and #138, then the rest of the CI split, the test strategy, 40d.
-- Blocked: nothing. CI was green through 9c8d0af; check the run for dc8fdbe first.
+- 2026-10-17: Dependabot applied on main and the PRs closed: image on Python 3.14 (cfb4ece; requires-python stays >=3.13), SQLAlchemy 2.1.5, psycopg 3.3.6, anyio 4.15.1 (f15fb38). Full suite green on both databases and Chromium locally; the PRs' CI was red only from their stale base.
+- Next: the CI split (pytest job into parallel jobs, PostgreSQL half sharded, all in `publish`/`pypi` needs, <10 min), then the test strategy, 40d.
+- Blocked: nothing. The run for 7a323fa was still in progress; check it and the one for f15fb38 first.
 
 ## Unblock newcomers and the supply chain
 
