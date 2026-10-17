@@ -35,4 +35,4 @@ Each file records one decision, why it was made, and what follows from it. A dec
 - [ADR-0031](0031-compatible-means-older-data-stays-meaningful.md): A compatible migration also keeps older releases' data meaningful
 - [ADR-0032](0032-a-library-log-is-ordered-by-a-hybrid-clock.md): A GitHub Library's log is ordered by a hybrid logical clock
 - [ADR-0033](0033-a-removed-computer-comes-back-when-it-changes-something.md): A removed computer comes back when it changes something
-- [ADR-0034](0034-a-forgotten-persons-revisions-stay-under-a-pseudonym.md): A forgotten person's revisions stay, under a pseudonym (proposed)
+- [ADR-0034](0034-a-forgotten-persons-revisions-stay-under-a-pseudonym.md): A forgotten person's revisions stay, under a pseudonym

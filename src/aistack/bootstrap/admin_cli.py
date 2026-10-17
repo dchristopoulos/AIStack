@@ -74,6 +74,14 @@ def _run(session, parsed: argparse.Namespace, endpoint: str | None) -> list[str]
     if command == "name-admin":
         operator_service.name_admin(session, parsed.team, parsed.username)
         return [f"{parsed.username} is an admin of {parsed.team}."]
+    if command == "forget":
+        pseudonym, teams, machines = operator_service.forget(session, parsed.username,
+                                                             _successors(parsed.successor))
+        return [f"Forgot {parsed.username}. Teams left: {', '.join(teams) or 'none'}. "
+                f"Computers removed: {', '.join(machines) or 'none'}.",
+                f"Their own skills, projects and full name are deleted. What they shared into "
+                f"a team stays, pushed by {pseudonym}. Rotate the server's invite code if they "
+                "knew it."]
     teams, machines = operator_service.offboard(session, parsed.username,
                                                 _successors(parsed.successor))
     return [f"Took {parsed.username} off the server. Teams left: "
@@ -116,12 +124,15 @@ def _parser() -> argparse.ArgumentParser:
     admin.add_argument("team")
     admin.add_argument("username")
 
-    offboard = commands.add_parser(
-        "offboard", help="take someone off the server: out of their teams, and every computer "
-                         "of theirs removed")
-    offboard.add_argument("username")
-    offboard.add_argument("--successor", action="append", default=[], metavar="TEAM=USERNAME",
-                          help="who takes over a team they are the only admin of")
+    for name, text in (("offboard", "take someone off the server: out of their teams, and "
+                                    "every computer of theirs removed"),
+                       ("forget", "offboard someone, delete their own skills, and show what "
+                                  "they shared under a pseudonym")):
+        leaving = commands.add_parser(name, help=text)
+        leaving.add_argument("username")
+        leaving.add_argument("--successor", action="append", default=[],
+                             metavar="TEAM=USERNAME",
+                             help="who takes over a team they are the only admin of")
     parser.set_defaults(url=None)
     return parser
 

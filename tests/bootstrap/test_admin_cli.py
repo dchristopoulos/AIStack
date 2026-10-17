@@ -10,10 +10,12 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError
 
 from aistack.bootstrap import admin_cli
+from aistack.commons.exceptions import ValidationError
 from aistack.db.engine import build_session_factory
 from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
+from aistack.db.models.skill import Skill
 from aistack.db.models.user import User
 from aistack.services import onboarding_service, skill_service, team_service, visibility
 from aistack.services.token_service import hash_token
@@ -141,6 +143,7 @@ def test_offboard_hands_over_the_teams_and_removes_every_computer(server, capsys
     ("remove-machine", "mario", "laptop"),
     ("name-admin", "acme", "mario"),
     ("offboard", "mario"),
+    ("forget", "mario"),
 ])
 def test_an_unknown_username_exits_with_a_sentence(server, capsys, arguments):
     before = _machines(server)
@@ -253,3 +256,42 @@ def test_rename_user_refuses_a_name_a_user_or_a_team_has(server, capsys, taken):
 
     with server.begin() as session:
         assert session.scalar(select(User).where(User.username == "maria")) is not None
+
+
+def test_forget_erases_the_person_and_keeps_what_teammates_hold(server, capsys):
+    with server.begin() as session:
+        dimitris = session.scalar(select(User).where(User.username == "dimitris"))
+        maria = session.scalar(select(User).where(User.username == "maria"))
+        onboarding_service.set_full_name(session, dimitris.user_id, "Dimitris C")
+        skill_service.push(session, session.scalar(select(Machine.machine_id).where(
+            Machine.user_id == dimitris.user_id)), dimitris.user_id, "wizard", None,
+            skill_archive("wizard"))
+        skill_service.share(session, dimitris.user_id, "wizard", "acme")
+        skill_service.take_from_team(session, maria.user_id, "wizard", "acme")
+        forgotten_id = dimitris.user_id
+
+    output = _admin(capsys, "forget", "dimitris", "--successor", "acme=maria")
+
+    pseudonym = re.search(r"pushed by (former-member-[0-9a-f]{4})\.", output).group(1)
+    assert "Teams left: acme. Computers removed: desktop." in output
+    with server.begin() as session:
+        forgotten = session.get(User, forgotten_id)
+        assert (forgotten.username, forgotten.full_name) == (pseudonym, None)
+        assert visibility.personal_team(session, forgotten_id).name == pseudonym
+        assert skill_service.list_skills(session, forgotten_id) == []
+        assert session.scalars(select(Skill).where(Skill.pushed_by == forgotten_id)).all()
+        # Maria's own copy and the team's both stay, and both name the pseudonym.
+        assert {(skill.name, skill.pushed_by) for skill in skill_service.list_skills(
+            session, maria.user_id)} == {("wizard", pseudonym)}
+    assert "desktop" not in _machines(server)
+    assert _admin(capsys, "teams").splitlines() == ["acme  maria  admin"]
+
+    assert "already been forgotten" in _refused(capsys, "forget", pseudonym)
+    with server.begin() as session:
+        assert session.get(User, forgotten_id).username == pseudonym
+
+
+def test_nobody_can_take_a_forgotten_persons_name(server, capsys):
+    assert "former-member-" in _refused(capsys, "rename-user", "maria", "former-member-1a2b")
+    with pytest.raises(ValidationError, match="former-member-"):
+        onboarding_service.validated_username("former-member-1a2b")
