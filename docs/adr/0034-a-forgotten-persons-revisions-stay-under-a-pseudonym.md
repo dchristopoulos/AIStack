@@ -1,6 +1,6 @@
 # A forgotten person's revisions stay, under a pseudonym
 
-Status: proposed, 2026-10-16. Amends ADR-0015 (every revision names who pushed it). Finding: the erasure half of STD-15 in [docs/audits/2026-10](../audits/2026-10/README.md).
+Status: accepted, 2026-10-17. Amends ADR-0015 (every revision names who pushed it). Finding: the erasure half of STD-15 in [docs/audits/2026-10](../audits/2026-10/README.md).
 
 A person who leaves a server can ask to be forgotten, and today the operator cannot do it. OPERATING forbids deleting a user, because `pushed_by` is a required reference from every skill and revision they pushed: deleting them either fails or takes those rows with it. Some of those rows are other people's. A skill shared into a team is the team's copy, and a teammate who took it holds a copy of their own, both still naming the person who shared it. ADR-0015 rules out a change to one person's account taking anything off anybody else's computer.
 
@@ -8,13 +8,13 @@ A person who leaves a server can ask to be forgotten, and today the operator can
 
 **`aistack admin forget USERNAME` erases the person and keeps the rows.** It runs `offboard` first, so every team they were in keeps an admin (a team they ran alone goes to the successor the operator names, as `offboard` takes it) and every computer of theirs goes, with its token, sessions and transfer links. Then, in the same transaction:
 
-- their username becomes `former-` and 8 random hex characters, with their personal team renamed to match, as `rename_user` does;
+- their username becomes `former-member-` and 4 random hex characters, drawn again when a user or a team already has it, with their personal team renamed to match, as `rename_user` does;
 - their `full_name` is cleared;
-- every skill in their own Library is deleted with its revisions and files: nobody else reads a person's Library, and nothing on anybody's computer installs from it.
+- every skill in their own Library is deleted with its revisions and files, and their projects with it: nobody else reads a person's Library, and nothing on anybody's computer installs from it.
 
-**What other people hold stays, and names the pseudonym.** A revision they shared into a team, and every copy a teammate took from it, keeps its row, and its `pushed_by` now reads `former-3f9a1c2e`. The pseudonym is random, not derived from the old name, so it cannot be turned back into one; it is stable, so a team can still tell that two revisions came from the same person.
+**What other people hold stays, and names the pseudonym.** A revision they shared into a team, and every copy a teammate took from it, keeps its row, and its `pushed_by` now reads `former-member-3f9a`. The pseudonym is random, not derived from the old name, so it cannot be turned back into one; it is stable, so a team can still tell that two revisions came from the same person.
 
-**A forgotten person cannot be forgotten twice.** `forget` refuses a username that starts with `former-`, with a sentence, so a mistyped second run changes nothing.
+**A forgotten person cannot be forgotten twice, and nobody can pose as one.** `forget` refuses a username that starts with `former-member-`, with a sentence, so a mistyped second run changes nothing; joining or renaming to such a name is refused, so the prefix only ever means a forgotten person.
 
 ## Not doing
 

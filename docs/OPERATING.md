@@ -189,7 +189,7 @@ docker exec aistack aistack admin register-machine maria new-laptop --os macos
 
 `--os` is `macos`, `windows` or `linux`. It prints the token and what to paste, as `rotate` does.
 
-**Never delete a user.** Every skill and revision records who pushed it, and their teams and memberships point at them. Deleting someone either fails or destroys that record, and the record is how a team knows whose instructions their agents are running.
+**Never delete a user.** Every skill and revision records who pushed it, and their teams and memberships point at them. Deleting someone either fails or destroys that record, and the record is how a team knows whose instructions their agents are running. To erase someone, forget them, below.
 
 ### Rename a user
 
@@ -212,6 +212,16 @@ This takes them out of every team, then removes every computer of theirs. A team
 With no machine they have no token, so they can reach neither the MCP endpoint nor the dashboard, and a dashboard session they still hold ends with the machine that opened it. Their account, the skills they shared, and the `pushed_by` on each revision stay. Then rotate the server's invite code, below.
 
 A team's admin removes a person from that team in the dashboard. That cancels the invites the person made into the team, as leaving it does, and as losing the right to invite does. Leaving the server altogether is this operation.
+
+### Forget a person
+
+When someone who left asks to be erased, check that it is them asking, then:
+
+```bash
+docker exec aistack aistack admin forget maria --successor acme=dimitris
+```
+
+This does everything `offboard` does, with the same `--successor`, and then deletes their own skills with every revision and file, and their projects, and clears their full name. Their username becomes a random pseudonym such as `former-member-3f9a`, printed once, and it is not derived from the old name. What they shared into a team, and every copy a teammate took from it, stays and shows that pseudonym as who pushed it (ADR-0034); a team admin can still remove a team's copy as for any skill. Nobody can take a name starting with `former-member-`, and a person already forgotten is refused. Old log files name them only by id; purge those with your own log retention if you must.
 
 ### Name a team's admin
 

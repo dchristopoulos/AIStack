@@ -7,11 +7,12 @@ to a team still takes the team's lock, as every change to a team does (`team_ser
 """
 
 import logging
+import secrets
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,8 @@ from aistack.commons.exceptions import Conflict, NotFound, ValidationError
 from aistack.commons.text import loggable
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
+from aistack.db.models.project import Project
+from aistack.db.models.skill import Skill
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
@@ -172,19 +175,40 @@ def rename_user(session: Session, username: str, new: str) -> None:
     has it."""
     user = _user(session, username)
     new = onboarding_service.validated_username(new)
-    # Every user has a personal team of their name, so the team names cover the usernames.
-    taken = Conflict(f"A user or a team on this server is already called '{new}'. Pick a "
-                     "different name. Nothing was changed.")
-    if session.scalar(select(Team.team_id).where(Team.name == new)) is not None:
-        raise taken
-    try:
-        # A join that takes the name meanwhile fails one of the two unique names.
-        with session.begin_nested():
-            user.username = new
-            visibility.personal_team(session, user.user_id).name = new
-    except IntegrityError as error:
-        raise taken from error
+    if not _renamed(session, user, new):
+        raise Conflict(f"A user or a team on this server is already called '{new}'. Pick a "
+                       "different name. Nothing was changed.")
     logger.info(f"User renamed by the operator. User: '{user.user_id}'.")
+
+
+def forget(session: Session, username: str,
+           successors: dict[str, str] | None = None) -> tuple[str, list[str], list[str]]:
+    """Erase someone and keep what other people hold (ADR-0034): `offboard` first, then their
+    own Library and projects deleted, their full name cleared, and their username replaced by
+    a random pseudonym that every revision they shared into a team now shows. Returns the
+    pseudonym, the teams and the computers."""
+    if username.startswith(onboarding_service.FORGOTTEN_PREFIX):
+        raise ValidationError(f"'{loggable(username)}' has already been forgotten. Nothing "
+                              "was changed.")
+    teams, removed = offboard(session, username, successors)
+    user = _user(session, username)
+    personal = visibility.personal_team(session, user.user_id)
+    # A teammate's copy is a skill of their own, and a team's copy is the team's: neither is
+    # in this team, so both stay.
+    team_service._delete_skills(session, select(Skill.skill_id)
+                                .where(Skill.team_id == personal.team_id))
+    session.execute(delete(Project).where(Project.user_id == user.user_id))
+    user.full_name = None
+    # Random, never derived from the old name, so it cannot be turned back into one.
+    # ponytail: 4 hex is 65536 names; widen it if a server ever forgets that many people.
+    for _ in range(100):
+        pseudonym = f"{onboarding_service.FORGOTTEN_PREFIX}{secrets.token_hex(2)}"
+        if _renamed(session, user, pseudonym):
+            break
+    else:
+        raise Conflict("Could not find a free pseudonym. Nothing was changed.")
+    logger.info(f"User forgotten by the operator. User: '{user.user_id}'.")
+    return pseudonym, teams, removed
 
 
 @dataclass(frozen=True)
@@ -204,6 +228,22 @@ def teams(session: Session) -> list[TeamRow]:
         .order_by(Team.name, User.username)).all()
     return [TeamRow(team=team, username=username, role=_value(role))
             for team, username, role in rows]
+
+
+def _renamed(session: Session, user: User, new: str) -> bool:
+    """Rename a user and their personal team, or change nothing and say False when a user or
+    a team already has the name."""
+    # Every user has a personal team of their name, so the team names cover the usernames.
+    if session.scalar(select(Team.team_id).where(Team.name == new)) is not None:
+        return False
+    try:
+        # A join that takes the name meanwhile fails one of the two unique names.
+        with session.begin_nested():
+            user.username = new
+            visibility.personal_team(session, user.user_id).name = new
+    except IntegrityError:
+        return False
+    return True
 
 
 def _value(stored) -> str:

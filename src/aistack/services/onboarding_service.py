@@ -20,6 +20,9 @@ from aistack.services.token_service import generate_machine_token, hash_token
 logger = logging.getLogger(__name__)
 
 _USERNAME = re.compile(r"[a-z0-9]+([._-][a-z0-9]+)*")
+# What a forgotten person is renamed to (ADR-0034). Nobody else may take it, so it can only
+# ever stand for someone the operator forgot.
+FORGOTTEN_PREFIX = "former-member-"
 
 
 @dataclass(frozen=True)
@@ -255,6 +258,10 @@ def validated_username(username: str) -> str:
             "A username is a short lowercase handle: letters and digits, joined by single "
             f"'.', '-' or '_', like 'maria' or 'j.smith'. Received: '{loggable(username)}'."
         )
+    if username.startswith(FORGOTTEN_PREFIX):
+        raise ValidationError(f"A username cannot start with '{FORGOTTEN_PREFIX}': the server "
+                              f"names people it has forgotten that way. Received: "
+                              f"'{loggable(username)}'.")
     return username
 
 

@@ -109,7 +109,7 @@ Desired state: this one of the user's own skills should exist in this harness on
 _Avoid_: Installed (that's actual state on disk), active
 
 **Pushed by**:
-The AIStack user who pushed a revision into their own skills or shared it with a team. A copy taken from a team keeps the name of whoever shared it there. Pure provenance: it never claims authorship, because people back up and share third-party skills.
+The AIStack user who pushed a revision into their own skills or shared it with a team. A copy taken from a team keeps the name of whoever shared it there. A person the operator forgot shows as their pseudonym, `former-member-` and four random hex characters (ADR-0034). Pure provenance: it never claims authorship, because people back up and share third-party skills.
 _Avoid_: Author, created by, uploaded by
 
 **Origin**:
