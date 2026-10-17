@@ -4,7 +4,7 @@ import threading
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import delete, event, func, select
+from sqlalchemy import delete, event, func, select, update
 
 from aistack.commons.exceptions import Conflict, NotFound, ValidationError
 from aistack.db.engine import build_session_factory
@@ -20,6 +20,7 @@ from aistack.services import (
     skill_service,
     sync_service,
     team_service,
+    visibility,
 )
 from tests.archives import local_digests, skill_archive
 from tests.teams import make_team
@@ -199,6 +200,28 @@ def test_taking_a_teams_skill_makes_it_your_own_and_installs_it(session_factory,
     assert _sync(session_factory, maria, local).up_to_date == 1
 
 
+def test_a_name_two_of_your_teams_hold_is_taken_from_the_team_you_name(session_factory,
+                                                                      dimitris, maria, eve):
+    with session_factory.begin() as session:
+        make_team(session, "north", dimitris.user.user_id, maria.user.user_id, eve.user.user_id)
+        make_team(session, "south", dimitris.user.user_id, maria.user.user_id, eve.user.user_id)
+    for team in ("north", "south"):
+        _push(session_factory, dimitris, description=f"The {team} copy.")
+        _share(session_factory, dimitris, team)
+
+    with pytest.raises(NotFound) as neither:
+        _take(session_factory, maria, None)
+    # One person per team, so whichever copy a wrong lookup finds first, one of them sees it.
+    from_south = _take(session_factory, maria, "south")
+    from_north = _take(session_factory, eve, "north")
+
+    assert str(neither.value) == ("You have no skill named 'wizard' of your own, but teams "
+                                  "'north', 'south' share one. Take it from team 'north' to "
+                                  "install it.")
+    assert from_south.description == "The south copy."
+    assert from_north.description == "The north copy."
+
+
 def test_a_skill_you_took_stays_yours_after_you_leave_the_team(session_factory, dimitris,
                                                               maria, acme):
     _push(session_factory, dimitris)
@@ -239,6 +262,45 @@ def test_a_teammates_change_is_offered_and_never_applied_unasked(session_factory
     assert accepted.team_updates == ()
     assert [(update.from_revision, update.to_revision, update.pushed_by)
             for update in accepted.update] == [(1, 2, "dimitris")]
+
+
+def test_no_update_is_offered_for_a_copy_not_enabled_here_or_removed(session_factory,
+                                                                     dimitris, maria, acme):
+    for name in ("wizard", "gadget", "relic"):
+        _push(session_factory, dimitris, name, files={"notes.md": "one\n"})
+        _share(session_factory, dimitris, acme, name)
+        _take(session_factory, maria, acme, name)
+        _push(session_factory, dimitris, name, files={"notes.md": "two\n"})
+        _share(session_factory, dimitris, acme, name)
+    _do(session_factory, skill_service.disable_skill, maria.machine.machine_id,
+        maria.user.user_id, "gadget")
+    # Removed, yet still enabled here: what a push landing during the removal leaves (ENT-08).
+    with session_factory.begin() as session:
+        session.execute(update(Skill).where(Skill.name == "relic",
+                                            Skill.team_id == visibility.personal_team(
+                                                session, maria.user.user_id).team_id)
+                        .values(archived=True))
+
+    offered = _sync(session_factory, maria, {}).team_updates
+
+    assert [update.name for update in offered] == ["wizard"]
+
+
+@pytest.mark.parametrize("asking", [
+    lambda session, me, machine: skill_service.share(session, me, "wizard", "acme", None),
+    lambda session, me, machine: skill_service.restore_revision(session, me, "wizard", 1),
+    lambda session, me, machine: skill_service.remove_from_my_skills(session, me, "wizard"),
+    lambda session, me, machine: dashboard_service.history(session, me, "wizard"),
+    lambda session, me, machine: dashboard_service.set_on_machine(session, me, "wizard",
+                                                                  str(machine), True),
+], ids=["share", "restore", "remove-again", "history", "place"])
+def test_a_removed_skill_is_refused_by_every_path_but_bringing_it_back(session_factory,
+                                                                       dimitris, acme, asking):
+    _push(session_factory, dimitris)
+    _do(session_factory, skill_service.remove_from_my_skills, dimitris.user.user_id, "wizard")
+
+    with pytest.raises(NotFound, match="You removed 'wizard' from your Library"):
+        _do(session_factory, asking, dimitris.user.user_id, dimitris.machine.machine_id)
 
 
 def test_the_one_who_shared_is_not_offered_their_own_change(session_factory, dimitris, acme):
@@ -1014,6 +1076,21 @@ def test_the_member_list_shows_no_group_its_reader_cannot_see(session_factory, d
     assert groups_of(eve, "dimitris") == ("backend",)
     assert groups_of(dimitris, "dimitris") == (
         "backend", "backend/aistack", "security", "security/tools")
+
+
+def test_a_private_groups_members_are_shown_only_from_inside_it(session_factory, dimitris,
+                                                                maria, eve, groups):
+    """Seeing every group's skills is not seeing who is in the private ones."""
+    _do(session_factory, team_service.set_member, dimitris.user.user_id, groups, "eve",
+        sees_all_groups=True)
+
+    def groups_of(viewer, username):
+        return next(member.groups for member in
+                    _do(session_factory, team_service.members, viewer.user.user_id, groups)
+                    if member.username == username)
+
+    assert groups_of(maria, "dimitris") == ("backend", "backend/aistack")
+    assert groups_of(eve, "dimitris") == ("backend",)
 
 
 def _statements(session_factory, portable_engine, call) -> int:

@@ -42,6 +42,7 @@ def test_values_a_newer_release_added_are_left_out_not_failed_on(portable_engine
         skill_service.push(session, machine_id=machine_id, user_id=user_id, name="wizard",
                            origin=None, archive=skill_archive("wizard"))
         make_team(session, "acme", user_id, dimitris.user.user_id)
+        make_team(session, "beta", user_id)
 
     with portable_engine.begin() as connection:
         _widen(connection, "machine_skill", "harness", "ck_machine_skill_harness",
@@ -52,6 +53,8 @@ def test_values_a_newer_release_added_are_left_out_not_failed_on(portable_engine
                ("MACOS", "WINDOWS", "LINUX", "FREEBSD"))
         _widen(connection, "team_member", "role", "ck_team_member_role",
                ("ADMIN", "MEMBER", "OWNER"))
+        _widen(connection, "team", "kind", "ck_team_kind", ("PERSONAL", "SHARED", "ORG"))
+        connection.execute(text("UPDATE team SET kind = 'ORG' WHERE name = 'beta'"))
         skill_id = connection.exec_driver_sql("SELECT skill_id FROM skill WHERE name = 'wizard' "
                                               "ORDER BY created_on LIMIT 1").scalar()
         machine = _as_stored(connection, machine_id)
@@ -75,6 +78,7 @@ def test_values_a_newer_release_added_are_left_out_not_failed_on(portable_engine
 
     with session_factory.begin() as session:
         state = dashboard_service.state(session, user_id)
+        teams_of_maria = team_service.list_teams(session, user_id)
         teams_of_dimitris = team_service.list_teams(session, dimitris.user.user_id)
         # His own membership row is read whole, and its role as no role at all.
         seen_by_dimitris = team_service.members(session, dimitris.user.user_id, "acme")
@@ -83,6 +87,8 @@ def test_values_a_newer_release_added_are_left_out_not_failed_on(portable_engine
     assert state["machines"][0]["harnesses"] == ["claude_code"]
     [wizard] = state["skills"]
     assert [placement["harness"] for placement in wizard["placements"]] == ["claude_code"]
+    # A team kind this release does not know is left out of her teams, not failed on.
+    assert [team.name for team in teams_of_maria] == ["acme"]
     [acme] = state["teams"]
     assert [member["username"] for member in acme["members"]] == ["maria"]
     # A role this release does not know grants nothing here, so the team is left out.

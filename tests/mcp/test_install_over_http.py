@@ -5,9 +5,11 @@ import tarfile
 import httpx
 import pytest
 from fastmcp.exceptions import ToolError
-from sqlalchemy import select
+from sqlalchemy import select, update
 
+from aistack.db.models.machine import Machine
 from aistack.db.models.machine_skill import MachineSkill
+from aistack.services.token_service import generate_machine_token, hash_token
 from tests.archives import skill_archive, skill_document
 from tests.mcp.conftest import call as _call
 from tests.mcp.conftest import client_for, second_machine, share_with_everyone
@@ -100,6 +102,21 @@ async def test_a_download_url_keeps_serving_the_revision_it_was_issued_for(serve
     response = await _download(skill["download_url"])
 
     assert _extracted(response.content)["notes.md"][0] == b"one\n"
+
+
+async def test_a_download_url_dies_with_the_token_it_was_minted_under(server_url,
+                                                                      session_factory):
+    """ADR-0027: rotating a lost computer's token voids the URLs it was handed."""
+    token = await _join(server_url)
+    await _push(server_url, token)
+    skill = await _call(server_url, token, "get_skill", name="wizard")
+    with session_factory.begin() as session:
+        session.execute(update(Machine).values(token_hash=hash_token(generate_machine_token())))
+
+    response = await _download(skill["download_url"])
+
+    assert response.status_code == 403
+    assert "no longer registered" in response.json()["error"]
 
 
 async def test_an_upload_url_cannot_download_and_a_download_url_cannot_upload(server_url):
