@@ -371,6 +371,33 @@ def test_too_many_local_files_is_rejected(session_factory, dimitris):
         _sync(session_factory, dimitris, local)
 
 
+def test_exactly_the_local_skill_and_file_limits_are_accepted():
+    """Checked on the hashing step alone: a thousand folders through sync is a thousand
+    backups, which is not what this pins."""
+    files_each = sync_service.MAX_LOCAL_FILES // sync_service.MAX_LOCAL_SKILLS
+    local = {f"skill-{number}": {f"file-{index}": "a" * 64 for index in range(files_each)}
+             for number in range(sync_service.MAX_LOCAL_SKILLS)}
+
+    assert len(sync_service._local_hashes(local)) == sync_service.MAX_LOCAL_SKILLS
+
+
+@pytest.mark.parametrize(("names", "expected"), [
+    (["a" * 255], None),
+    (["a" * 256], "each at most 255 characters"),
+    ("wizard", "list of folder names"),
+    ([7], "list of folder names"),
+    ([f"skill-{number}" for number in range(1000)], None),
+    ([f"skill-{number}" for number in range(1001)], "repository lists 1001 folders"),
+], ids=["name-at-limit", "name-past-limit", "a-string", "not-text", "count-at-limit",
+        "count-past-limit"])
+def test_a_repository_listing_at_its_limits_is_accepted_and_past_them_refused(names, expected):
+    if expected is None:
+        assert sync_service._repository_names(names, project="key") == set(names)
+    else:
+        with pytest.raises(ValidationError, match=expected):
+            sync_service._repository_names(names, project="key")
+
+
 # --- the questions --------------------------------------------------------------------------
 
 def _only_question(report):

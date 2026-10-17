@@ -11,6 +11,7 @@ from aistack.services.skill_archive import (
     MAX_ARCHIVE_BYTES,
     MAX_FILE_BYTES,
     MAX_FILE_COUNT,
+    MAX_TOTAL_BYTES,
     ArchivedFile,
     build_archive,
     read_archive,
@@ -468,3 +469,88 @@ def test_the_executable_bit_is_exactly_rwxr_xr_x_and_a_plain_file_rw_r_r():
 
     assert modes == {"SKILL.md": 0o644, "bin/tool": 0o755}
     assert built != build_archive([("SKILL.md", b"x", False), ("bin/tool", b"y", False)])
+
+
+# --- every limit at exactly the limit (T3) --------------------------------------------------
+
+def test_an_upload_of_exactly_the_compressed_limit_is_opened():
+    """It is still not gzip, and saying so shows the size check let it through."""
+    with pytest.raises(ValidationError, match="not gzip data"):
+        read_archive(b"\x1f\x8b" + b"\x00" * (MAX_ARCHIVE_BYTES - 2))
+
+
+def test_files_totalling_exactly_the_limit_are_accepted():
+    archive = raw_archive([(f"part-{number}.md", b"a" * MAX_FILE_BYTES) for number in range(4)])
+
+    assert sum(len(file.content) for file in read_archive(archive)) == MAX_TOTAL_BYTES
+
+
+def _gzip_expanding_to(size: int) -> bytes:
+    """A tar of one file, padded with zero blocks to exactly `size` bytes uncompressed."""
+    tar = _tar_bytes([("SKILL.md", b"x")])
+    return gzip.compress(tar + b"\0" * (size - len(tar)))
+
+
+def test_an_archive_expanding_to_exactly_the_ceiling_is_read():
+    assert [file.path for file in read_archive(_gzip_expanding_to(2 * MAX_TOTAL_BYTES))] == [
+        "SKILL.md"]
+
+
+def test_an_archive_expanding_one_byte_past_the_ceiling_is_refused():
+    with pytest.raises(ValidationError, match="expands to more than"):
+        read_archive(_gzip_expanding_to(2 * MAX_TOTAL_BYTES + 1))
+
+
+def test_an_archive_split_across_gzip_streams_is_read_whole():
+    """`cat a.gz b.gz` is one gzip file; every stream's bytes count, in order."""
+    tar = _tar_bytes([("SKILL.md", b"x"), ("notes.md", b"y")])
+
+    read = read_archive(gzip.compress(tar[:600]) + gzip.compress(tar[600:]))
+
+    assert [file.path for file in read] == ["SKILL.md", "notes.md"]
+
+
+def test_a_decompression_bomb_never_holds_more_than_the_ceiling():
+    """Timing alone does not show the bound: zeros decompress fast enough either way."""
+    import tracemalloc
+
+    bomb = gzip.compress(b"\x00" * (64 * 1024 * 1024), compresslevel=9)
+    tracemalloc.start()
+    try:
+        with pytest.raises(ValidationError, match="expands to more than"):
+            read_archive(bomb)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert peak < 16 * 1024 * 1024
+
+
+def _comment_header(size: int) -> bytes:
+    """A pax header of exactly `size` bytes holding one harmless comment record."""
+    records = _pax_record("comment", "x" * (size - 15))
+    assert len(records) == size
+    block, records = _pax_member(records)
+    return _with_leading_header(block, records, [("SKILL.md", b"x")])
+
+
+def _long_name_header(size: int) -> bytes:
+    header = tarfile.TarInfo(name="././@LongLink")
+    header.type = tarfile.GNUTYPE_LONGNAME
+    header.size = size
+    block = header.tobuf(format=tarfile.GNU_FORMAT)
+    return _with_leading_header(block, b"n" * size, [("SKILL.md", b"x")])
+
+
+@pytest.mark.parametrize(("archive", "accepted"), [
+    (lambda: _comment_header(16 * 1024), True),
+    (lambda: _comment_header(16 * 1024 + 1), False),
+    (lambda: _long_name_header(4 * 1024), True),
+    (lambda: _long_name_header(4 * 1024 + 1), False),
+], ids=["pax-at-limit", "pax-past-limit", "long-name-at-limit", "long-name-past-limit"])
+def test_an_extended_header_at_its_limit_is_read_and_one_byte_more_refused(archive, accepted):
+    if accepted:
+        assert len(read_archive(archive())) == 1
+    else:
+        with pytest.raises(ValidationError, match="extended header far larger"):
+            read_archive(archive())

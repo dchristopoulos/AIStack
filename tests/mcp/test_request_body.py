@@ -54,3 +54,10 @@ async def test_a_body_within_the_limit_is_read_whole():
     request, _ = _streaming_request(chunks=2)
 
     assert await bounded_body(request, LIMIT, "too big", timeout_seconds=5) == b"x" * 2 * CHUNK
+
+
+async def test_a_body_of_exactly_the_limit_declared_and_sent_is_read_whole():
+    request, _ = _streaming_request(chunks=LIMIT // CHUNK,
+                                    headers=[(b"content-length", str(LIMIT).encode())])
+
+    assert await bounded_body(request, LIMIT, "too big", timeout_seconds=5) == b"x" * LIMIT

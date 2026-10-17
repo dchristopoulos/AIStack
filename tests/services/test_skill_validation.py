@@ -5,8 +5,9 @@ import pytest
 
 from aistack.commons.exceptions import ValidationError
 from aistack.services.content_hash import canonical_content_hash, file_digest
-from aistack.services.skill_archive import ArchivedFile
+from aistack.services.skill_archive import MAX_FILE_COUNT, ArchivedFile
 from aistack.services.skill_validation import (
+    refusal_from_listing,
     validated_origin,
     validated_skill,
     validated_skill_name,
@@ -544,3 +545,53 @@ def test_an_environment_file_is_refused_because_skills_travel(path):
 @pytest.mark.parametrize("path", [".env.example", ".env.sample", ".gitignore", "env.md", ".envrc.md"])
 def test_a_dotfile_that_is_not_an_environment_file_is_kept(path):
     assert path in {file.path for file in validated_skill("wizard", _files({path: b"x\n"})).files}
+
+
+# --- every limit at exactly the limit (T3) --------------------------------------------------
+# The base document is one mapping plus two fields, five nodes at depths one and two.
+
+def _nested_lists(levels: int) -> str:
+    return "nest: " + "[" * levels + "]" * levels + "\n"
+
+
+def _nested_mappings(levels: int) -> str:
+    return "nest: " + "{a: " * levels + "x" + "}" * levels + "\n"
+
+
+def _items(count: int) -> str:
+    return "items: [" + ", ".join(["x"] * count) + "]\n"
+
+
+@pytest.mark.parametrize(("extra", "accepted"), [
+    (_nested_lists(7), True),
+    (_nested_lists(8), False),
+    (_nested_mappings(6), True),
+    (_nested_mappings(7), False),
+    (_items(493), True),
+    (_items(494), False),
+], ids=["lists-at-depth", "lists-past-depth", "mappings-at-depth", "mappings-past-depth",
+        "nodes-at-budget", "nodes-past-budget"])
+def test_frontmatter_at_its_depth_and_node_limits_is_accepted_and_one_more_refused(extra,
+                                                                                   accepted):
+    """Depth 8 and 500 nodes are allowed; the deepest key counts as deep as its value."""
+    files = _files(document=skill_document(extra_frontmatter=extra))
+
+    if accepted:
+        validated_skill("wizard", files)
+    else:
+        with pytest.raises(ValidationError, match="too large or too deeply nested"):
+            validated_skill("wizard", files)
+
+
+def test_a_version_at_the_length_limit_is_accepted():
+    document = skill_document(extra_frontmatter=f"version: {'9' * 32}\n")
+
+    assert validated_skill("wizard", _files(document=document)).version == "9" * 32
+
+
+def test_a_listing_at_the_file_limit_is_a_skill_and_one_more_is_refused():
+    paths = ["SKILL.md", *(f"file-{number}.md" for number in range(MAX_FILE_COUNT - 1))]
+
+    assert refusal_from_listing("wizard", paths) is None
+    assert "It holds 101 files, and a skill may hold 100" in refusal_from_listing(
+        "wizard", [*paths, "one-more.md"])

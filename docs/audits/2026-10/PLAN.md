@@ -127,6 +127,9 @@ Session notes:
 - 2026-10-17: T2 done (61df9cf): archive walk tests, 13 skill_archive survivors caught; only test code changed.
 - Next: T3, every size and depth limit at exactly the limit (trust boundary). Full suite on both databases is due by T4.
 - Blocked: nothing. Still open for the owner: T8 fsync, T9 GitHub token.
+- 2026-10-17: T3 done (3508d58): exact-limit tests, 31 survivors caught; only test code changed.
+- Next: T4, local installs (modes, missing skill, symlinks, `observed`); the full suite on both databases is due with it.
+- Blocked: nothing. Still open for the owner: T8 fsync, T9 GitHub token.
 
 ## Unblock newcomers and the supply chain
 
@@ -1071,6 +1074,8 @@ Closes groups 11 and 12.
 Tests, one parametrized matrix per module: at the limit accepted, one over refused, for archive bytes and total bytes (`read_archive`), gunzipped size and the `max_length` decompression guard (`_gunzipped`, with a small gzip bomb), long names and pax header size, `_validated_version`, `refusal_from_listing` (including `MAX_FILE_COUNT`, uncovered line 176), `_repository_names` and `_local_hashes` (including the non-list `repository`, lines 303 and 306), `request_body.bounded_body`, `local_skills.archive` (lines 115, 118, 124), and the frontmatter node budget and depth in `_measured`.
 
 Files: tests/services/test_skill_archive.py, test_skill_validation.py, test_sync_service.py, test_local_skills.py; tests/mcp/test_request_body.py.
+
+Outcome (3508d58): each limit at the limit and one past it, plus a several-stream gzip read whole, a bomb's peak memory under the ceiling (tracemalloc), and noise before real files in local packing. mutmut catches 31 more survivors of groups 11 and 12. Equivalent, no test: `_gunzipped`'s `+ len(output)` and `+ 2` (the ceiling at most doubles and the check still refuses), and the key depth in `_measured` (a key is a string at its value's depth).
 
 ### T4. Local installs: modes, a missing skill, the rename race and its `Busy`
 
