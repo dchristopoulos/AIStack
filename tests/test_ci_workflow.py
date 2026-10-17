@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "tests.yaml"
@@ -49,8 +50,9 @@ def test_jobs_read_the_repository_and_nothing_else_by_default():
     assert _workflow()["permissions"] == {"contents": "read"}
 
 
-def test_the_suite_shards_cover_every_test():
+@pytest.mark.parametrize("job", ["suite", "browser-tests"])
+def test_the_shards_cover_every_test(job):
     """The shards are k/n for every k up to one n, or some tests run in no job at all."""
-    shards = _workflow()["jobs"]["suite"]["strategy"]["matrix"]["shard"]
+    shards = _workflow()["jobs"][job]["strategy"]["matrix"]["shard"]
     n = len(shards)
     assert sorted(shards) == [f"{k}/{n}" for k in range(1, n + 1)]
