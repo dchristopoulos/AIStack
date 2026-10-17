@@ -101,6 +101,9 @@ Session notes:
 - Next: test strategy 6a (research, docs/testing/strategy.md), then 6b to 6d, then 40d.
 - Blocked: nothing. Check the run for the plan-note commit first.
 - 2026-10-17: Firefox ran its job past ten minutes; each browser now runs in two halves, with a `browsers (<engine>)` gate per engine for the required checks. Main green, about 7 minutes end to end. Next: 6a, the test strategy.
+- 2026-10-17: 6a done (172a4ad): docs/testing/strategy.md, nine rules from Google SWE book ch. 11, Fowler, Hypothesis, mutmut, Jepsen, SQLite and PostgreSQL docs; mutation testing on trust boundaries instead of a coverage goal.
+- Next: 6b, measure (coverage per module, `--durations=30`, mutmut on the trust-boundary modules; mutmut needs fork, so macOS, and check it runs on Python 3.14).
+- Found for 6c: local installs write without fsync before the rename (power-loss question), and the real-GitHub contract test runs on no schedule.
 
 ## Unblock newcomers and the supply chain
 
