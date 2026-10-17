@@ -92,6 +92,11 @@ How to work through it:
 - [x] 42. Tests and checks the code is missing (1a1109a)
 - [x] 43. Finish the security pass this audit could not (0986ae4)
 
+Session notes:
+- 2026-10-17: main was red because the pytest job ran past its 25 minutes with Chromium inside it; the browser tests now run in the `browsers` matrix beside it (32c6ccb).
+- Next: 41b (forget a person), then 41e, Dependabot #136 and #138, the rest of the CI split, the test strategy, 40d.
+- Blocked: nothing. Confirm 32c6ccb's run is green at the start of the next session.
+
 ## Unblock newcomers and the supply chain
 
 Nothing else matters if the first sentence of the README fails, and the publishing jobs are the one place an outsider could ship code to every user.
