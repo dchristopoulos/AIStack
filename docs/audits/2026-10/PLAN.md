@@ -91,6 +91,17 @@ How to work through it:
 - [x] 41c. Metrics for the operator, behind a token (f5e9ff3)
 - [x] 42. Tests and checks the code is missing (1a1109a)
 - [x] 43. Finish the security pass this audit could not (0986ae4)
+- [ ] T1. Tests for who may see what: download after rotation, one skill name in two teams, two projects, offers and harnesses of another computer (trust boundary)
+- [ ] T2. Tests for the archive walk: a refused record behind a member, pax headers with several records, byte-identical builds (trust boundary)
+- [ ] T3. Every size and depth limit tested at exactly the limit (trust boundary)
+- [ ] T4. Local installs: modes, a missing skill, the rename race and its `Busy`
+- [ ] T5. Library log: project events replayed, the canonical line, every field of an event, two computers with one name (trust boundary)
+- [ ] T6. The failure limiter's eviction and `Retry-After`, and what `verify_token` reports
+- [ ] T7. Races held at their window: two installs of one skill, a sync against a push, two syncs recording one harness, `Busy` from a route
+- [ ] T8. Crash mid-write: kill the process and check what survives; decide fsync before rename
+- [ ] T9. Slow and failing database and GitHub, and the real-GitHub test on a schedule
+- [ ] T10. Hypothesis properties: content hash, paths, reconciliation, log replay
+- [ ] T11. Speed: the slowest tests, and deletions with mutmut proof
 
 Session notes:
 - 2026-10-17: main was red because the pytest job ran past its 25 minutes with Chromium inside it; the browser tests now run in the `browsers` matrix beside it (32c6ccb).
@@ -107,6 +118,9 @@ Session notes:
 - 2026-10-17: 6b done (b3e9a05): docs/testing/measurements.md. Coverage 90%; 341 logic mutants survive on the trust boundaries (list in docs/testing/survivors-2026-10.txt), reconciliation table swept by hand, 90/90 caught. mutmut on macOS needs `no_proxy='*'` or forked tests crash in `_scproxy`.
 - Next: 6c, turn measurements.md's 21 missing-test groups into plan steps, trust boundaries first (download URL after token rotation, `team_skill` across two teams, `my_project`, archive layout walk, project-event replay).
 - Watch: the next Dependabot bump (starlette 1.8 / pydantic 2.14 / uvicorn 0.54 / idna 3.20) fails two `test_server_url.py` cases.
+- 2026-10-17: 6c done: the measurements are steps T1 to T11 under "Tests that would notice", trust boundaries first (T1 visibility, T2 archive walk, T3 exact limits, T5 log replay), then races, crashes, failing dependencies, Hypothesis, speed.
+- Next: T1. Open for the owner: T8's fsync-before-rename proposal (local installs, power loss), and T9's GitHub token and throwaway repository for a scheduled real-GitHub run.
+- Still watch: the next Dependabot bump fails two `test_server_url.py` cases (`example.com$(id)` echoed back).
 
 ## Unblock newcomers and the supply chain
 
@@ -1003,6 +1017,131 @@ Files: src/aistack/services/skill_archive.py, skill_validation.py, content_hash.
 ADR: none needed.
 
 Tests: A written review in docs/audits/ with crafted archives (confusables, case folding, pax tricks, a skill named like the staging folder), the install path under concurrent sync, and what `self_update` runs and from where.
+
+## Tests that would notice
+
+Steps T1 to T11 come from the test strategy (docs/testing/strategy.md) and its measurements (docs/testing/measurements.md, raw survivors in docs/testing/survivors-2026-10.txt). Each surviving mutant named below is a missing test; the group numbers are the ones in measurements.md. Rules for every step:
+
+- A new test fails without the code it protects: the commit shows that negative check (the mutant or the deleted guard, and the failure).
+- A test is deleted only with strategy rule 9's proof in the commit: mutmut shows every mutant it kills is killed by another test, it covers no line no other test covers, and the full suite stays green on both databases.
+- No coverage target, no tests for count. Message-text survivors and the equivalent mutants in measurements.md need no test.
+- After a step, re-run mutmut on the modules it touched (config in measurements.md, `no_proxy='*'`, scratch copy) and say in the commit which survivors are now caught.
+
+### T1. Tests for who may see what (trust boundary)
+
+Closes groups 1 to 8.
+
+Tests, each through the route or tool a caller uses, not the helper:
+- A download URL minted before `aistack admin rotate` answers like an unknown ticket after it (transfer `_load_download`, ADR-0027).
+- One person in two teams that both hold a skill named `x`: `get_skill("x", team)` returns that team's copy for each team (`visibility.team_skill`).
+- One person with two projects: asking for the second never returns the first (`visibility.my_project`).
+- A removed skill is refused by every path that must not see it (`required_my_skill` default).
+- A private group's members are shown only to its members and to whoever `sees_all_groups` (`shows_membership`).
+- A team row whose `kind` a newer release wrote is left out of the caller's teams, not an error (`memberships`, ADR-0031).
+- Two computers of one person: a project or harness recorded on one is not this one's in sync (`_here`, `_machine_harness`).
+- Sync offers no team update for a removed skill nor for one not enabled on this computer, and `_removed` lists only names asked about (`_team_updates`, `_removed`).
+
+Files: tests/services/test_teams.py, test_project_visibility.py, test_sync_service.py; tests/mcp/test_install_over_http.py (download), test_teams_over_http.py.
+
+### T2. Tests for the archive walk (trust boundary)
+
+Closes groups 9, 10 and 13.
+
+Tests:
+- A tar whose second or third member is a link, a device, an oversized pax header or a long-name header is refused: the walk must reach it (`_inspect_structure` offset and size rounding).
+- A pax header with several records, the refused one not first; records with zero or negative length; a non-numeric length (the uncovered lines 198 to 204) (`_reject_layout_records`).
+- Two `build_archive` calls over the same files, in different order and at different times, give identical bytes; an executable bit changes them.
+
+Files: tests/services/test_skill_archive.py.
+
+### T3. Every size and depth limit tested at exactly the limit (trust boundary)
+
+Closes groups 11 and 12.
+
+Tests, one parametrized matrix per module: at the limit accepted, one over refused, for archive bytes and total bytes (`read_archive`), gunzipped size and the `max_length` decompression guard (`_gunzipped`, with a small gzip bomb), long names and pax header size, `_validated_version`, `refusal_from_listing` (including `MAX_FILE_COUNT`, uncovered line 176), `_repository_names` and `_local_hashes` (including the non-list `repository`, lines 303 and 306), `request_body.bounded_body`, `local_skills.archive` (lines 115, 118, 124), and the frontmatter node budget and depth in `_measured`.
+
+Files: tests/services/test_skill_archive.py, test_skill_validation.py, test_sync_service.py, test_local_skills.py; tests/mcp/test_request_body.py.
+
+### T4. Local installs: modes, a missing skill, the rename race and its `Busy`
+
+Closes groups 14 and 15, and the uncovered lines in local_skills.py.
+
+Tests: an executable script installs executable and a plain file does not, and `archive` keeps exactly the executable bit; `remove` of a skill that is not there returns False; a symlink in the skills folder is neither removed through nor reported; `observed` leaves out the staging folder, dot-folders and files; `refresh` with a stale staged `SKILL.md` (line 216). The rename-race retry and the `Busy` it ends in (lines 173 to 186) are T7's race test.
+
+Files: tests/services/test_local_skills.py.
+
+### T5. Library log: project events, the canonical line, every field (trust boundary)
+
+Closes groups 16 to 19, and the uncovered replay refusals in library_log.py.
+
+Tests:
+- Replay of each project event kind, although they stay in `_REPLAY_ONLY` (ADR-0026): a placement replays; a hand-edited log placing a skill on another user's computer is refused (`_apply_to_project`, the `target.user_id != machine.user_id` mutant).
+- `append` stores events as unpublished and keeps the order check at `<=`; `catch_up` returns False when nothing was new; `Event.to_json` gives one canonical line (sorted keys, compact separators), pinned as a literal.
+- `removed`, `pushed` and `apply` carry name, os, origin and harness: the replay test compares computers and origins, not only skills.
+- Two computers with one name replay to two names, and a removal names the right user's computer (`_free_name`, `_remove_machine`).
+- Replay refuses an event naming an invalid revision or computer, and a removal of an unknown computer (lines 177, 335, 449, 472, 511, 520).
+
+Files: tests/mcp/test_library_log.py, tests/mcp/test_library_github.py.
+
+### T6. The failure limiter and what `verify_token` reports
+
+Closes groups 20 and 21.
+
+Tests: past `MAX_TRACKED_KEYS` the oldest key is evicted (line 70); a window that empties a key (81 to 84); the exact attempt that starts refusing; `Retry-After` equals the time left in the window, over HTTP. For group 21, read the failure kind and `client_id` somewhere that matters or delete them; a test only if they stay.
+
+Files: tests/mcp/test_throttle_over_http.py, test_auth_claims.py.
+
+### T7. Races held at their window
+
+Each test holds the first party at the exact statement with a `threading.Barrier` or a blocking hook and fails when the guard is removed (strategy rule 4).
+
+- Two agent sessions installing one skill into one folder, held between `_swap_in`'s two renames: one wins, the folder is whole, the loser retries and then answers `Busy`.
+- A sync and a push of one skill from two computers of one person, held between the hash read and the revision insert, on both databases.
+- Two syncs recording one harness at once: the `IntegrityError` path (sync_service line 395).
+- `Busy` from a transfer route and a dashboard route answers 503 with the try-again sentence, end to end, on both databases.
+- An upload that stalls past its read timeout (request_body line 32).
+
+Files: tests/db/, tests/services/test_local_skills.py, tests/mcp/test_reads_while_writing_over_http.py, test_request_body.py.
+
+### T8. Crash mid-write, and fsync before rename
+
+A medium test runs the operation in a subprocess, kills it with SIGKILL at a chosen point (an environment hook that blocks there), restarts, and checks the invariant (strategy rule 5):
+- During a local install: the skills folder holds the old revision, the new one, or nothing, never a mix; the next sync settles it.
+- During a local write before the Git push: the event is in the database and goes out with the next push.
+- A server write killed mid-transaction: the database is as before it.
+- A test pins `PRAGMA synchronous` at FULL on SQLite connections, so nobody lowers it for speed.
+
+Design question to propose before building: local installs write files without `fsync` and then rename, so a power cut can leave a renamed folder with empty files on some filesystems. Proposal: fsync each file and the staging folder before the rename, and the parent after it; measure the cost on a 100-file skill.
+
+Files: src/aistack/services/local_skills.py (only if the fsync proposal is taken); tests/services/, tests/db/test_engine.py.
+
+### T9. Slow and failing database and GitHub
+
+- PostgreSQL: a statement timeout and a connection dropped mid-transaction each answer `Busy` or a sentence, roll back, and leave nothing half written.
+- GitHub fakes: a rejected push, a network error and a slow clone each leave the Library consistent and retry with the next push (`services/library_repo.py`).
+- `tests/e2e/test_real_github.py` is the contract test for those fakes and runs in no CI job today. Add a scheduled job (weekly, outside the merge gate and the required checks) that runs it. It needs a GitHub token secret with rights on a throwaway repository: the owner creates both; the job skips with a message until they exist.
+
+Files: tests/db/, tests/mcp/test_library_github.py, .github/workflows/tests.yaml.
+
+### T10. Hypothesis properties
+
+Add `hypothesis` to the dev dependency group with a `ci` profile (derandomize, no deadline) chosen when `CI` is set, and the example database ignored by Git. Properties (strategy rule 3):
+- Content hash: the same files in any order and archive layout give one digest; any one-byte change, rename or mode change gives another.
+- Paths: every path push validation accepts stays inside the skill folder when joined, under POSIX and Windows rules; every rejected path is refused with a sentence naming it.
+- Reconciliation: every (desired, observed) pair gets an action, and none silently overwrites a local edit (ADR-0007).
+- Library log: a `RuleBasedStateMachine` over back up, edit, install, remove and rename on two computers, invariant that replaying either log rebuilds the same Library. It replaces the seeded-random test in tests/mcp/test_library_log.py only under rule 9's proof.
+
+Files: pyproject.toml, poetry.lock, tests/conftest.py, tests/services/, tests/mcp/test_library_log.py.
+
+### T11. Speed
+
+From the thirty slowest tests in measurements.md:
+- The two tests that wait out SQLite's 5-second busy timeout use a shorter timeout in the test engine (`SQLITE_BUSY_TIMEOUT_SECONDS` made a `build_engine` argument only if nothing simpler works).
+- `test_library_github.py` (16 of the 30): share bare repositories across tests where a test only reads them.
+- Tests that start `aistack` as a subprocess only to read printed text call the function in process; keep one subprocess test per command.
+- Delete what T1 to T10 made redundant, each with rule 9's proof.
+
+Files: tests/.
 
 ## Every finding has a step
 
