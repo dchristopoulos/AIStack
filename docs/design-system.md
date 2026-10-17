@@ -82,6 +82,10 @@ fetch one, and embedding one costs ~100 KB for no gain in a tool.
 - Real ellipsis `…` on a control that opens a further step ("Move here…", "Copy from…"), and
   in placeholders. Never `...`.
 - No "A · B · C" strings: join with commas.
+- Every word the page shows lives in `WORDS` at the top of the script: a phrase with `{name}`
+  slots, or `{ one, other }` for a count, read through `say()` (text) or `sayWith()` (with
+  elements in the slots). No sentence is written inline, so a translation is a change to that
+  table. The demo's replies stand in for the server's and stay where they are.
 
 ### Spacing, radius, elevation, motion
 
