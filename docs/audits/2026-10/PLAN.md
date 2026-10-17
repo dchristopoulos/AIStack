@@ -124,6 +124,9 @@ Session notes:
 - 2026-10-17: T1 done (0516aee): eight visibility tests, 18 mutmut survivors caught in visibility, sync_service and transfer; full suite green on both databases. mutmut setup: rsync to scratch, `uv venv -p 3.14`, `uv pip install -e .` plus the dev tools and `mutmut==3.8.0`, constrained by the poetry env's `pip freeze`.
 - Next: T2, the archive walk (trust boundary).
 - Blocked: nothing. Still open for the owner: T8 fsync, T9 GitHub token.
+- 2026-10-17: T2 done (61df9cf): archive walk tests, 13 skill_archive survivors caught; only test code changed.
+- Next: T3, every size and depth limit at exactly the limit (trust boundary). Full suite on both databases is due by T4.
+- Blocked: nothing. Still open for the owner: T8 fsync, T9 GitHub token.
 
 ## Unblock newcomers and the supply chain
 
@@ -1058,6 +1061,8 @@ Tests:
 - Two `build_archive` calls over the same files, in different order and at different times, give identical bytes; an executable bit changes them.
 
 Files: tests/services/test_skill_archive.py.
+
+Outcome (61df9cf): refused members second and third behind odd-sized files, a blank size field, multi-record and malformed pax headers, a non-UTF-8 key (strict decoding would have been a 500), builds at different times, exact modes. mutmut on skill_archive.py catches 13 more logic survivors. Equivalent, no test: the walk's `<=` (only stricter on a tar with no end marker), the size field read from byte 125 (differs above 1 GiB), `rfind` for `=` and the `<= 0`/`<= 1` boundaries (same rejection), and `build_archive`'s default mtime, format and str sort (no byte changes). The `>=` limit mutants are T3's.
 
 ### T3. Every size and depth limit tested at exactly the limit (trust boundary)
 
