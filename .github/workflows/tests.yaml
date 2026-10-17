@@ -16,33 +16,10 @@ permissions:
   contents: read
 
 jobs:
-  pytest:
+  # The checks that need no database, beside the suite rather than in front of it.
+  lint:
     runs-on: ubuntu-latest
-    # The suite, browser tests apart, takes about twelve minutes. Without a bound, a hung
-    # test holds the runner for GitHub's six hours and the pull request reads "pending"
-    # instead of failed; faulthandler_timeout below names a hung test well before this.
-    timeout-minutes: 25
-
-    services:
-      # The concurrent-admin race (ADR-0008) cannot be reproduced on SQLite, and the test that
-      # covers it skips when TEST_DATABASE_URL is unset. CI supplies it, so that skip is a
-      # local convenience and never a hole in the build.
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: aistack
-          POSTGRES_PASSWORD: aistack
-          POSTGRES_DB: aistack_test
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U aistack -d aistack_test"
-          --health-interval 2s --health-timeout 3s --health-retries 15
-
-    env:
-      # Never DATABASE_URL: a test that reads the server's own variable could drop the tables
-      # of whatever it happens to point at.
-      TEST_DATABASE_URL: postgresql+psycopg://aistack:aistack@localhost:5433/aistack_test
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,6 +62,58 @@ jobs:
           npm install --no-save --silent eslint@9.39.1 globals@16.5.0
           npx eslint page*.js
 
+  # The suite, browser tests apart, in four shards side by side: about twelve minutes in one
+  # job, so the pull request waits for the slowest quarter instead. Each shard runs every
+  # fourth test (--shard in tests/conftest.py), so a new test file needs no listing here.
+  suite:
+    name: suite (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    # Without a bound, a hung test holds the runner for GitHub's six hours and the pull
+    # request reads "pending" instead of failed; faulthandler_timeout below names a hung test
+    # well before this.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/4", "2/4", "3/4", "4/4"]
+
+    services:
+      # The concurrent-admin race (ADR-0008) cannot be reproduced on SQLite, and the test that
+      # covers it skips when TEST_DATABASE_URL is unset. CI supplies it, so that skip is a
+      # local convenience and never a hole in the build.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aistack
+          POSTGRES_PASSWORD: aistack
+          POSTGRES_DB: aistack_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U aistack -d aistack_test"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+
+    env:
+      # Never DATABASE_URL: a test that reads the server's own variable could drop the tables
+      # of whatever it happens to point at.
+      TEST_DATABASE_URL: postgresql+psycopg://aistack:aistack@localhost:5433/aistack_test
+
+    env:
+      # Never DATABASE_URL: a test that reads the server's own variable could drop the tables
+      # of whatever it happens to point at.
+      TEST_DATABASE_URL: postgresql+psycopg://aistack:aistack@localhost:5433/aistack_test
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - run: pipx install poetry==2.4.1
+
+      - run: poetry install
+
       # Fail setup rather than the assertions: a suite that skipped its only real concurrency
       # test still reports green, and "0 skipped" is the only way to notice from the summary.
       # Connecting is the whole check. Testing that TEST_DATABASE_URL is non-empty would not
@@ -100,7 +129,20 @@ jobs:
       # A test still running after two minutes prints every thread's stack and carries on, so
       # a hang that meets the job timeout has already named itself in the log.
       # The browser tests run in the browsers job, beside this one.
-      - run: poetry run pytest -q -p no:cacheprovider --no-header -rs -o faulthandler_timeout=120 --ignore=tests/ui
+      - run: poetry run pytest -q -p no:cacheprovider --no-header -rs -o faulthandler_timeout=120 --ignore=tests/ui --shard ${{ matrix.shard }}
+
+  # The check `main` requires by name. A job whose needs failed is skipped, and a skipped
+  # required check counts as passed, so this one always runs and fails unless every shard
+  # and the lint job succeeded.
+  pytest:
+    if: always()
+    needs: [lint, suite]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: test "$RESULTS" = "success success"
+        env:
+          RESULTS: ${{ needs.lint.result }} ${{ needs.suite.result }}
 
   # The dashboard's own tests open the page in a real browser, in all three engines. A job of
   # its own, beside pytest and not inside it, so the pull request waits for the slower of the
@@ -324,7 +366,7 @@ jobs:
   # main, or a version tag. A pull request never publishes, whatever its branch holds.
   publish:
     if: github.event_name == 'push' || github.event_name == 'schedule'
-    needs: [pytest, browsers, windows, macos, container]
+    needs: [lint, suite, pytest, browsers, windows, macos, container]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -394,7 +436,7 @@ jobs:
   # CHANGELOG.md, merge that, then tag the commit `v<version>` and push the tag. The image gets the same version from the same tag.
   pypi:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [pytest, browsers, windows, macos, container]
+    needs: [lint, suite, pytest, browsers, windows, macos, container]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Named on pypi.org's trusted publisher, so only this job, in this environment, can upload.
