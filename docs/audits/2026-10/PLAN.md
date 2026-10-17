@@ -121,6 +121,9 @@ Session notes:
 - 2026-10-17: 6c done: the measurements are steps T1 to T11 under "Tests that would notice", trust boundaries first (T1 visibility, T2 archive walk, T3 exact limits, T5 log replay), then races, crashes, failing dependencies, Hypothesis, speed.
 - Next: T1. Open for the owner: T8's fsync-before-rename proposal (local installs, power loss), and T9's GitHub token and throwaway repository for a scheduled real-GitHub run.
 - Still watch: the next Dependabot bump fails two `test_server_url.py` cases (`example.com$(id)` echoed back).
+- 2026-10-17: T1 done (0516aee): eight visibility tests, 18 mutmut survivors caught in visibility, sync_service and transfer; full suite green on both databases. mutmut setup: rsync to scratch, `uv venv -p 3.14`, `uv pip install -e .` plus the dev tools and `mutmut==3.8.0`, constrained by the poetry env's `pip freeze`.
+- Next: T2, the archive walk (trust boundary).
+- Blocked: nothing. Still open for the owner: T8 fsync, T9 GitHub token.
 
 ## Unblock newcomers and the supply chain
 
