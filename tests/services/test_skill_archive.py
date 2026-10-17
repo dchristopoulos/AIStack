@@ -350,3 +350,121 @@ def test_a_pax_path_that_leaves_the_skill_is_refused(path):
 
     with pytest.raises(ValidationError, match=r"'\.\.' segment|absolute"):
         _validated(archive)
+
+
+# --- the walk reaches every header (T2) -----------------------------------------------------
+
+def _oversized_pax() -> tarfile.TarInfo:
+    header = tarfile.TarInfo(name="PaxHeader")
+    header.type = tarfile.XHDTYPE
+    header.size = 17 * 1024
+    return header
+
+
+def _oversized_long_name() -> tarfile.TarInfo:
+    header = tarfile.TarInfo(name="././@LongLink")
+    header.type = tarfile.GNUTYPE_LONGNAME
+    header.size = 5 * 1024
+    return header
+
+
+@pytest.mark.parametrize(("refused", "expected"), [
+    (lambda: special_member("link", tarfile.SYMTYPE, "../../etc/passwd"), "not a regular file"),
+    (lambda: special_member("device", tarfile.CHRTYPE), "not a regular file"),
+    (_oversized_pax, "extended header far larger"),
+    (_oversized_long_name, "extended header far larger"),
+], ids=["symlink", "device", "oversized-pax", "oversized-long-name"])
+@pytest.mark.parametrize("position", [1, 2])
+def test_a_refused_member_behind_others_is_still_reached(refused, expected, position):
+    """Members of 513 and 1 bytes take two blocks and one: the walk rounds each size up."""
+    members = [("SKILL.md", b"x" * 513), ("notes.md", b"y")]
+    member = refused()
+    block = member.tobuf(format=tarfile.GNU_FORMAT)
+    data = b"n" * member.size + b"\0" * (-member.size % 512)
+    before, after = _tar_bytes(members[:position]), _tar_bytes(members[position:])
+    archive = gzip.compress(before[:_end(before)] + block + data + after)
+
+    with pytest.raises(ValidationError, match=expected):
+        read_archive(archive)
+
+
+def _end(tar: bytes) -> int:
+    """Where the end-of-archive blocks of a tar begin."""
+    offset = 0
+    while tar[offset:offset + 512] != bytes(512):
+        size = int(tar[offset + 124:offset + 136].strip(b" \0") or b"0", 8)
+        offset += 512 + -(-size // 512) * 512
+    return offset
+
+
+def test_a_header_with_a_blank_size_field_is_a_member_with_no_data():
+    """Some writers leave a folder's size field empty. Read as anything but 0, the walk
+    would step over the next header."""
+    tar = bytearray(_tar_bytes([_folder("docs"), ("docs/SKILL.md", b"x")]))
+    tar[124:136] = bytes(12)
+    tar[148:156] = b" " * 8
+    tar[148:156] = f"{sum(tar[:512]):06o}\0 ".encode()
+
+    read = read_archive(gzip.compress(bytes(tar)))
+
+    assert [file.path for file in read] == ["docs/SKILL.md"]
+
+
+def _folder(name: str) -> tarfile.TarInfo:
+    folder = tarfile.TarInfo(name=name)
+    folder.type = tarfile.DIRTYPE
+    return folder
+
+
+@pytest.mark.parametrize("member_type", [tarfile.XHDTYPE, tarfile.XGLTYPE])
+def test_a_layout_record_after_ordinary_records_is_refused(member_type):
+    """Each record's length moves the reader to the next; three of different lengths."""
+    records = (_pax_record("comment", "a longer comment than the rest")
+               + _pax_record("path", "SKILL.md") + b"11 size=99\n")
+    block, data = _pax_member(records, member_type)
+
+    with pytest.raises(ValidationError, match="tar extension"):
+        read_archive(_with_leading_header(block, data, [("SKILL.md", b"x")]))
+
+
+@pytest.mark.parametrize("records", [
+    b"0 a=b\n",
+    b"-6 a=b\n",
+    b"x6 a=b\n",
+    b"6 a=b\n6 ab\n\n",
+    b"6 a=b\nnospace",
+], ids=["zero-length", "negative-length", "non-numeric-length", "no-equals", "no-space"])
+def test_a_malformed_pax_record_is_unreadable(records):
+    block, data = _pax_member(records)
+
+    with pytest.raises(ValidationError, match="not a readable tar archive"):
+        read_archive(_with_leading_header(block, data, [("SKILL.md", b"x")]))
+
+
+def test_a_pax_key_that_is_not_utf_8_is_a_rejection_not_a_crash():
+    block, data = _pax_member(b"9 \xff\xfe=ab\n")
+
+    try:
+        read_archive(_with_leading_header(block, data, [("SKILL.md", b"x")]))
+    except ValidationError:
+        pass
+
+
+# --- building is reproducible (T2) ----------------------------------------------------------
+
+def test_two_builds_at_different_times_are_the_same_bytes(monkeypatch):
+    files = [("SKILL.md", b"x", False), ("bin/tool", b"y", True)]
+    first = build_archive(files)
+    monkeypatch.setattr(time, "time", lambda: 2_000_000_000.0)
+
+    assert build_archive(reversed(files)) == first
+
+
+def test_the_executable_bit_is_exactly_rwxr_xr_x_and_a_plain_file_rw_r_r():
+    built = build_archive([("SKILL.md", b"x", False), ("bin/tool", b"y", True)])
+
+    with tarfile.open(fileobj=io.BytesIO(built), mode="r:gz") as tar:
+        modes = {member.name: member.mode for member in tar}
+
+    assert modes == {"SKILL.md": 0o644, "bin/tool": 0o755}
+    assert built != build_archive([("SKILL.md", b"x", False), ("bin/tool", b"y", False)])
