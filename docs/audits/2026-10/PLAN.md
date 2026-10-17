@@ -100,6 +100,7 @@ Session notes:
 - 2026-10-17: CI split (5a2449c, f41c484): `lint` job plus `suite` in four shards (`--shard k/n` in tests/conftest.py, round-robin over collected tests), a `pytest` gate job keeps the required check name. Shards take 3 to 4 min; the slowest job is now `browsers` (7 to 9 min), the whole run 9.5 min. Also fixed a Firefox race in the removed-skill browser test.
 - Next: test strategy 6a (research, docs/testing/strategy.md), then 6b to 6d, then 40d.
 - Blocked: nothing. Check the run for the plan-note commit first.
+- 2026-10-17: Firefox ran its job past ten minutes; each browser now runs in two halves, with a `browsers (<engine>)` gate per engine for the required checks. Main green, about 7 minutes end to end. Next: 6a, the test strategy.
 
 ## Unblock newcomers and the supply chain
 
