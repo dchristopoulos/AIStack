@@ -176,6 +176,28 @@ def test_naming_a_repository_that_is_not_managed_stores_nothing(session_factory,
     assert _rows(session_factory) == {**before, "machine_harness": before["machine_harness"] + 1}
 
 
+def test_a_project_is_managed_only_on_the_computer_that_manages_that_project(
+        session_factory, dimitris, desktop):
+    """Two projects, one on each computer: each computer's sync names its own and only its
+    own as managed, whichever was registered first."""
+    other_key = "github.com/dchristopoulos/website"
+    other = projects.validated_here("/home/dimitris/website",
+                                    "git@github.com:dchristopoulos/website.git")
+    _sync(session_factory, dimitris, {}, project=True)
+    with session_factory.begin() as session:
+        sync_service.sync(session, desktop.machine.machine_id, desktop.user.user_id, {},
+                          here=other, project=other_key)
+
+    def managed_on_desktop(here):
+        with session_factory.begin() as session:
+            return sync_service.sync(session, desktop.machine.machine_id,
+                                     desktop.user.user_id, {}, here=here).project
+
+    assert managed_on_desktop(HERE) == sync_service.ProjectHere(KEY, "aistack", managed=False)
+    assert managed_on_desktop(other) == sync_service.ProjectHere(other_key, "website",
+                                                                 managed=True)
+
+
 def test_a_project_sync_writes_its_folder_and_nothing_else(session_factory, dimitris):
     _push(session_factory, dimitris, "wizard")
     before = _rows(session_factory)

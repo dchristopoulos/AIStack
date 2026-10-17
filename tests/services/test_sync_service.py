@@ -313,6 +313,14 @@ def test_sync_is_scoped_to_the_calling_machine(session_factory, dimitris, maria)
         "code-review"]
 
 
+def test_a_first_sync_is_first_on_each_computer_of_one_person(session_factory, dimitris,
+                                                              desktop):
+    """What one computer's harness recorded is not the other computer's."""
+    assert _sync(session_factory, dimitris, {}).first_sync is True
+    assert _sync(session_factory, desktop, {}).first_sync is True
+    assert _sync(session_factory, desktop, {}).first_sync is False
+
+
 def test_a_local_skill_the_vault_has_never_seen_is_not_acted_on(session_factory, dimitris):
     report = _sync(session_factory, dimitris, {"my-private-skill": local_digests()})
 
