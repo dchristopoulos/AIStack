@@ -92,9 +92,9 @@ How to work through it:
 - [x] 42. Tests and checks the code is missing (1a1109a)
 - [x] 43. Finish the security pass this audit could not (0986ae4)
 - [x] T1. Tests for who may see what: download after rotation, one skill name in two teams, two projects, offers and harnesses of another computer (trust boundary)
-- [ ] T2. Tests for the archive walk: a refused record behind a member, pax headers with several records, byte-identical builds (trust boundary)
-- [ ] T3. Every size and depth limit tested at exactly the limit (trust boundary)
-- [ ] T4. Local installs: modes, a missing skill, the rename race and its `Busy`
+- [x] T2. Tests for the archive walk: a refused record behind a member, pax headers with several records, byte-identical builds (trust boundary)
+- [x] T3. Every size and depth limit tested at exactly the limit (trust boundary)
+- [x] T4. Local installs: modes, a missing skill, the rename race and its `Busy`
 - [ ] T5. Library log: project events replayed, the canonical line, every field of an event, two computers with one name (trust boundary)
 - [ ] T6. The failure limiter's eviction and `Retry-After`, and what `verify_token` reports
 - [ ] T7. Races held at their window: two installs of one skill, a sync against a push, two syncs recording one harness, `Busy` from a route
@@ -129,6 +129,9 @@ Session notes:
 - Blocked: nothing. Still open for the owner: T8 fsync, T9 GitHub token.
 - 2026-10-17: T3 done (3508d58): exact-limit tests, 31 survivors caught; only test code changed.
 - Next: T4, local installs (modes, missing skill, symlinks, `observed`); the full suite on both databases is due with it.
+- Blocked: nothing. Still open for the owner: T8 fsync, T9 GitHub token.
+- 2026-10-17: T4 done (6576a53): local install tests, 19 logic survivors caught; full suite green on both databases.
+- Next: T5, the Library log (trust boundary). Next full run on both databases is due by T8.
 - Blocked: nothing. Still open for the owner: T8 fsync, T9 GitHub token.
 
 ## Unblock newcomers and the supply chain
@@ -1084,6 +1087,8 @@ Closes groups 14 and 15, and the uncovered lines in local_skills.py.
 Tests: an executable script installs executable and a plain file does not, and `archive` keeps exactly the executable bit; `remove` of a skill that is not there returns False; a symlink in the skills folder is neither removed through nor reported; `observed` leaves out the staging folder, dot-folders and files; `refresh` with a stale staged `SKILL.md` (line 216). The rename-race retry and the `Busy` it ends in (lines 173 to 186) are T7's race test.
 
 Files: tests/services/test_local_skills.py.
+
+Outcome (6576a53): modes on install (the first file two folders deep) and on packing (owner-only and others-only exec), a missing, a linked and a dangling skill removed, a folder link inside a skill refused and unlisted, everything `observed` must leave out, a stale staged `SKILL.md`. mutmut catches 25 more on local_skills.py, 19 of them logic. Equivalent, no test: `remove`'s `mkdir(parents)` (the skills folder exists when its skill does), the case of `.claude` and `SKILL.md` (equivalent on a case-insensitive disk only), `"SHA256"`. `_swap_in`'s retry and `Busy` stay T7's.
 
 ### T5. Library log: project events, the canonical line, every field (trust boundary)
 

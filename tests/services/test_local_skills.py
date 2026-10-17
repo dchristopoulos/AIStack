@@ -84,3 +84,96 @@ def test_noise_the_operating_system_made_is_skipped_and_the_rest_still_packed(tm
     packed = read_archive(local_skills.archive(tmp_path, "wizard"))
 
     assert sorted(file.path for file in packed) == ["SKILL.md", "docs/notes.md"]
+
+
+# --- modes, a missing skill, links, what sync is shown (T4) ---------------------------------
+
+def test_an_install_writes_scripts_executable_and_everything_else_not(tmp_path):
+    # "Assets" sorts before SKILL.md, so the first file written needs two new folders.
+    packed = skill_archive("wizard", files={"Assets/run.sh": "echo hi\n", "notes.md": "x\n"},
+                           executable=frozenset({"Assets/run.sh"}))
+    content_hash = validated_skill("wizard", read_archive(packed)).content_hash
+
+    local_skills.install(tmp_path, "wizard", packed, content_hash)
+
+    folder = tmp_path / "wizard"
+    assert (folder / "Assets/run.sh").stat().st_mode & 0o777 == 0o755
+    assert (folder / "notes.md").stat().st_mode & 0o777 == 0o644
+
+
+@pytest.mark.parametrize(("mode", "executable"), [
+    (0o644, False),
+    (0o744, True),
+    (0o645, True),
+], ids=["plain", "owner-only", "others-only"])
+def test_a_packed_file_is_executable_when_anyone_may_run_it(tmp_path, mode, executable):
+    _folder(tmp_path, {"run.sh": b"echo hi\n"})
+    (tmp_path / "wizard/run.sh").chmod(mode)
+
+    [packed] = read_archive(local_skills.archive(tmp_path, "wizard"))
+
+    assert packed.executable is executable
+
+
+def test_a_link_to_a_folder_inside_a_skill_is_refused_by_push_and_left_out_of_sync(tmp_path):
+    _folder(tmp_path, {"SKILL.md": b"x"})
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "elsewhere/secret.md").write_bytes(b"s")
+    (tmp_path / "wizard/docs").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+
+    with pytest.raises(ValidationError, match="'docs' in 'wizard' is a link"):
+        local_skills.archive(tmp_path, "wizard")
+    assert local_skills.observed(tmp_path)["wizard"] == {
+        "SKILL.md": local_skills._digest(tmp_path / "wizard/SKILL.md"),
+    }
+
+
+def test_sync_is_shown_skill_folders_only(tmp_path):
+    _folder(tmp_path, {"SKILL.md": b"x", ".DS_Store": b"noise"})
+    for hidden in (local_skills.STAGING_FOLDER, ".hidden", "synced"):
+        (tmp_path / hidden / "inside").mkdir(parents=True)
+        (tmp_path / hidden / "inside/SKILL.md").write_bytes(b"x")
+    (tmp_path / "README.md").write_bytes(b"not a skill")
+
+    assert {name: list(files) for name, files in local_skills.observed(tmp_path).items()} == {
+        "wizard": ["SKILL.md"],
+    }
+
+
+def test_removing_a_skill_that_is_not_there_says_so_and_touches_nothing(tmp_path):
+    assert local_skills.remove(tmp_path, "wizard") is False
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_removing_a_linked_skill_takes_the_link_and_never_what_it_points_to(tmp_path):
+    (tmp_path / "checkout").mkdir()
+    (tmp_path / "checkout/SKILL.md").write_bytes(b"x")
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    (skills / "wizard").symlink_to(tmp_path / "checkout", target_is_directory=True)
+    (skills / "gone").symlink_to(tmp_path / "nowhere", target_is_directory=True)
+
+    assert local_skills.remove(skills, "wizard") is True
+    assert local_skills.remove(skills, "gone") is True
+
+    assert (tmp_path / "checkout/SKILL.md").read_bytes() == b"x"
+    assert not (skills / "wizard").is_symlink() and not (skills / "gone").is_symlink()
+    assert list((skills / local_skills.STAGING_FOLDER).iterdir()) == []
+
+
+def test_removing_a_skill_folder_takes_all_of_it(tmp_path):
+    _folder(tmp_path, {"SKILL.md": b"x", "docs/notes.md": b"y"})
+
+    assert local_skills.remove(tmp_path, "wizard") is True
+
+    assert sorted(path.name for path in tmp_path.iterdir()) == [local_skills.STAGING_FOLDER]
+    assert list((tmp_path / local_skills.STAGING_FOLDER).iterdir()) == []
+
+
+def test_a_refresh_left_half_done_is_finished_by_the_next(tmp_path):
+    _folder(tmp_path, {"SKILL.md": b"old", "SKILL.md.aistack-new": b"stale"})
+
+    local_skills.refresh(tmp_path, "wizard", "new")
+
+    assert sorted(path.name for path in (tmp_path / "wizard").iterdir()) == ["SKILL.md"]
+    assert (tmp_path / "wizard/SKILL.md").read_bytes() == b"new"
