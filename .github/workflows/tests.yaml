@@ -141,15 +141,18 @@ jobs:
 
   # The dashboard's own tests open the page in a real browser, in all three engines. A job of
   # its own, beside pytest and not inside it, so the pull request waits for the slower of the
-  # two and not for their sum. Locally they skip when the browser is missing; here it is
-  # installed, so a skip cannot hide them.
-  browsers:
+  # two and not for their sum. Firefox alone takes about nine minutes, so each engine runs in
+  # two halves. Locally they skip when the browser is missing; here it is installed, so a skip
+  # cannot hide them.
+  browser-tests:
+    name: browser tests (${{ matrix.browser }} ${{ matrix.shard }})
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
         browser: [chromium, firefox, webkit]
+        shard: ["1/2", "2/2"]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -173,8 +176,23 @@ jobs:
         # status would stand in for pytest's and a failing test would pass.
         shell: bash
         run: |
-          poetry run pytest tests/ui -q -p no:cacheprovider --no-header -rs -o faulthandler_timeout=120 | tee result.txt
+          poetry run pytest tests/ui -q -p no:cacheprovider --no-header -rs -o faulthandler_timeout=120 --shard ${{ matrix.shard }} | tee result.txt
           ! grep -q "skipped" result.txt
+
+  # The checks `main` requires by name, `browsers (firefox)` and `browsers (webkit)`, one per
+  # engine as before the halves. Always run, for the reason given at `pytest`.
+  browsers:
+    if: always()
+    needs: [browser-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    strategy:
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - run: test "$RESULT" = "success"
+        env:
+          RESULT: ${{ needs.browser-tests.result }}
 
   # Local mode runs on the person's own computer, and people use Windows. The server runs in
   # a Linux container, so only what runs on their computer is tested here: local mode, the
@@ -361,7 +379,7 @@ jobs:
   # main, or a version tag. A pull request never publishes, whatever its branch holds.
   publish:
     if: github.event_name == 'push' || github.event_name == 'schedule'
-    needs: [lint, suite, pytest, browsers, windows, macos, container]
+    needs: [lint, suite, pytest, browser-tests, browsers, windows, macos, container]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -431,7 +449,7 @@ jobs:
   # CHANGELOG.md, merge that, then tag the commit `v<version>` and push the tag. The image gets the same version from the same tag.
   pypi:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [lint, suite, pytest, browsers, windows, macos, container]
+    needs: [lint, suite, pytest, browser-tests, browsers, windows, macos, container]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Named on pypi.org's trusted publisher, so only this job, in this environment, can upload.
