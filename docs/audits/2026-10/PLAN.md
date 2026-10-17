@@ -91,7 +91,7 @@ How to work through it:
 - [x] 41c. Metrics for the operator, behind a token (f5e9ff3)
 - [x] 42. Tests and checks the code is missing (1a1109a)
 - [x] 43. Finish the security pass this audit could not (0986ae4)
-- [ ] T1. Tests for who may see what: download after rotation, one skill name in two teams, two projects, offers and harnesses of another computer (trust boundary)
+- [x] T1. Tests for who may see what: download after rotation, one skill name in two teams, two projects, offers and harnesses of another computer (trust boundary)
 - [ ] T2. Tests for the archive walk: a refused record behind a member, pax headers with several records, byte-identical builds (trust boundary)
 - [ ] T3. Every size and depth limit tested at exactly the limit (trust boundary)
 - [ ] T4. Local installs: modes, a missing skill, the rename race and its `Busy`
@@ -1042,6 +1042,8 @@ Tests, each through the route or tool a caller uses, not the helper:
 - Sync offers no team update for a removed skill nor for one not enabled on this computer, and `_removed` lists only names asked about (`_team_updates`, `_removed`).
 
 Files: tests/services/test_teams.py, test_project_visibility.py, test_sync_service.py; tests/mcp/test_install_over_http.py (download), test_teams_over_http.py.
+
+Outcome: eight tests, each watched failing under its mutant; mutmut on visibility.py, sync_service.py and transfer.py now catches 18 survivors of groups 1 to 8. The private-group bullet follows `shows_membership` as written: seeing every group's skills is not seeing who is in a private one. Equivalent, no test: `_removed` without its name filter (only asked-about names are read back), `record_sync` without its first lookup (the IntegrityError path recovers), and `_team_updates` without `archived` (both decision readers already read a removed skill as disabled; the test catches both guards dropped together).
 
 ### T2. Tests for the archive walk (trust boundary)
 
