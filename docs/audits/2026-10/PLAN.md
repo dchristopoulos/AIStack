@@ -104,6 +104,9 @@ Session notes:
 - 2026-10-17: 6a done (172a4ad): docs/testing/strategy.md, nine rules from Google SWE book ch. 11, Fowler, Hypothesis, mutmut, Jepsen, SQLite and PostgreSQL docs; mutation testing on trust boundaries instead of a coverage goal.
 - Next: 6b, measure (coverage per module, `--durations=30`, mutmut on the trust-boundary modules; mutmut needs fork, so macOS, and check it runs on Python 3.14).
 - Found for 6c: local installs write without fsync before the rename (power-loss question), and the real-GitHub contract test runs on no schedule.
+- 2026-10-17: 6b done (b3e9a05): docs/testing/measurements.md. Coverage 90%; 341 logic mutants survive on the trust boundaries (list in docs/testing/survivors-2026-10.txt), reconciliation table swept by hand, 90/90 caught. mutmut on macOS needs `no_proxy='*'` or forked tests crash in `_scproxy`.
+- Next: 6c, turn measurements.md's 21 missing-test groups into plan steps, trust boundaries first (download URL after token rotation, `team_skill` across two teams, `my_project`, archive layout walk, project-event replay).
+- Watch: the next Dependabot bump (starlette 1.8 / pydantic 2.14 / uvicorn 0.54 / idna 3.20) fails two `test_server_url.py` cases.
 
 ## Unblock newcomers and the supply chain
 
