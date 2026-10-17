@@ -872,18 +872,18 @@ dialog.dlg.sheet[open] { animation: slide .2s var(--ease); }
 </style>
 </head>
 <body>
-<a class="skip-link" href="#main" id="skip-link">Skip to content</a>
+<a class="skip-link" href="#main" id="skip-link"></a>
 <div id="app">
   <header class="topbar">
-    <button type="button" class="btn ghost icon drawer-btn" id="drawer-btn" aria-label="Open navigation" title="Navigation" aria-expanded="false" aria-controls="nav-shell">
+    <button type="button" class="btn ghost icon drawer-btn" id="drawer-btn" aria-expanded="false" aria-controls="nav-shell">
       <svg class="ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
     </button>
-    <a class="home" href="#/library" aria-label="AIStack, your Library"><span class="logo"><svg class="ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></span><span class="home-text">AIStack</span></a>
-    <nav class="where" id="where" aria-label="You are here"><div class="skel" style="height:20px;width:220px"></div></nav>
+    <a class="home" href="#/library" id="home"><span class="logo"><svg class="ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></span><span class="home-text">AIStack</span></a>
+    <nav class="where" id="where"><div class="skel" style="height:20px;width:220px"></div></nav>
     <div class="top-right" id="top-right"></div>
   </header>
-  <aside class="nav-shell" id="nav-shell" aria-label="Navigation">
-    <nav class="rail" id="rail" aria-label="Spaces"></nav>
+  <aside class="nav-shell" id="nav-shell">
+    <nav class="rail" id="rail"></nav>
     <div class="sidebar" id="sidebar">
       <div class="skel" style="height:28px;margin-bottom:6px"></div>
       <div class="skel" style="height:28px;margin-bottom:6px"></div>
@@ -893,7 +893,7 @@ dialog.dlg.sheet[open] { animation: slide .2s var(--ease); }
   </aside>
   <div class="scrim" id="scrim"></div>
   <main id="main" tabindex="-1">
-    <div class="page" aria-busy="true" aria-label="Loading">
+    <div class="page" id="loading" aria-busy="true">
       <div class="band"><div class="wrap">
         <div class="skel" style="height:32px;width:180px;margin-bottom:12px"></div>
         <div class="skel" style="height:16px;width:min(340px,80%)"></div>
@@ -915,7 +915,7 @@ dialog.dlg.sheet[open] { animation: slide .2s var(--ease); }
 'use strict';
 
 const NAME_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
-const NAME_RULE = 'Use lowercase letters and digits, joined by single ".", "-" or "_" (for example "backend" or "data-eng").';
+// What a person says to their coding agent to sync. The sync skill answers to it as it is.
 const SYNC = 'sync aistack';
 const enc = encodeURIComponent;
 
@@ -929,6 +929,705 @@ const $main = document.getElementById('main');
 const $sidebar = document.getElementById('sidebar');
 const $toasts = document.getElementById('toasts');
 const $drawerBtn = document.getElementById('drawer-btn');
+
+/* ================= words ================= */
+
+// Every word the page shows is in WORDS, so a translation is a change to that table alone.
+// A phrase names its slots in braces; a phrase about a count is { one, other, ... }, and the
+// form is picked by `n` through the language's own plural rules. The demo's sentences stand in
+// for the server's, which answers in its own words, so they are not here.
+const LANG = 'en';
+const pluralRules = new Intl.PluralRules(LANG);
+function parts(phrase, vars = {}) {
+  if (phrase == null) throw new Error('A phrase is missing from WORDS.');
+  const form = typeof phrase === 'string' ? phrase : phrase[pluralRules.select(vars.n)] ?? phrase.other;
+  return form.split(/\{(\w+)\}/).map((part, i) => (i % 2 ? vars[part] : part));
+}
+// A phrase as text, for an attribute or a toast.
+const say = (phrase, vars) => parts(phrase, vars).map(String).join('');
+// A phrase with page elements in its slots, for el() to append.
+const sayWith = parts;
+
+const WORDS = {
+  shell: {
+    skip: 'Skip to content',
+    openNav: 'Open navigation',
+    closeNav: 'Close navigation',
+    navigation: 'Navigation',
+    home: 'AIStack, your Library',
+    where: 'You are here',
+    spaces: 'Spaces',
+    loading: 'Loading',
+  },
+  titles: {
+    page: '{place}, AIStack',
+    team: '{place}, {team}',
+    folder: '{agent} on {computer}',
+    projectFolder: '{agent} in {project} on {computer}',
+  },
+  count: {
+    skill: { one: '{n} skill', other: '{n} skills' },
+    file: { one: '{n} file', other: '{n} files' },
+    member: { one: '{n} member', other: '{n} members' },
+    group: { one: '{n} group', other: '{n} groups' },
+    computer: { one: '{n} computer', other: '{n} computers' },
+    person: { one: '{n} person', other: '{n} people' },
+  },
+  comma: ', ',
+  andMore: ' and {n} more',
+  justNow: 'just now',
+  nameRule: 'Use lowercase letters and digits, joined by single ".", "-" or "_" (for example "backend" or "data-eng").',
+  names: {
+    team: {
+      invalid: '"{value}" is not a valid team name. {rule}',
+      tooLong: 'A team name can be at most 64 characters; this one is {length}.',
+    },
+    group: {
+      invalid: '"{value}" is not a valid group name. {rule}',
+      tooLong: 'A group name can be at most 64 characters; this one is {length}.',
+    },
+  },
+  setup: 'Set up AIStack: run `uvx aistack-mcp setup` and follow what it prints.',
+
+  save: 'Save',
+  cancel: 'Cancel',
+  close: 'Close',
+  done: 'Done',
+  add: 'Add',
+  remove: 'Remove',
+  rename: 'Rename',
+  copy: 'Copy',
+  dismiss: 'Dismiss',
+  manage: 'Manage',
+  manageName: 'Manage {name}',
+  open: 'Open {name}',
+  name: 'Name',
+  none: 'None',
+  actions: 'Actions',
+  private: 'Private',
+  privateAfter: '(private)',
+  signOut: 'Sign out',
+  demoData: 'Demo data',
+  copied: 'Copied. Paste it into your coding agent.',
+  whatToSay: 'What to say',
+  seeWhereItCanMove: 'See where it can move',
+  whereItLives: 'Where it lives',
+  teamSettings: 'Team settings',
+  teamLevel: 'Team level',
+  teamLevelNoGroup: 'Team level (no group)',
+  teamGroup: '{team} / {group}',
+  targetName: '{computer} / {agent}',
+  agentInProject: '{agent} in {project}',
+  skillsIn: 'Skills in {place}',
+  onlyInLibrary: 'Only in your library',
+  inYourLibrary: 'In your library',
+  nameAndUsername: '{name} ({username})',
+  renamed: 'Renamed {from} to {to}.',
+  rev: 'r{revision}',
+  revisionTitle: 'Revision {revision}',
+  revisionFiles: 'Revision {revision}, {files}',
+  revisionHere: 'r{revision} here',
+  revisionArrives: 'r{revision} in your library arrives at the next sync',
+  lastSyncedWhen: 'Last synced {when}',
+  notSyncedYet: 'Not synced yet: say "{sync}" there',
+  arrivesLater: 'It reaches your other computers once GitHub can be reached again.',
+  updatesWaiting: { one: '{n} update waiting', other: '{n} updates waiting' },
+  updatesWaitingAfter: { one: ', {n} update waiting', other: ', {n} updates waiting' },
+  unreachable: 'Could not reach the AIStack server. Check your connection and try again.',
+  serverStatus: 'The server answered with status {status}. Try again.',
+  loadFailed: 'The dashboard could not load',
+  tryAgain: 'Try again',
+
+  tabs: { skills: 'Skills', members: 'Members', groups: 'Groups', settings: 'Settings' },
+  role: { ADMIN: 'Admin', MEMBER: 'Member' },
+  col: {
+    skill: 'Skill',
+    linkedTeam: 'Linked team',
+    whereItIs: 'Where it is',
+    revision: 'Revision',
+    pushedBy: 'Pushed by',
+  },
+  where: { teams: 'teams', computers: 'computers' },
+  placeShort: { this_computer: 'This computer', github: 'GitHub', postgresql: 'PostgreSQL', server: 'Server' },
+  pill: {
+    label: 'Library: {place}, {state}',
+    text: 'Library: {place}',
+    after: ', {state}',
+    connected: 'connected',
+    notReached: 'not reached',
+  },
+  nav: {
+    personal: 'Personal',
+    yourLibrary: 'Your Library',
+    livesOn: {
+      this_computer: 'Lives on this computer',
+      github: 'Lives on GitHub',
+      postgresql: 'Lives on PostgreSQL',
+      server: 'Lives on Server',
+    },
+    onlyYou: 'Only you see this',
+    main: 'Main',
+    computers: 'Computers',
+    allSkills: 'All skills',
+    team: 'Team',
+    youAdmin: '{members}, you are an admin',
+    youMember: '{members}, you are a member',
+    updateWaiting: 'An update is waiting',
+  },
+  tree: {
+    notSynced: 'Not synced yet: say "{sync}" there.',
+    global: 'Global',
+    globalLabel: '{computer} / {agent}, global folder, {skills}',
+    projectLabel: '{computer} / {agent}, project {project}, {skills}',
+    addAgent: 'Add an agent',
+    addProject: 'Add a project',
+    toComputer: ' to {computer}',
+  },
+  agentsFolder: {
+    name: 'Agents folder',
+    readers: 'Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode, and Amp',
+  },
+  addAgent: {
+    title: 'Add an agent to {computer}',
+    submit: 'Open its folder',
+    lead: 'Pick the coding agent. Its folder opens empty; add skills there and they arrive the next time you say {sync} on that computer.',
+    legend: 'Coding agent',
+    readBy: '{folder}, read by {readers}',
+  },
+  addComputer: {
+    title: 'Add a computer',
+    whatToPaste: 'What to paste on the new computer',
+    server: {
+      lead: 'Say this on a computer that is already connected, then run the command it answers with on the new one.',
+      say: 'add my Windows PC to aistack',
+      help: 'The command holds that computer\'s key: paste it only there.',
+    },
+    thisComputer: {
+      lead: 'Your Library lives only on this computer, so another computer cannot reach it.',
+      move: 'Move it to a private GitHub repository first: every computer of yours then shares it through your own GitHub sign-in, and nothing has to stay switched on.',
+    },
+    github: {
+      lead: 'On the new computer, paste this into the coding agent. Setup asks you to sign in to GitHub once; choose the same repository.',
+      paste: '{setup} My Library is in the private GitHub repository {repository}.',
+      help: 'Then say {sync} there. It shows up here at its first sync.',
+    },
+    postgresql: {
+      lead: 'On the new computer, paste this into the coding agent, and choose the same {provider} database when setup asks.',
+      paste: '{setup} My Library is in my {provider} database at {host}.',
+      help: 'Setup asks for the database address with its password. It is the one you pasted on this computer; it is not shown here.',
+    },
+  },
+  library: {
+    title: 'Library',
+    subtitle: 'Every skill you keep. Open one to choose the computers and agents that have it.',
+    search: 'Search your library',
+    searchPlaceholder: 'Search your library…',
+    slashToSearch: 'Press / to search',
+    sortBy: 'Sort by {column}',
+    emptyTitle: 'Your library is empty',
+    empty: 'Skills appear here when your coding agent runs {sync} on one of your computers. It backs up the skills it finds there, and you can then add them to your other computers.',
+    emptyWithTeams: 'Skills appear here when your coding agent runs {sync} on one of your computers. It backs up the skills it finds there, and you can then add them to your other computers or share them with a team.',
+    takeFromTeam: 'You can also take one from a team: open a team and choose "Add to library".',
+    takeOnceInTeam: 'You can also take one from a team once you are in one: choose "Add a team" to create one or join with an invite code.',
+    noMatch: 'No skill matches',
+    nothingMatches: 'Nothing in your library matches "{search}".',
+    clearSearch: 'Clear search',
+    someOf: '{shown} of {skills}',
+    notOnAny: 'Not on any computer',
+    updates: 'Updates',
+  },
+  removed: {
+    summary: 'Removed from your library ({n})',
+    localHelp: 'To bring one back, ask your coding agent to install it by name.',
+    bringBack: 'Bring back',
+    bringBackLabel: 'Bring back {skill}',
+    back: '{skill} is back in your library, on no computer yet.',
+  },
+  onlyHere: {
+    label: 'Your Library lives only on this computer',
+    strong: 'Your Library lives only on this computer.',
+    text: '{only} If it is lost, so are these skills. Move it to a private GitHub repository: about two minutes.',
+  },
+  row: {
+    addTo: 'Add to computer',
+    addToLabel: 'Add to computer: {skill}',
+    details: 'Details',
+    detailsLabel: 'Details of {skill}',
+  },
+  update: {
+    available: 'Update available',
+    fromTo: '{team} r{from} → r{to}',
+    revisions: 'r{from} → r{to}',
+    pushedBy: 'pushed by {who}',
+    commaPushedBy: ', pushed by {who}',
+    differentSkill: ', a different skill of the same name',
+    overYours: ', over your changes in r{revision}',
+    replacesYours: '. Taking it replaces your changes in r{revision}.',
+    review: 'Review changes',
+    reviewLabel: 'Review changes to {skill}',
+    take: 'Take update',
+    takeLabel: 'Take update to {skill}',
+  },
+  placement: {
+    legend: 'Computers and coding agents',
+    computerBefore: '{computer} / ',
+    saved: 'Saved where {skill} is. ',
+    eachPicksUp: 'Each computer picks up the change at its next {sync}.',
+    addTitle: 'Add {skill} to computers',
+  },
+  sheet: {
+    about: 'About',
+    revision: 'r{revision}, {files}',
+    lastPushedBy: 'Last pushed by',
+    lastChanged: 'Last changed',
+    noComputer: 'No computer is connected yet.',
+    more: 'More',
+    share: 'Share with a team…',
+    history: 'History…',
+    remove: 'Remove from library…',
+  },
+  changes: {
+    title: 'Changes to {skill}',
+    loading: 'Loading the changes…',
+    against: '{team} r{to}, pushed by {who}, against your r{from}.',
+    file: '{path}, {change}',
+    kinds: { added: 'added', removed: 'removed', changed: 'changed' },
+    same: 'Its files are the same as yours.',
+    truncated: 'The rest is too long to show here.',
+  },
+  history: {
+    title: 'History of {skill}',
+    loading: 'Loading the history…',
+    lead: 'Restoring a revision makes it the newest. Each computer that has {skill} installs it at its next sync.',
+    row: '{revision} pushed by {who}, {when}, {files}',
+    restore: 'Restore',
+    restoreLabel: 'Restore r{revision}',
+    unchanged: 'r{revision} is the same as the newest; nothing changed.',
+    restored: 'Restored r{revision} of {skill} as r{as}. Each computer installs it at its next {sync}.',
+    newest: 'Newest',
+  },
+  folder: {
+    where: '{agent} on {computer}',
+    heading: '{agent} on {computer}',
+    projectHeading: '{agent} in {project} on {computer}',
+    projectFolder: 'Project folder',
+    globalFolder: 'Global folder',
+    lastSeen: 'Where this repository was last seen on {computer}',
+    notSyncedHere: 'Not synced here yet',
+    readBy: 'Read by {readers}',
+    unpick: 'Remove from this list',
+    stopManaging: 'Stop managing {project}…',
+    computerSettings: 'Computer settings',
+    copyFrom: 'Copy from…',
+    addSkills: 'Add skills',
+    notSyncedOn: 'Not synced on {computer} yet',
+    firstSync: 'Skills added here arrive the first time {computer} syncs inside {project}: open your coding agent in the repository there and say {sync}.',
+    twice: { one: '{skills} is also in the global folder. ', other: '{skills} are also in the global folder. ' },
+    claudeUsesGlobal: 'Claude Code uses the global copy.',
+    agentsListBoth: 'The agents reading this folder list both copies.',
+    removeLabel: 'Remove {skill} from {place}',
+    removed: 'Removed {skill} from {place}. Its next sync asks whether to delete the folder; it stays in your library.',
+    emptyTitle: 'Nothing in {place} yet',
+    empty: 'Add skills from your library, or copy what another agent has.',
+    everyCopy: 'Every copy of this repository on {computer} shares these skills, and git never sees them.',
+  },
+  stopManaging: {
+    title: 'Stop managing {project} on {computer}?',
+    submit: 'Stop managing',
+    stops: 'AIStack stops syncing {agent} on {computer}, and forgets which skills belong there.',
+    stay: 'The skills stay in your library, on your other computers, and in the folder on disk, still hidden from git.',
+    done: 'Stopped managing {project} on {computer}.',
+  },
+  addProject: {
+    title: 'Add a project to {computer}',
+    fromOthers: 'From your other computers',
+    legend: 'A project your other computers have',
+    forAgent: '{project} for {agent}',
+    noneElsewhere: 'None of your computers manages a project this one does not.',
+    unseen: 'A repository AIStack has not seen',
+    unseenLead: 'On {computer}, open your coding agent inside the repository and say this. It adds the project and syncs it.',
+    say: 'add this project to aistack',
+    whatToSay: 'What to say inside the repository',
+    done: 'Added {project} to {agent} on {computer}. Add its skills here; they arrive at its first sync there.',
+  },
+  computer: {
+    sinceRemoved: 'A computer since removed',
+    setUpHere: 'Set up here first',
+    added: 'Added',
+    addedFrom: 'Added from',
+    agentSynced: '{agent} last synced',
+    never: 'Never',
+    only: 'This is your only computer, so it cannot be removed.',
+    remove: 'Remove this computer…',
+  },
+  removeComputer: {
+    title: 'Remove {computer}?',
+    lines: [
+      'Its connection to AIStack stops at once, and any dashboard it opened is signed out.',
+      'Your library and your other computers keep every skill. Nothing on it is deleted.',
+      'To use it again, add it from another computer.',
+    ],
+    done: 'Removed {computer}.',
+  },
+  addSkills: {
+    title: 'Add to {place}',
+    elsewhere: 'in use elsewhere',
+    onlyInLibrary: 'only in your library',
+    empty: 'Your library is empty. Say "{sync}" on a computer to back up its skills.',
+    emptyWithTeams: 'Your library is empty. Say "{sync}" on a computer to back up its skills, or add one from a team.',
+    allHere: 'Every skill in your library is here already.',
+    added: 'Added {skills} to {place}. ',
+    arrive: 'They arrive at its next {sync}.',
+  },
+  copyFrom: {
+    title: 'Copy skills to {place}',
+    lead: 'Adds every skill the other one has and this one does not. Nothing is removed here.',
+    legend: 'Copy from',
+    added: 'Added {skills} from {from}. ',
+    arrive: 'They arrive at the next {sync} on {computer}.',
+    nothing: 'Nothing to copy: {place} already has every skill {from} has.',
+  },
+  take: {
+    applies: 'Applies on {computers} at the next sync.',
+    addToComputer: 'Add it to a computer to use it there.',
+    added: 'Added {skill} to your library. {applies}',
+    took: 'Took the update to {skill}. {applies}',
+    replaced: 'Replaced your {skill} with {team}\'s. {applies}',
+    updateTitle: 'Take the update to {skill}?',
+    replaceTitle: 'Replace your {skill}?',
+    replaceYours: 'Replace yours',
+    changedSince: 'You changed {skill} since you took r{took} from {team}. Taking {who}\'s r{latest} replaces your r{yours}.',
+    ownAlready: 'You already have your own {skill}, r{revision}, last pushed by {who}. It was not taken from {team}, so it may be a different skill with the same name.',
+    replacedOn: 'It is replaced on {computers} at the next sync.',
+    inHistory: 'Yours stays in your history.',
+  },
+  share: {
+    title: 'Share {skill}',
+    submit: 'Share',
+    anyway: 'Share anyway',
+    lead: 'The team gets its own copy of this skill. Everyone who can see it there sees that you pushed it. Your copy in your library stays yours.',
+    team: 'Team',
+    groupLegend: 'Group (optional)',
+    different: '{team} already has a different {skill}, last pushed by {who}. Sharing puts yours on top for everyone who took it.',
+    neverTook: '{team} has r{revision} of {skill} from {who}, which you never took. Sharing yours replaces it, and its changes are no longer in the team\'s latest.',
+    checkIt: 'Shared, but check it: {team} already had a different skill named {skill}, last pushed by {who}. Yours is now revision {revision} there.',
+    unchanged: '{place} already had exactly this version of {skill}. Nothing changed.',
+    overwrote: 'Shared {skill} with {place} as revision {revision}, in place of revision {old} from {who}, which you never took.',
+    stillUpdates: 'Shared {skill} with {place} as revision {revision}. Your copy still takes updates from {from}.',
+    done: 'Shared {skill} with {place} as revision {revision}.',
+  },
+  removeMine: {
+    title: 'Remove {skill} from your library?',
+    asks: {
+      one: '{computers} asks at the next sync whether to delete its folder. Nothing is deleted from a computer until you answer there.',
+      other: '{computers} ask at the next sync whether to delete its folder. Nothing is deleted from a computer until you answer there.',
+    },
+    noComputer: 'No computer has it, so nothing on a computer changes.',
+    teamCopy: 'The copy in {place} is not affected.',
+    bringBack: 'To bring it back, say "install {skill}" where its folder still is, or push it again.',
+    done: 'Removed {skill} from your library. Each computer asks about its folder at its next sync.',
+  },
+  teamSubtitle: '{members}, {skills}, {groups}',
+  subscribe: {
+    on: 'Subscribed',
+    label: 'Subscribed to {group}',
+    offThrough: 'Off through {group}',
+    viaTip: 'Unsubscribed through {group}. Subscribe to {group} to be offered updates here again.',
+    onTip: 'You are offered updates from this group and the groups under it.',
+    offTip: 'You are not offered updates from this group or the groups under it. Nothing is hidden.',
+    subscribed: 'Subscribed to {group}. You will be offered its updates again.',
+    unsubscribed: 'Unsubscribed from {group} and the groups under it. You will not be offered their updates; nothing is hidden.',
+  },
+  skillsTab: {
+    group: 'The group {group}.',
+    groupAndUnder: 'The group {group} and the groups under it.',
+    allOf: 'All of {team}',
+    emptyTitle: 'No skills in this team yet',
+    empty: 'Share one of your skills to get it started: open your library and choose "Share with a team…". The team gets its own copy.',
+    openLibrary: 'Open your library',
+    withoutGroup: 'Skills shared without a group',
+    noTopLevel: 'No skills at team level. Skills shared without a group appear here.',
+    emptyGroup: 'No skills in this group yet.',
+  },
+  teamRow: {
+    replace: 'Replace yours…',
+    replaceLabel: 'Replace yours with the team\'s {skill}…',
+    youHave: 'You have your own {skill}',
+    add: 'Add to library',
+    addLabel: 'Add to library: {skill}',
+    move: 'Move to group…',
+    removeFromTeam: 'Remove from team',
+  },
+  move: {
+    title: 'Move {skill}',
+    submit: 'Move',
+    legend: 'Move to',
+    lead: 'Moving a skill changes who in the team can see it: a private group shows it only to the people in that group.',
+    teamLevelIn: 'team level in {team}',
+    done: 'Moved {skill} to {place}.',
+  },
+  removeTeamSkill: {
+    title: 'Remove {skill} from {team}?',
+    lines: [
+      'The team no longer has this skill, and nobody is offered it or its updates from here. Its history in the team is deleted and cannot be restored.',
+      'People who already added it to their library keep their copy.',
+    ],
+    done: 'Removed {skill} from {team}. People who took it keep their copy.',
+  },
+  members: {
+    member: 'Member',
+    pushed: 'Pushed',
+    pushedTip: 'Skills in this team whose latest revision this person pushed',
+    access: 'Access',
+    role: 'Role',
+    roleOf: 'Role of {username}',
+    nowRole: { ADMIN: '{username} is now an admin of {team}.', MEMBER: '{username} is now a member of {team}.' },
+    seesAll: 'Sees all groups',
+    seesAllLabel: '{username} sees all groups',
+    seesAllTip: 'Sees every group in this team, including private ones they were not added to.',
+    nowSeesAll: '{username} now sees every group in {team}.',
+    nowSeesOwn: '{username} now sees only open groups and the ones they are in.',
+    ownGroups: 'Own groups',
+    canInvite: 'Can invite',
+    canInviteLabel: '{username} can invite',
+    canInviteTip: 'May create invite links for this team, and nothing else an admin can.',
+    nowInvites: '{username} can now invite people to {team}.',
+    noLongerInvites: '{username} can no longer invite people to {team}.',
+    you: 'You',
+    groupsOf: 'Groups of {username}',
+    noGroups: 'In no groups',
+    nothingYet: 'Nothing yet',
+    remove: 'Remove…',
+    removeLabel: 'Remove {username} from {team}…',
+    removeTitle: 'Remove {username} from {team}?',
+    removeSubmit: 'Remove member',
+    stopsSeeing: '{username} stops seeing this team\'s skills and groups.',
+    keepTheirs: 'Skills they already added to their library stay theirs.',
+    removed: 'Removed {username} from {team}.',
+  },
+  groups: {
+    lead: 'Groups organise a team\'s skills, like channels. A private group is seen only by the people added to it.',
+    new: 'New group',
+    emptyTitle: 'No groups yet',
+    emptyAdmin: 'Create a group to organise skills by topic or project. Groups can be nested, for example {example}.',
+    empty: 'An admin of this team can create groups to organise its skills.',
+    group: 'Group',
+    people: 'People',
+    subscription: 'Subscription',
+    visibility: 'Visibility',
+    seenByAdded: 'Seen only by the people added to it',
+    openUnder: 'Open to everyone who sees {group}',
+    openToTeam: 'Open to everyone in {team}',
+    youAreIn: 'You are in it',
+    isPrivate: '{group} is private',
+    privateTip: 'Only people added to this group see it. Switch off to open it to the whole team.',
+    openTip: 'Everyone in the team sees this group. Switch on to limit it to the people added to it.',
+    nowPrivate: '{group} is now private: only people added to it see it.',
+    nowOpen: '{group} is now open to everyone in {team}.',
+    open: 'Open',
+    peopleButton: 'People…',
+    peopleLabel: 'People in {group}…',
+    renameItem: 'Rename…',
+    inside: 'Inside (optional)',
+    topLevel: 'Top level of {team}',
+    newTitle: 'New group in {team}',
+    create: 'Create group',
+    privateHelp: 'Only people you add to the group see it and its skills.',
+    created: 'Created the group {group} in {team}.',
+    renameTitle: 'Rename {group}',
+    newName: 'New name',
+    renameLead: 'The groups inside it follow, and its skills, people and subscriptions stay with it.',
+    deleteTitle: 'Delete {group}?',
+    deleteSubmit: 'Delete group',
+    deleteLines: [
+      'Only an empty group can be deleted. Move its skills elsewhere and delete the groups inside it first.',
+      'The people in it stay in the team.',
+    ],
+    deleted: 'Deleted the group {group} from {team}.',
+    filter: 'Filter members',
+    peopleTitle: 'People in {group}',
+    peoplePrivate: 'This group is private: only the people ticked here see it and its skills.',
+    peopleOpen: 'This group is open: the whole team sees it. People ticked here are its members.',
+    membersOf: 'Members of {team}',
+    peopleUpdated: 'Updated who is in {group}.',
+  },
+  // The answers to "Where should your Library live?", each with what it costs, and what to tell
+  // the coding agent to move there.
+  places: {
+    this_computer: {
+      title: 'Only this computer',
+      moveTo: 'Move to only this computer',
+      cost: 'Free and nothing to keep switched on. No other computer reaches it.',
+      say: 'move my AIStack Library to this computer only',
+      after: 'Your other computers can no longer reach it.',
+    },
+    github: {
+      title: 'A private GitHub repository',
+      moveTo: 'Move to a private GitHub repository',
+      cost: 'Every computer of yours shares it through your own GitHub sign-in, nothing has to stay on, and every change is in the repository\'s history.',
+      say: 'move my AIStack Library to a private GitHub repository',
+      after: 'Then, on each other computer, paste the setup and choose the same repository.',
+    },
+    postgresql: {
+      title: 'A free PostgreSQL database',
+      moveTo: 'Move to a free PostgreSQL database',
+      cost: 'Every computer of yours uses it, and nothing has to stay on. Each computer keeps its address; if a laptop is lost, reset the database password and paste the new address on the others.',
+      say: 'move my AIStack Library to a PostgreSQL database',
+      after: 'Then, on each other computer, paste the setup and give it the same database address.',
+    },
+    server: {
+      title: 'An AIStack server',
+      cost: 'Your computers reach it over the network, so it must stay on. The only choice that works for a team.',
+    },
+  },
+  storage: {
+    title: 'Where your Library lives',
+    subtitle: 'The one place every computer of yours reads your skills from.',
+    moveLead: 'Say this to your coding agent on this computer. It moves the Library with its history, connects this computer to the new place, and restarts once. The old place is left as it was.',
+    database: 'Database',
+    host: 'Host',
+    repository: 'Repository',
+    server: 'Server',
+    computer: 'Computer',
+    thisOne: 'The one showing this page',
+    computersUsing: 'Computers using it',
+    openOnGithub: 'Open on GitHub',
+    now: 'Where it lives now',
+    unreached: 'Could not reach GitHub: showing this computer\'s copy.',
+    unpublished: { one: ' {n} change made here goes out when it is back.', other: ' {n} changes made here go out when it is back.' },
+    connected: 'Connected: this page just read your Library from it.',
+    operatorBacksUp: 'The operator of this server backs it up.',
+    eachReaches: 'Each computer reaches it on its own.',
+    elsewhere: 'Move it somewhere else',
+    moveHere: 'Move here…',
+    wantTeam: 'Want a team? A team needs an AIStack server everyone reaches. To move onto one, connect this computer to it: its first sync backs up every skill here.',
+    private: 'Your Library on this server is private: only you see it. Teams and groups are where you share.',
+  },
+  fullName: {
+    label: 'Full name',
+    placeholder: 'Maria Papadopoulou',
+    save: 'Save name',
+    saved: 'Your teammates now see {name}.',
+    cleared: 'Your teammates now see only your username.',
+    help: 'Shown to your teammates beside your username, {username}. Leave it empty to show only the username.',
+  },
+  settings: {
+    title: 'Settings',
+    subtitle: 'How the dashboard looks, and who you are signed in as.',
+    appearance: 'Appearance',
+    theme: 'Theme',
+    themes: { system: 'Match the system', light: 'Light', dark: 'Dark' },
+    accent: 'Accent',
+    accents: { blue: 'Blue', teal: 'Teal', green: 'Green', amber: 'Amber', rose: 'Rose', graphite: 'Graphite' },
+    keptHere: 'Kept in this browser only. Each browser you open the dashboard in remembers its own.',
+    account: 'Account',
+    username: 'Username',
+    teams: 'Teams',
+    exportHint: 'Every skill in your library, a folder each.',
+    download: 'Download my library',
+  },
+  teamSettingsTab: {
+    about: 'About this team',
+    yourRole: 'Your role',
+    admins: { one: 'Admin', other: 'Admins' },
+    privateGroups: 'Private groups',
+    joining: 'Joining',
+    withCode: 'With an invite code',
+    adminSees: 'As an admin you see every group, private ones included.',
+    invite: 'Invite people',
+    inviteText: 'Each invite link lets one person into this team, and makes them an account on this server if they have none. It lasts seven days.',
+    inviteHint: 'Make one per person. Cancel any you no longer need.',
+    createInvite: 'Create invite link',
+  },
+  leave: {
+    title: 'Leave team',
+    text: 'You stop seeing this team\'s skills and groups. Skills you added to your library stay yours.',
+    onlyMember: 'You are its only member, so leaving deletes it.',
+    comeBack: 'To come back you need an invite code.',
+    confirmTitle: 'Leave {team}?',
+    andDelete: 'Leave and delete',
+    deletes: 'You are its only member, so leaving deletes {team} and its copies of its skills.',
+    stayYours: 'Skills you added to your library stay yours.',
+    lines: [
+      'You stop seeing this team\'s skills and groups, and are no longer offered its updates.',
+      'Skills you added to your library stay yours. To come back you need an invite code.',
+    ],
+    left: 'You left {team}.',
+    leftDeleted: 'You left {team}, and it was deleted.',
+  },
+  deleteTeam: {
+    title: 'Delete team',
+    text: 'Deletes the team for everyone in it: its copies of its skills, its groups and its invites.',
+    hint: 'Skills members added to their library stay theirs.',
+    confirmTitle: 'Delete {team}?',
+    loses: 'Everyone in {team} loses it, with its skills, groups and invites. This cannot be undone.',
+    stays: 'Every skill a member added to their library stays theirs, on their computers too.',
+    done: 'Deleted {team}.',
+  },
+  invites: {
+    status: { PENDING: 'Pending', ACCEPTED: 'Accepted', CANCELLED: 'Cancelled', EXPIRED: 'Expired' },
+    label: 'Invites',
+    statusCol: 'Status',
+    madeBy: 'Made by',
+    when: 'When',
+    made: 'made {when}',
+    usedBy: 'Used by {who}',
+    expires: 'Expires {when}',
+    notInTime: 'Nobody used it in time',
+    nobodyCan: 'Nobody can use it',
+    cancelLabel: 'Cancel invite {tag}, made by {who}',
+    cancelled: 'Cancelled. That link no longer lets anyone in.',
+    link: 'Invite link',
+    code: 'Invite code',
+    copied: 'Copied to the clipboard.',
+    title: 'Invite to {team}',
+    lead: 'Send this link to one person. It works once, within seven days, and is shown only now. In the list it is invite {tag}.',
+    codeHelp: 'Someone already on this server says "join a team with this code".',
+    loopback: 'Only this computer can open it. For others, whoever runs the server sets AISTACK_PUBLIC_URL.',
+  },
+  addTeam: {
+    title: 'Add a team',
+    continue: 'Continue',
+    create: 'Create a team',
+    createHelp: 'You become its admin and invite people with a code.',
+    join: 'Join with an invite code',
+    joinHelp: 'An admin of the team gives you one.',
+  },
+  newTeam: {
+    title: 'New team',
+    submit: 'Create team',
+    lead: 'You become the team\'s admin. Others join with an invite code you create in the team\'s settings.',
+    name: 'Team name',
+    done: 'Created the team {team}. You are its admin.',
+  },
+  join: {
+    title: 'Join a team',
+    submit: 'Join team',
+    help: 'Ask an admin of the team for its invite code.',
+    enterCode: 'Enter the invite code an admin of the team gave you.',
+    done: 'You joined {team}.',
+  },
+  ended: {
+    title: 'Session ended',
+    heading: 'Your session has ended.',
+    text: 'Ask your coding agent to "open my aistack dashboard" for a new link.',
+    restartDemo: 'Restart the demo',
+  },
+};
+
+const W = WORDS;
+const NAME_RULE = W.nameRule;
+
+// The page's frame is in the HTML; its words are put in before anything else is drawn.
+document.documentElement.lang = LANG;
+document.getElementById('skip-link').textContent = W.shell.skip;
+$drawerBtn.setAttribute('aria-label', W.shell.openNav);
+$drawerBtn.title = W.shell.navigation;
+document.getElementById('home').setAttribute('aria-label', W.shell.home);
+document.getElementById('where').setAttribute('aria-label', W.shell.where);
+document.getElementById('nav-shell').setAttribute('aria-label', W.shell.navigation);
+document.getElementById('rail').setAttribute('aria-label', W.shell.spaces);
+document.getElementById('loading').setAttribute('aria-label', W.shell.loading);
 
 /* ================= DOM helpers ================= */
 
@@ -995,18 +1694,18 @@ function btn(label, props = {}, ic) {
   return el('button', { type: 'button', class: 'btn', ...props }, ic && icon(ic), label && el('span', null, label));
 }
 const byFk = fk => document.querySelector(`[data-fk="${CSS.escape(fk)}"]`);
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const plural = (n, word) => say(W.count[word], { n });
 
-const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+const rtf = new Intl.RelativeTimeFormat(LANG, { numeric: 'auto' });
 function when(iso) {
   const d = new Date(iso);
   if (isNaN(d)) return null;
   const s = (d - Date.now()) / 1000;
-  let text = 'just now';
+  let text = W.justNow;
   for (const [unit, n] of [['year', 31536000], ['month', 2592000], ['day', 86400], ['hour', 3600], ['minute', 60]]) {
     if (Math.abs(s) >= n) { text = rtf.format(Math.round(s / n), unit); break; }
   }
-  return el('time', { datetime: iso, title: d.toLocaleString() }, text);
+  return el('time', { datetime: iso, title: d.toLocaleString(LANG) }, text);
 }
 
 // A switch that cannot be turned stays focusable (aria-disabled) and says why beside it, in words.
@@ -1032,7 +1731,7 @@ function toast(text, kind = 'ok') {
   const t = el('div', { class: 'toast ' + kind, role: kind === 'error' ? 'alert' : null },
     el('span', { class: 'dot' }),
     el('p', null, text),
-    btn(null, { class: 'btn ghost icon', 'aria-label': 'Dismiss', title: 'Dismiss', on: { click: () => {
+    btn(null, { class: 'btn ghost icon', 'aria-label': W.dismiss, title: W.dismiss, on: { click: () => {
       const next = t.nextElementSibling || t.previousElementSibling;
       t.remove();
       if (next) next.querySelector('button').focus(); else focusHeading();
@@ -1056,14 +1755,14 @@ async function api(path, body) {
   try {
     res = await fetch(path, init);
   } catch (_) {
-    const e = new Error('Could not reach the AIStack server. Check your connection and try again.');
+    const e = new Error(W.unreachable);
     e.network = true;
     throw e;
   }
   if (res.status === 401) throw new SessionEnded();
   let data = null;
   try { data = await res.json(); } catch (_) { /* not JSON: handled below */ }
-  if (!res.ok) throw new Error(data && typeof data.error === 'string' ? data.error : `The server answered with status ${res.status}. Try again.`);
+  if (!res.ok) throw new Error(data && typeof data.error === 'string' ? data.error : say(W.serverStatus, { status: res.status }));
   return data || {};
 }
 
@@ -1139,7 +1838,7 @@ function successorOf(fk, nextFk) {
 
 // Native <dialog>.showModal() gives the focus trap, Escape, and the inert background.
 // A dialog that asks to confirm opens on Cancel (focus: 'cancel'), so a held Enter cannot confirm it.
-function openDialog({ title, body, submitLabel = 'Save', danger, onSubmit, cancelLabel = 'Cancel', returnFk, sheet, focus, describe }) {
+function openDialog({ title, body, submitLabel = W.save, danger, onSubmit, cancelLabel = W.cancel, returnFk, sheet, focus, describe }) {
   const opener = document.activeElement;
   // Safari does not focus a button on click, so fall back to the last control clicked.
   const fk = returnFk || (opener && opener.dataset && opener.dataset.fk) || lastFk;
@@ -1151,7 +1850,7 @@ function openDialog({ title, body, submitLabel = 'Save', danger, onSubmit, cance
   const form = el('form', { method: 'dialog', novalidate: true },
     el('div', { class: 'dlg-head' },
       el('h2', { id }, title),
-      btn(null, { class: 'btn ghost icon', 'aria-label': 'Close', title: 'Close', on: { click: () => dlg.close() } }, 'x')),
+      btn(null, { class: 'btn ghost icon', 'aria-label': W.close, title: W.close, on: { click: () => dlg.close() } }, 'x')),
     el('div', { class: 'dlg-body', id: id + '-body' }, body, err),
     el('div', { class: 'dlg-foot' }, cancel, submit));
   const dlg = el('dialog', { class: 'dlg' + (sheet ? ' sheet' : ''), 'aria-labelledby': id, 'aria-describedby': describe ? id + '-body' : null }, form);
@@ -1198,9 +1897,10 @@ function field(label, input, help) {
     help && el('span', { class: 'help', id: input.id + '-help' }, help));
 }
 
+// `what` is a phrase set from W.names: the rule speaks of a team's name or a group's.
 function checkName(value, what) {
-  if (!NAME_RE.test(value)) throw new Error(`"${value}" is not a valid ${what} name. ${NAME_RULE}`);
-  if (value.length > 64) throw new Error(`A ${what} name can be at most 64 characters; this one is ${value.length}.`);
+  if (!NAME_RE.test(value)) throw new Error(say(what.invalid, { value, rule: NAME_RULE }));
+  if (value.length > 64) throw new Error(say(what.tooLong, { length: value.length }));
 }
 
 /* ================= menu ================= */
@@ -1211,7 +1911,7 @@ function menu(label, fk, items) {
       on: { click: () => { close(); trigger.focus(); it.run(); } } }, it.icon)));
   // Labelled, never a bare "⋯": a person should know what is behind it before opening it.
   const trigger = el('button', { type: 'button', class: 'btn sm', fk, 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-label': label,
-    on: { click: () => (list.hidden ? open() : close()) } }, el('span', null, 'Manage'), icon('down', 14));
+    on: { click: () => (list.hidden ? open() : close()) } }, el('span', null, W.manage), icon('down', 14));
   const wrap = el('div', { class: 'menu-wrap' }, trigger, list);
   const outside = ev => { if (!wrap.contains(ev.target)) close(); };
   function open() {
@@ -1245,7 +1945,7 @@ const teamBy = name => state.teams.find(t => t.name === name);
 const members = team => team.members || [];
 const byPath = (a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 const isUnder = (path, ancestor) => path.startsWith(ancestor + '/');
-const teamLabel = (team, group) => (group ? `${team} / ${group}` : team);
+const teamLabel = (team, group) => (group ? say(W.teamGroup, { team, group }) : team);
 
 // A skill can be shared into a group the user is in, or any group below one.
 function mayShareInto(team, path) {
@@ -1312,15 +2012,15 @@ function go(hash) {
 
 /* ================= render ================= */
 
-const TAB_LABELS = { skills: 'Skills', members: 'Members', groups: 'Groups', settings: 'Settings' };
+const TAB_LABELS = W.tabs;
 let sort = { key: 'name', dir: 1 }; // the Library table, sorted in the browser
 
 const td = (cls, ...kids) => el('div', { class: 'td' + (cls ? ' ' + cls : ''), role: 'cell' }, kids);
 const th = label => el('div', { class: 'th', role: 'columnheader' }, label);
-const thActions = () => th(el('span', { class: 'sr-only' }, 'Actions'));
+const thActions = () => th(el('span', { class: 'sr-only' }, W.actions));
 const logo = (size = 14) => el('span', { class: 'logo' }, icon('layers', size));
-const people = n => plural(n, 'person').replace('persons', 'people');
-const some = (names, max = 3) => names.slice(0, max).join(', ') + (names.length > max ? ` and ${names.length - max} more` : '');
+const people = n => plural(n, 'person');
+const some = (names, max = 3) => names.slice(0, max).join(W.comma) + (names.length > max ? say(W.andMore, { n: names.length - max }) : '');
 
 const VIEWS = {
   team: r => teamView(r.team, r.tab, r.group),
@@ -1330,11 +2030,12 @@ const VIEWS = {
   library: () => libraryView(),
 };
 const TITLES = {
-  team: r => `${r.group || (r.tab === 'settings' ? 'Team settings' : TAB_LABELS[r.tab])}, ${r.team.name}`,
-  folder: r => (r.project ? `${AGENTS[r.agent].name} in ${r.project.name} on ${r.machine.name}` : `${AGENTS[r.agent].name} on ${r.machine.name}`),
-  storage: () => 'Where your Library lives',
-  settings: () => 'Settings',
-  library: () => 'Library',
+  team: r => say(W.titles.team, { place: r.group || (r.tab === 'settings' ? W.teamSettings : TAB_LABELS[r.tab]), team: r.team.name }),
+  folder: r => (r.project ? say(W.titles.projectFolder, { agent: AGENTS[r.agent].name, project: r.project.name, computer: r.machine.name })
+    : say(W.titles.folder, { agent: AGENTS[r.agent].name, computer: r.machine.name })),
+  storage: () => W.storage.title,
+  settings: () => W.settings.title,
+  library: () => W.library.title,
 };
 
 function render() {
@@ -1344,7 +2045,7 @@ function render() {
   const r = route();
   renderSidebar(r);
   $main.replaceChildren(el('div', { class: 'page' }, VIEWS[r.view](r)));
-  document.title = TITLES[r.view](r) + ', AIStack';
+  document.title = say(W.titles.page, { place: TITLES[r.view](r) });
   if (fk && !document.querySelector('dialog[open]')) { const t = byFk(fk); if (t) t.focus(); }
 }
 
@@ -1352,7 +2053,7 @@ function render() {
 function wherePath(r) {
   const me = { label: state.user.username, href: '#/library' };
   if (r.view === 'team') {
-    const t = r.team, parts = [{ label: 'teams' }, { label: t.name, href: teamHash(t.name), mono: true }];
+    const t = r.team, parts = [{ label: W.where.teams }, { label: t.name, href: teamHash(t.name), mono: true }];
     if (!r.group) return parts.concat({ label: TAB_LABELS[r.tab] });
     // Each group above this one is a place of its own, when the user can see it.
     let path = '';
@@ -1363,15 +2064,15 @@ function wherePath(r) {
     return parts;
   }
   if (r.view === 'folder') {
-    const head = [me, { label: 'computers' }, { label: r.machine.name }, { label: AGENTS[r.agent].name }];
+    const head = [me, { label: W.where.computers }, { label: r.machine.name }, { label: AGENTS[r.agent].name }];
     return r.project ? head.concat({ label: r.project.name, mono: true }, { label: AGENTS[r.agent].inProject, mono: true })
       : head.concat({ label: AGENTS[r.agent].folder, mono: true });
   }
-  return [me, { label: { library: 'Library', storage: 'Where it lives', settings: 'Settings' }[r.view] }];
+  return [me, { label: { library: W.library.title, storage: W.whereItLives, settings: W.settings.title }[r.view] }];
 }
 
 // Where the Library lives, in a few words for the top bar.
-const PLACE_SHORT = { this_computer: 'This computer', github: 'GitHub', postgresql: 'PostgreSQL', server: 'Server' };
+const PLACE_SHORT = W.placeShort;
 const library = () => state.library || { kind: 'server' };
 
 function renderSidebar(r) {
@@ -1386,12 +2087,12 @@ function renderSidebar(r) {
   })));
   const lib = library();
   // On a server the pill could only ever say Server, so it is shown where it says something.
-  const pill = lib.kind !== 'server' && el('a', { class: 'place-pill', href: '#/storage', title: 'Where your Library lives',
-    'aria-label': `Library: ${PLACE_SHORT[lib.kind]}, ${lib.problem ? 'not reached' : 'connected'}` },
-    el('span', { class: 'dot ' + (lib.problem ? 'amber' : 'ok'), 'aria-hidden': 'true' }), el('span', { class: 'label' }, 'Library: ' + PLACE_SHORT[lib.kind],
-      el('span', { class: 'sr-only' }, lib.problem ? ', not reached' : ', connected')));
+  const pill = lib.kind !== 'server' && el('a', { class: 'place-pill', href: '#/storage', title: W.storage.title,
+    'aria-label': say(W.pill.label, { place: PLACE_SHORT[lib.kind], state: lib.problem ? W.pill.notReached : W.pill.connected }) },
+    el('span', { class: 'dot ' + (lib.problem ? 'amber' : 'ok'), 'aria-hidden': 'true' }), el('span', { class: 'label' }, say(W.pill.text, { place: PLACE_SHORT[lib.kind] }),
+      el('span', { class: 'sr-only' }, say(W.pill.after, { state: lib.problem ? W.pill.notReached : W.pill.connected }))));
   document.getElementById('top-right').replaceChildren(
-    ...(DEMO ? [el('span', { class: 'badge' }, el('span', { class: 'dot amber' }), 'Demo data')] : []),
+    ...(DEMO ? [el('span', { class: 'badge' }, el('span', { class: 'dot amber' }), W.demoData)] : []),
     ...(pill ? [pill] : []));
 
   const link = (hash, current, ...kids) => el('a', { class: 'nav-item', href: hash, 'aria-current': current ? 'page' : null }, kids);
@@ -1404,32 +2105,32 @@ function renderSidebar(r) {
   // The rail: you on top, then every team, like a server list. The letter is decoration; the name below it is the link's name.
   document.getElementById('rail').replaceChildren(...(local ? [] : [
     el('a', { class: 'rail-item', href: '#/library', 'aria-current': personal ? 'page' : null },
-      el('span', { class: 'rail-btn', 'aria-hidden': 'true' }, state.user.username[0], updates ? el('span', { class: 'pip', title: plural(updates, 'update') + ' waiting' }) : null),
-      el('span', { class: 'rail-name' }, 'Personal'),
-      updates ? el('span', { class: 'sr-only' }, `, ${plural(updates, 'update')} waiting`) : null),
+      el('span', { class: 'rail-btn', 'aria-hidden': 'true' }, state.user.username[0], updates ? el('span', { class: 'pip', title: say(W.updatesWaiting, { n: updates }) }) : null),
+      el('span', { class: 'rail-name' }, W.nav.personal),
+      updates ? el('span', { class: 'sr-only' }, say(W.updatesWaitingAfter, { n: updates })) : null),
     el('span', { class: 'rail-sep', 'aria-hidden': 'true' }),
     ...state.teams.map(t => el('a', { class: 'rail-item', href: teamHash(t.name),
       title: t.name, 'aria-current': r.view === 'team' && r.team === t ? 'page' : null },
       el('span', { class: 'rail-btn', 'aria-hidden': 'true' }, t.name[0]),
       el('span', { class: 'rail-name' }, t.name))),
-    el('button', { type: 'button', class: 'rail-btn ghost', fk: 'add-team', title: 'Add a team', 'aria-label': 'Add a team', on: { click: addTeamDialog } }, icon('plus', 18)),
+    el('button', { type: 'button', class: 'rail-btn ghost', fk: 'add-team', title: W.addTeam.title, 'aria-label': W.addTeam.title, on: { click: addTeamDialog } }, icon('plus', 18)),
   ]));
 
   let list;
   if (personal) {
     list = [
-      el('div', { class: 'space-head' }, el('h2', null, local ? 'Your Library' : 'Personal'),
-        el('p', null, local ? `Lives on ${PLACE_SHORT[lib.kind] === 'This computer' ? 'this computer' : PLACE_SHORT[lib.kind]}` : 'Only you see this')),
-      el('nav', { class: 'nav', 'aria-label': 'Main' },
-        link('#/library', r.view === 'library', icon('layers'), el('span', { class: 'label' }, 'Library'),
-          updates ? el('span', { class: 'count upd', title: plural(updates, 'update') + ' waiting' }, el('span', { class: 'dot accent' }), String(updates))
+      el('div', { class: 'space-head' }, el('h2', null, local ? W.nav.yourLibrary : W.nav.personal),
+        el('p', null, local ? W.nav.livesOn[lib.kind] : W.nav.onlyYou)),
+      el('nav', { class: 'nav', 'aria-label': W.nav.main },
+        link('#/library', r.view === 'library', icon('layers'), el('span', { class: 'label' }, W.library.title),
+          updates ? el('span', { class: 'count upd', title: say(W.updatesWaiting, { n: updates }) }, el('span', { class: 'dot accent' }), String(updates))
             : el('span', { class: 'count' }, String(state.skills.length))),
-        el('div', { class: 'nav-heading' }, 'Computers',
-          btn(null, { class: 'btn ghost icon', fk: 'add-computer', title: 'Add a computer', 'aria-label': 'Add a computer', on: { click: addComputerDialog } }, 'plus')),
+        el('div', { class: 'nav-heading' }, W.nav.computers,
+          btn(null, { class: 'btn ghost icon', fk: 'add-computer', title: W.addComputer.title, 'aria-label': W.addComputer.title, on: { click: addComputerDialog } }, 'plus')),
         computerTree(r),
         el('div', { class: 'nav-foot' },
-          link('#/storage', r.view === 'storage', icon('globe'), el('span', { class: 'label' }, 'Where it lives')),
-          link('#/settings', r.view === 'settings', icon('settings'), el('span', { class: 'label' }, 'Settings')))),
+          link('#/storage', r.view === 'storage', icon('globe'), el('span', { class: 'label' }, W.whereItLives)),
+          link('#/settings', r.view === 'settings', icon('settings'), el('span', { class: 'label' }, W.settings.title)))),
     ];
   } else {
     const t = r.team;
@@ -1438,35 +2139,35 @@ function renderSidebar(r) {
       && s.source.group && (s.source.group === path || isUnder(s.source.group, path)));
     list = [
       el('div', { class: 'space-head' }, el('h2', { class: 'mono' }, t.name),
-        el('p', null, plural(members(t).length, 'member'), ', ', t.role === 'ADMIN' ? 'you are an admin' : 'you are a member')),
-      el('nav', { class: 'nav', 'aria-label': 'Main' },
-        link(teamHash(t.name), r.tab === 'skills' && !r.group, icon('layers'), el('span', { class: 'label' }, 'All skills'), el('span', { class: 'count' }, String(t.skills.length))),
-        groups.length ? el('div', { class: 'nav-heading' }, 'Groups') : null,
+        el('p', null, say(t.role === 'ADMIN' ? W.nav.youAdmin : W.nav.youMember, { members: plural(members(t).length, 'member') }))),
+      el('nav', { class: 'nav', 'aria-label': W.nav.main },
+        link(teamHash(t.name), r.tab === 'skills' && !r.group, icon('layers'), el('span', { class: 'label' }, W.nav.allSkills), el('span', { class: 'count' }, String(t.skills.length))),
+        groups.length ? el('div', { class: 'nav-heading' }, W.tabs.groups) : null,
         groups.map(({ node, depth }) => {
           const a = link(teamHash(t.name, 'skills', node.path), r.group === node.path,
             icon(node.g.private ? 'lock' : 'folder', 14),
             el('span', { class: 'label mono', title: node.path }, node.host ? node.path.slice(node.host.path.length + 1) : node.path),
-            node.g.private && el('span', { class: 'sr-only' }, '(private)'),
-            waiting(node.path) ? el('span', { class: 'count upd', title: 'An update is waiting' }, el('span', { class: 'dot accent' }), String(countSkills(node)))
+            node.g.private && el('span', { class: 'sr-only' }, W.privateAfter),
+            waiting(node.path) ? el('span', { class: 'count upd', title: W.nav.updateWaiting }, el('span', { class: 'dot accent' }), String(countSkills(node)))
               : el('span', { class: 'count' }, String(countSkills(node))));
           a.classList.add('sub');
           a.style.setProperty('--d', Math.min(depth, 6));
           return a;
         }),
-        el('div', { class: 'nav-heading' }, 'Team'),
-        link(teamHash(t.name, 'members'), r.tab === 'members', icon('users'), el('span', { class: 'label' }, 'Members'), el('span', { class: 'count' }, String(members(t).length))),
-        link(teamHash(t.name, 'settings'), r.tab === 'settings', icon('key'), el('span', { class: 'label' }, 'Team settings'))),
+        el('div', { class: 'nav-heading' }, W.nav.team),
+        link(teamHash(t.name, 'members'), r.tab === 'members', icon('users'), el('span', { class: 'label' }, W.tabs.members), el('span', { class: 'count' }, String(members(t).length))),
+        link(teamHash(t.name, 'settings'), r.tab === 'settings', icon('key'), el('span', { class: 'label' }, W.teamSettings))),
     ];
   }
   $sidebar.replaceChildren(
     el('div', { class: 'side-brand' }, logo(), el('span', { class: 'grow' }, 'AIStack'),
-      btn(null, { class: 'btn ghost icon', 'aria-label': 'Close navigation', title: 'Close navigation', on: { click: () => { setDrawer(false); $drawerBtn.focus(); } } }, 'x')),
+      btn(null, { class: 'btn ghost icon', 'aria-label': W.shell.closeNav, title: W.shell.closeNav, on: { click: () => { setDrawer(false); $drawerBtn.focus(); } } }, 'x')),
     ...list);
   document.getElementById('account').replaceChildren(
     el('span', { class: 'avatar round', 'aria-hidden': 'true' }, state.user.username[0]),
-    el('span', { class: 'who', title: state.user.full_name ? `${state.user.full_name} (${state.user.username})` : state.user.username }, el('b', null, state.user.full_name || state.user.username),
+    el('span', { class: 'who', title: state.user.full_name ? say(W.nameAndUsername, { name: state.user.full_name, username: state.user.username }) : state.user.username }, el('b', null, state.user.full_name || state.user.username),
       el('span', null, state.user.full_name ? state.user.username : plural(state.machines.length, 'computer'))),
-    btn(null, { class: 'btn ghost icon', fk: 'sign-out', title: 'Sign out', 'aria-label': 'Sign out', on: { click: ev => signOut(ev.currentTarget) } }, 'logout'));
+    btn(null, { class: 'btn ghost icon', fk: 'sign-out', title: W.signOut, 'aria-label': W.signOut, on: { click: ev => signOut(ev.currentTarget) } }, 'logout'));
 }
 
 /* ---------- computers, as a folder tree ---------- */
@@ -1502,29 +2203,29 @@ function computerTree(r) {
     const shown = agentsShown(m, here ? r.agent : null);
     const missing = Object.keys(AGENTS).filter(a => !shown.includes(a));
     const kids = el('div', { class: 'tree-kids', hidden: !open },
-      shown.length ? null : el('div', { class: 'tree-agent' }, `Not synced yet: say "${SYNC}" there.`),
+      shown.length ? null : el('div', { class: 'tree-agent' }, say(W.tree.notSynced, { sync: SYNC })),
       shown.map(agent => {
         const t = { m, agent }, n = placedOn(t).length;
         const leaf = el('a', {
           class: 'nav-item leaf', href: folderHash(m, agent), title: AGENTS[agent].folder,
           'aria-current': here && r.agent === agent ? 'page' : null,
-          'aria-label': `${m.name} / ${AGENTS[agent].name}, global folder, ${plural(n, 'skill')}`,
-        }, icon('folder', 14), el('span', { class: 'label' }, 'Global'), el('span', { class: 'count' }, String(n)));
+          'aria-label': say(W.tree.globalLabel, { computer: m.name, agent: AGENTS[agent].name, skills: plural(n, 'skill') }),
+        }, icon('folder', 14), el('span', { class: 'label' }, W.tree.global), el('span', { class: 'count' }, String(n)));
         const projectLeaves = projectsOf(m, agent).map(project => {
           const pt = { m, agent, project }, count = placedOn(pt).length;
           return el('a', {
             class: 'nav-item leaf', href: folderHash(m, agent, project), title: AGENTS[agent].inProject,
             'aria-current': here && r.agent === agent && r.project && r.project.key === project.key ? 'page' : null,
-            'aria-label': `${m.name} / ${AGENTS[agent].name}, project ${project.name}, ${plural(count, 'skill')}`,
+            'aria-label': say(W.tree.projectLabel, { computer: m.name, agent: AGENTS[agent].name, project: project.name, skills: plural(count, 'skill') }),
           }, icon('repo', 14), el('span', { class: 'label mono' }, project.name), el('span', { class: 'count' }, String(count)));
         });
         return [el('div', { class: 'tree-agent' }, icon('terminal', 14), AGENTS[agent].name), leaf, projectLeaves];
       }),
       missing.length ? el('button', { type: 'button', class: 'tree-add', fk: 'add-agent:' + m.id, on: { click: () => addAgentDialog(m, missing) } },
-        icon('plus', 14), 'Add an agent', el('span', { class: 'sr-only' }, ' to ' + m.name)) : null,
+        icon('plus', 14), W.tree.addAgent, el('span', { class: 'sr-only' }, say(W.tree.toComputer, { computer: m.name }))) : null,
       // A project's folders are managed on a server for now (ADR-0026).
       shown.length && state.server !== false ? el('button', { type: 'button', class: 'tree-add', fk: 'add-project:' + m.id, on: { click: () => addProjectDialog(m) } },
-        icon('plus', 14), 'Add a project', el('span', { class: 'sr-only' }, ' to ' + m.name)) : null);
+        icon('plus', 14), W.tree.addProject, el('span', { class: 'sr-only' }, say(W.tree.toComputer, { computer: m.name }))) : null);
     return el('div', null,
       el('button', {
         type: 'button', class: 'tree-comp', fk: 'cmp:' + m.id, 'aria-expanded': String(open),
@@ -1537,14 +2238,14 @@ function computerTree(r) {
 function addAgentDialog(m, missing) {
   const name = 'add-agent';
   openDialog({
-    title: `Add an agent to ${m.name}`,
-    submitLabel: 'Open its folder',
+    title: say(W.addAgent.title, { computer: m.name }),
+    submitLabel: W.addAgent.submit,
     body: [
-      el('p', null, 'Pick the coding agent. Its folder opens empty; add skills there and they arrive the next time you say ', el('code', null, SYNC), ' on that computer.'),
-      el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, 'Coding agent'), el('div', { class: 'picker-list' },
+      el('p', null, sayWith(W.addAgent.lead, { sync: el('code', null, SYNC) })),
+      el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, W.addAgent.legend), el('div', { class: 'picker-list' },
         missing.map((a, i) => el('label', { class: 'picker-opt choice' },
           el('input', { type: 'radio', name, value: a, checked: i === 0 }),
-          el('span', null, el('strong', null, AGENTS[a].name), el('small', null, `${AGENTS[a].folder}, read by ${AGENTS[a].readers}`)))))),
+          el('span', null, el('strong', null, AGENTS[a].name), el('small', null, say(W.addAgent.readBy, { folder: AGENTS[a].folder, readers: AGENTS[a].readers }))))))),
     ],
     onSubmit: async () => {
       const agent = document.querySelector(`input[name="${name}"]:checked`).value;
@@ -1558,10 +2259,10 @@ function addAgentDialog(m, missing) {
 /* ---------- adding a computer: what is true depends on where the Library lives ---------- */
 
 // A read-only line with a Copy button, for anything a person pastes somewhere else.
-function copyField(value, label, done = 'Copied. Paste it into your coding agent.') {
+function copyField(value, label, done = W.copied) {
   const input = el('input', { class: 'input mono', type: 'text', value, spellcheck: false, autocomplete: 'off', 'aria-label': label });
   const said = el('span', { class: 'help', role: 'status' });
-  const copy = btn('Copy', { on: { click: async () => {
+  const copy = btn(W.copy, { on: { click: async () => {
     try { await navigator.clipboard.writeText(input.value); }
     catch (_) { input.select(); document.execCommand('copy'); }
     said.textContent = done;
@@ -1569,33 +2270,32 @@ function copyField(value, label, done = 'Copied. Paste it into your coding agent
   return el('div', { class: 'field' }, el('div', { class: 'code-box' }, input, copy), said);
 }
 
-const SETUP = 'Set up AIStack: run `uvx aistack-mcp setup` and follow what it prints.';
 const ADD_COMPUTER = {
   server: () => [
-    el('p', null, 'Say this on a computer that is already connected, then run the command it answers with on the new one.'),
-    copyField('add my Windows PC to aistack', 'What to say'),
-    el('p', { class: 'help' }, 'The command holds that computer\'s key: paste it only there.'),
+    el('p', null, W.addComputer.server.lead),
+    copyField(W.addComputer.server.say, W.whatToSay),
+    el('p', { class: 'help' }, W.addComputer.server.help),
   ],
   this_computer: () => [
-    el('p', null, 'Your Library lives only on this computer, so another computer cannot reach it.'),
-    el('p', null, 'Move it to a private GitHub repository first: every computer of yours then shares it through your own GitHub sign-in, and nothing has to stay switched on.'),
-    el('a', { class: 'btn', style: 'align-self:flex-start', href: '#/storage', on: { click: () => document.querySelector('dialog[open]').close() } }, icon('globe'), el('span', null, 'See where it can move')),
+    el('p', null, W.addComputer.thisComputer.lead),
+    el('p', null, W.addComputer.thisComputer.move),
+    el('a', { class: 'btn', style: 'align-self:flex-start', href: '#/storage', on: { click: () => document.querySelector('dialog[open]').close() } }, icon('globe'), el('span', null, W.seeWhereItCanMove)),
   ],
   github: lib => [
-    el('p', null, 'On the new computer, paste this into the coding agent. Setup asks you to sign in to GitHub once; choose the same repository.'),
-    copyField(`${SETUP} My Library is in the private GitHub repository ${lib.repository}.`, 'What to paste on the new computer'),
-    el('p', { class: 'help' }, 'Then say ', el('code', null, SYNC), ' there. It shows up here at its first sync.'),
+    el('p', null, W.addComputer.github.lead),
+    copyField(say(W.addComputer.github.paste, { setup: W.setup, repository: lib.repository }), W.addComputer.whatToPaste),
+    el('p', { class: 'help' }, sayWith(W.addComputer.github.help, { sync: el('code', null, SYNC) })),
   ],
   postgresql: lib => [
-    el('p', null, `On the new computer, paste this into the coding agent, and choose the same ${lib.provider} database when setup asks.`),
-    copyField(`${SETUP} My Library is in my ${lib.provider} database at ${lib.host}.`, 'What to paste on the new computer'),
-    el('p', { class: 'help' }, 'Setup asks for the database address with its password. It is the one you pasted on this computer; it is not shown here.'),
+    el('p', null, say(W.addComputer.postgresql.lead, { provider: lib.provider })),
+    copyField(say(W.addComputer.postgresql.paste, { setup: W.setup, provider: lib.provider, host: lib.host }), W.addComputer.whatToPaste),
+    el('p', { class: 'help' }, W.addComputer.postgresql.help),
   ],
 };
 
 function addComputerDialog() {
   const lib = library();
-  openDialog({ title: 'Add a computer', submitLabel: 'Done', cancelLabel: null, body: ADD_COMPUTER[lib.kind](lib) });
+  openDialog({ title: W.addComputer.title, submitLabel: W.done, cancelLabel: null, body: ADD_COMPUTER[lib.kind](lib) });
 }
 
 /* ---------- Library and computers ---------- */
@@ -1604,8 +2304,7 @@ function addComputerDialog() {
 // A computer lists the ones that have synced there, and any picked here before that.
 const AGENTS = {
   claude_code: { name: 'Claude Code', folder: '~/.claude/skills', inProject: '.claude/skills', readers: 'Claude Code' },
-  agents: { name: 'Agents folder', folder: '~/.agents/skills', inProject: '.agents/skills',
-            readers: 'Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode, and Amp' },
+  agents: { name: W.agentsFolder.name, folder: '~/.agents/skills', inProject: '.agents/skills', readers: W.agentsFolder.readers },
 };
 // A place a skill can be switched on: an agent's global folder on a computer, or its folder in
 // a project that computer manages (ADR-0026).
@@ -1613,8 +2312,8 @@ const projectsOf = (m, agent) => (m.projects || []).filter(p => p.folders.some(f
 const projectFolder = (m, agent, key) => projectsOf(m, agent).find(p => p.key === key) || null;
 const targets = () => state.machines.flatMap(m => agentsShown(m).flatMap(agent =>
   [{ m, agent, project: null }, ...projectsOf(m, agent).map(project => ({ m, agent, project }))]));
-const agentIn = t => (t.project ? `${AGENTS[t.agent].name} in ${t.project.name}` : AGENTS[t.agent].name);
-const targetName = t => `${t.m.name} / ${agentIn(t)}`;
+const agentIn = t => (t.project ? say(W.agentInProject, { agent: AGENTS[t.agent].name, project: t.project.name }) : AGENTS[t.agent].name);
+const targetName = t => say(W.targetName, { computer: t.m.name, agent: agentIn(t) });
 const keyOf = t => (t.project ? t.project.key : null);
 const isPlaced = (s, t) => s.placements.some(p => p.machine === t.m.id && p.harness === t.agent && (p.project || null) === keyOf(t));
 const placedOn = t => state.skills.filter(s => isPlaced(s, t));
@@ -1634,7 +2333,7 @@ function libraryView() {
     const on = sort.key === key;
     return el('div', { class: 'th', role: 'columnheader', 'aria-sort': on ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none' },
       el('button', {
-        type: 'button', class: 'th-sort', fk: 'sort:' + key, title: 'Sort by ' + label.toLowerCase(),
+        type: 'button', class: 'th-sort', fk: 'sort:' + key, title: say(W.library.sortBy, { column: label.toLocaleLowerCase(LANG) }),
         on: { click: () => {
           sort = { key, dir: on ? -sort.dir : 1 };
           fill();
@@ -1650,24 +2349,23 @@ function libraryView() {
       .filter(s => !q || s.name.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q))
       .sort((a, b) => (get(a) < get(b) ? -1 : get(a) > get(b) ? 1 : 0) * sort.dir || a.name.localeCompare(b.name));
     if (!state.skills.length) {
-      list.replaceChildren(empty('layers', 'Your library is empty',
-        el('p', null, 'Skills appear here when your coding agent runs ', el('code', null, SYNC), ' on one of your computers. It backs up the skills it finds there, and you can then add them to your other computers', state.server !== false ? ' or share them with a team.' : '.'),
-        state.server !== false && el('p', null, state.teams.length
-          ? 'You can also take one from a team: open a team and choose "Add to library".'
-          : 'You can also take one from a team once you are in one: choose "Add a team" to create one or join with an invite code.')));
+      list.replaceChildren(empty('layers', W.library.emptyTitle,
+        el('p', null, sayWith(state.server !== false ? W.library.emptyWithTeams : W.library.empty, { sync: el('code', null, SYNC) })),
+        state.server !== false && el('p', null, state.teams.length ? W.library.takeFromTeam : W.library.takeOnceInTeam)));
     } else if (!shown.length) {
-      list.replaceChildren(empty('search', 'No skill matches', el('p', null, `Nothing in your library matches "${search.trim()}".`),
-        btn('Clear search', { on: { click: () => { input.value = search = ''; fill(); input.focus(); } } })));
+      list.replaceChildren(empty('search', W.library.noMatch, el('p', null, say(W.library.nothingMatches, { search: search.trim() })),
+        btn(W.library.clearSearch, { on: { click: () => { input.value = search = ''; fill(); input.focus(); } } })));
     } else {
       list.replaceChildren(
-        el('div', { class: 'tbl library', role: 'table', 'aria-label': 'Library' },
-          el('div', { class: 'tr th-row', role: 'row' }, sortTh('name', 'Skill'), sortTh('source', 'Linked team'), th('Where it is'), thActions()),
+        el('div', { class: 'tbl library', role: 'table', 'aria-label': W.library.title },
+          el('div', { class: 'tr th-row', role: 'row' }, sortTh('name', W.col.skill), sortTh('source', W.col.linkedTeam), th(W.col.whereItIs), thActions()),
           shown.map(libraryRow)),
         el('div', { class: 'tbl-foot' },
-          el('span', { class: 'count' }, shown.length === state.skills.length ? plural(shown.length, 'skill') : `${shown.length} of ${plural(state.skills.length, 'skill')}`)));
+          el('span', { class: 'count' }, shown.length === state.skills.length ? plural(shown.length, 'skill')
+            : say(W.library.someOf, { shown: shown.length, skills: plural(state.skills.length, 'skill') }))));
     }
   };
-  const input = el('input', { class: 'input', type: 'search', id: 'search', fk: 'search', 'aria-keyshortcuts': '/', placeholder: 'Search your library…', value: search, autocomplete: 'off',
+  const input = el('input', { class: 'input', type: 'search', id: 'search', fk: 'search', 'aria-keyshortcuts': '/', placeholder: W.library.searchPlaceholder, value: search, autocomplete: 'off',
     on: {
       input: () => { search = input.value; fill(); },
       keydown: ev => { if (ev.key === 'Escape' && input.value) { input.value = search = ''; fill(); } },
@@ -1682,16 +2380,16 @@ function libraryView() {
     el('div', { class: 'band' },
       el('div', { class: 'wrap page-head' },
         el('div', { class: 'titles' },
-          el('h1', null, 'Library'),
-          el('p', { class: 'subtitle' }, 'Every skill you keep. Open one to choose the computers and agents that have it.')),
-        el('div', { class: 'search' }, el('label', { class: 'sr-only', htmlFor: 'search' }, 'Search your library'), icon('search'), input,
-          el('kbd', { 'aria-hidden': 'true', title: 'Press / to search' }, '/')))),
+          el('h1', null, W.library.title),
+          el('p', { class: 'subtitle' }, W.library.subtitle)),
+        el('div', { class: 'search' }, el('label', { class: 'sr-only', htmlFor: 'search' }, W.library.search), icon('search'), input,
+          el('kbd', { 'aria-hidden': 'true', title: W.library.slashToSearch }, '/')))),
     el('div', { class: 'wrap body' },
       onlyHereNotice(),
       // A figure shows only when it asks for something; on a normal day there are none.
       unplaced.length || updating.length ? el('div', { class: 'stats' },
-        unplaced.length ? stat('Not on any computer', unplaced.length, unplaced.map(s => s.name).join(', ')) : null,
-        updating.length ? stat('Updates', updating.length, updating.map(s => s.name).join(', '), el('span', { class: 'dot accent' })) : null) : null,
+        unplaced.length ? stat(W.library.notOnAny, unplaced.length, unplaced.map(s => s.name).join(W.comma)) : null,
+        updating.length ? stat(W.library.updates, updating.length, updating.map(s => s.name).join(W.comma), el('span', { class: 'dot accent' })) : null) : null,
       list,
       removedList()),
   ];
@@ -1702,13 +2400,13 @@ function removedList() {
   const removed = state.removed || [];
   if (!removed.length) return null;
   return el('details', { class: 'removed' },
-    el('summary', null, `Removed from your library (${removed.length})`),
-    state.server === false ? el('p', { class: 'help' }, 'To bring one back, ask your coding agent to install it by name.') : null,
+    el('summary', null, say(W.removed.summary, { n: removed.length })),
+    state.server === false ? el('p', { class: 'help' }, W.removed.localHelp) : null,
     el('ul', { class: 'revisions' }, removed.map(name => el('li', null,
       el('span', { class: 'name grow' }, name),
-      state.server !== false && btn('Bring back', { class: 'btn sm', 'aria-label': 'Bring back ' + name, on: { click: ev => run(ev.currentTarget, async () => {
+      state.server !== false && btn(W.removed.bringBack, { class: 'btn sm', 'aria-label': say(W.removed.bringBackLabel, { skill: name }), on: { click: ev => run(ev.currentTarget, async () => {
         await api(`/api/skills/${enc(name)}/bring-back`, {});
-        return `${name} is back in your library, on no computer yet.`;
+        return say(W.removed.back, { skill: name });
       }) } })))));
 }
 
@@ -1719,32 +2417,32 @@ const ONLY_HERE_QUIET_MS = 30 * 24 * 60 * 60 * 1000;
 function onlyHereNotice() {
   if (library().kind !== 'this_computer' || !state.skills.length) return null;
   try { if (Date.now() - Number(localStorage.getItem(ONLY_HERE_KEY) || 0) < ONLY_HERE_QUIET_MS) return null; } catch (_) { /* shown */ }
-  const notice = el('section', { class: 'card only-here', 'aria-label': 'Your Library lives only on this computer' },
+  const notice = el('section', { class: 'card only-here', 'aria-label': W.onlyHere.label },
     el('div', { class: 'card-body' },
-      el('p', null, el('strong', null, 'Your Library lives only on this computer.'), ' If it is lost, so are these skills. Move it to a private GitHub repository: about two minutes.')),
+      el('p', null, sayWith(W.onlyHere.text, { only: el('strong', null, W.onlyHere.strong) }))),
     el('div', { class: 'card-foot' },
-      btn('Dismiss', { class: 'btn ghost sm', on: { click: () => {
+      btn(W.dismiss, { class: 'btn ghost sm', on: { click: () => {
         try { localStorage.setItem(ONLY_HERE_KEY, String(Date.now())); } catch (_) { /* hidden for this visit only */ }
         notice.remove();
       } } }),
-      el('a', { class: 'btn sm', href: '#/storage' }, 'See where it can move')));
+      el('a', { class: 'btn sm', href: '#/storage' }, W.seeWhereItCanMove)));
   return notice;
 }
 
 // The team a skill is linked to, taken from it or shared to it: a relation, not who wrote it (UX-05).
 const sourceCell = src => td(src ? 'meta src' : 'meta',
-  src ? [el('a', { class: 't1 mono link', href: teamHash(src.team), title: 'Open ' + src.team }, src.team),
-         el('span', { class: 't2' + (src.group ? ' mono' : '') }, src.group || 'Team level')]
-    : el('span', { class: 't2' }, 'None'));
+  src ? [el('a', { class: 't1 mono link', href: teamHash(src.team), title: say(W.open, { name: src.team }) }, src.team),
+         el('span', { class: 't2' + (src.group ? ' mono' : '') }, src.group || W.teamLevel)]
+    : el('span', { class: 't2' }, W.none));
 
 // Where a skill is, as words: a line per computer, naming its agents. Each agent opens that folder.
 function whereItIs(s) {
   const placed = targets().filter(t => isPlaced(s, t));
-  if (!placed.length) return el('span', { class: 'not-placed' }, 'Only in your library');
+  if (!placed.length) return el('span', { class: 'not-placed' }, W.onlyInLibrary);
   return el('div', { class: 'where-list' }, state.machines.filter(m => placed.some(t => t.m === m)).map(m =>
     el('div', { class: 'where-line' }, icon(osIcon(m), 14),
       el('span', { class: 'on' }, m.name),
-      el('span', null, placed.filter(t => t.m === m).map((t, i) => [i ? ', ' : null,
+      el('span', null, placed.filter(t => t.m === m).map((t, i) => [i ? W.comma : null,
         el('a', { href: folderHash(m, t.agent, t.project), 'aria-label': targetName(t) }, agentIn(t))])))));
 }
 
@@ -1753,22 +2451,23 @@ function libraryRow(s) {
   const update = src && src.update_available;
   return [el('div', { class: 'tr', role: 'row' },
     td('c-main',
-      el('button', { type: 'button', class: 'name-btn', fk: 'open:' + s.name, title: 'Open ' + s.name, on: { click: () => skillSheet(s) } },
+      el('button', { type: 'button', class: 'name-btn', fk: 'open:' + s.name, title: say(W.open, { name: s.name }), on: { click: () => skillSheet(s) } },
         el('span', { class: 'name' }, s.name)),
       s.description && el('span', { class: 't2' }, s.description)),
     sourceCell(src),
     td('wide', whereItIs(s)),
     td('row end',
-      btn('Add to computer', { class: 'btn sm', fk: 'addto:' + s.name, 'aria-label': `Add to computer: ${s.name}`, on: { click: () => addToDialog(s) } }, 'plus'),
-      btn('Details', { class: 'btn ghost sm', fk: 'details:' + s.name, 'aria-label': `Details of ${s.name}`, on: { click: () => skillSheet(s) } }))),
+      btn(W.row.addTo, { class: 'btn sm', fk: 'addto:' + s.name, 'aria-label': say(W.row.addToLabel, { skill: s.name }), on: { click: () => addToDialog(s) } }, 'plus'),
+      btn(W.row.details, { class: 'btn ghost sm', fk: 'details:' + s.name, 'aria-label': say(W.row.detailsLabel, { skill: s.name }), on: { click: () => skillSheet(s) } }))),
     update && el('div', { class: 'tr update-row', role: 'row' }, el('div', { class: 'td update-cell', role: 'cell', 'aria-colspan': '4' },
       el('div', { class: 'update' },
         el('span', { class: 'dot accent' }),
-        el('strong', null, 'Update available'),
-        el('span', { class: 'mono' }, `${src.team} r${src.revision} → r${src.latest_revision}`),
-        el('span', { class: 'grow' }, `pushed by ${src.latest_pushed_by}${src.different_skill ? ', a different skill of the same name' : ''}${src.own_changes ? `, over your changes in r${s.revision}` : ''}`),
-        btn('Review changes', { class: 'btn sm', fk: 'changes:' + s.name, 'aria-label': `Review changes to ${s.name}`, on: { click: () => changesDialog(s) } }),
-        btn('Take update', { class: 'btn primary sm', fk: 'take:' + s.name, 'data-next': 'open:' + s.name, 'aria-label': `Take update to ${s.name}`,
+        el('strong', null, W.update.available),
+        el('span', { class: 'mono' }, say(W.update.fromTo, { team: src.team, from: src.revision, to: src.latest_revision })),
+        el('span', { class: 'grow' }, say(W.update.pushedBy, { who: src.latest_pushed_by }) + (src.different_skill ? W.update.differentSkill : '')
+          + (src.own_changes ? say(W.update.overYours, { revision: s.revision }) : '')),
+        btn(W.update.review, { class: 'btn sm', fk: 'changes:' + s.name, 'aria-label': say(W.update.reviewLabel, { skill: s.name }), on: { click: () => changesDialog(s) } }),
+        btn(W.update.take, { class: 'btn primary sm', fk: 'take:' + s.name, 'data-next': 'open:' + s.name, 'aria-label': say(W.update.takeLabel, { skill: s.name }),
           on: { click: ev => takeSkill(ev.currentTarget, src.team, s.name) } }, 'up'))))];
 }
 
@@ -1781,35 +2480,35 @@ async function placeAll(pairs) {
 }
 
 // When the other computers get a change: at their next sync, or once GitHub answers again.
-const arrives = (shared, normally) => shared ? normally : 'It reaches your other computers once GitHub can be reached again.';
+const arrives = (shared, normally) => shared ? normally : W.arrivesLater;
 
 // Every computer, each with the agents it shows, as ticks. Returns the fieldset and a way to save it.
-function placementPicker(s, legend = 'Computers and coding agents') {
+function placementPicker(s, legend = W.placement.legend) {
   const boxes = targets().map(t => ({ t, box: el('input', { type: 'checkbox', checked: isPlaced(s, t) }) }));
   const picker = el('fieldset', { class: 'picker' }, el('legend', null, legend),
     state.machines.map(m => el('div', { class: 'target-group' },
       el('div', { class: 'head', 'aria-hidden': 'true' }, icon(osIcon(m), 14), el('span', null, m.name)),
       boxes.filter(b => b.t.m === m).map(b => el('label', { class: 'picker-opt' }, b.box,
-        el('span', null, el('span', { class: 'sr-only' }, m.name + ' / '), agentIn(b.t)),
+        el('span', null, el('span', { class: 'sr-only' }, say(W.placement.computerBefore, { computer: m.name })), agentIn(b.t)),
         el('span', { class: 't2 mono', style: 'margin-left:auto', 'aria-hidden': 'true' },
           b.t.project ? AGENTS[b.t.agent].inProject : AGENTS[b.t.agent].folder))))));
   const save = async () => {
     const changed = boxes.filter(b => b.box.checked !== isPlaced(s, b.t));
     const shared = await placeAll(changed.map(b => [s, b.t, b.box.checked]));
-    return changed.length ? `Saved where ${s.name} is. ` + arrives(shared, `Each computer picks up the change at its next ${SYNC}.`) : null;
+    return changed.length ? say(W.placement.saved, { skill: s.name }) + arrives(shared, say(W.placement.eachPicksUp, { sync: SYNC })) : null;
   };
   return { picker, save };
 }
 
 function addToDialog(s) {
   const { picker, save } = placementPicker(s);
-  openDialog({ title: `Add ${s.name} to computers`, submitLabel: 'Save', body: picker, onSubmit: save });
+  openDialog({ title: say(W.placement.addTitle, { skill: s.name }), submitLabel: W.save, body: picker, onSubmit: save });
 }
 
 // Everything about one skill, and everything you can do with it, in a panel from the side.
 function skillSheet(s) {
   const src = s.source;
-  const { picker, save } = placementPicker(s, 'Where it is');
+  const { picker, save } = placementPicker(s, W.col.whereItIs);
   const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
   // Ticks made in the panel are saved before its other buttons leave it (UX-19).
   const after = then => ev => run(ev.currentTarget, async () => {
@@ -1820,26 +2519,28 @@ function skillSheet(s) {
   openDialog({
     title: s.name,
     sheet: true,
-    submitLabel: 'Save',
+    submitLabel: W.save,
     returnFk: 'open:' + s.name,
     body: [
       s.description && el('p', { class: 'lead' }, s.description),
       src && src.update_available && el('div', { class: 'update' },
-        el('span', { class: 'dot accent' }), el('strong', null, 'Update available'),
-        el('span', { class: 'grow' }, `${src.team} r${src.revision} → r${src.latest_revision}, pushed by ${src.latest_pushed_by}${src.different_skill ? ', a different skill of the same name' : ''}${src.own_changes ? `. Taking it replaces your changes in r${s.revision}.` : ''}`),
-        btn('Review changes', { class: 'btn sm', on: { click: after(changesDialog) } })),
-      el('section', { class: 'sheet-sec', 'aria-label': 'About' },
+        el('span', { class: 'dot accent' }), el('strong', null, W.update.available),
+        el('span', { class: 'grow' }, say(W.update.fromTo, { team: src.team, from: src.revision, to: src.latest_revision })
+          + say(W.update.commaPushedBy, { who: src.latest_pushed_by }) + (src.different_skill ? W.update.differentSkill : '')
+          + (src.own_changes ? say(W.update.replacesYours, { revision: s.revision }) : '')),
+        btn(W.update.review, { class: 'btn sm', on: { click: after(changesDialog) } })),
+      el('section', { class: 'sheet-sec', 'aria-label': W.sheet.about },
         el('dl', { class: 'facts' },
-          fact('Linked team', src ? el('a', { class: 'mono link', href: teamHash(src.team) }, teamLabel(src.team, src.group)) : 'None'),
-          fact('Revision', `r${s.revision}, ${plural(s.files, 'file')}`),
-          fact('Last pushed by', s.pushed_by),
-          fact('Last changed', when(s.updated_on)))),
-      el('section', { class: 'sheet-sec', 'aria-label': 'Where it is' },
-        state.machines.length ? picker : el('p', null, 'No computer is connected yet.')),
-      el('section', { class: 'sheet-sec actions', 'aria-label': 'More' },
-        state.server !== false && btn('Share with a team…', { on: { click: after(shareDialog) } }, 'share'),
-        state.server !== false && btn('History…', { on: { click: after(historyDialog) } }, 'layers'),
-        btn('Remove from library…', { class: 'btn danger', on: { click: after(removeMineDialog) } }, 'trash')),
+          fact(W.col.linkedTeam, src ? el('a', { class: 'mono link', href: teamHash(src.team) }, teamLabel(src.team, src.group)) : W.none),
+          fact(W.col.revision, say(W.sheet.revision, { revision: s.revision, files: plural(s.files, 'file') })),
+          fact(W.sheet.lastPushedBy, s.pushed_by),
+          fact(W.sheet.lastChanged, when(s.updated_on)))),
+      el('section', { class: 'sheet-sec', 'aria-label': W.col.whereItIs },
+        state.machines.length ? picker : el('p', null, W.sheet.noComputer)),
+      el('section', { class: 'sheet-sec actions', 'aria-label': W.sheet.more },
+        state.server !== false && btn(W.sheet.share, { on: { click: after(shareDialog) } }, 'share'),
+        state.server !== false && btn(W.sheet.history, { on: { click: after(historyDialog) } }, 'layers'),
+        btn(W.sheet.remove, { class: 'btn danger', on: { click: after(removeMineDialog) } }, 'trash')),
     ],
     onSubmit: save,
   });
@@ -1848,41 +2549,42 @@ function skillSheet(s) {
 // What taking a team's update would change in your copy, read before anything is taken (IMP-08).
 function changesDialog(s) {
   const src = s.source;
-  const body = el('div', null, el('p', { class: 't2' }, 'Loading the changes…'));
-  openDialog({ title: `Changes to ${s.name}`, submitLabel: 'Done', cancelLabel: null, body });
+  const body = el('div', null, el('p', { class: 't2' }, W.changes.loading));
+  openDialog({ title: say(W.changes.title, { skill: s.name }), submitLabel: W.done, cancelLabel: null, body });
   // el() flattens the lists and drops what is false; replaceChildren would print them.
   api(`/api/teams/${enc(src.team)}/skills/${enc(s.name)}/changes`).then(c => body.replaceChildren(el('div', null,
-    el('p', null, `${src.team} r${c.to_revision}, pushed by ${c.pushed_by}, against your r${c.from_revision}.`),
+    el('p', null, say(W.changes.against, { team: src.team, to: c.to_revision, who: c.pushed_by, from: c.from_revision })),
     c.files.length ? c.files.map(f => el('section', { class: 'field', 'aria-label': f.path },
-      el('h3', { class: 'mono' }, `${f.path}, ${f.change}`),
+      el('h3', { class: 'mono' }, say(W.changes.file, { path: f.path, change: W.changes.kinds[f.change] || f.change })),
       el('pre', { class: 'diff' }, f.diff.replace(/\n$/, '').split('\n').map(line => el('span', {
         class: /^\+(?!\+\+ )/.test(line) ? 'add' : /^-(?!-- )/.test(line) ? 'del' : null }, line + '\n')))))
-      : el('p', null, 'Its files are the same as yours.'),
-    c.truncated && el('p', { class: 'help' }, 'The rest is too long to show here.'))))
+      : el('p', null, W.changes.same),
+    c.truncated && el('p', { class: 'help' }, W.changes.truncated))))
     .catch(e => body.replaceChildren(el('p', { class: 'form-error', role: 'alert' }, e.message)));
 }
 
 // Every revision of one of your skills; restoring one stores it again as the newest (PH-08).
 function historyDialog(s) {
-  const list = el('div', null, el('p', { class: 't2' }, 'Loading the history…'));
-  openDialog({ title: `History of ${s.name}`, submitLabel: 'Done', cancelLabel: null, body: [
-    el('p', null, `Restoring a revision makes it the newest. Each computer that has ${s.name} installs it at its next sync.`), list] });
+  const list = el('div', null, el('p', { class: 't2' }, W.history.loading));
+  openDialog({ title: say(W.history.title, { skill: s.name }), submitLabel: W.done, cancelLabel: null, body: [
+    el('p', null, say(W.history.lead, { skill: s.name })), list] });
   api(`/api/skills/${enc(s.name)}/history`).then(h => list.replaceChildren(el('ul', { class: 'revisions' },
     h.revisions.map((r, i) => el('li', null,
-      el('span', { class: 'grow' }, el('strong', null, `r${r.revision}`), ` pushed by ${r.pushed_by}, `, when(r.pushed_on), `, ${plural(r.files, 'file')}`),
-      i ? btn('Restore', { class: 'btn sm', 'aria-label': `Restore r${r.revision}`, on: { click: ev => run(ev.currentTarget, async () => {
+      el('span', { class: 'grow' }, sayWith(W.history.row, { revision: el('strong', null, say(W.rev, { revision: r.revision })), who: r.pushed_by,
+        when: when(r.pushed_on), files: plural(r.files, 'file') })),
+      i ? btn(W.history.restore, { class: 'btn sm', 'aria-label': say(W.history.restoreLabel, { revision: r.revision }), on: { click: ev => run(ev.currentTarget, async () => {
         const res = await api(`/api/skills/${enc(s.name)}/restore`, { revision: r.revision });
         document.querySelector('dialog[open]').close();
-        return res.unchanged ? `r${r.revision} is the same as the newest; nothing changed.`
-          : `Restored r${r.revision} of ${s.name} as r${res.revision}. Each computer installs it at its next ${SYNC}.`;
-      }) } }) : el('span', { class: 'badge' }, 'Newest'))))))
+        return res.unchanged ? say(W.history.unchanged, { revision: r.revision })
+          : say(W.history.restored, { revision: r.revision, skill: s.name, as: res.revision, sync: SYNC });
+      }) } }) : el('span', { class: 'badge' }, W.history.newest))))))
     .catch(e => list.replaceChildren(el('p', { class: 'form-error', role: 'alert' }, e.message)));
 }
 
 function folderView(m, agent, project = null) {
   const t = { m, agent, project };
   const here = placedOn(t);
-  const where = `${agentIn(t)} on ${m.name}`;
+  const where = say(W.folder.where, { agent: agentIn(t), computer: m.name });
   const others = targets().filter(x => !sameTarget(x, t));
   const folder = project && project.folders.find(f => f.harness === agent);
   // Claude Code uses the global copy of a skill both folders hold; Codex lists both.
@@ -1893,61 +2595,62 @@ function folderView(m, agent, project = null) {
         el('span', { class: 'avatar lg', 'aria-hidden': 'true' }, icon(project ? 'repo' : 'terminal', 20)),
         el('div', { class: 'titles' },
           project
-            ? el('h1', null, AGENTS[agent].name, el('span', { class: 'muted', style: 'font-weight:400' }, ' in '), el('span', { class: 'mono' }, project.name),
-                el('span', { class: 'muted', style: 'font-weight:400' }, ' on '), m.name)
-            : el('h1', null, AGENTS[agent].name, el('span', { class: 'muted', style: 'font-weight:400' }, ' on '), m.name),
+            ? el('h1', null, sayWith(W.folder.projectHeading, { agent: AGENTS[agent].name, project: el('span', { class: 'mono' }, project.name), computer: m.name })
+                .map((p, i) => (i % 2 || !p ? p : el('span', { class: 'muted', style: 'font-weight:400' }, p))))
+            : el('h1', null, sayWith(W.folder.heading, { agent: AGENTS[agent].name, computer: m.name })
+                .map((p, i) => (i % 2 || !p ? p : el('span', { class: 'muted', style: 'font-weight:400' }, p)))),
           project
-            ? el('div', { class: 'folder-path' }, el('span', { class: 't2' }, 'Project folder'), el('code', null, AGENTS[agent].inProject),
-                folder.path ? el('code', { class: 't2', title: 'Where this repository was last seen on ' + m.name }, folder.path) : null,
-                el('span', { class: 't2' }, folder.last_synced_on ? ['Last synced ', when(folder.last_synced_on)] : 'Not synced here yet'))
-            : el('div', { class: 'folder-path' }, el('span', { class: 't2' }, 'Global folder'), el('code', null, AGENTS[agent].folder),
-                el('span', { class: 't2' }, 'Read by ' + AGENTS[agent].readers),
+            ? el('div', { class: 'folder-path' }, el('span', { class: 't2' }, W.folder.projectFolder), el('code', null, AGENTS[agent].inProject),
+                folder.path ? el('code', { class: 't2', title: say(W.folder.lastSeen, { computer: m.name }) }, folder.path) : null,
+                el('span', { class: 't2' }, folder.last_synced_on ? sayWith(W.lastSyncedWhen, { when: when(folder.last_synced_on) }) : W.folder.notSyncedHere))
+            : el('div', { class: 'folder-path' }, el('span', { class: 't2' }, W.folder.globalFolder), el('code', null, AGENTS[agent].folder),
+                el('span', { class: 't2' }, say(W.folder.readBy, { readers: AGENTS[agent].readers })),
                 el('span', { class: 't2' }, lastSynced(m, agent))))),
       el('div', { class: 'head-actions' },
         // Picked in this browser and holding nothing: it can be taken off the list again (UI-20).
         !project && !m.harnesses.includes(agent) && !here.length
-          ? btn('Remove from this list', { class: 'btn ghost', fk: 'unpick', on: { click: () => { unpickAgent(m, agent); go('#/library'); } } }, 'x') : null,
+          ? btn(W.folder.unpick, { class: 'btn ghost', fk: 'unpick', on: { click: () => { unpickAgent(m, agent); go('#/library'); } } }, 'x') : null,
         project
-          ? btn(`Stop managing ${project.name}…`, { class: 'btn', fk: 'stop:' + project.key, on: { click: () => stopManagingDialog(m, agent, project) } }, 'x')
-          : btn('Computer settings', { fk: 'computer:' + m.id, on: { click: () => computerDialog(m) } }, 'monitor'),
-        others.some(o => placedOn(o).length) ? btn('Copy from…', { fk: 'copy-from', on: { click: () => copyFromDialog(t, others) } }, 'copy') : null,
-        btn('Add skills', { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(t) } }, 'plus')))),
+          ? btn(say(W.folder.stopManaging, { project: project.name }), { class: 'btn', fk: 'stop:' + project.key, on: { click: () => stopManagingDialog(m, agent, project) } }, 'x')
+          : btn(W.folder.computerSettings, { fk: 'computer:' + m.id, on: { click: () => computerDialog(m) } }, 'monitor'),
+        others.some(o => placedOn(o).length) ? btn(W.folder.copyFrom, { fk: 'copy-from', on: { click: () => copyFromDialog(t, others) } }, 'copy') : null,
+        btn(W.folder.addSkills, { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(t) } }, 'plus')))),
     el('div', { class: 'wrap body' },
       project && !folder.last_synced_on && el('div', { class: 'card notice' }, el('div', { class: 'card-body' },
-        el('h2', { class: 'small' }, `Not synced on ${m.name} yet`),
-        el('p', null, `Skills added here arrive the first time ${m.name} syncs inside ${project.name}: open your coding agent in the repository there and say `, el('code', null, SYNC), '.'))),
-      twice.length ? el('p', { class: 't2 hint' }, `${some(twice)} ${twice.length === 1 ? 'is' : 'are'} also in the global folder. `,
-        agent === 'claude_code' ? 'Claude Code uses the global copy.' : 'The agents reading this folder list both copies.') : null,
-      here.length ? el('div', { class: 'tbl folder', role: 'table', 'aria-label': 'Skills in ' + where },
-        el('div', { class: 'tr th-row', role: 'row' }, th('Skill'), th('Linked team'), th('Revision'), thActions()),
+        el('h2', { class: 'small' }, say(W.folder.notSyncedOn, { computer: m.name })),
+        el('p', null, sayWith(W.folder.firstSync, { computer: m.name, project: project.name, sync: el('code', null, SYNC) })))),
+      twice.length ? el('p', { class: 't2 hint' }, say(W.folder.twice, { n: twice.length, skills: some(twice) }),
+        agent === 'claude_code' ? W.folder.claudeUsesGlobal : W.folder.agentsListBoth) : null,
+      here.length ? el('div', { class: 'tbl folder', role: 'table', 'aria-label': say(W.skillsIn, { place: where }) },
+        el('div', { class: 'tr th-row', role: 'row' }, th(W.col.skill), th(W.col.linkedTeam), th(W.col.revision), thActions()),
         here.map(s => el('div', { class: 'tr', role: 'row' },
           td('c-main', el('span', { class: 'name' }, s.name), s.description && el('span', { class: 't2' }, s.description)),
           sourceCell(s.source),
           revisionHere(s, t),
-          td('row end', btn('Remove', {
-            class: 'btn ghost sm', fk: `fr:${s.name}`, 'aria-label': `Remove ${s.name} from ${where}`,
+          td('row end', btn(W.remove, {
+            class: 'btn ghost sm', fk: `fr:${s.name}`, 'aria-label': say(W.folder.removeLabel, { skill: s.name, place: where }),
             on: { click: ev => run(ev.currentTarget, async () => {
               await place(s, t, false);
-              return `Removed ${s.name} from ${where}. Its next sync asks whether to delete the folder; it stays in your library.`;
+              return say(W.folder.removed, { skill: s.name, place: where });
             }) },
           }, 'x')))))
-        : empty('folder', `Nothing in ${where} yet`, el('p', null, 'Add skills from your library, or copy what another agent has.'),
-            btn('Add skills', { on: { click: () => addSkillsDialog(t) } }, 'plus')),
-      project ? el('div', { class: 'tbl-foot' }, el('span', null, `Every copy of this repository on ${m.name} shares these skills, and git never sees them.`)) : null),
+        : empty('folder', say(W.folder.emptyTitle, { place: where }), el('p', null, W.folder.empty),
+            btn(W.folder.addSkills, { on: { click: () => addSkillsDialog(t) } }, 'plus')),
+      project ? el('div', { class: 'tbl-foot' }, el('span', null, say(W.folder.everyCopy, { computer: m.name }))) : null),
   ];
 }
 
 function stopManagingDialog(m, agent, project) {
   confirmDialog({
-    title: `Stop managing ${project.name} on ${m.name}?`,
-    submitLabel: 'Stop managing',
+    title: say(W.stopManaging.title, { project: project.name, computer: m.name }),
+    submitLabel: W.stopManaging.submit,
     lines: [
-      `AIStack stops syncing ${agentIn({ agent, project })} on ${m.name}, and forgets which skills belong there.`,
-      'The skills stay in your library, on your other computers, and in the folder on disk, still hidden from git.',
+      say(W.stopManaging.stops, { agent: agentIn({ agent, project }), computer: m.name }),
+      W.stopManaging.stay,
     ],
     onSubmit: async () => {
       await api(`/api/machines/${enc(m.id)}/projects/remove`, { project: project.key, harness: agent });
-      return () => { go(folderHash(m, agent)); toast(`Stopped managing ${project.name} on ${m.name}.`); };
+      return () => { go(folderHash(m, agent)); toast(say(W.stopManaging.done, { project: project.name, computer: m.name })); };
     },
   });
 }
@@ -1963,32 +2666,32 @@ function addProjectDialog(m) {
     .map(agent => ({ p, agent })));
   const name = 'add-project';
   openDialog({
-    title: `Add a project to ${m.name}`,
-    submitLabel: choices.length ? 'Add' : 'Done',
-    cancelLabel: choices.length ? 'Cancel' : null,
+    title: say(W.addProject.title, { computer: m.name }),
+    submitLabel: choices.length ? W.add : W.done,
+    cancelLabel: choices.length ? W.cancel : null,
     body: el('div', { class: 'choice-grid' },
       el('div', { class: 'card choice-card' }, el('div', { class: 'card-body' },
-        el('h3', null, icon('repo', 16), 'From your other computers'),
-        choices.length ? el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, 'A project your other computers have'),
+        el('h3', null, icon('repo', 16), W.addProject.fromOthers),
+        choices.length ? el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, W.addProject.legend),
           el('div', { class: 'picker-list' }, choices.map((c, i) => el('label', { class: 'picker-opt' },
             el('input', { type: 'radio', name, value: String(i), checked: i === 0 }),
-            el('span', null, el('span', { class: 'mono' }, c.p.name), ` for ${AGENTS[c.agent].name}`)))))
-          : el('p', null, 'None of your computers manages a project this one does not.'))),
+            el('span', null, sayWith(W.addProject.forAgent, { project: el('span', { class: 'mono' }, c.p.name), agent: AGENTS[c.agent].name }))))))
+          : el('p', null, W.addProject.noneElsewhere))),
       el('div', { class: 'card choice-card' }, el('div', { class: 'card-body' },
-        el('h3', null, icon('terminal', 16), 'A repository AIStack has not seen'),
-        el('p', null, `On ${m.name}, open your coding agent inside the repository and say this. It adds the project and syncs it.`),
-        copyField('add this project to aistack', 'What to say inside the repository')))),
+        el('h3', null, icon('terminal', 16), W.addProject.unseen),
+        el('p', null, say(W.addProject.unseenLead, { computer: m.name })),
+        copyField(W.addProject.say, W.addProject.whatToSay)))),
     onSubmit: choices.length ? async () => {
       const c = choices[Number(document.querySelector(`input[name="${name}"]:checked`).value)];
       await api(`/api/machines/${enc(m.id)}/projects`, { project: c.p.key, harness: c.agent });
-      return () => { go(folderHash(m, c.agent, c.p)); toast(`Added ${c.p.name} to ${AGENTS[c.agent].name} on ${m.name}. Add its skills here; they arrive at its first sync there.`); };
+      return () => { go(folderHash(m, c.agent, c.p)); toast(say(W.addProject.done, { project: c.p.name, agent: AGENTS[c.agent].name, computer: m.name })); };
     } : null,
   });
 }
 
 function lastSynced(m, agent) {
   const at = (m.last_synced || {})[agent];
-  return at ? ['Last synced ', when(at)] : `Not synced yet: say "${SYNC}" there`;
+  return at ? sayWith(W.lastSyncedWhen, { when: when(at) }) : say(W.notSyncedYet, { sync: SYNC });
 }
 
 // The revision this folder last installed, when it is behind the library's.
@@ -1996,86 +2699,82 @@ function revisionHere(s, t) {
   const p = s.placements.find(x => x.machine === t.m.id && x.harness === t.agent && (x.project || null) === keyOf(t));
   const behind = p && p.revision != null && p.revision < s.revision;
   return td('meta nowrap', behind
-    ? el('span', { class: 't1 mono', title: `r${s.revision} in your library arrives at the next sync` }, `r${p.revision} here`)
-    : el('span', { class: 't1 mono', title: `Revision ${s.revision}, ${plural(s.files, 'file')}` }, 'r' + s.revision));
+    ? el('span', { class: 't1 mono', title: say(W.revisionArrives, { revision: s.revision }) }, say(W.revisionHere, { revision: p.revision }))
+    : el('span', { class: 't1 mono', title: say(W.revisionFiles, { revision: s.revision, files: plural(s.files, 'file') }) }, say(W.rev, { revision: s.revision })));
 }
 
 function computerDialog(m) {
   const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
   const server = state.server !== false;
-  const from = m.added_by || (m.added_by_removed ? 'A computer since removed' : 'Set up here first');
+  const from = m.added_by || (m.added_by_removed ? W.computer.sinceRemoved : W.computer.setUpHere);
   const name = el('input', { class: 'input', type: 'text', name: 'computer-name', maxLength: 64, value: m.name, autocomplete: 'off' });
   const only = state.machines.length === 1;
   openDialog({
     title: m.name,
-    submitLabel: server ? 'Rename' : 'Close',
-    cancelLabel: server ? 'Cancel' : null,
+    submitLabel: server ? W.rename : W.close,
+    cancelLabel: server ? W.cancel : null,
     body: [
       el('dl', { class: 'facts' },
-        fact('Added', when(m.added_on)),
-        fact('Added from', from),
-        agentsShown(m).map(agent => fact(`${AGENTS[agent].name} last synced`, (m.last_synced || {})[agent] ? when(m.last_synced[agent]) : 'Never'))),
-      server && field('Name', name),
+        fact(W.computer.added, when(m.added_on)),
+        fact(W.computer.addedFrom, from),
+        agentsShown(m).map(agent => fact(say(W.computer.agentSynced, { agent: AGENTS[agent].name }), (m.last_synced || {})[agent] ? when(m.last_synced[agent]) : W.computer.never))),
+      server && field(W.name, name),
       server && (only
-        ? el('p', { class: 't2' }, 'This is your only computer, so it cannot be removed.')
-        : btn('Remove this computer…', { class: 'btn danger', on: { click: () => { document.querySelector('dialog[open]').close(); removeComputerDialog(m); } } }, 'trash')),
+        ? el('p', { class: 't2' }, W.computer.only)
+        : btn(W.computer.remove, { class: 'btn danger', on: { click: () => { document.querySelector('dialog[open]').close(); removeComputerDialog(m); } } }, 'trash')),
     ],
     onSubmit: server ? async () => {
       const res = await api(`/api/machines/${enc(m.id)}/rename`, { name: name.value });
-      return res.name === m.name ? null : `Renamed ${m.name} to ${res.name}.`;
+      return res.name === m.name ? null : say(W.renamed, { from: m.name, to: res.name });
     } : null,
   });
 }
 
 function removeComputerDialog(m) {
   confirmDialog({
-    title: `Remove ${m.name}?`,
-    submitLabel: 'Remove',
-    lines: [
-      'Its connection to AIStack stops at once, and any dashboard it opened is signed out.',
-      'Your library and your other computers keep every skill. Nothing on it is deleted.',
-      'To use it again, add it from another computer.',
-    ],
+    title: say(W.removeComputer.title, { computer: m.name }),
+    submitLabel: W.remove,
+    lines: W.removeComputer.lines,
     onSubmit: async () => {
       await api(`/api/machines/${enc(m.id)}/remove`, {});
-      return () => { go('#/'); toast(`Removed ${m.name}.`); };
+      return () => { go('#/'); toast(say(W.removeComputer.done, { computer: m.name })); };
     },
   });
 }
 
 function addSkillsDialog(t) {
-  const where = `${agentIn(t)} on ${t.m.name}`;
+  const where = say(W.folder.where, { agent: agentIn(t), computer: t.m.name });
   const rows = state.skills.filter(s => !isPlaced(s, t)).map(s => ({ s, box: el('input', { type: 'checkbox' }) }));
   const labels = rows.map(r => el('label', { class: 'picker-opt' }, r.box, el('span', { class: 'mono' }, r.s.name),
-    el('span', { class: 't2', style: 'margin-left:auto' }, r.s.placements.length ? 'in use elsewhere' : 'only in your library')));
-  const filter = el('input', { class: 'input', type: 'search', placeholder: 'Search your library', 'aria-label': 'Search your library',
+    el('span', { class: 't2', style: 'margin-left:auto' }, r.s.placements.length ? W.addSkills.elsewhere : W.addSkills.onlyInLibrary)));
+  const filter = el('input', { class: 'input', type: 'search', placeholder: W.library.search, 'aria-label': W.library.search,
     on: { input: () => rows.forEach((r, i) => { labels[i].hidden = !r.s.name.includes(filter.value.trim().toLowerCase()); }) } });
   const none = !state.skills.length;
   openDialog({
-    title: 'Add to ' + where,
-    submitLabel: rows.length ? 'Add' : 'Done',
-    cancelLabel: rows.length ? 'Cancel' : null,
-    body: rows.length ? [filter, el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, 'Skills'), el('div', { class: 'picker-list' }, labels))]
+    title: say(W.addSkills.title, { place: where }),
+    submitLabel: rows.length ? W.add : W.done,
+    cancelLabel: rows.length ? W.cancel : null,
+    body: rows.length ? [filter, el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, W.tabs.skills), el('div', { class: 'picker-list' }, labels))]
       : [el('p', null, none
-          ? `Your library is empty. Say "${SYNC}" on a computer to back up its skills${state.server !== false ? ', or add one from a team' : ''}.`
-          : 'Every skill in your library is here already.')],
+          ? say(state.server !== false ? W.addSkills.emptyWithTeams : W.addSkills.empty, { sync: SYNC })
+          : W.addSkills.allHere)],
     onSubmit: async () => {
       const picked = rows.filter(r => r.box.checked);
       const shared = await placeAll(picked.map(r => [r.s, t, true]));
-      return picked.length ? `Added ${plural(picked.length, 'skill')} to ${where}. ` + arrives(shared, `They arrive at its next ${SYNC}.`) : null;
+      return picked.length ? say(W.addSkills.added, { skills: plural(picked.length, 'skill'), place: where }) + arrives(shared, say(W.addSkills.arrive, { sync: SYNC })) : null;
     },
   });
 }
 
 function copyFromDialog(t, others) {
-  const where = `${agentIn(t)} on ${t.m.name}`;
+  const where = say(W.folder.where, { agent: agentIn(t), computer: t.m.name });
   const name = 'copy-from';
   openDialog({
-    title: 'Copy skills to ' + where,
-    submitLabel: 'Copy',
+    title: say(W.copyFrom.title, { place: where }),
+    submitLabel: W.copy,
     body: [
-      el('p', null, 'Adds every skill the other one has and this one does not. Nothing is removed here.'),
-      el('fieldset', { class: 'picker' }, el('legend', null, 'Copy from'), el('div', { class: 'picker-list' },
+      el('p', null, W.copyFrom.lead),
+      el('fieldset', { class: 'picker' }, el('legend', null, W.copyFrom.legend), el('div', { class: 'picker-list' },
         others.map((o, i) => el('label', { class: 'picker-opt' }, el('input', { type: 'radio', name, value: String(i), checked: i === 0 }),
           el('span', { class: 'mono' }, targetName(o)), el('span', { class: 't2', style: 'margin-left:auto' }, plural(placedOn(o).length, 'skill')))))),
     ],
@@ -2083,8 +2782,9 @@ function copyFromDialog(t, others) {
       const from = others[Number(document.querySelector(`input[name="${name}"]:checked`).value)];
       const missing = placedOn(from).filter(s => !isPlaced(s, t));
       const shared = await placeAll(missing.map(s => [s, t, true]));
-      return missing.length ? `Added ${plural(missing.length, 'skill')} from ${targetName(from)}. ` + arrives(shared, `They arrive at the next ${SYNC} on ${t.m.name}.`)
-        : `Nothing to copy: ${where} already has every skill ${targetName(from)} has.`;
+      return missing.length ? say(W.copyFrom.added, { skills: plural(missing.length, 'skill'), from: targetName(from) })
+          + arrives(shared, say(W.copyFrom.arrive, { sync: SYNC, computer: t.m.name }))
+        : say(W.copyFrom.nothing, { place: where, from: targetName(from) });
     },
   });
 }
@@ -2096,35 +2796,35 @@ function takeSkill(control, team, name) {
   const mine = state.skills.find(x => x.name === name);
   const take = replace => api(`/api/teams/${enc(team)}/take`, replace ? { name, replace } : { name });
   const where = mine && computersOf(mine);
-  const applies = where ? `Applies on ${where} at the next sync.` : 'Add it to a computer to use it there.';
+  const applies = where ? say(W.take.applies, { computers: where }) : W.take.addToComputer;
   if (!mine) {
-    return run(control, async () => { await take(false); return `Added ${name} to your library. ${applies}`; });
+    return run(control, async () => { await take(false); return say(W.take.added, { skill: name, applies }); });
   }
   const linked = mine.source && mine.source.team === team;
   if (linked && !mine.source.own_changes) {
-    return run(control, async () => { await take(false); return `Took the update to ${name}. ${applies}`; });
+    return run(control, async () => { await take(false); return say(W.take.took, { skill: name, applies }); });
   }
   confirmDialog({
-    title: linked ? `Take the update to ${name}?` : `Replace your ${name}?`,
-    submitLabel: linked ? 'Take update' : 'Replace yours',
+    title: say(linked ? W.take.updateTitle : W.take.replaceTitle, { skill: name }),
+    submitLabel: linked ? W.update.take : W.take.replaceYours,
     danger: false,
     lines: [
       linked
-        ? `You changed ${name} since you took r${mine.source.revision} from ${team}. Taking ${mine.source.latest_pushed_by}'s r${mine.source.latest_revision} replaces your r${mine.revision}.`
-        : `You already have your own ${name}, r${mine.revision}, last pushed by ${mine.pushed_by}. It was not taken from ${team}, so it may be a different skill with the same name.`,
-      where ? `It is replaced on ${where} at the next sync.` : null,
-      'Yours stays in your history.',
+        ? say(W.take.changedSince, { skill: name, took: mine.source.revision, team, who: mine.source.latest_pushed_by, latest: mine.source.latest_revision, yours: mine.revision })
+        : say(W.take.ownAlready, { skill: name, revision: mine.revision, who: mine.pushed_by, team }),
+      where ? say(W.take.replacedOn, { computers: where }) : null,
+      W.take.inHistory,
     ],
     onSubmit: async () => {
       await take(!linked);
-      return linked ? `Took the update to ${name}. ${applies}` : `Replaced your ${name} with ${team}'s. ${applies}`;
+      return say(linked ? W.take.took : W.take.replaced, { skill: name, team, applies });
     },
   });
 }
 
 function computersOf(s) {
   const names = [...new Set(s.placements.map(p => (state.machines.find(m => m.id === p.machine) || {}).name).filter(Boolean))];
-  return names.length ? names.join(', ') : null;
+  return names.length ? names.join(W.comma) : null;
 }
 
 function groupPicker(team, { name, value = '', legend, noneLabel, allow = () => true }) {
@@ -2138,7 +2838,7 @@ function groupPicker(team, { name, value = '', legend, noneLabel, allow = () => 
         el('input', { type: 'radio', name, value: o.path, checked: o.path === value }),
         o.path ? icon(o.private ? 'lock' : 'folder', 14) : null,
         el('span', { class: o.path ? 'mono' : null }, o.label),
-        o.private && el('span', { class: 'sr-only' }, ' (private)')))));
+        o.private && el('span', { class: 'sr-only' }, ' ' + W.privateAfter)))));
 }
 const picked = root => { const c = root.querySelector('input[type=radio]:checked'); return c && c.value ? c.value : null; };
 
@@ -2150,34 +2850,34 @@ function shareDialog(s) {
     const had = team.skills.find(x => x.name === s.name);
     if (!had) return null;
     if (!s.source || s.source.team !== team.name) {
-      return `${team.name} already has a different ${s.name}, last pushed by ${had.pushed_by}. Sharing puts yours on top for everyone who took it.`;
+      return say(W.share.different, { team: team.name, skill: s.name, who: had.pushed_by });
     }
     if (s.source.update_available) {
-      return `${team.name} has r${s.source.latest_revision} of ${s.name} from ${s.source.latest_pushed_by}, which you never took. Sharing yours replaces it, and its changes are no longer in the team's latest.`;
+      return say(W.share.neverTook, { team: team.name, revision: s.source.latest_revision, skill: s.name, who: s.source.latest_pushed_by });
     }
     return null;
   };
   const fill = () => {
     holder.replaceChildren(groupPicker(team, {
-      name: 'share-group', legend: 'Group (optional)', noneLabel: 'Team level (no group)',
+      name: 'share-group', legend: W.share.groupLegend, noneLabel: W.teamLevelNoGroup,
       value: s.source && s.source.team === team.name ? s.source.group || '' : '',
       allow: g => mayShareInto(team, g.path),
     }));
     const text = risk();
     warning.textContent = text || '';
     warning.hidden = !text;
-    if (dlg) dlg.querySelector('button[type=submit]').textContent = text ? 'Share anyway' : 'Share';
+    if (dlg) dlg.querySelector('button[type=submit]').textContent = text ? W.share.anyway : W.share.submit;
   };
   let dlg = null;
   const select = el('select', { class: 'input', on: { change: () => { team = teamBy(select.value); fill(); } } },
     state.teams.map(t => el('option', { value: t.name, selected: t === team }, t.name)));
   fill();
   dlg = openDialog({
-    title: `Share ${s.name}`,
-    submitLabel: risk() ? 'Share anyway' : 'Share',
+    title: say(W.share.title, { skill: s.name }),
+    submitLabel: risk() ? W.share.anyway : W.share.submit,
     body: [
-      el('p', null, 'The team gets its own copy of this skill. Everyone who can see it there sees that you pushed it. Your copy in your library stays yours.'),
-      field('Team', select),
+      el('p', null, W.share.lead),
+      field(W.share.team, select),
       warning,
       holder,
     ],
@@ -2185,14 +2885,14 @@ function shareDialog(s) {
       const res = await api(`/api/skills/${enc(s.name)}/share`, { team: team.name, group: picked(holder) });
       const where = teamLabel(res.team, res.group);
       if (res.possibly_unrelated) {
-        return { kind: 'warn', text: `Shared, but check it: ${res.team} already had a different skill named ${s.name}, last pushed by ${res.previous_pushed_by}. Yours is now revision ${res.revision} there.` };
+        return { kind: 'warn', text: say(W.share.checkIt, { team: res.team, skill: s.name, who: res.previous_pushed_by, revision: res.revision }) };
       }
-      if (res.unchanged) return `${where} already had exactly this version of ${s.name}. Nothing changed.`;
+      if (res.unchanged) return say(W.share.unchanged, { place: where, skill: s.name });
       if (res.overwrote_revision) {
-        return { kind: 'warn', text: `Shared ${s.name} with ${where} as revision ${res.revision}, in place of revision ${res.overwrote_revision} from ${res.previous_pushed_by}, which you never took.` };
+        return { kind: 'warn', text: say(W.share.overwrote, { skill: s.name, place: where, revision: res.revision, old: res.overwrote_revision, who: res.previous_pushed_by }) };
       }
-      if (res.updates_from) return `Shared ${s.name} with ${where} as revision ${res.revision}. Your copy still takes updates from ${res.updates_from}.`;
-      return `Shared ${s.name} with ${where} as revision ${res.revision}.`;
+      if (res.updates_from) return say(W.share.stillUpdates, { skill: s.name, place: where, revision: res.revision, from: res.updates_from });
+      return say(W.share.done, { skill: s.name, place: where, revision: res.revision });
     },
   });
 }
@@ -2200,17 +2900,16 @@ function shareDialog(s) {
 function removeMineDialog(s) {
   const names = state.machines.filter(m => s.placements.some(p => p.machine === m.id)).map(m => m.name);
   confirmDialog({
-    title: `Remove ${s.name} from your library?`,
-    submitLabel: 'Remove',
+    title: say(W.removeMine.title, { skill: s.name }),
+    submitLabel: W.remove,
     lines: [
-      names.length ? `${names.join(', ')} ${names.length === 1 ? 'asks' : 'ask'} at the next sync whether to delete its folder. Nothing is deleted from a computer until you answer there.`
-        : 'No computer has it, so nothing on a computer changes.',
-      s.source && `The copy in ${teamLabel(s.source.team, s.source.group)} is not affected.`,
-      `To bring it back, say "install ${s.name}" where its folder still is, or push it again.`,
+      names.length ? say(W.removeMine.asks, { n: names.length, computers: names.join(W.comma) }) : W.removeMine.noComputer,
+      s.source && say(W.removeMine.teamCopy, { place: teamLabel(s.source.team, s.source.group) }),
+      say(W.removeMine.bringBack, { skill: s.name }),
     ],
     onSubmit: async () => {
       await api(`/api/skills/${enc(s.name)}/remove`, {});
-      return `Removed ${s.name} from your library. Each computer asks about its folder at its next sync.`;
+      return say(W.removeMine.done, { skill: s.name });
     },
   });
 }
@@ -2219,7 +2918,7 @@ function removeMineDialog(s) {
 
 function teamView(team, tab, group) {
   const admin = team.role === 'ADMIN';
-  const tabs = [['skills', 'Skills', team.skills.length], ['members', 'Members', members(team).length], ['groups', 'Groups', team.groups.length], ['settings', 'Settings', null]];
+  const tabs = [['skills', W.tabs.skills, team.skills.length], ['members', W.tabs.members, members(team).length], ['groups', W.tabs.groups, team.groups.length], ['settings', W.tabs.settings, null]];
   if (!tabs.some(t => t[0] === tab)) tab = 'skills';
   const panels = { skills: skillsTab, members: membersTab, groups: groupsTab, settings: settingsTab };
   const tablist = el('div', { class: 'tabs', role: 'tablist', 'aria-label': team.name },
@@ -2246,8 +2945,8 @@ function teamView(team, tab, group) {
           el('div', { class: 'titles' },
             el('div', { class: 'line' },
               el('h1', null, team.name),
-              el('span', { class: 'badge' + (admin ? ' solid' : '') }, admin ? 'Admin' : 'Member')),
-            el('p', { class: 'subtitle' }, plural(members(team).length, 'member'), ', ', plural(team.skills.length, 'skill'), ', ', plural(team.groups.length, 'group')))),
+              el('span', { class: 'badge' + (admin ? ' solid' : '') }, admin ? W.role.ADMIN : W.role.MEMBER)),
+            el('p', { class: 'subtitle' }, say(W.teamSubtitle, { members: plural(members(team).length, 'member'), skills: plural(team.skills.length, 'skill'), groups: plural(team.groups.length, 'group') })))),
         tablist)),
     el('div', { class: 'wrap body', id: 'tabpanel', role: 'tabpanel', 'aria-labelledby': 'tab-' + tab }, panels[tab](team, admin, group)),
   ];
@@ -2256,24 +2955,20 @@ function teamView(team, tab, group) {
 function subscribeSwitch(team, g) {
   const via = unsubscribedVia(team, g.path);
   const on = g.subscribed && !via;
-  return sw(on, 'Subscribed', {
+  return sw(on, W.subscribe.on, {
     fk: `sub:${team.name}:${g.path}`,
-    label: `Subscribed to ${g.path}`,
+    label: say(W.subscribe.label, { group: g.path }),
     disabled: !!via,
-    why: via && `Off through ${via}`,
-    tip: via ? `Unsubscribed through ${via}. Subscribe to ${via} to be offered updates here again.`
-      : on ? 'You are offered updates from this group and the groups under it.'
-      : 'You are not offered updates from this group or the groups under it. Nothing is hidden.',
+    why: via && say(W.subscribe.offThrough, { group: via }),
+    tip: via ? say(W.subscribe.viaTip, { group: via }) : on ? W.subscribe.onTip : W.subscribe.offTip,
     onToggle: (b, next) => run(b, async () => {
       await api(`/api/teams/${enc(team.name)}/group`, { path: g.path, subscribed: next });
-      return next
-        ? `Subscribed to ${g.path}. You will be offered its updates again.`
-        : `Unsubscribed from ${g.path} and the groups under it. You will not be offered their updates; nothing is hidden.`;
+      return say(next ? W.subscribe.subscribed : W.subscribe.unsubscribed, { group: g.path });
     }),
   });
 }
 
-const privateBadge = () => el('span', { class: 'badge private' }, icon('lock', 11), 'Private');
+const privateBadge = () => el('span', { class: 'badge private' }, icon('lock', 11), W.private);
 const hintRow = (depth, text) => el('div', { class: 'tr hint-row', role: 'row', style: `--d:${depth}` }, el('div', { role: 'cell', 'aria-colspan': '4' }, text));
 
 // One header row of the skills tree: a chevron that folds everything under it.
@@ -2301,28 +2996,28 @@ function skillsTab(team, admin, group) {
     groupRows(team, only, admin, 0, rows);
     return [
       el('div', { class: 'panel-head' },
-        el('p', { class: 'muted' }, 'The group ', el('span', { class: 'mono' }, group), only.children.length ? ' and the groups under it.' : '.'),
-        el('a', { class: 'btn', href: teamHash(team.name) }, `All of ${team.name}`)),
-      el('div', { class: 'tbl tree', role: 'table', 'aria-label': `Skills in ${group}` },
-        el('div', { class: 'tr th-row', role: 'row' }, th('Skill'), th('Revision'), th('Pushed by'), thActions()),
+        el('p', { class: 'muted' }, sayWith(only.children.length ? W.skillsTab.groupAndUnder : W.skillsTab.group, { group: el('span', { class: 'mono' }, group) })),
+        el('a', { class: 'btn', href: teamHash(team.name) }, say(W.skillsTab.allOf, { team: team.name }))),
+      el('div', { class: 'tbl tree', role: 'table', 'aria-label': say(W.skillsIn, { place: group }) },
+        el('div', { class: 'tr th-row', role: 'row' }, th(W.col.skill), th(W.col.revision), th(W.col.pushedBy), thActions()),
         rows),
     ];
   }
   if (!team.skills.length && !roots.length) {
-    return empty('layers', 'No skills in this team yet',
-      el('p', null, 'Share one of your skills to get it started: open your library and choose "Share with a team…". The team gets its own copy.'),
-      btn('Open your library', { on: { click: () => go('#/library') } }));
+    return empty('layers', W.skillsTab.emptyTitle,
+      el('p', null, W.skillsTab.empty),
+      btn(W.skillsTab.openLibrary, { on: { click: () => go('#/library') } }));
   }
   const top = team.skills.filter(s => !s.group);
   const topKey = team.name + '\n'; // no group path is empty, so this cannot collide with one
-  const rows = [foldRow(topKey, 0, { title: 'Skills shared without a group', ic: 'users', label: 'Team level', plain: true, count: top.length })];
+  const rows = [foldRow(topKey, 0, { title: W.skillsTab.withoutGroup, ic: 'users', label: W.teamLevel, plain: true, count: top.length })];
   if (!collapsed.has(topKey)) {
     rows.push(top.length ? top.map(s => teamSkillRow(team, s, admin, 1))
-      : hintRow(1, 'No skills at team level. Skills shared without a group appear here.'));
+      : hintRow(1, W.skillsTab.noTopLevel));
   }
   roots.forEach(n => groupRows(team, n, admin, 0, rows));
-  return el('div', { class: 'tbl tree', role: 'table', 'aria-label': 'Skills in ' + team.name },
-    el('div', { class: 'tr th-row', role: 'row' }, th('Skill'), th('Revision'), th('Pushed by'), thActions()),
+  return el('div', { class: 'tbl tree', role: 'table', 'aria-label': say(W.skillsIn, { place: team.name }) },
+    el('div', { class: 'tr th-row', role: 'row' }, th(W.col.skill), th(W.col.revision), th(W.col.pushedBy), thActions()),
     rows);
 }
 
@@ -2338,7 +3033,7 @@ function groupRows(team, node, admin, depth, out) {
   if (collapsed.has(key)) return;
   const inner = Math.min(depth + 1, 7);
   if (node.skills.length) node.skills.forEach(s => out.push(teamSkillRow(team, s, admin, inner)));
-  else if (!node.children.length) out.push(hintRow(inner, 'No skills in this group yet.'));
+  else if (!node.children.length) out.push(hintRow(inner, W.skillsTab.emptyGroup));
   node.children.forEach(c => groupRows(team, c, admin, depth + 1, out));
 }
 
@@ -2347,56 +3042,53 @@ function teamSkillRow(team, s, admin, depth) {
   const update = s.in_library && mine && mine.source && mine.source.team === team.name && mine.source.update_available;
   const fk = `ts:${team.name}:${s.name}`;
   const action = update
-    ? btn('Take update', { class: 'btn primary', fk, 'aria-label': `Take update to ${s.name}`, title: `r${mine.source.revision} → r${mine.source.latest_revision}`, on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name) } }, 'up')
+    ? btn(W.update.take, { class: 'btn primary', fk, 'aria-label': say(W.update.takeLabel, { skill: s.name }), title: say(W.update.revisions, { from: mine.source.revision, to: mine.source.latest_revision }), on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name) } }, 'up')
     : s.in_library
       // Same focus key as the button it replaces, so focus stays on this row after taking it.
-      ? el('span', { class: 'in-mine', fk, tabIndex: -1 }, icon('check', 14), `In your library`)
+      ? el('span', { class: 'in-mine', fk, tabIndex: -1 }, icon('check', 14), W.inYourLibrary)
       : mine
-        ? btn('Replace yours…', { fk, 'aria-label': `Replace yours with the team's ${s.name}…`, title: `You have your own ${s.name}`, on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name) } }, 'up')
-        : btn('Add to library', { fk, 'aria-label': `Add to library: ${s.name}`, on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name) } }, 'plus');
+        ? btn(W.teamRow.replace, { fk, 'aria-label': say(W.teamRow.replaceLabel, { skill: s.name }), title: say(W.teamRow.youHave, { skill: s.name }), on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name) } }, 'up')
+        : btn(W.teamRow.add, { fk, 'aria-label': say(W.teamRow.addLabel, { skill: s.name }), on: { click: ev => takeSkill(ev.currentTarget, team.name, s.name) } }, 'plus');
   return el('div', { class: 'tr', role: 'row', style: `--d:${depth}` },
     td('c-main',
       el('div', { class: 'name-line' },
         el('span', { class: 'name' }, s.name),
-        update && el('span', { class: 'badge info' }, el('span', { class: 'dot accent' }), 'Update available')),
+        update && el('span', { class: 'badge info' }, el('span', { class: 'dot accent' }), W.update.available)),
       s.description && el('span', { class: 't2' }, s.description)),
-    td('meta nowrap', el('span', { class: 't1 mono', title: 'Revision ' + s.revision }, 'r' + s.revision)),
+    td('meta nowrap', el('span', { class: 't1 mono', title: say(W.revisionTitle, { revision: s.revision }) }, say(W.rev, { revision: s.revision }))),
     td('meta',
       el('span', { class: 't1' }, s.pushed_by),
       el('span', { class: 't2' }, when(s.updated_on))),
     td('row end',
       action,
-      admin && menu(`Manage ${s.name}`, 'tsm:' + fk, [
-        { label: 'Move to group…', icon: 'move', run: () => moveDialog(team, s) },
-        { label: 'Remove from team', icon: 'trash', danger: true, run: () => removeTeamSkillDialog(team, s) },
+      admin && menu(say(W.manageName, { name: s.name }), 'tsm:' + fk, [
+        { label: W.teamRow.move, icon: 'move', run: () => moveDialog(team, s) },
+        { label: W.teamRow.removeFromTeam, icon: 'trash', danger: true, run: () => removeTeamSkillDialog(team, s) },
       ])));
 }
 
 function moveDialog(team, s) {
-  const picker = groupPicker(team, { name: 'move-group', legend: 'Move to', noneLabel: 'Team level (no group)', value: s.group || '' });
+  const picker = groupPicker(team, { name: 'move-group', legend: W.move.legend, noneLabel: W.teamLevelNoGroup, value: s.group || '' });
   openDialog({
-    title: `Move ${s.name}`,
-    submitLabel: 'Move',
-    body: [el('p', null, 'Moving a skill changes who in the team can see it: a private group shows it only to the people in that group.'), picker],
+    title: say(W.move.title, { skill: s.name }),
+    submitLabel: W.move.submit,
+    body: [el('p', null, W.move.lead), picker],
     onSubmit: async () => {
       const group = picked(picker);
       await api(`/api/teams/${enc(team.name)}/skills/${enc(s.name)}/move`, { group });
-      return `Moved ${s.name} to ${group ? teamLabel(team.name, group) : `team level in ${team.name}`}.`;
+      return say(W.move.done, { skill: s.name, place: group ? teamLabel(team.name, group) : say(W.move.teamLevelIn, { team: team.name }) });
     },
   });
 }
 
 function removeTeamSkillDialog(team, s) {
   confirmDialog({
-    title: `Remove ${s.name} from ${team.name}?`,
-    submitLabel: 'Remove from team',
-    lines: [
-      'The team no longer has this skill, and nobody is offered it or its updates from here. Its history in the team is deleted and cannot be restored.',
-      'People who already added it to their library keep their copy.',
-    ],
+    title: say(W.removeTeamSkill.title, { skill: s.name, team: team.name }),
+    submitLabel: W.teamRow.removeFromTeam,
+    lines: W.removeTeamSkill.lines,
     onSubmit: async () => {
       await api(`/api/teams/${enc(team.name)}/skills/${enc(s.name)}/remove`, {});
-      return `Removed ${s.name} from ${team.name}. People who took it keep their copy.`;
+      return say(W.removeTeamSkill.done, { skill: s.name, team: team.name });
     },
   });
 }
@@ -2410,34 +3102,34 @@ function membersTab(team, admin) {
   });
   const removable = admin;
   const cols = 'minmax(180px, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) auto auto' + (removable ? ' auto' : '');
-  return el('div', { class: 'tbl', role: 'table', 'aria-label': 'Members', style: 'grid-template-columns:' + cols },
-    el('div', { class: 'tr th-row', role: 'row' }, th('Member'), th('Groups'),
-      el('div', { class: 'th extra', role: 'columnheader', title: 'Skills in this team whose latest revision this person pushed' }, 'Pushed'),
-      th('Access'), th('Role'), removable && thActions()),
+  return el('div', { class: 'tbl', role: 'table', 'aria-label': W.tabs.members, style: 'grid-template-columns:' + cols },
+    el('div', { class: 'tr th-row', role: 'row' }, th(W.members.member), th(W.tabs.groups),
+      el('div', { class: 'th extra', role: 'columnheader', title: W.members.pushedTip }, W.members.pushed),
+      th(W.members.access), th(W.members.role), removable && thActions()),
     members(team).map(m => {
       const me = m.username === state.user.username;
       const isAdmin = m.role === 'ADMIN';
       const role = admin
         ? el('select', {
-            class: 'input compact', fk: `role:${m.username}`, 'aria-label': `Role of ${m.username}`,
-            on: { change: ev => patch(ev.currentTarget, m, { role: ev.currentTarget.value }, `${m.username} is now ${ev.currentTarget.value === 'ADMIN' ? 'an admin' : 'a member'} of ${team.name}.`).then(ok => { if (!ok) render(); }) },
-          }, el('option', { value: 'ADMIN', selected: isAdmin }, 'Admin'), el('option', { value: 'MEMBER', selected: !isAdmin }, 'Member'))
-        : el('span', { class: 'badge' + (isAdmin ? ' solid' : '') }, isAdmin ? 'Admin' : 'Member');
+            class: 'input compact', fk: `role:${m.username}`, 'aria-label': say(W.members.roleOf, { username: m.username }),
+            on: { change: ev => patch(ev.currentTarget, m, { role: ev.currentTarget.value }, say(W.members.nowRole[ev.currentTarget.value], { username: m.username, team: team.name })).then(ok => { if (!ok) render(); }) },
+          }, el('option', { value: 'ADMIN', selected: isAdmin }, W.role.ADMIN), el('option', { value: 'MEMBER', selected: !isAdmin }, W.role.MEMBER))
+        : el('span', { class: 'badge' + (isAdmin ? ' solid' : '') }, isAdmin ? W.role.ADMIN : W.role.MEMBER);
       const seesAll = admin
-        ? sw(!!m.sees_all_groups, 'Sees all groups', {
-            fk: `sees:${m.username}`, label: `${m.username} sees all groups`,
-            tip: 'Sees every group in this team, including private ones they were not added to.',
-            onToggle: (b, next) => patch(b, m, { sees_all_groups: next }, next ? `${m.username} now sees every group in ${team.name}.` : `${m.username} now sees only open groups and the ones they are in.`),
+        ? sw(!!m.sees_all_groups, W.members.seesAll, {
+            fk: `sees:${m.username}`, label: say(W.members.seesAllLabel, { username: m.username }),
+            tip: W.members.seesAllTip,
+            onToggle: (b, next) => patch(b, m, { sees_all_groups: next }, say(next ? W.members.nowSeesAll : W.members.nowSeesOwn, { username: m.username, team: team.name })),
           })
-        : m.sees_all_groups ? el('span', { class: 'badge' }, 'Sees all groups') : el('span', { class: 't2' }, 'Own groups');
+        : m.sees_all_groups ? el('span', { class: 'badge' }, W.members.seesAll) : el('span', { class: 't2' }, W.members.ownGroups);
       // An admin can always invite; the switch is for members (ADR-0019).
       const invites = isAdmin ? null : admin
-        ? sw(!!m.can_invite, 'Can invite', {
-            fk: `invites:${m.username}`, label: `${m.username} can invite`,
-            tip: 'May create invite links for this team, and nothing else an admin can.',
-            onToggle: (b, next) => patch(b, m, { can_invite: next }, next ? `${m.username} can now invite people to ${team.name}.` : `${m.username} can no longer invite people to ${team.name}.`),
+        ? sw(!!m.can_invite, W.members.canInvite, {
+            fk: `invites:${m.username}`, label: say(W.members.canInviteLabel, { username: m.username }),
+            tip: W.members.canInviteTip,
+            onToggle: (b, next) => patch(b, m, { can_invite: next }, say(next ? W.members.nowInvites : W.members.noLongerInvites, { username: m.username, team: team.name })),
           })
-        : m.can_invite ? el('span', { class: 'badge' }, 'Can invite') : null;
+        : m.can_invite ? el('span', { class: 'badge' }, W.members.canInvite) : null;
       const groups = m.groups || [];
       const pushed = team.skills.filter(s => s.pushed_by === m.username).map(s => s.name);
       return el('div', { class: 'tr', role: 'row' },
@@ -2445,28 +3137,28 @@ function membersTab(team, admin) {
           el('div', { class: 'name-line' },
             el('span', { class: 'avatar round', 'aria-hidden': 'true' }, m.username[0]),
             el('span', { class: 'person' }, m.username),
-            me && el('span', { class: 'badge' }, 'You')),
+            me && el('span', { class: 'badge' }, W.members.you)),
           m.full_name && el('span', { class: 't2' }, m.full_name)),
         td('wide',
           groups.length
-            ? el('ul', { class: 'chips', 'aria-label': `Groups of ${m.username}` }, groups.map(g => el('li', { class: 'badge mono' }, g)))
-            : el('span', { class: 't2' }, 'In no groups')),
+            ? el('ul', { class: 'chips', 'aria-label': say(W.members.groupsOf, { username: m.username }) }, groups.map(g => el('li', { class: 'badge mono' }, g)))
+            : el('span', { class: 't2' }, W.members.noGroups)),
         td('extra',
-          el('span', { class: 't2' }, pushed.length ? plural(pushed.length, 'skill') : 'Nothing yet'),
+          el('span', { class: 't2' }, pushed.length ? plural(pushed.length, 'skill') : W.members.nothingYet),
           pushed.length ? el('span', { class: 't2 mono', title: pushed.join(', ') }, some(pushed)) : null),
         td('row', seesAll, invites),
         td('row', role),
         removable && td('row end', me
           ? null
-          : btn('Remove…', {
-              class: 'btn ghost sm push', fk: `rmm:${m.username}`, 'aria-label': `Remove ${m.username} from ${team.name}…`,
+          : btn(W.members.remove, {
+              class: 'btn ghost sm push', fk: `rmm:${m.username}`, 'aria-label': say(W.members.removeLabel, { username: m.username, team: team.name }),
               on: { click: () => confirmDialog({
-                title: `Remove ${m.username} from ${team.name}?`,
-                submitLabel: 'Remove member',
-                lines: [`${m.username} stops seeing this team's skills and groups.`, 'Skills they already added to their library stay theirs.'],
+                title: say(W.members.removeTitle, { username: m.username, team: team.name }),
+                submitLabel: W.members.removeSubmit,
+                lines: [say(W.members.stopsSeeing, { username: m.username }), W.members.keepTheirs],
                 onSubmit: async () => {
                   await api(`/api/teams/${enc(team.name)}/members/${enc(m.username)}/remove`, {});
-                  return `Removed ${m.username} from ${team.name}.`;
+                  return say(W.members.removed, { username: m.username, team: team.name });
                 },
               }) },
             }, 'trash')));
@@ -2478,30 +3170,29 @@ function membersTab(team, admin) {
 function groupsTab(team, admin) {
   const rows = flatten(groupTree(team)).filter(r => r.node.g);
   const head = el('div', { class: 'panel-head' },
-    el('p', { class: 'muted' }, 'Groups organise a team\'s skills, like channels. A private group is seen only by the people added to it.'),
-    admin && btn('New group', { class: 'btn primary', fk: 'new-group', on: { click: () => newGroupDialog(team) } }, 'plus'));
+    el('p', { class: 'muted' }, W.groups.lead),
+    admin && btn(W.groups.new, { class: 'btn primary', fk: 'new-group', on: { click: () => newGroupDialog(team) } }, 'plus'));
   if (!rows.length) {
-    return [head, empty('folder', 'No groups yet',
-      el('p', null, admin ? 'Create a group to organise skills by topic or project. Groups can be nested, for example ' : 'An admin of this team can create groups to organise its skills.',
-        admin && el('code', null, 'backend/aistack'), admin && '.'),
-      admin && btn('New group', { on: { click: () => newGroupDialog(team) } }, 'plus'))];
+    return [head, empty('folder', W.groups.emptyTitle,
+      el('p', null, admin ? sayWith(W.groups.emptyAdmin, { example: el('code', null, 'backend/aistack') }) : W.groups.empty),
+      admin && btn(W.groups.new, { on: { click: () => newGroupDialog(team) } }, 'plus'))];
   }
   const cols = 'minmax(300px, 1.6fr) minmax(0, .8fr) minmax(0, 1fr) auto auto' + (admin ? ' auto' : '');
-  return [head, el('div', { class: 'tbl groups', role: 'table', 'aria-label': 'Groups', style: 'grid-template-columns:' + cols },
-    el('div', { class: 'tr th-row', role: 'row' }, th('Group'), th('People'), th('Skills'), th('Subscription'), th('Visibility'), admin && thActions()),
+  return [head, el('div', { class: 'tbl groups', role: 'table', 'aria-label': W.tabs.groups, style: 'grid-template-columns:' + cols },
+    el('div', { class: 'tr th-row', role: 'row' }, th(W.groups.group), th(W.groups.people), th(W.tabs.skills), th(W.groups.subscription), th(W.groups.visibility), admin && thActions()),
     rows.map(({ node, depth }) => {
       const g = node.g;
       const cut = g.path.lastIndexOf('/');
       const inIt = members(team).filter(m => (m.groups || []).includes(g.path)).map(m => m.username);
       const holds = node.skills.map(s => s.name);
-      const seenBy = g.private ? 'Seen only by the people added to it'
-        : cut > 0 ? `Open to everyone who sees ${g.path.slice(0, cut)}` : `Open to everyone in ${team.name}`;
+      const seenBy = g.private ? W.groups.seenByAdded
+        : cut > 0 ? say(W.groups.openUnder, { group: g.path.slice(0, cut) }) : say(W.groups.openToTeam, { team: team.name });
       return el('div', { class: 'tr', role: 'row', style: `--d:${Math.min(depth, 6)}` },
         td('c-main',
           el('div', { class: 'tree-name' },
             el('span', { class: 'gicon' }, icon(g.private ? 'lock' : 'folder', 16)),
             el('span', { class: 'path' }, cut > 0 && el('span', { class: 'parent' }, g.path.slice(0, cut + 1)), g.path.slice(cut + 1)),
-            g.member && el('span', { class: 'badge' }, icon('check', 11), 'You are in it')),
+            g.member && el('span', { class: 'badge' }, icon('check', 11), W.groups.youAreIn)),
           el('span', { class: 't2 extra' }, seenBy)),
         td('meta',
           el('span', { class: 't2' }, people(inIt.length)),
@@ -2511,40 +3202,40 @@ function groupsTab(team, admin) {
           holds.length ? el('span', { class: 't2 mono extra', title: holds.join(', ') }, some(holds)) : null),
         td('row', subscribeSwitch(team, g)),
         td('row', admin
-          ? sw(g.private, 'Private', {
-              fk: `priv:${g.path}`, label: `${g.path} is private`,
-              tip: g.private ? 'Only people added to this group see it. Switch off to open it to the whole team.' : 'Everyone in the team sees this group. Switch on to limit it to the people added to it.',
+          ? sw(g.private, W.private, {
+              fk: `priv:${g.path}`, label: say(W.groups.isPrivate, { group: g.path }),
+              tip: g.private ? W.groups.privateTip : W.groups.openTip,
               onToggle: (b, next) => run(b, async () => {
                 await api(`/api/teams/${enc(team.name)}/group`, { path: g.path, private: next });
-                return next ? `${g.path} is now private: only people added to it see it.` : `${g.path} is now open to everyone in ${team.name}.`;
+                return say(next ? W.groups.nowPrivate : W.groups.nowOpen, { group: g.path, team: team.name });
               }),
             })
-          : g.private ? privateBadge() : el('span', { class: 'badge' }, 'Open')),
-        admin && td('row end acts', btn('People…', { class: 'btn push', fk: `ppl:${g.path}`, 'aria-label': `People in ${g.path}…`, on: { click: () => groupPeopleDialog(team, g) } }, 'users'),
-          menu(`Manage ${g.path}`, `gm:${g.path}`, [
-            { label: 'Rename…', icon: 'edit', run: () => renameGroupDialog(team, g) },
-            { label: 'Delete group', icon: 'trash', danger: true, run: () => deleteGroupDialog(team, g) },
+          : g.private ? privateBadge() : el('span', { class: 'badge' }, W.groups.open)),
+        admin && td('row end acts', btn(W.groups.peopleButton, { class: 'btn push', fk: `ppl:${g.path}`, 'aria-label': say(W.groups.peopleLabel, { group: g.path }), on: { click: () => groupPeopleDialog(team, g) } }, 'users'),
+          menu(say(W.manageName, { name: g.path }), `gm:${g.path}`, [
+            { label: W.groups.renameItem, icon: 'edit', run: () => renameGroupDialog(team, g) },
+            { label: W.groups.deleteSubmit, icon: 'trash', danger: true, run: () => deleteGroupDialog(team, g) },
           ])));
     }))];
 }
 
 function newGroupDialog(team) {
   const name = el('input', { class: 'input', type: 'text', autocomplete: 'off', spellcheck: false, maxLength: 64, placeholder: 'aistack' });
-  const parent = groupPicker(team, { name: 'parent', legend: 'Inside (optional)', noneLabel: 'Top level of ' + team.name });
+  const parent = groupPicker(team, { name: 'parent', legend: W.groups.inside, noneLabel: say(W.groups.topLevel, { team: team.name }) });
   const priv = el('input', { type: 'checkbox' });
   openDialog({
-    title: `New group in ${team.name}`,
-    submitLabel: 'Create group',
+    title: say(W.groups.newTitle, { team: team.name }),
+    submitLabel: W.groups.create,
     body: [
-      field('Name', name, NAME_RULE),
+      field(W.name, name, NAME_RULE),
       parent,
-      el('label', { class: 'check' }, priv, el('span', null, 'Private', el('small', null, 'Only people you add to the group see it and its skills.'))),
+      el('label', { class: 'check' }, priv, el('span', null, W.private, el('small', null, W.groups.privateHelp))),
     ],
     onSubmit: async () => {
       const value = name.value.trim();
-      checkName(value, 'group');
+      checkName(value, W.names.group);
       const res = await api(`/api/teams/${enc(team.name)}/groups`, { name: value, parent: picked(parent), private: priv.checked });
-      return `Created the group ${res.path || value} in ${team.name}.`;
+      return say(W.groups.created, { group: res.path || value, team: team.name });
     },
   });
 }
@@ -2553,88 +3244,74 @@ function renameGroupDialog(team, g) {
   const cut = g.path.lastIndexOf('/');
   const name = el('input', { class: 'input', type: 'text', autocomplete: 'off', spellcheck: false, maxLength: 64, value: g.path.slice(cut + 1) });
   openDialog({
-    title: `Rename ${g.path}`,
-    submitLabel: 'Rename',
-    body: [field('New name', name, NAME_RULE), el('p', null, 'The groups inside it follow, and its skills, people and subscriptions stay with it.')],
+    title: say(W.groups.renameTitle, { group: g.path }),
+    submitLabel: W.rename,
+    body: [field(W.groups.newName, name, NAME_RULE), el('p', null, W.groups.renameLead)],
     onSubmit: async () => {
       const value = name.value.trim();
-      checkName(value, 'group');
+      checkName(value, W.names.group);
       const res = await api(`/api/teams/${enc(team.name)}/group/rename`, { path: g.path, name: value });
-      return `Renamed ${g.path} to ${res.path}.`;
+      return say(W.renamed, { from: g.path, to: res.path });
     },
   });
 }
 
 function deleteGroupDialog(team, g) {
   confirmDialog({
-    title: `Delete ${g.path}?`,
-    submitLabel: 'Delete group',
-    lines: ['Only an empty group can be deleted. Move its skills elsewhere and delete the groups inside it first.',
-      'The people in it stay in the team.'],
+    title: say(W.groups.deleteTitle, { group: g.path }),
+    submitLabel: W.groups.deleteSubmit,
+    lines: W.groups.deleteLines,
     onSubmit: async () => {
       await api(`/api/teams/${enc(team.name)}/group/delete`, { path: g.path });
-      return `Deleted the group ${g.path} from ${team.name}.`;
+      return say(W.groups.deleted, { group: g.path, team: team.name });
     },
   });
 }
 
 function groupPeopleDialog(team, g) {
-  const filter = el('input', { class: 'input', type: 'search', placeholder: 'Filter members', autocomplete: 'off', 'aria-label': 'Filter members' });
+  const filter = el('input', { class: 'input', type: 'search', placeholder: W.groups.filter, autocomplete: 'off', 'aria-label': W.groups.filter });
   const boxes = members(team).map(m => ({
     m, was: (m.groups || []).includes(g.path),
     box: el('input', { type: 'checkbox', checked: (m.groups || []).includes(g.path) }),
   }));
   const rows = boxes.map(b => el('label', { class: 'picker-opt' }, b.box, el('span', { class: 'avatar round', 'aria-hidden': 'true' }, b.m.username[0]),
-    el('span', { class: 'person' }, b.m.username), b.m.role === 'ADMIN' && el('span', { class: 'badge' }, 'Admin')));
+    el('span', { class: 'person' }, b.m.username), b.m.role === 'ADMIN' && el('span', { class: 'badge' }, W.role.ADMIN)));
   filter.addEventListener('input', () => {
     const q = filter.value.trim().toLowerCase();
     boxes.forEach((b, i) => { rows[i].hidden = !!q && !b.m.username.toLowerCase().includes(q); });
   });
   openDialog({
-    title: `People in ${g.path}`,
-    submitLabel: 'Save',
+    title: say(W.groups.peopleTitle, { group: g.path }),
+    submitLabel: W.save,
     body: [
-      el('p', null, g.private ? 'This group is private: only the people ticked here see it and its skills.' : 'This group is open: the whole team sees it. People ticked here are its members.'),
+      el('p', null, g.private ? W.groups.peoplePrivate : W.groups.peopleOpen),
       filter,
-      el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, `Members of ${team.name}`), el('div', { class: 'picker-list' }, rows)),
+      el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, say(W.groups.membersOf, { team: team.name })), el('div', { class: 'picker-list' }, rows)),
     ],
     onSubmit: async () => {
       const changed = boxes.filter(b => b.box.checked !== b.was);
       for (const b of changed) {
         await api(`/api/teams/${enc(team.name)}/group/members`, { path: g.path, username: b.m.username, member: b.box.checked });
       }
-      return changed.length ? `Updated who is in ${g.path}.` : null;
+      return changed.length ? say(W.groups.peopleUpdated, { group: g.path }) : null;
     },
   });
 }
 
 /* ---------- where the Library lives (ADR-0020) ---------- */
 
-// The answers to "Where should your Library live?", each with what it costs, and what to tell
-// the coding agent to move there.
-const STORAGE = {
-  this_computer: { title: 'Only this computer', icon: 'laptop', cost: 'Free and nothing to keep switched on. No other computer reaches it.',
-                   say: 'move my AIStack Library to this computer only',
-                   after: 'Your other computers can no longer reach it.' },
-  github: { title: 'A private GitHub repository', icon: 'folder', cost: 'Every computer of yours shares it through your own GitHub sign-in, nothing has to stay on, and every change is in the repository\'s history.',
-            say: 'move my AIStack Library to a private GitHub repository',
-            after: 'Then, on each other computer, paste the setup and choose the same repository.' },
-  postgresql: { title: 'A free PostgreSQL database', icon: 'layers', cost: 'Every computer of yours uses it, and nothing has to stay on. Each computer keeps its address; if a laptop is lost, reset the database password and paste the new address on the others.',
-                say: 'move my AIStack Library to a PostgreSQL database',
-                after: 'Then, on each other computer, paste the setup and give it the same database address.' },
-  server: { title: 'An AIStack server', icon: 'globe', cost: 'Your computers reach it over the network, so it must stay on. The only choice that works for a team.' },
-};
-
-const lowerFirst = text => text[0].toLowerCase() + text.slice(1);
+// Each place a Library can live: its words (W.places) and its icon.
+const STORAGE_ICONS = { this_computer: 'laptop', github: 'folder', postgresql: 'layers', server: 'globe' };
+const STORAGE = Object.fromEntries(Object.entries(W.places).map(([key, words]) => [key, { ...words, icon: STORAGE_ICONS[key] }]));
 
 function moveLibraryDialog(key) {
   openDialog({
-    title: 'Move to ' + lowerFirst(STORAGE[key].title),
-    submitLabel: 'Done',
+    title: STORAGE[key].moveTo,
+    submitLabel: W.done,
     cancelLabel: null,
     body: [
-      el('p', null, 'Say this to your coding agent on this computer. It moves the Library with its history, connects this computer to the new place, and restarts once. The old place is left as it was.'),
-      copyField(STORAGE[key].say, 'What to say'),
+      el('p', null, W.storage.moveLead),
+      copyField(STORAGE[key].say, W.whatToSay),
       el('p', { class: 'help' }, STORAGE[key].after),
     ],
   });
@@ -2645,48 +3322,48 @@ function storageView() {
   const here = STORAGE[lib.kind];
   const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
   const facts = lib.kind === 'postgresql'
-    ? [fact('Database', lib.provider), fact('Host', el('span', { class: 'mono' }, lib.host))]
+    ? [fact(W.storage.database, lib.provider), fact(W.storage.host, el('span', { class: 'mono' }, lib.host))]
     : lib.kind === 'github'
-    ? [fact('Repository', el('span', { class: 'mono' }, lib.repository))]
-    : lib.kind === 'server' ? [fact('Server', el('span', { class: 'mono' }, location.host))]
-    : [fact('Computer', 'The one showing this page')];
-  facts.push(fact('Computers using it', String(state.machines.length)));
+    ? [fact(W.storage.repository, el('span', { class: 'mono' }, lib.repository))]
+    : lib.kind === 'server' ? [fact(W.storage.server, el('span', { class: 'mono' }, location.host))]
+    : [fact(W.storage.computer, W.storage.thisOne)];
+  facts.push(fact(W.storage.computersUsing, String(state.machines.length)));
   const actions = [
     lib.kind === 'github' && el('a', { class: 'btn', href: `https://github.com/${lib.repository}`, target: '_blank', rel: 'noopener noreferrer' },
-      icon('external'), el('span', null, 'Open on GitHub')),
-    lib.kind !== 'this_computer' && btn('Add a computer', { fk: 'storage-add-computer', on: { click: addComputerDialog } }, 'plus'),
+      icon('external'), el('span', null, W.storage.openOnGithub)),
+    lib.kind !== 'this_computer' && btn(W.addComputer.title, { fk: 'storage-add-computer', on: { click: addComputerDialog } }, 'plus'),
   ];
   // Local mode moves between the three places a person can keep alone; a server's Library stays on the server.
   const elsewhere = lib.kind === 'server' ? [] : ['github', 'postgresql', 'this_computer'].filter(k => k !== lib.kind);
   return [
     el('div', { class: 'band' }, el('div', { class: 'wrap page-head' }, el('div', { class: 'titles' },
-      el('h1', null, 'Where your Library lives'),
-      el('p', { class: 'subtitle' }, 'The one place every computer of yours reads your skills from.')))),
+      el('h1', null, W.storage.title),
+      el('p', { class: 'subtitle' }, W.storage.subtitle)))),
     el('div', { class: 'wrap body narrow' },
-      el('section', { class: 'card place-now', 'aria-label': 'Where it lives now' },
+      el('section', { class: 'card place-now', 'aria-label': W.storage.now },
         el('div', { class: 'card-body' },
           el('div', { class: 'place-title' },
             el('span', { class: 'avatar lg', 'aria-hidden': 'true' }, icon(here.icon, 20)),
             el('div', null,
               el('h2', null, here.title),
               lib.problem
-                ? el('p', { class: 'status' }, el('span', { class: 'dot amber' }), 'Could not reach GitHub: showing this computer\'s copy.'
-                    + (lib.unpublished ? ` ${plural(lib.unpublished, 'change')} made here ${lib.unpublished === 1 ? 'goes' : 'go'} out when it is back.` : ''))
-                : el('p', { class: 'status' }, el('span', { class: 'dot ok' }), 'Connected: this page just read your Library from it.'))),
+                ? el('p', { class: 'status' }, el('span', { class: 'dot amber' }), W.storage.unreached
+                    + (lib.unpublished ? say(W.storage.unpublished, { n: lib.unpublished }) : ''))
+                : el('p', { class: 'status' }, el('span', { class: 'dot ok' }), W.storage.connected))),
           lib.problem && el('p', { class: 'note' }, icon('info', 14), el('span', null, lib.problem)),
           el('p', null, here.cost),
           el('dl', { class: 'facts' }, facts)),
-        actions.some(Boolean) && el('div', { class: 'card-foot' }, el('span', null, lib.kind === 'server' ? 'The operator of this server backs it up.' : 'Each computer reaches it on its own.'),
+        actions.some(Boolean) && el('div', { class: 'card-foot' }, el('span', null, lib.kind === 'server' ? W.storage.operatorBacksUp : W.storage.eachReaches),
           el('div', { class: 'head-actions' }, actions))),
       elsewhere.length ? [
-        el('h2', { class: 'section-title' }, 'Move it somewhere else'),
+        el('h2', { class: 'section-title' }, W.storage.elsewhere),
         el('div', { class: 'choice-grid' }, elsewhere.map(k => el('section', { class: 'card choice-card', 'aria-label': STORAGE[k].title },
           el('div', { class: 'card-body' },
             el('h3', null, icon(STORAGE[k].icon, 16), STORAGE[k].title),
             el('p', null, STORAGE[k].cost)),
-          el('div', { class: 'card-foot' }, btn('Move here…', { fk: 'move:' + k, 'aria-label': 'Move to ' + lowerFirst(STORAGE[k].title), on: { click: () => moveLibraryDialog(k) } }, 'move'))))),
-        el('p', { class: 'note' }, icon('info', 14), el('span', null, 'Want a team? A team needs an AIStack server everyone reaches. To move onto one, connect this computer to it: its first sync backs up every skill here.')),
-      ] : el('p', { class: 'note' }, icon('info', 14), el('span', null, 'Your Library on this server is private: only you see it. Teams and groups are where you share.'))),
+          el('div', { class: 'card-foot' }, btn(W.storage.moveHere, { fk: 'move:' + k, 'aria-label': STORAGE[k].moveTo, on: { click: () => moveLibraryDialog(k) } }, 'move'))))),
+        el('p', { class: 'note' }, icon('info', 14), el('span', null, W.storage.wantTeam)),
+      ] : el('p', { class: 'note' }, icon('info', 14), el('span', null, W.storage.private))),
   ];
 }
 
@@ -2695,31 +3372,31 @@ function storageView() {
 // The name teammates read beside your username. Usernames stay unique; two people may share a name.
 function fullNameForm() {
   const input = el('input', { class: 'input', type: 'text', id: 'full-name', name: 'full-name', autocomplete: 'name', maxLength: 100,
-    value: state.user.full_name || '', placeholder: 'Maria Papadopoulou' });
-  const save = btn('Save name', { class: 'btn', fk: 'save-name', on: { click: ev => run(ev.currentTarget, async () => {
+    value: state.user.full_name || '', placeholder: W.fullName.placeholder });
+  const save = btn(W.fullName.save, { class: 'btn', fk: 'save-name', on: { click: ev => run(ev.currentTarget, async () => {
     const res = await api('/api/account', { full_name: input.value });
-    return res.full_name ? `Your teammates now see ${res.full_name}.` : 'Your teammates now see only your username.';
+    return res.full_name ? say(W.fullName.saved, { name: res.full_name }) : W.fullName.cleared;
   }) } });
   return el('div', { class: 'field name-field' },
-    el('label', { htmlFor: 'full-name' }, 'Full name'),
+    el('label', { htmlFor: 'full-name' }, W.fullName.label),
     el('div', { class: 'code-box' }, input, save),
-    el('span', { class: 'help' }, 'Shown to your teammates beside your username, ', state.user.username, '. Leave it empty to show only the username.'));
+    el('span', { class: 'help' }, say(W.fullName.help, { username: state.user.username })));
 }
 
 /* ---------- settings: appearance ---------- */
 
-const THEME_CHOICES = { system: ['Match the system', 'auto'], light: ['Light', 'sun'], dark: ['Dark', 'moon'] };
-const ACCENT_NAMES = { blue: 'Blue', teal: 'Teal', green: 'Green', amber: 'Amber', rose: 'Rose', graphite: 'Graphite' };
+const THEME_CHOICES = { system: [W.settings.themes.system, 'auto'], light: [W.settings.themes.light, 'sun'], dark: [W.settings.themes.dark, 'moon'] };
+const ACCENT_NAMES = W.settings.accents;
 
 function settingsView() {
   const now = window.appearance.get();
   const choose = change => { window.appearance.set(change); render(); };
-  const themes = el('fieldset', { class: 'seg-choice' }, el('legend', null, 'Theme'),
+  const themes = el('fieldset', { class: 'seg-choice' }, el('legend', null, W.settings.theme),
     Object.entries(THEME_CHOICES).map(([key, [label, ic]]) => el('label', { class: 'theme-opt' },
       el('input', { type: 'radio', name: 'theme', value: key, checked: now.theme === key, fk: 'theme:' + key, on: { change: () => choose({ theme: key }) } }),
       el('span', { class: 'preview ' + key, 'aria-hidden': 'true' }, el('i'), el('i'), el('i')),
       el('span', { class: 'opt-label' }, icon(ic, 14), label))));
-  const accents = el('fieldset', { class: 'swatches' }, el('legend', null, 'Accent'),
+  const accents = el('fieldset', { class: 'swatches' }, el('legend', null, W.settings.accent),
     window.appearance.ACCENTS.map(key => el('label', { class: 'swatch', 'data-accent': key, title: ACCENT_NAMES[key] },
       el('input', { type: 'radio', name: 'accent', value: key, checked: now.accent === key, fk: 'accent:' + key, on: { change: () => choose({ accent: key }) } }),
       el('span', { class: 'chip', 'aria-hidden': 'true' }),
@@ -2727,28 +3404,28 @@ function settingsView() {
   const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
   return [
     el('div', { class: 'band' }, el('div', { class: 'wrap page-head' }, el('div', { class: 'titles' },
-      el('h1', null, 'Settings'),
-      el('p', { class: 'subtitle' }, 'How the dashboard looks, and who you are signed in as.')))),
+      el('h1', null, W.settings.title),
+      el('p', { class: 'subtitle' }, W.settings.subtitle)))),
     el('div', { class: 'wrap body narrow' },
-      el('section', { class: 'card', 'aria-label': 'Appearance' },
+      el('section', { class: 'card', 'aria-label': W.settings.appearance },
         el('div', { class: 'card-body stack' },
-          el('h2', null, 'Appearance'),
+          el('h2', null, W.settings.appearance),
           themes,
           accents),
-        el('div', { class: 'card-foot' }, el('span', null, 'Kept in this browser only. Each browser you open the dashboard in remembers its own.'))),
-      el('section', { class: 'card', 'aria-label': 'Account' },
+        el('div', { class: 'card-foot' }, el('span', null, W.settings.keptHere))),
+      el('section', { class: 'card', 'aria-label': W.settings.account },
         el('div', { class: 'card-body' },
-          el('h2', null, 'Account'),
+          el('h2', null, W.settings.account),
           state.server !== false && fullNameForm(),
           el('dl', { class: 'facts' },
-            fact('Username', el('strong', null, state.user.username)),
-            fact('Computers', String(state.machines.length)),
-            fact('Library', el('a', { class: 'link', href: '#/storage' }, STORAGE[library().kind].title)),
-            state.server !== false && fact('Teams', String(state.teams.length)),
+            fact(W.settings.username, el('strong', null, state.user.username)),
+            fact(W.nav.computers, String(state.machines.length)),
+            fact(W.library.title, el('a', { class: 'link', href: '#/storage' }, STORAGE[library().kind].title)),
+            state.server !== false && fact(W.settings.teams, String(state.teams.length)),
             state.release && fact('AIStack', el('span', { class: 'mono' }, state.release)))),
         // Your data, to take anywhere: every skill as a folder, as `aistack export` writes them (STD-15).
-        !DEMO && el('div', { class: 'card-foot' }, el('span', null, 'Every skill in your library, a folder each.'),
-          el('a', { class: 'btn', href: '/api/library.tar.gz', download: 'aistack-library.tar.gz' }, 'Download my library')))),
+        !DEMO && el('div', { class: 'card-foot' }, el('span', null, W.settings.exportHint),
+          el('a', { class: 'btn', href: '/api/library.tar.gz', download: 'aistack-library.tar.gz' }, W.settings.download)))),
   ];
 }
 
@@ -2762,71 +3439,63 @@ function settingsTab(team, admin) {
   const closed = team.groups.filter(g => g.private).length;
   const alone = members(team).length === 1;
   const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
-  const about = el('section', { class: 'card', 'aria-label': 'About this team' },
+  const about = el('section', { class: 'card', 'aria-label': W.teamSettingsTab.about },
     el('div', { class: 'card-body' },
-      el('h2', { class: 'small' }, 'About this team'),
+      el('h2', { class: 'small' }, W.teamSettingsTab.about),
       el('dl', { class: 'facts' },
-        fact('Your role', admin ? 'Admin' : 'Member'),
-        fact(admins.length === 1 ? 'Admin' : 'Admins', el('span', { class: 'person', title: admins.join(', ') }, some(admins))),
-        fact('Private groups', closed ? String(closed) : 'None'),
-        fact('Joining', 'With an invite code'))),
-    admin && el('div', { class: 'card-foot' }, el('span', null, 'As an admin you see every group, private ones included.')));
+        fact(W.teamSettingsTab.yourRole, admin ? W.role.ADMIN : W.role.MEMBER),
+        fact(say(W.teamSettingsTab.admins, { n: admins.length }), el('span', { class: 'person', title: admins.join(W.comma) }, some(admins))),
+        fact(W.teamSettingsTab.privateGroups, closed ? String(closed) : W.none),
+        fact(W.teamSettingsTab.joining, W.teamSettingsTab.withCode))),
+    admin && el('div', { class: 'card-foot' }, el('span', null, W.teamSettingsTab.adminSees)));
   return el('div', { class: 'settings' }, el('div', null,
-    (admin || team.can_invite) && card('', 'Invite people',
-      'Each invite link lets one person into this team, and makes them an account on this server if they have none. It lasts seven days.',
-      'Make one per person. Cancel any you no longer need.',
-      btn('Create invite link', { fk: 'invite', on: { click: ev => run(ev.currentTarget, async () => {
+    (admin || team.can_invite) && card('', W.teamSettingsTab.invite, W.teamSettingsTab.inviteText, W.teamSettingsTab.inviteHint,
+      btn(W.teamSettingsTab.createInvite, { fk: 'invite', on: { click: ev => run(ev.currentTarget, async () => {
         const res = await api(`/api/teams/${enc(team.name)}/invite`, {});
         return () => inviteCodeDialog(team, res);
       }) } }, 'key')),
     (admin || team.can_invite) && invitesList(team, admin),
-    card(' danger', 'Leave team',
-      'You stop seeing this team\'s skills and groups. Skills you added to your library stay yours.',
-      alone ? 'You are its only member, so leaving deletes it.' : 'To come back you need an invite code.',
-      btn('Leave team', { class: 'btn danger', fk: 'leave', on: { click: () => confirmDialog({
-        title: `Leave ${team.name}?`,
-        submitLabel: alone ? 'Leave and delete' : 'Leave team',
-        lines: alone
-          ? [`You are its only member, so leaving deletes ${team.name} and its copies of its skills.`, 'Skills you added to your library stay yours.']
-          : ['You stop seeing this team\'s skills and groups, and are no longer offered its updates.', 'Skills you added to your library stay yours. To come back you need an invite code.'],
+    card(' danger', W.leave.title, W.leave.text, alone ? W.leave.onlyMember : W.leave.comeBack,
+      btn(W.leave.title, { class: 'btn danger', fk: 'leave', on: { click: () => confirmDialog({
+        title: say(W.leave.confirmTitle, { team: team.name }),
+        submitLabel: alone ? W.leave.andDelete : W.leave.title,
+        lines: alone ? [say(W.leave.deletes, { team: team.name }), W.leave.stayYours] : W.leave.lines,
         onSubmit: async () => {
           await api(`/api/teams/${enc(team.name)}/leave`, {});
-          return () => { toast(alone ? `You left ${team.name}, and it was deleted.` : `You left ${team.name}.`); go('#/library'); };
+          return () => { toast(say(alone ? W.leave.leftDeleted : W.leave.left, { team: team.name })); go('#/library'); };
         },
       }) } }, 'logout')),
-    admin && !alone && card(' danger', 'Delete team',
-      'Deletes the team for everyone in it: its copies of its skills, its groups and its invites.',
-      'Skills members added to their library stay theirs.',
-      btn('Delete team', { class: 'btn danger', fk: 'delete-team', on: { click: () => confirmDialog({
-        title: `Delete ${team.name}?`,
-        submitLabel: 'Delete team',
-        lines: [`Everyone in ${team.name} loses it, with its skills, groups and invites. This cannot be undone.`, 'Every skill a member added to their library stays theirs, on their computers too.'],
+    admin && !alone && card(' danger', W.deleteTeam.title, W.deleteTeam.text, W.deleteTeam.hint,
+      btn(W.deleteTeam.title, { class: 'btn danger', fk: 'delete-team', on: { click: () => confirmDialog({
+        title: say(W.deleteTeam.confirmTitle, { team: team.name }),
+        submitLabel: W.deleteTeam.title,
+        lines: [say(W.deleteTeam.loses, { team: team.name }), W.deleteTeam.stays],
         onSubmit: async () => {
           await api(`/api/teams/${enc(team.name)}/delete`, {});
-          return () => { toast(`Deleted ${team.name}.`); go('#/library'); };
+          return () => { toast(say(W.deleteTeam.done, { team: team.name })); go('#/library'); };
         },
       }) } }, 'trash'))), about);
 }
 
 // Invites are records (ADR-0022): pending until someone uses one, and each can be cancelled.
-const INVITE_STATUS = { PENDING: 'Pending', ACCEPTED: 'Accepted', CANCELLED: 'Cancelled', EXPIRED: 'Expired' };
+const INVITE_STATUS = W.invites.status;
 
 function invitesList(team, admin) {
   const invites = team.invites || [];
   if (!invites.length) return null;
-  return el('div', { class: 'tbl', role: 'table', 'aria-label': 'Invites', style: 'grid-template-columns:auto minmax(0, 1fr) minmax(0, 1fr) auto' },
-    el('div', { class: 'tr th-row', role: 'row' }, th('Status'), th('Made by'), th('When'), thActions()),
+  return el('div', { class: 'tbl', role: 'table', 'aria-label': W.invites.label, style: 'grid-template-columns:auto minmax(0, 1fr) minmax(0, 1fr) auto' },
+    el('div', { class: 'tr th-row', role: 'row' }, th(W.invites.statusCol), th(W.invites.madeBy), th(W.invites.when), thActions()),
     invites.map(i => el('div', { class: 'tr', role: 'row' },
       td('row', el('span', { class: 'badge' + (i.status === 'PENDING' ? ' solid' : '') }, INVITE_STATUS[i.status]), el('span', { class: 't2 mono' }, inviteTag(i.id))),
-      td('meta', el('span', { class: 't1 person' }, i.created_by), el('span', { class: 't2' }, 'made ', when(i.created_on))),
-      td('meta', i.status === 'ACCEPTED' ? el('span', { class: 't1' }, 'Used by ', el('span', { class: 'person' }, i.used_by))
-        : i.status === 'PENDING' ? el('span', { class: 't1' }, 'Expires ', when(i.expires_on))
-        : el('span', { class: 't2' }, i.status === 'EXPIRED' ? 'Nobody used it in time' : 'Nobody can use it')),
+      td('meta', el('span', { class: 't1 person' }, i.created_by), el('span', { class: 't2' }, sayWith(W.invites.made, { when: when(i.created_on) }))),
+      td('meta', i.status === 'ACCEPTED' ? el('span', { class: 't1' }, sayWith(W.invites.usedBy, { who: el('span', { class: 'person' }, i.used_by) }))
+        : i.status === 'PENDING' ? el('span', { class: 't1' }, sayWith(W.invites.expires, { when: when(i.expires_on) }))
+        : el('span', { class: 't2' }, i.status === 'EXPIRED' ? W.invites.notInTime : W.invites.nobodyCan)),
       td('row end', i.status === 'PENDING' && (admin || i.created_by === state.user.username)
-        ? btn('Cancel', { class: 'btn ghost sm', fk: 'cancel-invite:' + i.id, 'aria-label': `Cancel invite ${inviteTag(i.id)}, made by ${i.created_by}`,
+        ? btn(W.cancel, { class: 'btn ghost sm', fk: 'cancel-invite:' + i.id, 'aria-label': say(W.invites.cancelLabel, { tag: inviteTag(i.id), who: i.created_by }),
             on: { click: ev => run(ev.currentTarget, async () => {
               await api(`/api/teams/${enc(team.name)}/invites/${enc(i.id)}/cancel`, {});
-              return 'Cancelled. That link no longer lets anyone in.';
+              return W.invites.cancelled;
             }) } }, 'x')
         : null))));
 }
@@ -2838,26 +3507,25 @@ function inviteCodeDialog(team, invite) {
   const code = invite.code;
   // The link opens a page on this server that says what to paste; it creates the account too (ADR-0019).
   const link = `${location.origin}/invite/${code}`;
-  const input = el('input', { class: 'input', type: 'text', readOnly: true, value: link, 'aria-label': 'Invite link', on: { focus: () => input.select() } });
-  const codeInput = el('input', { class: 'input mono', type: 'text', readOnly: true, value: code, 'aria-label': 'Invite code', on: { focus: () => codeInput.select() } });
+  const input = el('input', { class: 'input', type: 'text', readOnly: true, value: link, 'aria-label': W.invites.link, on: { focus: () => input.select() } });
+  const codeInput = el('input', { class: 'input mono', type: 'text', readOnly: true, value: code, 'aria-label': W.invites.code, on: { focus: () => codeInput.select() } });
   const copied = el('span', { class: 'help', role: 'status' });
-  const copy = btn('Copy', { on: { click: async () => {
+  const copy = btn(W.copy, { on: { click: async () => {
     try { await navigator.clipboard.writeText(link); }
     catch (_) { input.select(); document.execCommand('copy'); }
-    copied.textContent = 'Copied to the clipboard.';
+    copied.textContent = W.invites.copied;
   } } }, 'copy');
   openDialog({
-    title: `Invite to ${team.name}`,
-    submitLabel: 'Done',
+    title: say(W.invites.title, { team: team.name }),
+    submitLabel: W.done,
     cancelLabel: null,
     returnFk: 'invite',
     body: [
-      el('p', null, `Send this link to one person. It works once, within seven days, and is shown only now. In the list it is invite ${inviteTag(invite.id)}.`),
+      el('p', null, say(W.invites.lead, { tag: inviteTag(invite.id) })),
       el('div', { class: 'field' }, el('div', { class: 'code-box' }, input, copy), copied),
-      field('Invite code', codeInput, 'Someone already on this server says "join a team with this code".'),
+      field(W.invites.code, codeInput, W.invites.codeHelp),
       // The link is built from this page's address, and a loopback one opens only here.
-      ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) && el('p', { class: 'help' },
-        `Only this computer can open it. For others, whoever runs the server sets AISTACK_PUBLIC_URL.`),
+      ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) && el('p', { class: 'help' }, W.invites.loopback),
     ],
   });
   copy.focus();
@@ -2870,12 +3538,12 @@ function addTeamDialog() {
     el('input', { type: 'radio', name: 'add-team', value, checked }),
     el('span', null, el('strong', null, title), el('small', null, help)));
   const list = el('div', { class: 'picker-list' },
-    choice('create', 'Create a team', 'You become its admin and invite people with a code.', true),
-    choice('join', 'Join with an invite code', 'An admin of the team gives you one.', false));
+    choice('create', W.addTeam.create, W.addTeam.createHelp, true),
+    choice('join', W.addTeam.join, W.addTeam.joinHelp, false));
   openDialog({
-    title: 'Add a team',
-    submitLabel: 'Continue',
-    body: el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, 'Add a team'), list),
+    title: W.addTeam.title,
+    submitLabel: W.addTeam.continue,
+    body: el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, W.addTeam.title), list),
     onSubmit: async () => (list.querySelector('input:checked').value === 'create' ? newTeamDialog : joinDialog),
   });
 }
@@ -2883,14 +3551,14 @@ function addTeamDialog() {
 function newTeamDialog() {
   const name = el('input', { class: 'input', type: 'text', autocomplete: 'off', spellcheck: false, maxLength: 64, placeholder: 'backend' });
   openDialog({
-    title: 'New team',
-    submitLabel: 'Create team',
-    body: [el('p', null, 'You become the team\'s admin. Others join with an invite code you create in the team\'s settings.'), field('Team name', name, NAME_RULE)],
+    title: W.newTeam.title,
+    submitLabel: W.newTeam.submit,
+    body: [el('p', null, W.newTeam.lead), field(W.newTeam.name, name, NAME_RULE)],
     onSubmit: async () => {
       const value = name.value.trim();
-      checkName(value, 'team');
+      checkName(value, W.names.team);
       await api('/api/teams', { name: value });
-      return () => { toast(`Created the team ${value}. You are its admin.`); go(teamHash(value, 'settings')); };
+      return () => { toast(say(W.newTeam.done, { team: value })); go(teamHash(value, 'settings')); };
     },
   });
 }
@@ -2898,14 +3566,14 @@ function newTeamDialog() {
 function joinDialog(invite = '') {
   const code = el('input', { class: 'input mono', type: 'text', autocomplete: 'off', spellcheck: false, placeholder: 'aistinv_…', value: invite });
   openDialog({
-    title: 'Join a team',
-    submitLabel: 'Join team',
-    body: [field('Invite code', code, 'Ask an admin of the team for its invite code.')],
+    title: W.join.title,
+    submitLabel: W.join.submit,
+    body: [field(W.invites.code, code, W.join.help)],
     onSubmit: async () => {
       const value = code.value.trim();
-      if (!value) throw new Error('Enter the invite code an admin of the team gave you.');
+      if (!value) throw new Error(W.join.enterCode);
       const res = await api('/api/teams/join', { code: value });
-      return () => { toast(`You joined ${res.team}.`); go(teamHash(res.team)); };
+      return () => { toast(say(W.join.done, { team: res.team })); go(teamHash(res.team)); };
     },
   });
 }
@@ -2926,12 +3594,12 @@ function fullPage(...kids) {
 }
 function sessionEnded() {
   state = null;
-  document.title = 'Session ended, AIStack';
+  document.title = say(W.titles.page, { place: W.ended.title });
   fullPage(
     el('span', { class: 'logo', style: 'width:40px;height:40px;border-radius:8px' }, icon('layers', 22)),
-    el('h1', null, 'Your session has ended.'),
-    el('p', null, 'Ask your coding agent to "open my aistack dashboard" for a new link.'),
-    DEMO && btn('Restart the demo', { on: { click: () => location.reload() } }));
+    el('h1', null, W.ended.heading),
+    el('p', null, W.ended.text),
+    DEMO && btn(W.ended.restartDemo, { on: { click: () => location.reload() } }));
 }
 
 /* ================= drawer (narrow screens) ================= */
@@ -2942,7 +3610,7 @@ const behindDrawer = () => [$main, document.querySelector('.topbar'), $toasts, d
 function setDrawer(open) {
   $app.classList.toggle('drawer-open', open);
   $drawerBtn.setAttribute('aria-expanded', String(open));
-  $drawerBtn.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+  $drawerBtn.setAttribute('aria-label', open ? W.shell.closeNav : W.shell.openNav);
   for (const n of behindDrawer()) n.inert = open;
   if (open) {
     void $sidebar.offsetWidth; // apply visibility before focusing into the drawer
@@ -3329,8 +3997,8 @@ function start() {
   const code = takeJoinCode();
   load().then(() => offerJoin(code)).catch(e => {
     if (e instanceof SessionEnded) return sessionEnded();
-    $main.replaceChildren(el('div', { class: 'wrap body' }, empty('info', 'The dashboard could not load', el('p', null, e.message),
-      btn('Try again', { class: 'btn primary', on: { click: ev => { ev.currentTarget.setAttribute('aria-disabled', 'true'); start(); } } }))));
+    $main.replaceChildren(el('div', { class: 'wrap body' }, empty('info', W.loadFailed, el('p', null, e.message),
+      btn(W.tryAgain, { class: 'btn primary', on: { click: ev => { ev.currentTarget.setAttribute('aria-disabled', 'true'); start(); } } }))));
   });
 }
 start();
