@@ -18,7 +18,7 @@ permissions:
 jobs:
   pytest:
     runs-on: ubuntu-latest
-    # The suite, browser tests included, takes about fourteen minutes. Without a bound, a hung
+    # The suite, browser tests apart, takes about twelve minutes. Without a bound, a hung
     # test holds the runner for GitHub's six hours and the pull request reads "pending"
     # instead of failed; faulthandler_timeout below names a hung test well before this.
     timeout-minutes: 25
@@ -85,10 +85,6 @@ jobs:
           npm install --no-save --silent eslint@9.39.1 globals@16.5.0
           npx eslint page*.js
 
-      # The dashboard's own tests open the page in a real browser. Locally they skip when the
-      # browser is missing; here it is installed, so a skip cannot hide them.
-      - run: poetry run playwright install --with-deps chromium
-
       # Fail setup rather than the assertions: a suite that skipped its only real concurrency
       # test still reports green, and "0 skipped" is the only way to notice from the summary.
       # Connecting is the whole check. Testing that TEST_DATABASE_URL is non-empty would not
@@ -103,17 +99,20 @@ jobs:
 
       # A test still running after two minutes prints every thread's stack and carries on, so
       # a hang that meets the job timeout has already named itself in the log.
-      - run: poetry run pytest -q -p no:cacheprovider --no-header -rs -o faulthandler_timeout=120
+      # The browser tests run in the browsers job, beside this one.
+      - run: poetry run pytest -q -p no:cacheprovider --no-header -rs -o faulthandler_timeout=120 --ignore=tests/ui
 
-  # The same browser tests in the two other engines. A job of its own, beside pytest and not
-  # inside it, so the pull request waits no longer than before: this finishes first.
+  # The dashboard's own tests open the page in a real browser, in all three engines. A job of
+  # its own, beside pytest and not inside it, so the pull request waits for the slower of the
+  # two and not for their sum. Locally they skip when the browser is missing; here it is
+  # installed, so a skip cannot hide them.
   browsers:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        browser: [firefox, webkit]
+        browser: [chromium, firefox, webkit]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
