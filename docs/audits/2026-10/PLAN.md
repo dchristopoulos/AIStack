@@ -86,7 +86,7 @@ How to work through it:
 - [x] 40c. A session start that stays quiet when nothing changed (f43f3b1)
 - [x] 41. One log: a line for every change, one format, no SDK chatter (14907f9)
 - [x] 41d. Download your Library, and the headers an https server sends (d29e8e4)
-- [ ] 41e. The page's words in one table
+- [x] 41e. The page's words in one table (dc8fdbe)
 - [x] 41b. The operator can forget a person (d6efb33)
 - [x] 41c. Metrics for the operator, behind a token (f5e9ff3)
 - [x] 42. Tests and checks the code is missing (1a1109a)
@@ -95,8 +95,9 @@ How to work through it:
 Session notes:
 - 2026-10-17: main was red because the pytest job ran past its 25 minutes with Chromium inside it; the browser tests now run in the `browsers` matrix beside it (32c6ccb).
 - 2026-10-17: 41b done (d6efb33): `aistack admin forget`, pseudonym `former-member-<4 hex>`, prefix reserved at join and rename; ADR-0034 accepted.
-- Next: 41e (the page's words in one table), then Dependabot #136 and #138, the rest of the CI split, the test strategy, 40d.
-- Blocked: nothing. Check the CI runs for 32c6ccb and d6efb33 at the start of the next session.
+- 2026-10-17: 41e done (dc8fdbe): every word of the dashboard in `WORDS`, counts through `Intl.PluralRules`; browser tests unchanged, demo text identical.
+- Next: Dependabot #136 and #138, then the rest of the CI split, the test strategy, 40d.
+- Blocked: nothing. CI was green through 9c8d0af; check the run for dc8fdbe first.
 
 ## Unblock newcomers and the supply chain
 
