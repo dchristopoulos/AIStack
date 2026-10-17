@@ -149,9 +149,11 @@ async def test_a_skill_removed_from_the_library_can_be_brought_back(sign_in):
         "button", name="Remove from library…").click()
     await page.get_by_role("dialog", name="Remove meeting-notes from your library?").get_by_role(
         "button", name="Remove").click()
+    removed = page.get_by_text("Removed from your library (1)")
+    await expect(removed).to_be_visible()
     assert (await dimitris.state())["removed"] == ["meeting-notes"]
 
-    await page.get_by_text("Removed from your library (1)").click()
+    await removed.click()
     await page.get_by_role("button", name="Bring back meeting-notes").click()
 
     await expect(page.get_by_text("meeting-notes is back in your library")).to_be_visible()
