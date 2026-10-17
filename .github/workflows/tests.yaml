@@ -98,11 +98,6 @@ jobs:
       # of whatever it happens to point at.
       TEST_DATABASE_URL: postgresql+psycopg://aistack:aistack@localhost:5433/aistack_test
 
-    env:
-      # Never DATABASE_URL: a test that reads the server's own variable could drop the tables
-      # of whatever it happens to point at.
-      TEST_DATABASE_URL: postgresql+psycopg://aistack:aistack@localhost:5433/aistack_test
-
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
