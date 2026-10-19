@@ -2,13 +2,20 @@
 
 import base64
 import contextlib
+import os
 import random
+import tempfile
 import uuid
+from pathlib import Path
+from unittest.mock import patch
 
 import httpx
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
+from hypothesis import settings
+from hypothesis import strategies as st
+from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 from sqlalchemy import select
 from starlette.applications import Starlette
 
@@ -16,7 +23,7 @@ from aistack.api import dashboard
 from aistack.api.dashboard import REQUEST_HEADER
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings
 from aistack.bootstrap.context import application_context
-from aistack.commons.exceptions import AIStackError
+from aistack.commons.exceptions import AIStackError, Conflict
 from aistack.db.engine import build_engine, build_session_factory
 from aistack.db.models.harness import Harness
 from aistack.db.models.library_event import LibraryEvent
@@ -27,12 +34,14 @@ from aistack.db.models.machine_project_skill import MachineProjectSkill
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.project import Project
 from aistack.db.models.skill import Skill
+from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.user import User
 from aistack.db.schema import migrate_schema
 from aistack.mcp import local_dashboard
 from aistack.mcp.local import local_mcp
 from aistack.mcp.server_url import DASHBOARD_LOGIN_PATH
+from aistack.mcp.tools import local
 from aistack.services import (
     library_log,
     local_identity,
@@ -909,3 +918,132 @@ def test_replay_refuses_a_hand_edited_value_and_names_its_file(tmp_path, change,
 
     assert f"log/{event.path}" in str(refused.value)
     assert sentence in str(refused.value)
+
+
+class LibraryChanges(RuleBasedStateMachine):
+    """Two computers exchange their logs after each generated action."""
+
+    def __init__(self):
+        super().__init__()
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.log = {}
+        self.edits = 0
+        self.replay_engine = build_engine(f"sqlite:///{(self.root / 'replay.db').as_posix()}")
+        migrate_schema(self.replay_engine)
+        for computer in range(2):
+            with self._computer(computer) as home:
+                if computer == 0:
+                    _write(home, "wizard", "Initial backup")
+                    local.push_skill(name="wizard")
+
+    @contextlib.contextmanager
+    def _computer(self, number):
+        home = self.root / str(number)
+        home.mkdir(exist_ok=True)
+        url = f"sqlite:///{(home / 'copy.db').as_posix()}"
+        engine = build_engine(url)
+        try:
+            if not (home / "copy.db").exists():
+                migrate_schema(engine)
+            if self.log:
+                with build_session_factory(engine).begin() as session:
+                    library_log.catch_up(session, list(self.log.values()))
+        finally:
+            engine.dispose()
+        with patch.dict(os.environ, {"HOME": str(home), "USERPROFILE": str(home)}):
+            application_context.build_local_context(LocalSettings(
+                aistack_home=home / ".aistack",
+                aistack_database_url=url,
+                aistack_username="maria",
+                aistack_auto_update=False,
+            ))
+            try:
+                yield home
+                with application_context.get_session_factory().begin() as session:
+                    self.log.update((event.event_id, event) for event in _events(session))
+            finally:
+                application_context.dispose_application_context()
+
+    def _available(self, name):
+        with application_context.get_session_factory().begin() as session:
+            return session.scalar(select(Skill).where(
+                Skill.name == name, Skill.archived.is_(False))) is not None
+
+    @rule(computer=st.integers(0, 1), name=st.sampled_from(NAMES))
+    def backup(self, computer, name):
+        with self._computer(computer) as home:
+            self.edits += 1
+            _write(home, name, f"Backup {self.edits} from computer {computer}")
+            local.push_skill(name=name)
+
+    @rule(computer=st.integers(0, 1), name=st.sampled_from(NAMES), body=st.text(
+        alphabet="abc XYZ", max_size=30))
+    def edit(self, computer, name, body):
+        with self._computer(computer) as home:
+            _write(home, name, body)
+
+    @rule(computer=st.integers(0, 1), name=st.sampled_from(NAMES))
+    def install(self, computer, name):
+        with self._computer(computer):
+            if self._available(name):
+                local.get_skill(name=name)
+
+    @rule(computer=st.integers(0, 1), name=st.sampled_from(NAMES))
+    def remove(self, computer, name):
+        with self._computer(computer):
+            if self._available(name):
+                caller = application_context.get_local_principal()
+                with application_context.get_session_factory().begin() as session:
+                    dashboard.remove_my_skill(session, caller.user_id, {"name": name}, {})
+
+    @rule(computer=st.integers(0, 1), name=st.sampled_from(["laptop", "work laptop", "desktop"]))
+    def rename(self, computer, name):
+        with self._computer(computer):
+            caller = application_context.get_local_principal()
+            try:
+                with application_context.get_session_factory().begin() as session:
+                    renamed = onboarding_service.rename_machine(
+                        session, caller.user_id, str(caller.machine_id), name)
+                    library_log.record(session, library_log.renamed(
+                        session, caller.machine_id, caller.machine_id, renamed))
+            except Conflict:
+                # A name taken on the other computer is a refusal, with nothing to replay.
+                pass
+
+    @staticmethod
+    def _view(session):
+        return {
+            **_snapshot(session),
+            "files": sorted(session.execute(select(
+                Skill.name,
+                SkillVersion.revision,
+                SkillFile.path,
+                SkillFile.content,
+                SkillFile.executable,
+            ).join(SkillVersion, SkillVersion.skill_id == Skill.skill_id).join(
+                SkillFile, SkillFile.skill_version_id == SkillVersion.skill_version_id)).all()),
+        }
+
+    @invariant()
+    def either_computers_log_rebuilds_the_same_library(self):
+        views = []
+        for computer in range(2):
+            with self._computer(computer):
+                with application_context.get_session_factory().begin() as session:
+                    expected, events = self._view(session), _events(session)
+                prepared = library_log.prepared(events)
+                with build_session_factory(self.replay_engine).begin() as session:
+                    library_log.rebuild(session, events, validated=prepared)
+                    assert self._view(session) == expected
+                views.append(expected)
+        assert views[0] == views[1]
+
+    def teardown(self):
+        application_context.dispose_application_context()
+        self.replay_engine.dispose()
+        self.temporary.cleanup()
+
+
+TestLibraryChanges = LibraryChanges.TestCase
+TestLibraryChanges.settings = settings(max_examples=8, stateful_step_count=12, deadline=None)

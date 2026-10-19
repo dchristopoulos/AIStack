@@ -1,11 +1,16 @@
 import os
 
 import pytest
+from hypothesis import settings
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from aistack.db.engine import build_engine, build_session_factory
 from aistack.db.schema import migrate_schema
+
+settings.register_profile("ci", derandomize=True, deadline=None)
+if os.environ.get("CI"):
+    settings.load_profile("ci")
 
 INVITE_CODE = "test-invite-code-long-enough"
 
