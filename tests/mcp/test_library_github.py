@@ -697,3 +697,84 @@ def test_an_unreachable_github_repository_says_whether_to_sign_in(monkeypatch, s
 def test_a_repository_elsewhere_is_never_blamed_on_a_github_sign_in(monkeypatch):
     monkeypatch.setattr(library_sharing.subprocess, "run", pytest.fail)
     assert "could not be reached" in library_sharing.unreachable_reason("/srv/library.git")
+
+
+@pytest.mark.parametrize("fault", ["rejected-push", "network-error"])
+async def test_a_failed_git_push_keeps_the_event_and_the_next_push_carries_it(
+        computer, repository, monkeypatch, fault):
+    from aistack.services import library_log, library_repo
+
+    run = subprocess.run
+    failures = []
+
+    def failing_push(command, *args, **kwargs):
+        if command[0] == "git" and "push" in command:
+            failures.append(command)
+            reason = ("[rejected] HEAD -> main (non-fast-forward)"
+                      if fault == "rejected-push" else "Could not resolve host: github.com")
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr=reason)
+        return run(command, *args, **kwargs)
+
+    async with computer("laptop") as (laptop, home):
+        original = _write(home, "wizard", "Saved despite the failed push.")
+        with monkeypatch.context() as failing:
+            failing.setattr(library_repo.subprocess, "run", failing_push)
+            pushed = await _call(laptop, "push_skill", name="wizard")
+        assert (pushed["revision"], pushed["shared"]) == (1, False)
+        assert failures
+        with application_context.get_session_factory().begin() as session:
+            [pending] = library_log.unpublished(session)
+            assert pending.kind == library_log.SKILL_PUSHED
+            assert len(session.scalars(select(SkillVersion)).all()) == 1
+
+        _write(home, "review", "The next change carries both.")
+        assert (await _call(laptop, "push_skill", name="review"))["shared"] is True
+        with application_context.get_session_factory().begin() as session:
+            assert library_log.unpublished(session) == []
+
+    async with computer("desktop") as (desktop, home):
+        listed = await _call(desktop, "list_skills")
+        assert sorted(skill["name"] for skill in listed["skills"]) == ["review", "wizard"]
+        installed = await _call(desktop, "get_skill", name="wizard")
+        assert installed["revision"] == 1
+        assert (home / ".claude/skills/wizard/SKILL.md").read_bytes() == (
+            original / "SKILL.md").read_bytes()
+
+
+async def test_a_clone_deadline_leaves_no_partial_library_and_the_next_start_retries(
+        computer, repository, monkeypatch):
+    from aistack.services import library_repo
+
+    run = subprocess.run
+    deadlines = []
+
+    def slow_clone(command, *args, **kwargs):
+        if command[0] == "git" and "clone" in command:
+            deadlines.append(kwargs["timeout"])
+            partial = pathlib.Path(command[-1])
+            partial.mkdir(parents=True)
+            (partial / "half-copied").write_bytes(b"partial clone")
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        return run(command, *args, **kwargs)
+
+    async with computer("laptop") as (laptop, home):
+        original = _write(home, "wizard", "A complete Library.")
+        await _call(laptop, "push_skill", name="wizard")
+
+    with monkeypatch.context() as failing:
+        failing.setattr(library_repo.subprocess, "run", slow_clone)
+        async with computer("desktop") as (desktop, home):
+            with pytest.raises(ToolError, match="has not read your Library from GitHub yet"):
+                await _call(desktop, "list_skills")
+            assert not (home / ".aistack/library").exists()
+            with application_context.get_session_factory().begin() as session:
+                assert session.scalars(select(SkillVersion)).all() == []
+    assert deadlines and all(deadline is not None and deadline > 0 for deadline in deadlines)
+
+    async with computer("desktop") as (desktop, home):
+        assert not (home / ".aistack/library.cloning").exists()
+        listed = await _call(desktop, "list_skills")
+        assert [skill["name"] for skill in listed["skills"]] == ["wizard"]
+        await _call(desktop, "get_skill", name="wizard")
+        assert (home / ".claude/skills/wizard/SKILL.md").read_bytes() == (
+            original / "SKILL.md").read_bytes()

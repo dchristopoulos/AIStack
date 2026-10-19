@@ -1,4 +1,7 @@
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,6 +11,8 @@ WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "tests.yaml"
 PUBLISHING = {"publish", "pypi"}
 # Writes the GitHub Release once the package is out; it publishes nothing that runs.
 RELEASE_NOTES = "release"
+# External service contracts run weekly and do not gate a release.
+CONTRACT_TESTS = {"github-contract"}
 
 
 class _StrictLoader(yaml.SafeLoader):
@@ -25,11 +30,10 @@ def _workflow():
     return yaml.load(WORKFLOW.read_text(), Loader=_StrictLoader)
 
 
-def test_publishing_waits_for_every_test_job():
-    """An image or a package reaches people only from a commit every test job passed on, so a
-    test job added later and left out of `needs` cannot publish a break it caught."""
+def test_publishing_waits_for_every_merge_gate_test_job():
+    """Every merge-gate test must pass before a package or image can be published."""
     jobs = _workflow()["jobs"]
-    tests = set(jobs) - PUBLISHING - {RELEASE_NOTES}
+    tests = set(jobs) - PUBLISHING - {RELEASE_NOTES} - CONTRACT_TESTS
     for name in PUBLISHING:
         assert set(jobs[name]["needs"]) == tests, name
     assert jobs[RELEASE_NOTES]["needs"] == ["pypi"]
@@ -56,3 +60,39 @@ def test_the_shards_cover_every_test(job):
     shards = _workflow()["jobs"][job]["strategy"]["matrix"]["shard"]
     n = len(shards)
     assert sorted(shards) == [f"{k}/{n}" for k in range(1, n + 1)]
+
+
+def test_the_real_github_contract_uses_credentials_only_on_its_weekly_schedule():
+    job = _workflow()["jobs"]["github-contract"]
+    assert job["if"] == "github.event_name == 'schedule'"
+    assert job["steps"][-1]["env"]["GH_TOKEN"] == "${{ secrets.AISTACK_E2E_GITHUB_TOKEN }}"
+    assert job["steps"][-1]["if"] == "steps.configuration.outputs.configured == 'true'"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="The scheduled job runs in a Linux shell.")
+@pytest.mark.parametrize("repository,token", [("", ""), ("owner/sandbox", ""), ("", "sentinel-credential"),
+                                             ("owner/sandbox", "sentinel-credential")])
+def test_the_github_contract_skips_until_both_repository_and_token_are_set(
+        tmp_path, repository, token):
+    script = _workflow()["jobs"]["github-contract"]["steps"][0]["run"]
+    output = tmp_path / "output"
+    summary = tmp_path / "summary"
+    completed = subprocess.run(
+        ["bash", "-e", "-c", script],
+        env={
+            "PATH": os.environ.get("PATH", ""),
+            "AISTACK_E2E_GITHUB_REPO": repository,
+            "TEST_TOKEN": token,
+            "GITHUB_OUTPUT": str(output),
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    configured = bool(repository and token)
+    assert output.read_text().strip() == f"configured={str(configured).lower()}"
+    summary_text = summary.read_text() if summary.exists() else ""
+    if not configured:
+        assert "Skipping the real-GitHub contract test" in summary_text
+    assert "sentinel-credential" not in completed.stdout + completed.stderr + summary_text
