@@ -186,6 +186,12 @@ def test_a_local_write_killed_before_its_git_push_is_published_after_restart(tmp
               getattr(error, "sqlite_errorname", None),
               getattr(error, "sqlite_errorcode", None),
               [(p.name, p.stat().st_size) for p in settings.home.iterdir()])
+        try:
+            import os
+            os.truncate(settings.home / "github-copy.db-shm", 32768)
+            print("Native SHM truncate succeeded")
+        except OSError as native:
+            print("Native SHM truncate failed", repr(native), native.winerror)
 
     try:
         with build_session_factory(engine).begin() as session:
