@@ -19,7 +19,7 @@ from aistack.services.skill_validation import validated_skill
 
 def hold(boundary):
     if os.environ["AISTACK_TEST_CRASH_AT"] == boundary:
-        print("ready", flush=True)
+        print(f"ready:{os.getpid()}", flush=True)
         # The parent keeps stdin open and kills us instead of releasing the operation.
         sys.stdin.read(1)
 
