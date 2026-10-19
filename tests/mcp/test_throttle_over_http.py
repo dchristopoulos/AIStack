@@ -12,7 +12,14 @@ from fastmcp.client import BearerAuth, Client, StreamableHttpTransport
 from fastmcp.exceptions import ToolError
 
 from aistack.bootstrap.__main__ import ARGUMENT_ECHO_LOGGER, configure_logging
-from aistack.mcp.auth.failure_limiter import FAILURE_LIMIT, REFUSED_JOIN_LIMIT, REJECTED_BEARER
+from aistack.bootstrap.context import application_context
+from aistack.mcp.auth import failure_limiter
+from aistack.mcp.auth.failure_limiter import (
+    FAILURE_LIMIT,
+    REFUSED_JOIN_LIMIT,
+    REJECTED_BEARER,
+    FailureLimiter,
+)
 from tests.conftest import INVITE_CODE
 from tests.mcp.conftest import call, join
 
@@ -33,6 +40,87 @@ async def _post_with_bearer(http: httpx.AsyncClient, server_url: str, bearer: st
     if address is not None:
         headers["X-Forwarded-For"] = address
     return await http.post(server_url, json=LIST_TOOLS, headers=headers)
+
+
+def test_the_exact_failure_that_starts_the_wait():
+    limiter = FailureLimiter(limit=3, window_seconds=60, clock=lambda: 100)
+    for _ in range(2):
+        assert limiter.record(GUESSER) is False
+        assert limiter.retry_after(GUESSER) is None
+    assert limiter.record(GUESSER) is True
+    assert limiter.retry_after(GUESSER) == 60
+    # Further refusals must not produce another "Client throttled" line.
+    assert limiter.record(GUESSER) is False
+
+
+def test_only_the_oldest_address_is_forgotten_past_capacity(monkeypatch):
+    monkeypatch.setattr(failure_limiter, "MAX_TRACKED_KEYS", 3)
+    limiter = FailureLimiter(limit=1, window_seconds=60, clock=lambda: 100)
+    for address in ("oldest", "middle", "newest"):
+        limiter.record(address)
+    assert all(limiter.retry_after(address) == 60
+               for address in ("oldest", "middle", "newest"))
+
+    limiter.record("arrival")
+    assert limiter.retry_after("oldest") is None
+    assert all(limiter.retry_after(address) == 60
+               for address in ("middle", "newest", "arrival"))
+
+
+def test_an_address_with_a_new_failure_is_kept_when_memory_fills(monkeypatch):
+    monkeypatch.setattr(failure_limiter, "MAX_TRACKED_KEYS", 2)
+    limiter = FailureLimiter(limit=1, window_seconds=60, clock=lambda: 100)
+    limiter.record("first")
+    limiter.record("second")
+    limiter.record("first")
+    limiter.record("third")
+
+    assert limiter.retry_after("first") == 60
+    assert limiter.retry_after("second") is None
+    assert limiter.retry_after("third") == 60
+
+
+def test_expired_failures_leave_room_for_a_fresh_window():
+    now = 100.0
+    limiter = FailureLimiter(limit=2, window_seconds=60, clock=lambda: now)
+    limiter.record(GUESSER)
+    now = 110.0
+    limiter.record(GUESSER)
+    now = 160.0
+    assert limiter.retry_after(GUESSER) is None
+    assert limiter.record(GUESSER) is True
+    assert limiter.retry_after(GUESSER) == 10
+
+    now = 220.0
+    assert limiter.retry_after(GUESSER) is None
+    # An empty window must release its memory as well as stop throttling.
+    assert GUESSER not in limiter._failures
+    assert limiter.record(GUESSER) is False
+    assert limiter.retry_after(GUESSER) is None
+    assert limiter.record(GUESSER) is True
+    assert limiter.retry_after(GUESSER) == 60
+
+
+async def test_retry_after_counts_down_to_the_first_expiring_failure(server_url, monkeypatch):
+    now = 100.0
+    limiter = application_context.get_failure_limiter()
+    monkeypatch.setattr(limiter, "_clock", lambda: now)
+    monkeypatch.setattr(limiter, "_limit", 2)
+    async with httpx.AsyncClient() as http:
+        assert (await _post_with_bearer(http, server_url, "aist_wrong", GUESSER)).status_code == 401
+        now = 110.0
+        assert (await _post_with_bearer(http, server_url, "aist_wrong", GUESSER)).status_code == 401
+        for instant, wait in ((112.25, 48), (159.5, 1)):
+            now = instant
+            response = await _post_with_bearer(http, server_url, "aist_wrong", GUESSER)
+            assert response.status_code == 429
+            assert response.headers["retry-after"] == str(wait)
+            assert f"{wait} more seconds" in response.json()["error"]
+
+        now = 160.0
+        response = await _post_with_bearer(http, server_url, "aist_wrong", GUESSER)
+        assert response.status_code == 401
+        assert "retry-after" not in response.headers
 
 
 async def test_wrong_bearers_from_one_address_are_turned_away(server_url, caplog):
@@ -65,6 +153,7 @@ async def test_wrong_bearers_from_one_address_are_turned_away(server_url, caplog
     throttle_lines = [record.getMessage() for record in caplog.records
                       if record.getMessage().startswith("Client throttled")]
     assert len(throttle_lines) == 1 and GUESSER in throttle_lines[0]
+    assert "Last: 'bearer'." in throttle_lines[0]
 
 
 async def test_a_rejected_bearer_is_told_what_aistack_can_do(server_url):

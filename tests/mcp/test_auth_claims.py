@@ -5,6 +5,7 @@ import pytest
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.tools import FunctionTool
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser, authorization_context
 from pydantic import SecretStr
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -45,6 +46,9 @@ async def test_a_machine_token_resolves_to_its_machine_and_user(verifier, joined
 
     assert access_token.scopes == [MACHINE_SCOPE]
     assert access_token.token == joined.token
+    user = AuthenticatedUser(access_token)
+    assert user.display_name == str(joined.machine.machine_id)
+    assert authorization_context(user)["client_id"] == str(joined.machine.machine_id)
     assert joined.token not in repr(access_token)
     assert joined.token not in str(access_token)
     # The token's prefix, not the token: what tickets minted on this call are bound to.
@@ -58,6 +62,7 @@ async def test_the_bootstrap_principal_carries_no_identity(verifier):
 
     assert access_token.scopes == [BOOTSTRAP_SCOPE]
     assert access_token.token == INVITE_CODE
+    assert AuthenticatedUser(access_token).display_name == "bootstrap"
     assert INVITE_CODE not in repr(access_token)
     assert INVITE_CODE not in str(access_token)
     # A bootstrap bearer has no machine and no user yet. An identity claim appearing here would
@@ -78,6 +83,7 @@ async def test_a_team_invite_code_is_a_bootstrap_principal_with_no_identity(veri
     # It says which kind of invite this is, never which team or user: `join` resolves the
     # code again inside its own transaction, so a code replaced in between admits nobody.
     assert access_token.claims == {"invite": "team"}
+    assert AuthenticatedUser(access_token).display_name == "bootstrap"
     assert await verifier.verify_token(code[:-1]) is None
 
 
