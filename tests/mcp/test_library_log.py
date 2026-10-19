@@ -681,3 +681,226 @@ async def test_every_tool_on_a_moved_library_says_where_it_went(computer, place,
 
         with application_context.get_session_factory().begin() as session:
             assert _snapshot(session) == before
+
+
+# --- what an event carries, and what replay refuses -----------------------------------------
+
+BEN = uuid.uuid4()
+
+
+def test_an_event_is_one_canonical_line():
+    """Every computer reads the same file, so its text is fixed: sorted keys, no spaces."""
+    event = library_log.Event(uuid.UUID(int=1), "2026-10-15T09:00:01.000000Z", uuid.UUID(int=2),
+                              library_log.SKILL_REMOVED, {"name": "wizard", "a": [1, 2]})
+
+    assert event.to_json() == (
+        '{"at":"2026-10-15T09:00:01.000000Z","data":{"a":[1,2],"name":"wizard"},'
+        '"event_id":"00000000-0000-0000-0000-000000000001","kind":"skill_removed",'
+        '"machine_id":"00000000-0000-0000-0000-000000000002"}')
+    assert library_log.Event.from_json(event.to_json()) == event
+
+
+def test_appended_events_are_stored_as_published_and_never_appended_twice(session_factory):
+    first, second = _added(1, LAPTOP, "laptop"), _synced(2, LAPTOP)
+    with session_factory.begin() as session:
+        assert library_log.append(session, [first]) is True
+        # The same event again sorts at, not after, what the copy holds.
+        assert library_log.append(session, [first]) is False
+        assert library_log.append(session, [second]) is True
+        assert library_log.unpublished(session) == []
+        assert [row.published for row in session.scalars(select(LibraryEvent))] == [True, True]
+
+
+def test_catch_up_rebuilds_only_when_an_arrival_sorts_before_what_the_copy_holds(session_factory):
+    early = _synced(3, DESKTOP)
+    with session_factory.begin() as session:
+        assert library_log.catch_up(session, [_added(1, LAPTOP, "laptop"),
+                                              _added(2, DESKTOP, "desktop")]) is False
+        assert library_log.catch_up(session, [_synced(4, LAPTOP)]) is False
+    with session_factory.begin() as session:
+        arrived = [*_events(session), early]
+        assert library_log.catch_up(session, arrived) is True
+        assert early.event_id in library_log.known_ids(session)
+
+
+def _pushed_event(second, machine_id, name, harness, origin, project=False):
+    return _event(
+        second,
+        machine_id,
+        library_log.SKILL_PUSHED_TO_PROJECT if project else library_log.SKILL_PUSHED,
+        name=name,
+        origin=origin,
+        harness=harness,
+        archive=base64.b64encode(skill_archive(name)).decode(),
+        **({"project": PROJECT_KEY, "project_name": "billing"} if project else {}),
+    )
+
+
+def test_a_push_event_carries_its_name_origin_harness_and_files(session_factory):
+    archive = skill_archive("wizard")
+    with session_factory.begin() as session:
+        library_log.append(session, [_added(1, LAPTOP, "laptop")])
+        event = library_log.pushed(session, LAPTOP, "wizard", "github.com/acme/skills", "agents",
+                                   archive)
+
+    assert event.kind == library_log.SKILL_PUSHED
+    assert event.data == {"name": "wizard", "origin": "github.com/acme/skills",
+                          "harness": "agents",
+                          "archive": base64.b64encode(archive).decode("ascii")}
+
+
+@pytest.mark.parametrize("prepared", [True, False], ids=["read-ahead", "read-in-replay"])
+def test_a_replayed_push_keeps_its_origin_and_its_harness(portable_engine, prepared):
+    events = [
+        _added(1, LAPTOP, "laptop"),
+        _pushed_event(2, LAPTOP, "wizard", "agents", "github.com/acme/skills"),
+        _event(3, LAPTOP, library_log.PROJECT_FOLDER_ADDED, project=PROJECT_KEY,
+               project_name="billing", harness="claude_code", path="/work/billing"),
+        _pushed_event(4, LAPTOP, "notes", "claude_code", "github.com/acme/notes", project=True),
+    ]
+    with build_session_factory(portable_engine).begin() as session:
+        library_log.append(session, events, library_log.prepared(events) if prepared else None)
+        snapshot = _snapshot(session)
+        origins = dict(session.execute(select(Skill.name, Skill.origin)).all())
+
+    assert origins == {"wizard": "github.com/acme/skills", "notes": "github.com/acme/notes"}
+    assert snapshot["placements"] == [(LAPTOP, "agents", "wizard", True, 1)]
+    assert snapshot["project_placements"] == [
+        (LAPTOP, PROJECT_KEY, "claude_code", "notes", True, 1)]
+
+
+def test_project_events_replay_alike_with_and_without_archives_read_ahead(tmp_path,
+                                                                          session_factory):
+    baseline, changes = _project_changes()
+    expected = _replayed(tmp_path, [*baseline, *changes])
+
+    with session_factory.begin() as session:
+        library_log.append(session, [*baseline, *changes])
+        assert _snapshot(session) == expected
+
+
+def test_a_removal_and_a_rename_carry_what_brings_the_computer_back(session_factory):
+    with session_factory.begin() as session:
+        library_log.append(session, [_added(1, LAPTOP, "laptop"), _added(2, DESKTOP, "desktop")])
+        laptop = session.get(Machine, LAPTOP)
+        removal = library_log.removed(session, DESKTOP, laptop)
+        rename = library_log.renamed(session, DESKTOP, LAPTOP, "old laptop")
+
+    assert (removal.machine_id, removal.kind) == (DESKTOP, library_log.MACHINE_REMOVED)
+    assert removal.data == {"target_machine_id": str(LAPTOP), "name": "laptop", "os": "LINUX"}
+    assert (rename.machine_id, rename.kind) == (DESKTOP, library_log.MACHINE_RENAMED)
+    assert rename.data == {"target_machine_id": str(LAPTOP), "name": "old laptop"}
+
+
+def test_a_computer_that_comes_back_keeps_the_name_and_system_its_removal_recorded(
+        session_factory):
+    removal = _event(4, DESKTOP, library_log.MACHINE_REMOVED, target_machine_id=str(LAPTOP),
+                     name="old laptop", os="WINDOWS")
+    with session_factory.begin() as session:
+        library_log.append(session, [_added(1, LAPTOP, "laptop"), _added(2, DESKTOP, "desktop"),
+                                     removal, _synced(5, LAPTOP)])
+        laptop = session.get(Machine, LAPTOP)
+        assert (laptop.name, laptop.os.value) == ("old laptop", "WINDOWS")
+
+
+def test_two_computers_added_with_one_name_replay_to_two_names(tmp_path):
+    longest = "x" * 64
+    replayed = _replayed(tmp_path, [
+        _added(1, LAPTOP, "laptop"), _added(2, DESKTOP, "laptop"),
+        _added(3, STRANGER, longest), _added(4, uuid.UUID(int=4), longest),
+    ])
+
+    assert _machines(replayed) == {LAPTOP: "laptop", DESKTOP: "laptop-2", STRANGER: longest,
+                                   uuid.UUID(int=4): "x" * 62 + "-2"}
+
+
+def test_a_computer_added_twice_in_the_log_is_one_computer(tmp_path):
+    replayed = _replayed(tmp_path, [_added(1, LAPTOP, "laptop"), _added(2, LAPTOP, "renamed")])
+
+    assert _machines(replayed) == {LAPTOP: "laptop"}
+
+
+def _two_people(session_factory):
+    """Ben's computer and Maria's, in one database: replay must keep to Maria's."""
+    with session_factory.begin() as session:
+        onboarding_service.join(session, "ben", "laptop", "MACOS", machine_id=STRANGER,
+                                user_id=BEN)
+        onboarding_service.join(session, "maria", "desktop", "LINUX", machine_id=DESKTOP,
+                                user_id=uuid.UUID(MARIA))
+
+
+def test_replay_names_and_counts_only_the_persons_own_computers(session_factory):
+    _two_people(session_factory)
+    with session_factory.begin() as session:
+        # Ben's "laptop" does not take the name from Maria's.
+        library_log.append(session, [_added(1, LAPTOP, "laptop")])
+        assert session.get(Machine, LAPTOP).name == "laptop"
+        # Her last computer is not removed because Ben has one.
+        library_log.append(session, [_removes(2, LAPTOP, LAPTOP, "laptop"),
+                                     _removes(3, DESKTOP, DESKTOP, "desktop")])
+        owners = dict(session.execute(select(Machine.machine_id, Machine.user_id)).all())
+
+    assert owners == {STRANGER: BEN, DESKTOP: uuid.UUID(MARIA)}
+
+
+def test_a_log_cannot_change_another_persons_computer(session_factory):
+    _two_people(session_factory)
+    with session_factory.begin() as session:
+        library_log.append(session, [
+            _event(1, DESKTOP, library_log.PROJECT_FOLDER_ADDED, project=PROJECT_KEY,
+                   project_name="billing", harness="agents", target_machine_id=str(STRANGER)),
+            _removes(2, DESKTOP, STRANGER, "laptop"),
+            _renames(3, DESKTOP, STRANGER, "taken"),
+        ])
+        assert session.scalar(select(MachineProject.machine_project_id)) is None
+        assert session.get(Machine, STRANGER).name == "laptop"
+
+
+def test_a_project_folder_keeps_a_path_only_when_its_own_computer_added_it(tmp_path):
+    def folder(second, target, path):
+        return _event(second, LAPTOP, library_log.PROJECT_FOLDER_ADDED, project=PROJECT_KEY,
+                      project_name="billing", harness="agents", path=path,
+                      target_machine_id=str(target))
+
+    replayed = _replayed(tmp_path, [
+        _added(1, LAPTOP, "laptop"), _added(2, DESKTOP, "desktop"),
+        folder(3, LAPTOP, "/work/billing"),
+        # A path from another computer is where the repository is there, not here.
+        folder(4, DESKTOP, "/elsewhere/billing"),
+    ])
+
+    assert replayed["project_folders"] == sorted([
+        (LAPTOP, PROJECT_KEY, "agents", "/work/billing"),
+        (DESKTOP, PROJECT_KEY, "agents", None),
+    ])
+
+
+def test_a_removal_of_a_computer_nobody_has_changes_nothing(tmp_path):
+    replayed = _replayed(tmp_path, [_added(1, LAPTOP, "laptop"),
+                                    _removes(2, LAPTOP, STRANGER, "ghost")])
+
+    assert _machines(replayed) == {LAPTOP: "laptop"}
+
+
+@pytest.mark.parametrize("change, sentence", [
+    (lambda: _event(3, LAPTOP, library_log.SKILL_PLACED, name="wizard", harness="agents",
+                    enabled=True, revision="1"), "revision that is not a number"),
+    (lambda: _event(3, LAPTOP, library_log.SKILL_PLACED_IN_PROJECT, project=PROJECT_KEY,
+                    name="wizard", harness="agents", enabled=True, revision="1"),
+     "revision that is not a number"),
+    (lambda: _removes(3, LAPTOP, "not-an-id", "laptop"), "not an id"),
+    (lambda: _renames(3, LAPTOP, LAPTOP, 5), "not text"),
+], ids=["revision", "project-revision", "computer-id", "computer-name"])
+def test_replay_refuses_a_hand_edited_value_and_names_its_file(tmp_path, change, sentence):
+    event = change()
+    with pytest.raises(AIStackError) as refused:
+        _replayed(tmp_path, [
+            _added(1, LAPTOP, "laptop"),
+            _pushed_event(2, LAPTOP, "wizard", "agents", None),
+            _event(2, LAPTOP, library_log.PROJECT_FOLDER_ADDED, project=PROJECT_KEY,
+                   project_name="billing", harness="agents", path="/work/billing"),
+            event,
+        ])
+
+    assert f"log/{event.path}" in str(refused.value)
+    assert sentence in str(refused.value)
