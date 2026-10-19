@@ -1,10 +1,10 @@
 # The program does the mechanical work
 
-Status: proposed, 2026-10-19. Amends ADR-0003 and ADR-0019 for adding a computer, ADR-0012 and ADR-0021 for executing sync, and ADR-0027 for recording which computer added another. The reconciliation rules in ADR-0006 and ADR-0015 still apply.
+Status: accepted, 2026-10-19. Amends ADR-0003 and ADR-0019 for adding a computer, ADR-0012 and ADR-0021 for executing sync, and ADR-0027 for recording which computer added another. The reconciliation rules in ADR-0006 and ADR-0015 still apply.
 
 On a server, the coding agent currently lists files, computes their digests, sends those digests to `sync`, then downloads, unpacks and moves each skill. Local mode already does that work in the program. Server mode should do it there too. The dashboard remains where a person manages their Library and computers; chat remains where they ask for something and answer questions.
 
-This proposal needs approval before implementation. It recommends keeping the existing remote MCP connections, requiring approval for a new computer by default, and measuring sync before adding bulk downloads.
+It keeps the existing remote MCP connections, requires approval for a new computer by default, and measures sync before adding bulk downloads.
 
 ## Decisions
 
@@ -79,7 +79,7 @@ The operator's `aistack admin register-machine` can issue a recovery code when n
 
 Codes are bearers, never tool arguments, URL paths or query parameters. Only creation returns the plaintext code or the command containing it; later dashboard state returns status and expiry. Do not store the command in browser persistence. Sanitize names in output, keep protocol payload logging suppressed, and never log codes, request credentials, permanent tokens or signed transfer URLs. A command pasted into a terminal can remain in shell history; expiry and one use limit that exposure.
 
-Joining and syncing across computers require HTTPS with certificate verification. Plain HTTP is for loopback development only. Do not forward credentials across an origin-changing redirect or attach the permanent bearer to transfer requests; those URLs carry their own scoped tickets. Approval cannot protect a token sent over an unencrypted connection.
+Joining and syncing across computers use HTTPS with certificate verification. Plain HTTP is accepted for a server on the person's own network: a loopback or private address (the RFC 1918 and RFC 4193 ranges, and 100.64.0.0/10, which VPNs such as Tailscale use), or a name that resolves only to such addresses. The command then prints one line saying the connection is not encrypted. A server at a public address over plain HTTP is refused unless the person passes `--allow-http`, and the command then says that anyone on the network path can read the computer's key. Do not forward credentials across an origin-changing redirect or attach the permanent bearer to transfer requests; those URLs carry their own scoped tickets. Approval cannot protect a token sent over an unencrypted connection, so `docs/OPERATING.md` shows how to serve AIStack over HTTPS with a reverse proxy or a VPN.
 
 ### Bind approval to one waiting request
 

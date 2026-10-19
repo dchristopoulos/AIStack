@@ -36,4 +36,4 @@ Each file records one decision, why it was made, and what follows from it. A dec
 - [ADR-0032](0032-a-library-log-is-ordered-by-a-hybrid-clock.md): A GitHub Library's log is ordered by a hybrid logical clock
 - [ADR-0033](0033-a-removed-computer-comes-back-when-it-changes-something.md): A removed computer comes back when it changes something
 - [ADR-0034](0034-a-forgotten-persons-revisions-stay-under-a-pseudonym.md): A forgotten person's revisions stay, under a pseudonym
-- [ADR-0035](0035-the-program-does-the-mechanical-work.md): The program does the mechanical work, proposed
+- [ADR-0035](0035-the-program-does-the-mechanical-work.md): The program does the mechanical work, accepted
