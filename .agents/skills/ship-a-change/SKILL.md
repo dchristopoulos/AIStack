@@ -17,19 +17,20 @@ One step of an issue is one branch and one pull request (`docs/agents/issue-trac
 ## 2. Commit
 
 - Subject: imperative, in product terms, under ~70 characters ("Let a team's invite code create the account").
-- Body: why first, then what changed, wrapped at 72. Last line names the issue: `Step N of #X.`, `Part of #X.`, or `Closes #X.`
-- The body describes the change and nothing else.
-- One meaningful change per commit. A fix-up to an unmerged branch is folded into the commit it belongs to.
+- Body: why first, then what changed, wrapped at 72. When an issue exists, the last line names it: `Part of #X.` or `Closes #X.`
+- The body describes the change and nothing else: no plan step numbers, no finding ids, no account of how the work was checked (mutants caught, runs made). The PR holds that.
+- No `Co-Authored-By` trailer, no "Generated with" footer, no mention of the tool that wrote it. Commits and PRs read as the author's own.
+- One meaningful change per commit. A fix-up to an unmerged branch is folded into the commit it belongs to. Bookkeeping about the change, such as ticking a plan or a note in a doc, goes in the same commit, never in a commit of its own.
 
 ## 3. Open the PR
 
-- Title: the commit subject. Body: one line placing it ("Step 2 of #79 (ADR-0020)."), then bullets of what changed, then the tests and the databases they passed on. End on the gate sentence from step 4. No footer.
+- Title: the commit subject. Body: one line placing it ("Part of #79 (ADR-0020)."), then bullets of what changed, then the tests and the databases they passed on. End on the gate sentence from step 4. No footer and no attribution line.
 - Branch: `feat/<issue>-<slug>`, `fix/…`, or `docs/…`, from an up-to-date `main`.
 - If your harness can watch the PR (Auto-fix in the Claude desktop app), turn it on, so a CI failure or a review comment wakes the session.
 
 ## 4. Gate
 
-Work that was decided and planned, and passes, merges without waiting for a manual review. Arm auto-merge with the rebase method on every PR. `main` requires `pytest`, `browsers (firefox)`, `browsers (webkit)` and `container`, and GitHub refuses auto-merge on a branch with no required checks.
+Work that was decided and planned, and passes, merges without waiting for a manual review. Arm auto-merge with the squash method on every PR: `gh pr merge <n> --auto --squash --delete-branch`. `main` gets one commit per PR, carrying the commit's message with `(#n)` added to its subject. Nothing reaches `main` except through a merged PR: never push to it, and never force-push it. `main` requires `pytest`, `browsers (firefox)`, `browsers (webkit)` and `container`, and GitHub refuses auto-merge on a branch with no required checks.
 
 A **trust-boundary** change (auth, sync, push validation and hashing, migrations or migration tooling, anything that deletes, any route that answers without a session) earns its merge with more evidence instead of a wait. Before arming it:
 
@@ -41,14 +42,13 @@ Stop and ask only for a new design direction nobody decided, or a change that wo
 
 ## 5. Land a stack
 
-When each PR is based on the one before it and every one is approved:
+When each PR is based on the one before it:
 
-1. Check every head is green on its exact commit and fast-forwards from `main` (`git merge-base --is-ancestor origin/main <head>`).
-2. Push each head to `main` in order: `git push origin <sha>:refs/heads/main`. Commits keep the SHAs CI tested.
-3. GitHub marks a PR merged only when its own base contains its head, and it misses some. Retarget the next open PR to `main` and arm it, or close a PR it missed with a note naming the commit now on `main`.
-4. Delete the stack's branches, locally and on `origin`, and remove their worktrees.
+1. Arm auto-merge on the bottom PR only. When it merges, GitHub deletes its branch and retargets the next PR to `main`.
+2. Rebase the next branch onto `main` (`git rebase --onto origin/main <old base> <branch>`), push it, and arm it. Repeat up the stack.
+3. Remove the stack's worktrees once their PRs have merged.
 
-Done when every PR in the stack shows merged or closed with that note, and `git log origin/main` holds each commit once.
+Done when every PR in the stack shows merged and `git log origin/main` holds one commit per PR.
 
 ## Events while waiting
 

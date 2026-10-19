@@ -150,7 +150,7 @@ Default five canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, 
 
 ### Shipping a change
 
-Commit, open the PR, gate it, and land it (stacks included) with the `ship-a-change` skill in `.agents/skills/`. Planned work that passes merges without asking the owner, trust-boundary changes included once their extra checks pass.
+Commit, open the PR, gate it, and land it (stacks included) with the `ship-a-change` skill in `.agents/skills/`. Planned work that passes merges without asking the owner, trust-boundary changes included once their extra checks pass. One PR is one squash commit on `main`; nothing is pushed to `main` directly, and no commit or PR carries an AI co-author trailer or footer.
 
 ### Domain docs
 
