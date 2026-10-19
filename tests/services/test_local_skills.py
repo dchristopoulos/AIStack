@@ -1,5 +1,6 @@
 """Writing skill folders in local mode: an install is a whole revision or nothing."""
 
+import sys
 import threading
 
 import pytest
@@ -86,8 +87,12 @@ def test_noise_the_operating_system_made_is_skipped_and_the_rest_still_packed(tm
     assert sorted(file.path for file in packed) == ["SKILL.md", "docs/notes.md"]
 
 
-# --- modes, a missing skill, links, what sync is shown (T4) ---------------------------------
+# --- modes, a missing skill, links, what sync is shown ---------------------------------------
 
+posix_modes = pytest.mark.skipif(sys.platform == "win32", reason="Windows has no execute bit.")
+
+
+@posix_modes
 def test_an_install_writes_scripts_executable_and_everything_else_not(tmp_path):
     # "Assets" sorts before SKILL.md, so the first file written needs two new folders.
     packed = skill_archive("wizard", files={"Assets/run.sh": "echo hi\n", "notes.md": "x\n"},
@@ -101,6 +106,7 @@ def test_an_install_writes_scripts_executable_and_everything_else_not(tmp_path):
     assert (folder / "notes.md").stat().st_mode & 0o777 == 0o644
 
 
+@posix_modes
 @pytest.mark.parametrize(("mode", "executable"), [
     (0o644, False),
     (0o744, True),
