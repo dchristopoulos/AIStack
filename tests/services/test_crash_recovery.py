@@ -1,6 +1,7 @@
 """Hard process exits leave complete revisions and committed Library events."""
 
 import subprocess
+import sqlite3
 
 import pytest
 from sqlalchemy import select
@@ -175,6 +176,17 @@ def test_a_local_write_killed_before_its_git_push_is_published_after_restart(tmp
         aistack_auto_update=False,
     )
     engine = build_engine(settings.library_url())
+
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "handle_error")
+    def diagnostic(context):
+        error = context.original_exception
+        print("SQLite recovery failure:", sqlite3.sqlite_version,
+              getattr(error, "sqlite_errorname", None),
+              getattr(error, "sqlite_errorcode", None),
+              [(p.name, p.stat().st_size) for p in settings.home.iterdir()])
+
     try:
         with build_session_factory(engine).begin() as session:
             pending = library_log.unpublished(session)
