@@ -179,6 +179,12 @@ def test_a_local_write_killed_before_its_git_push_is_published_after_restart(tmp
 
     from sqlalchemy import event
 
+    captured = []
+
+    @event.listens_for(engine, "connect", insert=True)
+    def capture(connection, record):
+        captured.append(connection)
+
     @event.listens_for(engine, "handle_error")
     def diagnostic(context):
         error = context.original_exception
@@ -186,9 +192,17 @@ def test_a_local_write_killed_before_its_git_push_is_published_after_restart(tmp
               getattr(error, "sqlite_errorname", None),
               getattr(error, "sqlite_errorcode", None),
               [(p.name, p.stat().st_size) for p in settings.home.iterdir()])
+        if __import__("sys").platform == "win32":
+            import ctypes
+            import sys
+            from pathlib import Path
+            dll = ctypes.CDLL(str(Path(sys.base_prefix) / "DLLs/sqlite3.dll"))
+            dll.sqlite3_system_errno.argtypes = [ctypes.c_void_p]
+            pointer = ctypes.c_void_p.from_address(id(captured[-1]) + 16).value
+            print("Native SQLite errno", dll.sqlite3_system_errno(pointer))
         try:
             import os
-            os.truncate(settings.home / "github-copy.db-shm", 32768)
+            os.truncate(settings.home / "github-copy.db-shm", 3)
             print("Native SHM truncate succeeded")
         except OSError as native:
             print("Native SHM truncate failed", repr(native), native.winerror)
