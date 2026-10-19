@@ -1,7 +1,6 @@
 """Hard process exits leave complete revisions and committed Library events."""
 
 import subprocess
-import sqlite3
 
 import pytest
 from sqlalchemy import select
@@ -175,38 +174,14 @@ def test_a_local_write_killed_before_its_git_push_is_published_after_restart(tmp
         aistack_username="maria",
         aistack_auto_update=False,
     )
+    import ctypes
+    import sys
+    from pathlib import Path
+    dll = ctypes.CDLL(str(Path(sys.base_prefix) / "DLLs/sqlite3.dll"))
+    callback_type = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_int, ctypes.c_char_p)
+    callback = callback_type(lambda _, code, text: print("SQLite native log", code, text.decode()))
+    print("Log configured", dll.sqlite3_config(16, callback, None))
     engine = build_engine(settings.library_url())
-
-    from sqlalchemy import event
-
-    captured = []
-
-    @event.listens_for(engine, "connect", insert=True)
-    def capture(connection, record):
-        captured.append(connection)
-
-    @event.listens_for(engine, "handle_error")
-    def diagnostic(context):
-        error = context.original_exception
-        print("SQLite recovery failure:", sqlite3.sqlite_version,
-              getattr(error, "sqlite_errorname", None),
-              getattr(error, "sqlite_errorcode", None),
-              [(p.name, p.stat().st_size) for p in settings.home.iterdir()])
-        if __import__("sys").platform == "win32":
-            import ctypes
-            import sys
-            from pathlib import Path
-            dll = ctypes.CDLL(str(Path(sys.base_prefix) / "DLLs/sqlite3.dll"))
-            dll.sqlite3_system_errno.argtypes = [ctypes.c_void_p]
-            pointer = ctypes.c_void_p.from_address(id(captured[-1]) + 16).value
-            print("Native SQLite errno", dll.sqlite3_system_errno(pointer))
-        try:
-            import os
-            os.truncate(settings.home / "github-copy.db-shm", 3)
-            print("Native SHM truncate succeeded")
-        except OSError as native:
-            print("Native SHM truncate failed", repr(native), native.winerror)
-
     try:
         with build_session_factory(engine).begin() as session:
             pending = library_log.unpublished(session)

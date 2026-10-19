@@ -43,8 +43,6 @@ def kill_at(tmp_path, operation, boundary, **configuration):
                 raise AssertionError(f"{message}: {log.read().decode(errors='replace')}")
             worker.kill()
             worker.wait(timeout=10)
-            if sys.platform == "win32":
-                worker._handle.Close()
             if sys.platform != "win32":
                 assert worker.returncode == -signal.SIGKILL
             else:
