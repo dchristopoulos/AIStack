@@ -167,3 +167,25 @@ Auth and limits:
 
 - A fresh `uv pip install` of the declared ranges, instead of the lock, fails two cases of `tests/mcp/test_server_url.py` (`example.com$(id)` as a host). The newer resolution moved starlette 1.6.0 to 1.8.0, pydantic 2.13.5 to 2.14.1, uvicorn 0.52.4 to 0.54.0 and idna 3.19 to 3.20; one of them now reports the refused address back in the error. Expect it in the next Dependabot pull request.
 - From 6a, still open: local installs write without `fsync` before the rename, and the real-GitHub contract test runs on no schedule.
+
+## Test speed follow-up, 2026-10-19
+
+The two SQLite contention checks now set a 50 ms timeout on their test connections.
+The connection-policy test still checks the five-second default. The printed sync skill
+is checked in process; its file-writing command still runs as a real subprocess.
+
+On macOS with Python 3.14.8, the five affected checks took 13.93 seconds before and
+2.23 seconds after. Run the same group with:
+
+```sh
+poetry run pytest -q --durations=5 \
+  tests/db/test_engine.py::test_sqlite_waits_for_a_busy_writer_before_failing_with_a_sentence \
+  tests/mcp/test_reads_while_writing_over_http.py::test_a_write_that_waits_too_long_says_to_try_again \
+  tests/mcp/test_local_mode.py::test_the_command_prints_local_setup_and_its_skill \
+  tests/mcp/test_local_mode.py::test_sync_skill_writes_itself_into_a_skills_folder_as_utf8
+```
+
+Both contention checks still fail when the conversion to `Busy` is removed. The
+in-process command check fails when its print is removed. No tests were deleted.
+The slow Git-backed Library journeys keep separate repositories. Starting a computer
+writes an event, even when the test's later calls only read.

@@ -94,10 +94,19 @@ async def test_the_dashboard_state_loads_while_another_request_writes(server_url
 async def test_a_write_that_waits_too_long_says_to_try_again(server_url, database_file):
     token = await join(server_url)
 
-    with _a_write_in_progress(database_file):
-        with pytest.raises(ToolError, match="The server is busy right now.*Nothing was changed. "
-                                            "Make the same call again in a few seconds."):
-            await call(server_url, token, "sync", local={})
+    engine = get_session_factory().kw["bind"]
+
+    def short_wait(connection, record, proxy):
+        connection.execute("PRAGMA busy_timeout = 50")
+
+    event.listen(engine, "checkout", short_wait)
+    try:
+        with _a_write_in_progress(database_file):
+            with pytest.raises(ToolError, match="The server is busy right now.*Nothing was changed. "
+                                                "Make the same call again in a few seconds."):
+                await call(server_url, token, "sync", local={})
+    finally:
+        event.remove(engine, "checkout", short_wait)
 
 @pytest.mark.parametrize("route", ["transfer", "dashboard"])
 async def test_a_database_conflict_answers_503_and_rolls_back_the_route(

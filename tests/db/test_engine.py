@@ -28,11 +28,13 @@ def test_every_sqlite_connection_commits_with_full_durability(engine):
 
 def test_sqlite_waits_for_a_busy_writer_before_failing_with_a_sentence(engine):
     with engine.connect() as writer, engine.connect() as contender:
+        contender.exec_driver_sql("PRAGMA busy_timeout = 50")
+        contender.rollback()
         writer.execute(User.__table__.insert().values(username="holding-lock"))
         started = perf_counter()
         with pytest.raises(Busy, match="Make the same call again in a few seconds"):
             contender.execute(User.__table__.insert().values(username="waiting"))
-        assert perf_counter() - started >= 4.5
+        assert perf_counter() - started >= 0.04
 
 
 def test_savepoint_rollback_preserves_the_outer_transaction(session_factory: sessionmaker[Session]):

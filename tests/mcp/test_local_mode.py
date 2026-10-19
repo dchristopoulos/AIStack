@@ -351,9 +351,23 @@ def test_the_local_sync_skill_is_one_the_library_would_accept():
 
 @pytest.mark.parametrize("command, starts", [("setup", "# Set up AIStack on this computer"),
                                              ("sync-skill", "---\nname: sync-aistack\n")])
-def test_the_command_prints_local_setup_and_its_skill(command, starts):
-    printed = subprocess.run([sys.executable, "-m", "aistack.bootstrap", command],
-                             capture_output=True, text=True, check=True).stdout
+def test_the_command_prints_local_setup_and_its_skill(command, starts, monkeypatch, capsys):
+    if command == "setup":
+        printed = subprocess.run([sys.executable, "-m", "aistack.bootstrap", command],
+                                 capture_output=True, text=True, check=True).stdout
+    else:
+        import signal
+
+        from aistack.bootstrap.__main__ import run
+
+        # The file-writing test below keeps a real sync-skill process at the command boundary.
+        previous = signal.getsignal(signal.SIGTERM)
+        monkeypatch.setattr(sys, "argv", ["aistack", command])
+        try:
+            run()
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+        printed = capsys.readouterr().out
     assert printed.startswith(starts)
 
 
