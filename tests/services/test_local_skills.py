@@ -2,10 +2,12 @@
 
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 
-from aistack.commons.exceptions import ValidationError
+from aistack.commons.exceptions import Busy, ValidationError
 from aistack.services import local_skills
 from aistack.services.skill_archive import MAX_FILE_BYTES, MAX_FILE_COUNT, read_archive
 from aistack.services.skill_validation import validated_skill
@@ -183,3 +185,50 @@ def test_a_refresh_left_half_done_is_finished_by_the_next(tmp_path):
 
     assert sorted(path.name for path in (tmp_path / "wizard").iterdir()) == ["SKILL.md"]
     assert (tmp_path / "wizard/SKILL.md").read_bytes() == b"new"
+
+@pytest.mark.parametrize("collisions", [1, 5],
+                         ids=["retry-succeeds", "retry-exhausted"])
+def test_an_install_racing_between_renames_retries_or_says_to_try_again(
+        tmp_path, monkeypatch, collisions):
+    local_skills.install(tmp_path, "wizard", *_revision("old\n"))
+    rendezvous = threading.Barrier(2)
+    rename = Path.rename
+    attempts = []
+    main_thread = threading.get_ident()
+
+    def contender_between_renames(path, target):
+        if (threading.get_ident() != main_thread
+                and path.parent == tmp_path / local_skills.STAGING_FOLDER
+                and not path.name.endswith(".replaced")):
+            attempts.append(path)
+            if len(attempts) <= collisions:
+                # The previous folder has moved out, but this revision has not moved in.
+                assert not (tmp_path / "wizard").exists()
+                rendezvous.wait(timeout=10)
+                rendezvous.wait(timeout=10)
+        return rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", contender_between_renames)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        losing = pool.submit(local_skills.install, tmp_path, "wizard", *_revision("loser\n"))
+        try:
+            for index in range(collisions):
+                rendezvous.wait(timeout=10)
+                local_skills.install(tmp_path, "wizard", *_revision(f"winner {index}\n"))
+                rendezvous.wait(timeout=10)
+            if collisions == 5:
+                with pytest.raises(Busy, match="Another session kept installing 'wizard'.*Try again"):
+                    losing.result(timeout=10)
+                expected = f"winner {collisions - 1}\n"
+                assert len(attempts) == 5
+            else:
+                losing.result(timeout=10)
+                expected = "loser\n"
+                assert len(attempts) == collisions + 1
+        finally:
+            rendezvous.abort()
+
+    folder = tmp_path / "wizard"
+    assert (folder / "notes.md").read_text() == (folder / "more.md").read_text() == expected
+    assert sorted(path.name for path in folder.iterdir()) == ["SKILL.md", "more.md", "notes.md"]
+    assert list((tmp_path / local_skills.STAGING_FOLDER).iterdir()) == []

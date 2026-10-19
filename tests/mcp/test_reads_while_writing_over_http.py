@@ -1,4 +1,4 @@
-"""On SQLite, a request that only reads does not wait for a writer (ADR-0030)."""
+"""Reads proceed during writes, and conflicting writes answer with a retryable refusal."""
 
 import sqlite3
 from contextlib import contextmanager
@@ -7,7 +7,13 @@ from time import perf_counter
 import httpx
 import pytest
 from fastmcp.exceptions import ToolError
+from psycopg.errors import SerializationFailure
+from sqlalchemy import event, select
 
+from aistack.bootstrap.context.application_context import get_session_factory
+from aistack.db.models.skill import Skill
+from aistack.db.models.team import Team
+from tests.archives import skill_archive
 from tests.mcp.conftest import call, join
 
 pytestmark = pytest.mark.anyio
@@ -92,3 +98,50 @@ async def test_a_write_that_waits_too_long_says_to_try_again(server_url, databas
         with pytest.raises(ToolError, match="The server is busy right now.*Nothing was changed. "
                                             "Make the same call again in a few seconds."):
             await call(server_url, token, "sync", local={})
+
+@pytest.mark.parametrize("route", ["transfer", "dashboard"])
+async def test_a_database_conflict_answers_503_and_rolls_back_the_route(
+        server_url, portable_engine, route):
+    token = await join(server_url)
+    link = (await call(server_url, token, "open_dashboard"))["url"]
+    upload = (await call(server_url, token, "push_skill", name="wizard"))["upload_url"]
+    refused = []
+    engine = get_session_factory().kw["bind"]
+
+    def conflict_at_insert(cursor, statement, parameters, context):
+        table = "skill_version" if route == "transfer" else "team_member"
+        if statement.startswith(f"INSERT INTO {table} "):
+            refused.append(statement)
+            if portable_engine.dialect.name == "sqlite":
+                raise sqlite3.OperationalError("database is locked")
+            raise SerializationFailure("could not serialize access")
+
+    async with httpx.AsyncClient(base_url=server_url.removesuffix("/mcp")) as browser:
+        await browser.get(link)
+        event.listen(engine, "do_execute", conflict_at_insert)
+        try:
+            if route == "transfer":
+                response = await browser.put(upload, content=skill_archive())
+            else:
+                response = await browser.post("/api/teams", json={"name": "acme"},
+                                              headers={"X-AIStack-Request": "1"})
+        finally:
+            event.remove(engine, "do_execute", conflict_at_insert)
+
+        assert len(refused) == 1
+        assert response.status_code == 503
+        assert response.json() == {
+            "error": "The server is busy right now and could not finish this in time. "
+                     "Nothing was changed. Make the same call again in a few seconds.",
+        }
+        with get_session_factory().begin() as session:
+            assert session.scalar(select(Skill).where(Skill.name == "wizard")) is None
+            assert session.scalar(select(Team).where(Team.name == "acme")) is None
+
+        # Retrying the same request succeeds once the database can write again.
+        if route == "transfer":
+            retried = await browser.put(upload, content=skill_archive())
+        else:
+            retried = await browser.post("/api/teams", json={"name": "acme"},
+                                         headers={"X-AIStack-Request": "1"})
+        assert retried.status_code == 200
