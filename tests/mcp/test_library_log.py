@@ -851,8 +851,13 @@ def test_a_log_cannot_change_another_persons_computer(session_factory):
                    project_name="billing", harness="agents", target_machine_id=str(STRANGER)),
             _removes(2, DESKTOP, STRANGER, "laptop"),
             _renames(3, DESKTOP, STRANGER, "taken"),
+            _pushed_event(4, DESKTOP, "wizard", "agents", None),
+            _event(5, DESKTOP, library_log.SKILL_PLACED, name="wizard", harness="agents",
+                   enabled=True, target_machine_id=str(STRANGER)),
         ])
         assert session.scalar(select(MachineProject.machine_project_id)) is None
+        assert session.scalar(select(MachineSkill).where(
+            MachineSkill.machine_id == STRANGER)) is None
         assert session.get(Machine, STRANGER).name == "laptop"
 
 

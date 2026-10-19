@@ -205,8 +205,10 @@ def apply(session: Session, event: Event,
         # A computer can place a skill on another of the person's computers, from the
         # dashboard; the event is still filed under the computer that made the change.
         target = _target(data.get("target_machine_id") or str(machine.machine_id))
-        if session.get(Machine, target) is None:
-            # Placed while another computer removed it: nothing is left to place on.
+        placed_on = session.get(Machine, target)
+        if placed_on is None or placed_on.user_id != machine.user_id:
+            # Placed while another computer removed it, or a log edited to name someone
+            # else's: nothing of the person's is left to place on.
             return None
         skill = visibility.required_my_skill(session, machine.user_id, data["name"],
                                              removed_too=True)
