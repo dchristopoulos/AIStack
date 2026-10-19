@@ -18,6 +18,14 @@ def test_sqlite_connections_get_wal_busy_timeout_and_foreign_keys(engine: Engine
         assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
 
 
+def test_every_sqlite_connection_commits_with_full_durability(engine):
+    # Two live connections ensure the connect policy is applied beyond the first one.
+    with engine.connect() as first, engine.connect() as second:
+        for connection in (first, second):
+            assert connection.exec_driver_sql("PRAGMA synchronous").scalar() == 2
+            connection.rollback()
+
+
 def test_sqlite_waits_for_a_busy_writer_before_failing_with_a_sentence(engine):
     with engine.connect() as writer, engine.connect() as contender:
         writer.execute(User.__table__.insert().values(username="holding-lock"))

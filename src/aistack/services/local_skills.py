@@ -128,7 +128,7 @@ def archive(folder: Path, name: str) -> bytes:
 
 
 def install(folder: Path, name: str, packed: bytes, content_hash: str) -> None:
-    """Put one revision at `folder/name`, replacing what is there, or leave the disk as it was.
+    """Install one validated revision whole, flushing its files before replacement.
 
     `packed` came out of the shared database, so it is validated and re-hashed exactly as an
     upload is before a byte of it is written.
@@ -151,11 +151,30 @@ def install(folder: Path, name: str, packed: bytes, content_hash: str) -> None:
             # Validated paths: relative, no '..', no drive, no device name.
             target = staged / file.path
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(file.content.encode("utf-8"))
-            target.chmod(0o755 if file.executable else 0o644)
+            with target.open("wb") as stream:
+                stream.write(file.content.encode("utf-8"))
+                stream.flush()
+                target.chmod(0o755 if file.executable else 0o644)
+                os.fsync(stream.fileno())
+        # Persist children before their directory entries, then the rename's destination.
+        for directory, _, _ in os.walk(staged, topdown=False):
+            _flush_directory(Path(directory))
+        _flush_directory(staging)
         _swap_in(staged, folder / name, staging)
+        _flush_directory(folder)
     finally:
         _discard(staged)
+
+
+def _flush_directory(folder: Path) -> None:
+    # Windows cannot open directories through os.open; its files are still flushed above.
+    if os.name == "nt":
+        return
+    descriptor = os.open(folder, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _swap_in(staged: Path, destination: Path, staging: Path) -> None:
