@@ -174,39 +174,6 @@ def test_a_local_write_killed_before_its_git_push_is_published_after_restart(tmp
         aistack_username="maria",
         aistack_auto_update=False,
     )
-    import ctypes
-    import sys
-    from pathlib import Path
-    dll = ctypes.CDLL(str(Path(sys.base_prefix) / "DLLs/sqlite3.dll"))
-    callback_type = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_int, ctypes.c_char_p)
-    callback = callback_type(lambda _, code, text: print("SQLite native log", code, text.decode()))
-    print("Log configured", dll.sqlite3_config(16, callback, None))
-    class VFS(ctypes.Structure):
-        _fields_ = [(name, ctypes.c_int) for name in ("version", "size", "maxpath")] + [
-            (name, ctypes.c_void_p) for name in (
-                "next", "name", "data", "open", "delete", "access", "fullpath", "dlopen",
-                "dlerror", "dlsym", "dlclose", "random", "sleep", "time", "error", "time64",
-                "setsystem", "getsystem", "nextsystem")]
-    dll.sqlite3_vfs_find.restype = ctypes.POINTER(VFS)
-    vfs = dll.sqlite3_vfs_find(None)
-    kernel = ctypes.WinDLL("kernel32")
-    kernel.SetEndOfFile.argtypes = [ctypes.c_void_p]
-    kernel.GetFinalPathNameByHandleW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
-                                               ctypes.c_uint, ctypes.c_uint]
-    eof_type = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p)
-    @eof_type
-    def eof(handle):
-        result = kernel.SetEndOfFile(handle)
-        error = kernel.GetLastError()
-        if not result:
-            name = ctypes.create_unicode_buffer(1024)
-            kernel.GetFinalPathNameByHandleW(handle, name, len(name), 0)
-            print("SetEndOfFile failed", error, name.value, flush=True)
-        kernel.SetLastError(error)
-        return result
-    setter = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_char_p,
-                              ctypes.c_void_p)(vfs.contents.setsystem)
-    print("File trace configured", setter(vfs, b"SetEndOfFile", eof))
     engine = build_engine(settings.library_url())
     try:
         with build_session_factory(engine).begin() as session:

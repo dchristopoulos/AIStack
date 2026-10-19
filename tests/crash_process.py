@@ -41,7 +41,7 @@ def kill_at(tmp_path, operation, boundary, **configuration):
             if message != "ready\n":
                 log.seek(0)
                 raise AssertionError(f"{message}: {log.read().decode(errors='replace')}")
-            worker.kill()
+            _kill(worker)
             worker.wait(timeout=10)
             if sys.platform != "win32":
                 assert worker.returncode == -signal.SIGKILL
@@ -49,8 +49,21 @@ def kill_at(tmp_path, operation, boundary, **configuration):
                 assert worker.returncode != 0  # TerminateProcess is Windows' hard kill.
         finally:
             if worker.poll() is None:
-                worker.kill()
+                _kill(worker)
                 worker.wait(timeout=10)
             reader.join(timeout=5)
             worker.stdin.close()
             worker.stdout.close()
+
+
+def _kill(worker):
+    if sys.platform == "win32":
+        # A Windows virtualenv's python.exe launches the interpreter as a child process.
+        subprocess.run(
+            ["taskkill", "/PID", str(worker.pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    else:
+        worker.kill()
