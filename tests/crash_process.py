@@ -42,7 +42,6 @@ def kill_at(tmp_path, operation, boundary, **configuration):
                 log.seek(0)
                 raise AssertionError(f"{message}: {log.read().decode(errors='replace')}")
             actual_pid = int(message.removeprefix("ready:"))
-            print("Crash worker processes", worker.pid, actual_pid)
             _kill(worker, actual_pid)
             worker.wait(timeout=10)
             if sys.platform != "win32":
@@ -66,6 +65,7 @@ def _kill(worker, actual_pid=None):
             capture_output=True,
             text=True,
             check=True,
+            timeout=10,
         )
     else:
         worker.kill()
