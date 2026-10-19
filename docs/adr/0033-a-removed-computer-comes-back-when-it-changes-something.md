@@ -1,6 +1,6 @@
 # A removed computer comes back when it changes something
 
-Status: accepted, 2026-10-16. Amends ADR-0025. Findings: AUTO-02, AUTO-20 in [docs/audits/2026-10](../audits/2026-10/README.md).
+Status: accepted, 2026-10-16. Amends ADR-0025. Findings: AUTO-02, AUTO-20 in [the October 2026 audit](https://github.com/dchristopoulos/AIStack/blob/v0.1.1/docs/audits/2026-10/README.md).
 
 Local mode records every change as an event in the Library's log, and every computer replays the log in one order (ADR-0025, ADR-0032). Removing a computer is a change like any other, but the computer removed may be offline and still in use: its later changes reach the log after the removal. Replay refused a change from a computer it did not know, which would stop every other computer's Library.
 

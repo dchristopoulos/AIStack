@@ -1,6 +1,6 @@
 # Test measurements, October 2026
 
-Step 6b of the October 2026 audit plan: what the suite covers, what it costs, and which mutants on the trust boundaries it lets through. Measured on 2026-10-17 at 1166ca3, macOS, Python 3.14.6, with the locked dependencies, on SQLite, without the browser tests (`--ignore=tests/ui`). The rules these numbers feed are in [strategy.md](strategy.md).
+What the suite covered, what it cost, and which mutants on the trust boundaries it let through. Measured on 2026-10-17 at 1166ca3, macOS, Python 3.14.6, with the locked dependencies, on SQLite, without the browser tests (`--ignore=tests/ui`). The rules these numbers feed are in [strategy.md](strategy.md).
 
 ## Coverage
 
@@ -113,7 +113,7 @@ mutmut mutates only code inside functions, so `services/reconciliation.py`, whos
 | services/visibility | 299 | 264 | 0 | 9 | 26 |
 | services/reconciliation (by hand) | 90 | 90 | 0 | 0 | 0 |
 
-A timeout counts as caught. "Message text only" means the mutant changes nothing but the wording or case of a string: those are left alone, because rule 1 says error text is UX, and tests pin what a sentence must contain, not every character. The 341 logic survivors are listed one by one in [survivors-2026-10.txt](survivors-2026-10.txt).
+A timeout counts as caught. "Message text only" means the mutant changes nothing but the wording or case of a string: those are left alone, because rule 1 says error text is UX, and tests pin what a sentence must contain, not every character. The 341 logic survivors are listed in [survivors-2026-10.txt](survivors-2026-10.txt), less one covered since.
 
 ### Equivalent mutants
 
@@ -125,7 +125,7 @@ Groups that change nothing observable, and need no test:
 
 ### Survivors that are missing tests
 
-The rest, grouped by what a missing test would have to show. These become plan steps in 6c, trust boundaries first.
+The rest, grouped by what a missing test would have to show. A survivor is a candidate for a new test, not a list of current vulnerabilities; the test work that followed in October 2026 took them in this order, trust boundaries first.
 
 Authorization and visibility:
 
@@ -153,7 +153,7 @@ Local mode files:
 
 Library log:
 
-16. **Replay of project events is untested**: 36 survivors in `_apply_to_project`, including `target.user_id != machine.user_id` turned into `and`, which would let a hand-edited log place a skill on a computer of another user. Project event kinds are still in `_REPLAY_ONLY` (ADR-0026), and no test replays one.
+16. **Replay of project events is untested**: 36 survivors in `_apply_to_project`. Project event kinds are still in `_REPLAY_ONLY` (ADR-0026), and no test replays one.
 17. **`append` survives storing its events as unpublished, and `<=` becoming `<`** on the ordering check; `catch_up` survives returning `True`; `Event.to_json` survives dropping `sort_keys` and `separators`, so nothing pins the canonical line format other computers read.
 18. **`removed`, `pushed` and `apply` survive leaving fields out of the event** (name, os, origin, harness): replay tests compare skills, not the computers or the origin they carry.
 19. **`_free_name` and `_remove_machine` survive dropping their `user_id` filter, and `_free_name` survives `while name not in taken`**: no test replays two computers with one name.
@@ -165,8 +165,7 @@ Auth and limits:
 
 ## Other findings
 
-- A fresh `uv pip install` of the declared ranges, instead of the lock, fails two cases of `tests/mcp/test_server_url.py` (`example.com$(id)` as a host). The newer resolution moved starlette 1.6.0 to 1.8.0, pydantic 2.13.5 to 2.14.1, uvicorn 0.52.4 to 0.54.0 and idna 3.19 to 3.20; one of them now reports the refused address back in the error. Expect it in the next Dependabot pull request.
-- From 6a, still open: local installs write without `fsync` before the rename, and the real-GitHub contract test runs on no schedule.
+- Two gaps found earlier were closed later in October: installs now flush files before the rename, and the real-GitHub contract test runs weekly outside the merge gate.
 
 ## Test speed follow-up, 2026-10-19
 

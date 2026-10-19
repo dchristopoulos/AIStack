@@ -50,4 +50,4 @@ The reconciliation table (ADR-0007) and the rule that sync never deletes (ADR-00
 - The `sync` tool description is at its limit, so its shell commands move to the `sync-aistack` skill to make room for the new arguments.
 - AGENTS.md gains the two rules above: project folders are written only where git ignores them, and a new event kind is replayed one release before it is recorded.
 
-The longer design, with wire examples, the schema for both databases, event formats, the page, open questions and what could not be verified, is in [docs/audits/2026-10/projects-design.md](../audits/2026-10/projects-design.md).
+The longer design, with wire examples, the schema for both databases, event formats, the page, open questions and what could not be verified, is in [the October 2026 projects design](https://github.com/dchristopoulos/AIStack/blob/v0.1.1/docs/audits/2026-10/projects-design.md).

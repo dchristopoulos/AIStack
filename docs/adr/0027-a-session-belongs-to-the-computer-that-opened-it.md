@@ -1,6 +1,6 @@
 # A dashboard session belongs to the computer that opened it, and its owner can remove that computer
 
-Status: accepted, 2026-10-15. Amends ADR-0017 (a session ended only with its user's last machine) and ADR-0003 (revocation was an operator's database edit). Findings: SEC-01, SEC-05, STD-03, AUTO-02, STD-04 in [docs/audits/2026-10](../audits/2026-10/README.md).
+Status: accepted, 2026-10-15. Amends ADR-0017 (a session ended only with its user's last machine) and ADR-0003 (revocation was an operator's database edit). Findings: SEC-01, SEC-05, STD-03, AUTO-02, STD-04 in [the October 2026 audit](https://github.com/dchristopoulos/AIStack/blob/v0.1.1/docs/audits/2026-10/README.md).
 
 A lost laptop's token is the person's whole account. Today the operator's documented rotation leaves the thief every computer they added with `add_machine`, every dashboard session they opened, for eight hours, and every upload URL they minted. Signing out deletes a cookie and ends nothing. And the owner cannot act at all: only the operator can revoke a computer.
 

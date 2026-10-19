@@ -1,6 +1,6 @@
 # A team can be deleted, and nobody is kept in one
 
-Status: accepted, 2026-10-15. Amends ADR-0015 (a team always keeps an admin, and nothing deletes a team). Findings: AUTHZ-05, AUTHZ-V01, PH-04, PH-05, DB-07, AUTO-13, UX-03 in [docs/audits/2026-10](../audits/2026-10/README.md).
+Status: accepted, 2026-10-15. Amends ADR-0015 (a team always keeps an admin, and nothing deletes a team). Findings: AUTHZ-05, AUTHZ-V01, PH-04, PH-05, DB-07, AUTO-13, UX-03 in [the October 2026 audit](https://github.com/dchristopoulos/AIStack/blob/v0.1.1/docs/audits/2026-10/README.md).
 
 A team made by mistake can never go away: its only member cannot leave, because a team keeps an admin, and nothing deletes a team. A team whose only admin was taken off the server has an admin nobody can reach, and no script names another. Its name stays taken, and team names share a namespace with usernames.
 

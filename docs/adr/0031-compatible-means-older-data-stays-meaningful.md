@@ -1,6 +1,6 @@
 # A compatible migration also keeps older releases' data meaningful
 
-Status: accepted, 2026-10-15. Amends ADR-0024. Findings: DB-04, DB-08, DB-09 in [docs/audits/2026-10](../audits/2026-10/README.md).
+Status: accepted, 2026-10-15. Amends ADR-0024. Findings: DB-04, DB-08, DB-09 in [the October 2026 audit](https://github.com/dchristopoulos/AIStack/blob/v0.1.1/docs/audits/2026-10/README.md).
 
 ADR-0024 calls a migration compatible when it only adds. Three kinds of change pass that test and still break a computer on an older release:
 

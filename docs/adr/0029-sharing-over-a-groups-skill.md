@@ -1,6 +1,6 @@
 # Sharing over a group's skill takes being able to share into the group
 
-Status: accepted, 2026-10-15. Resolves two sentences of ADR-0015 that disagree. Findings: AUTHZ-02 in [docs/audits/2026-10](../audits/2026-10/README.md).
+Status: accepted, 2026-10-15. Resolves two sentences of ADR-0015 that disagree. Findings: AUTHZ-02 in [the October 2026 audit](https://github.com/dchristopoulos/AIStack/blob/v0.1.1/docs/audits/2026-10/README.md).
 
 ADR-0015 says any member may change a team's skill by sharing over it, and also that seeing an open group does not make it writable and that sight of every group grants reading and taking, not sharing. The code follows the first: a member who can only see a group, including a "sees all groups" member looking at a private one, shares over its skill by naming no group, and the refusal for naming the group tells them to do exactly that.
 

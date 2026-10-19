@@ -47,7 +47,7 @@ Out of scope, because they are the design rather than a flaw in it:
 - Someone doing what a credential they hold allows: a machine token, the server's invite code, a team's invite code, the database address in local mode, or write access to a GitHub Library's repository.
 - Anything that needs control of the person's own computer or coding agent.
 
-Known weaknesses already being worked on are listed in [docs/audits/2026-10](docs/audits/2026-10/README.md). A report that finds one of them exploitable in a way the audit missed is still welcome.
+Planned improvements are tracked in [GitHub Issues](https://github.com/dchristopoulos/AIStack/issues). Report vulnerabilities privately using the process above.
 
 ## For whoever runs a server
 

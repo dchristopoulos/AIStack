@@ -1,6 +1,6 @@
 # A GitHub Library's log is ordered by a hybrid logical clock
 
-Status: accepted, 2026-10-15. Amends ADR-0025. Findings: ENT-03, ENT-06 in [docs/audits/2026-10](../audits/2026-10/README.md).
+Status: accepted, 2026-10-15. Amends ADR-0025. Findings: ENT-03, ENT-06 in [the October 2026 audit](https://github.com/dchristopoulos/AIStack/blob/v0.1.1/docs/audits/2026-10/README.md).
 
 ADR-0025 orders a Library's events by each computer's wall clock. A computer whose clock runs ahead, which happens after sleep in WSL2 and VMs and on dual-boot machines, sorts its events after newer ones from other computers, so copies disagree until a rebuild, and the rebuild silently keeps the older edit.
 

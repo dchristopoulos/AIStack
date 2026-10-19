@@ -1,5 +1,5 @@
 # mutmut 3.8.0 survivors on the trust-boundary modules at 1166ca3, logic mutants only
-# (278 mutants that only change message text are left out). Each is three lines:
+# (278 mutants that only change message text, and one covered since, are left out). Each is three lines:
 # <module>.<function>, the original line, the mutant. Equivalent mutants are still listed;
 # docs/testing/measurements.md says which groups are equivalent.
 mcp.auth.aistack_token_verifier.AIStackTokenVerifier.verify_token__mutmut_6
@@ -197,9 +197,6 @@ services.library_log._apply_to_project__mutmut_73
 services.library_log._apply_to_project__mutmut_83
     - target = session.get(Machine, _target(data.get("target_machine_id")
     + target = session.get(Machine, _target(data.get(None)
-services.library_log._apply_to_project__mutmut_87
-    - if target is None or target.user_id != machine.user_id:
-    + if target is None and target.user_id != machine.user_id:
 services.library_log._apply_to_project__mutmut_100
     - if target.machine_id == machine.machine_id and path is not None:
     + if target.machine_id == machine.machine_id or path is not None:

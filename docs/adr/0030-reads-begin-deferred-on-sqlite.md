@@ -1,6 +1,6 @@
 # On SQLite, a request that only reads begins deferred
 
-Status: accepted, 2026-10-15. Amends ADR-0014. Findings: SEC-04, STD-06, ENT-04, DB-01 in [docs/audits/2026-10](../audits/2026-10/README.md).
+Status: accepted, 2026-10-15. Amends ADR-0014. Findings: SEC-04, STD-06, ENT-04, DB-01 in [the October 2026 audit](https://github.com/dchristopoulos/AIStack/blob/v0.1.1/docs/audits/2026-10/README.md).
 
 ADR-0014 makes every SQLite transaction take the write lock at BEGIN, so a second writer waits instead of failing. It also makes every reader wait: the bearer check, `/health`, the invite page and the dashboard's state. One slow write turns `/health` into `unavailable` and, past the five-second busy timeout, a valid bearer into a bare 500.
 

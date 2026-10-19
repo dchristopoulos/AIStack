@@ -1,6 +1,6 @@
 # A forgotten person's revisions stay, under a pseudonym
 
-Status: accepted, 2026-10-17. Amends ADR-0015 (every revision names who pushed it). Finding: the erasure half of STD-15 in [docs/audits/2026-10](../audits/2026-10/README.md).
+Status: accepted, 2026-10-17. Amends ADR-0015 (every revision names who pushed it). Finding: the erasure half of STD-15 in [the October 2026 audit](https://github.com/dchristopoulos/AIStack/blob/v0.1.1/docs/audits/2026-10/README.md).
 
 A person who leaves a server can ask to be forgotten, and today the operator cannot do it. OPERATING forbids deleting a user, because `pushed_by` is a required reference from every skill and revision they pushed: deleting them either fails or takes those rows with it. Some of those rows are other people's. A skill shared into a team is the team's copy, and a teammate who took it holds a copy of their own, both still naming the person who shared it. ADR-0015 rules out a change to one person's account taking anything off anybody else's computer.
 
