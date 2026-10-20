@@ -215,6 +215,41 @@ async def test_wrong_team_codes_from_a_signed_in_caller_count_toward_the_limit(s
     assert after.status_code == 429
 
 
+async def test_a_team_code_sent_again_by_whoever_used_it_is_not_a_refused_one(server_url,
+                                                                              monkeypatch):
+    """The answer to join_team can be lost after it committed; sending the code again is no
+    guess. Anyone else sending it is refused exactly as for an unknown code, and counted."""
+    monkeypatch.setattr(application_context.get_failure_limiter(), "_limit", 1)
+    dimitris = await join(server_url)
+    maria = await join(server_url, "maria", "laptop")
+    eve = await join(server_url, "eve", "phone")
+    await call(server_url, dimitris, "create_team", name="acme")
+    code = (await call(server_url, dimitris, "invite_to_team", team="acme"))["code"]
+
+    transport = StreamableHttpTransport(server_url, auth=BearerAuth(maria),
+                                        headers={"X-Forwarded-For": GUESSER})
+    async with Client(transport) as client:
+        for _ in range(2):
+            joined = await client.call_tool("join_team", {"code": code})
+            assert joined.structured_content == {"team": "acme"}
+        # One counted refusal would turn this address away now.
+        teams = (await client.call_tool("list_teams", {})).structured_content["teams"]
+    assert teams == [{"name": "acme", "kind": "SHARED", "role": "MEMBER", "members": 2}]
+
+    refusals = []
+    for address, sent in (("198.51.100.1", code), ("198.51.100.2", "aistinv_" + "x" * 32)):
+        transport = StreamableHttpTransport(server_url, auth=BearerAuth(eve),
+                                            headers={"X-Forwarded-For": address})
+        async with Client(transport) as client:
+            with pytest.raises(ToolError) as refusal:
+                await client.call_tool("join_team", {"code": sent})
+        refusals.append(str(refusal.value))
+        async with httpx.AsyncClient() as http:
+            assert (await _post_with_bearer(http, server_url, eve, address)).status_code == 429
+    assert refusals[0] == refusals[1]
+    assert code not in refusals[0]
+
+
 async def test_a_team_code_answers_a_few_taken_names_and_then_waits(server_url):
     """SEC-08: a refused join leaves the code unused, so it could list every username."""
     dimitris = await join(server_url)

@@ -550,6 +550,46 @@ def test_a_member_using_an_invite_again_leaves_it_for_someone_else(session_facto
     assert _members_of(session_factory, "acme") == 3
 
 
+def test_whoever_used_an_invite_may_send_it_again_and_is_told_their_team(session_factory,
+                                                                         dimitris, eve, acme):
+    """The answer to a join can be lost after it committed, so the agent sends the code again."""
+    code = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, acme)
+    assert _do(session_factory, team_service.join_team, eve.user.user_id, code) == "acme"
+    with session_factory() as session:
+        used_on = session.scalar(select(Invite.used_on).where(Invite.used_by == eve.user.user_id))
+
+    assert _do(session_factory, team_service.join_team, eve.user.user_id, code) == "acme"
+    assert _do(session_factory, team_service.join_team, eve.user.user_id,
+               f"https://aistack.example.com/invite/{code}") == "acme"
+    assert _members_of(session_factory, "acme") == 3
+    with session_factory() as session:
+        assert session.scalar(select(Invite.used_on)
+                              .where(Invite.used_by == eve.user.user_id)) == used_on
+
+
+def test_a_used_invite_sent_by_anyone_else_reads_like_an_unknown_code(session_factory,
+                                                                     dimitris, maria, eve,
+                                                                     acme):
+    code = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, acme)
+    _do(session_factory, team_service.join_team, eve.user.user_id, code)
+    with pytest.raises(NotFound) as unknown:
+        _do(session_factory, team_service.join_team, eve.user.user_id, "aistinv_unknown")
+    frank = _join(session_factory, "frank")
+    refusals = []
+
+    # Someone outside the team, a member who did not use it, and whoever used it once they left.
+    for person in (frank, maria, eve):
+        if person is eve:
+            _do(session_factory, team_service.leave_team, eve.user.user_id, acme)
+        with pytest.raises(NotFound) as refusal:
+            _do(session_factory, team_service.join_team, person.user.user_id, code)
+        refusals.append(str(refusal.value))
+
+    assert refusals == [str(unknown.value)] * 3
+    assert code not in refusals[0]
+    assert _members_of(session_factory, "acme") == 2
+
+
 def test_the_invite_link_works_wherever_the_code_does(session_factory, dimitris, eve, acme):
     code = _do(session_factory, team_service.new_invite_code, dimitris.user.user_id, acme)
     link = f" https://aistack.example.com/invite/{code}/\n"

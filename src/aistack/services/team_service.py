@@ -145,8 +145,21 @@ def new_invite(session: Session, user_id: uuid.UUID, team: str) -> tuple[str, uu
 
 
 def join_team(session: Session, user_id: uuid.UUID, code: str) -> str:
-    """Join the team an invite belongs to, using the invite up."""
-    return admit(session, invited_to(session, code), user_id)
+    """Join the team an invite belongs to, using the invite up.
+
+    Whoever used the invite, while still in its team, may send it again and is told the team,
+    as the first time: the answer to a join can be lost after it committed, and the retry is
+    no guess. To anyone else a used invite reads like a code that never existed.
+    """
+    invite = _invite(session, code)
+    if invite is not None and invite.used_by == user_id:
+        team = session.scalar(
+            select(Team.name)
+            .join(TeamMember, TeamMember.team_id == Team.team_id)
+            .where(Team.team_id == invite.team_id, TeamMember.user_id == user_id))
+        if team is not None:
+            return team
+    return admit(session, _pending(session, invite), user_id)
 
 
 def invited_to(session: Session, code: str) -> Invite:
@@ -155,13 +168,22 @@ def invited_to(session: Session, code: str) -> Invite:
     It also admits a new person at `join` (ADR-0019), so it is read again inside that
     transaction rather than trusted from the moment the bearer was verified.
     """
-    invite = None
-    if isinstance(code, str):
-        # The invite link is what people are sent, so it is accepted wherever the code is.
-        # The code is its last segment: a token_urlsafe code has no '/' in it.
-        code = code.strip().rstrip("/").rsplit("/", 1)[-1]
-    if isinstance(code, str) and code.startswith(TEAM_INVITE_PREFIX):
-        invite = session.scalar(select(Invite).where(Invite.code_hash == hash_token(code)))
+    return _pending(session, _invite(session, code))
+
+
+def _invite(session: Session, code: str) -> Invite | None:
+    """The invite a code or invite link belongs to, in whatever state, by its hash."""
+    if not isinstance(code, str):
+        return None
+    # The invite link is what people are sent, so it is accepted wherever the code is.
+    # The code is its last segment: a token_urlsafe code has no '/' in it.
+    code = code.strip().rstrip("/").rsplit("/", 1)[-1]
+    if not code.startswith(TEAM_INVITE_PREFIX):
+        return None
+    return session.scalar(select(Invite).where(Invite.code_hash == hash_token(code)))
+
+
+def _pending(session: Session, invite: Invite | None) -> Invite:
     if invite is None or not _usable(session, invite):
         # Used, cancelled, expired and unknown read alike, and the code is never repeated: a
         # near-miss of a real one is still a secret.
