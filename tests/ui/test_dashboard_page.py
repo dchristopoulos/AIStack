@@ -344,7 +344,7 @@ async def test_adding_a_computer_uses_a_code_and_approval(sign_in, server_url):
     await dialog.get_by_label("Computer name", exact=True).fill("travel")
     await dialog.get_by_role("button", name="Save options").click()
     # The server state, not the rendered dialog, confirms the saved choice.
-    await expect(dialog.get_by_text(re.compile("^Expires "))).to_be_visible()
+    await expect(dialog.get_by_text(re.compile("^The code works once and expires "))).to_be_visible()
     for _ in range(30):
         state = await dimitris.state()
         if state['computer_codes'][0]['options']['name'] == 'travel':
@@ -352,8 +352,16 @@ async def test_adding_a_computer_uses_a_code_and_approval(sign_in, server_url):
         await page.wait_for_timeout(100)
     assert state['computer_codes'][0]['options']['name'] == 'travel'
     request = await call(server_url, code, "join", pairing="reserve", machine_name="hostname", os="LINUX")
-    await dialog.get_by_role("button", name="Approve this computer").click()
+    approve = dialog.get_by_role("button", name="Approve this computer")
+    await approve.focus()
+    await expect(dialog.get_by_text(re.compile("^Request from travel on Linux, arrived "))).to_be_visible()
+    # The dialog polls every two seconds; a poll that changes nothing keeps the button in place.
+    await page.wait_for_timeout(2500)
+    await expect(approve).to_be_focused()
+    await page.keyboard.press("Enter")
     await expect(dialog.get_by_text("Approved. Waiting for the new computer…", exact=True)).to_be_visible()
+    # The answered request took its button away; focus moved on inside the dialog.
+    await expect(dialog.get_by_role("button", name="Cancel code")).to_be_focused()
     assert (await dimitris.state())['computer_codes'][0]['status'] == 'approved'
     added = await call(server_url, request['request_bearer'], "join", pairing="poll")
     assert added['token'].startswith('aist_')
@@ -362,11 +370,23 @@ async def test_adding_a_computer_uses_a_code_and_approval(sign_in, server_url):
     await expect(dialog.get_by_text("Setup complete: Codex; 0 skills installed.")).to_be_visible()
     assert (await dimitris.state())['computer_codes'][0]['status'] == 'complete'
     assert await page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-    await page.screenshot(path='/tmp/187-computer-code-light.png')
-    await page.emulate_media(color_scheme='dark')
-    await page.screenshot(path='/tmp/187-computer-code-dark.png')
     await dialog.get_by_role("button", name="Done").click()
     await expect(page.get_by_role("dialog")).to_have_count(0)
+
+
+async def test_a_code_waits_under_the_computers_until_it_is_cancelled(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    nav = page.get_by_role("navigation", name="Main")
+    await nav.get_by_role("button", name="Add a computer").click()
+    await page.get_by_role("dialog").get_by_role("button", name="Done").click()
+    await expect(nav.get_by_role("button", name="New computer", exact=True)).to_be_visible()
+    await expect(nav.get_by_text(re.compile("^Code expires in "))).to_be_visible()
+    await nav.get_by_role("button", name="Cancel the code for New computer").click()
+    await expect(page.get_by_text("Code cancelled.")).to_be_visible()
+    await expect(nav.get_by_role("button", name="New computer", exact=True)).to_have_count(0)
+    assert (await dimitris.state())['computer_codes'][0]['status'] == 'cancelled'
+    assert await page.evaluate('document.activeElement !== document.body')
 
 
 async def test_an_agent_is_added_to_a_computer_and_given_a_skill(sign_in):

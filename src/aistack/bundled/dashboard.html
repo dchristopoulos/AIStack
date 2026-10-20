@@ -273,6 +273,9 @@ h1 .mono { font-size: inherit; letter-spacing: -.03em; }
 .nav-item.leaf .path { color: var(--faint); font: 11.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-add { display: flex; align-items: center; gap: 8px; height: 28px; width: 100%; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--faint); font-size: 13px; cursor: pointer; text-align: left; }
 .tree-add:hover { background: var(--active); color: var(--text); }
+.tree-code .tree-add span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-code-line { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px 0 30px; color: var(--faint); font-size: 12px; }
+.tree-code-line > span { flex: 1; min-width: 0; }
 .sidebar {
   grid-area: side; min-height: 0;
   display: flex; flex-direction: column;
@@ -1097,29 +1100,26 @@ const WORDS = {
   computerCode: {
     lead: 'Run this command in a terminal on the new computer. Keep this dialog open to approve its request.',
     command: 'Command for the new computer', platform: 'Terminal', posix: 'macOS / Linux', windows: 'Windows PowerShell',
-    expiry: 'Expires {time}', options: 'Options', name: 'Computer name', hostname: 'Use its hostname',
+    expiry: 'The code works once and expires {time}.', options: 'Options', name: 'Computer name', hostname: 'Use its hostname',
     expires: 'Code expires after', hours1: '1 hour', hours24: '24 hours', days7: '7 days',
     agents: 'Agents', find: 'Find them', claude: 'Claude Code', codex: 'Codex', skills: 'Initial skills',
     library: "Add my Library’s skills", empty: 'Start empty', hook: 'Install the session-start hook', approval: 'Require approval here',
     save: 'Save options', cancel: 'Cancel code', approve: 'Approve this computer', deny: 'Deny request',
     warning: 'These are reported details, not proof of identity. Approve only the request you just started.',
-    arrived: 'Request: {name} · {os} · arrived {time}', pending: 'Waiting for the new computer…',
+    arrived: 'Request from {name} on {os}, arrived {time}.', os: { MACOS: 'macOS', WINDOWS: 'Windows', LINUX: 'Linux' }, pending: 'Waiting for the new computer…',
     waiting: 'Waiting for your approval', approved: 'Approved. Waiting for the new computer…',
     connected: 'Connected. Setup has not been confirmed yet.', complete: 'Setup complete: {agents}; {skills} skills installed.',
     cancelled: 'Code cancelled.', denied: 'Request denied.', expired: 'Code expired. Make another with Add a computer.',
     revoked: 'The issuing computer’s key changed or was removed. Make another code from a connected computer.',
     help: 'No uv command?', helpText: 'Install uv, then run this command again. Or paste the sentence below into your coding agent.',
     fallback: 'What to paste into the coding agent', sentence: 'Connect this computer to AIStack by running: {command}',
-    request: 'Computer request', recover: 'If setup lost its key, remove the incomplete computer and make another code.',
+    newComputer: 'New computer', cancelFor: 'Cancel the code for {name}',
+    tree: { pending: 'Code expires {time}', waiting: 'Waiting for your approval', approved: 'Approved, connecting', connected: 'Connected, setup not confirmed' },
+    recover: 'If setup lost its key, remove the incomplete computer and make another code.',
   },
   addComputer: {
     title: 'Add a computer',
     whatToPaste: 'What to paste on the new computer',
-    server: {
-      lead: 'Say this on a computer that is already connected, then run the command it answers with on the new one.',
-      say: 'add my Windows PC to aistack',
-      help: 'The command holds that computer\'s key: paste it only there.',
-    },
     thisComputer: {
       lead: 'Your Library lives only on this computer, so another computer cannot reach it.',
       move: 'Move it to a private GitHub repository first: every computer of yours then shares it through your own GitHub sign-in, and nothing has to stay switched on.',
@@ -2250,8 +2250,19 @@ function computerTree(r) {
         on: { click: () => { if (open) folded.add(m.id); else folded.delete(m.id); render(); } },
       }, el('span', { class: 'chev' }, icon('chev', 14)), icon(m.os === 'MACOS' ? 'laptop' : 'monitor', 15), el('span', { class: 'label', title: m.name }, m.name)),
       kids);
-  }), (state.computer_codes || []).filter(c => ['pending', 'waiting', 'approved', 'connected'].includes(c.status)).map(c =>
-    btn(W.computerCode.request + (c.request ? ': ' + c.request.name : ''), { class: 'tree-add', on: { click: () => computerCodeDialog(c) } }, 'monitor')));
+  }), (state.computer_codes || []).filter(c => ['pending', 'waiting', 'approved', 'connected'].includes(c.status)).map(codeRow));
+}
+
+// A code in use sits under the computers, with its expiry and Cancel, until it connects one (ADR-0035).
+function codeRow(c) {
+  const C = W.computerCode, name = c.request ? c.request.name : C.newComputer;
+  const cancel = c.status !== 'connected' && btn(C.cancel, {
+    class: 'btn ghost sm', fk: 'cancel-code:' + c.id, 'aria-label': say(C.cancelFor, { name }),
+    on: { click: ev => run(ev.currentTarget, async () => { await api('/api/computer-codes/' + c.id + '/cancel', {}); return C.cancelled; }) },
+  });
+  return el('div', { class: 'tree-code' },
+    btn(name, { class: 'tree-add', fk: 'code:' + c.id, title: name, on: { click: () => computerCodeDialog(c) } }, 'monitor'),
+    el('div', { class: 'tree-code-line' }, el('span', null, sayWith(C.tree[c.status], { time: when(c.expires_on) })), cancel));
 }
 
 function addAgentDialog(m, missing) {
@@ -2289,12 +2300,8 @@ function copyField(value, label, done = W.copied) {
   return el('div', { class: 'field' }, el('div', { class: 'code-box' }, input, copy), said);
 }
 
+// A server makes a one-use computer code instead (computerCodeDialog).
 const ADD_COMPUTER = {
-  server: () => [
-    el('p', null, W.addComputer.server.lead),
-    copyField(W.addComputer.server.say, W.whatToSay),
-    el('p', { class: 'help' }, W.addComputer.server.help),
-  ],
   this_computer: () => [
     el('p', null, W.addComputer.thisComputer.lead),
     el('p', null, W.addComputer.thisComputer.move),
@@ -2324,13 +2331,19 @@ async function computerCodeDialog(existing) {
     try { record = await api('/api/computer-codes/' + record.id + '/' + kind, {}); error.hidden = true; draw(); }
     catch (failure) { error.textContent = failure.message; error.hidden = false; }
   };
+  let drawn;
   function draw() {
+    // A poll that changes nothing must not rebuild the buttons under the person's focus.
+    const key = JSON.stringify([record.status, record.request, record.requested_on, record.expires_on, record.options]);
+    if (key === drawn) return;
+    drawn = key;
+    const focused = controls.contains(document.activeElement);
     expiry.textContent = say(C.expiry, { time: new Date(record.expires_on).toLocaleString() });
     const setup = record.request && record.request.setup;
     status.textContent = setup ? say(C.complete, { agents: setup.agents.map(a => a === 'codex' ? C.codex : C.claude).join(', '), skills: setup.skills }) : C[record.status] || C.pending;
     request.replaceChildren(); controls.replaceChildren();
     if (record.request) {
-      request.append(el('p', null, say(C.arrived, { name: record.request.name, os: record.request.os, time: new Date(record.requested_on).toLocaleString() })));
+      request.append(el('p', null, say(C.arrived, { name: record.request.name, os: C.os[record.request.os] || record.request.os, time: new Date(record.requested_on).toLocaleString() })));
     }
     if (record.status === 'waiting' && record.options.approval) {
       request.append(el('p', { class: 'help' }, C.warning));
@@ -2339,6 +2352,8 @@ async function computerCodeDialog(existing) {
     if (['pending', 'waiting', 'approved'].includes(record.status)) controls.append(btn(C.cancel, { on: { click: () => action('cancel') } }));
     if (record.status === 'connected') request.append(el('p', { class: 'help' }, C.recover));
     if (optionsBox) optionsBox.hidden = record.status !== 'pending';
+    // An answered request takes its buttons away: focus moves on inside the dialog, never to the page.
+    if (focused) (controls.querySelector('button') || container.closest('form').querySelector('[type=submit]')).focus();
   }
   let optionsBox;
   if (record.command) {
