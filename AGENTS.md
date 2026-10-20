@@ -73,6 +73,8 @@ Layered layout under `src/aistack/` (see `docs/DESIGN.md` §8): MCP tool handler
 
 ### MCP tools
 
+The program does mechanical work; the agent handles what the person asks and decides.
+
 - Tool results are flat facts in a TypedDict, and FastMCP structures them. No preformatted `message` field: the agent writes better chat prose than we can, and a second copy of the UX drifts. `add_machine` is the one exception: its paste-ready command is consumed by a human on a different computer.
 - Constrain a tool parameter in the schema only when the agent benefits from seeing the options, as `os` does with three legal values. Length and format limits are validated in the service, where the message can say what was received.
 - `mcp/tools/` holds four modules by area: `onboarding.py`, `skills.py`, `sync.py`, `teams.py`, plus `local.py` for local mode. A tool is added only when saying it in chat beats clicking it; anything with many typed parameters is a dashboard action.

@@ -1,6 +1,6 @@
 # AIStack design
 
-Scope, architecture, and schema for the MVP, settled 2026-08-21, revised 2026-08-24 after two external design reviews, 2026-10-13 after research into what the client can carry (ADR-0010 to ADR-0012), 2026-10-14 for the personal space, teams, groups, migrations, and the dashboard (ADR-0015 to ADR-0017), and 2026-10-16 to match the code after the October audit. Vocabulary lives in `CONTEXT.md`. Decisions and their reasoning live in `docs/adr/`. This document is the current plan, so where anything else disagrees with it, this wins.
+Scope, architecture, and schema for the MVP, settled 2026-08-21, revised 2026-08-24 after two external design reviews, 2026-10-13 after research into what the client can carry (ADR-0010 to ADR-0012), 2026-10-14 for the personal space, teams, groups, migrations, and the dashboard (ADR-0015 to ADR-0017), 2026-10-16 to match the code after the October audit, and 2026-10-20 for program sync and computer codes (ADR-0035). Vocabulary lives in `CONTEXT.md`. Decisions and their reasoning live in `docs/adr/`. This document is the current plan, so where anything else disagrees with it, this wins.
 
 ## 1. What AIStack is
 
@@ -73,10 +73,11 @@ No FastAPI and no frontend framework: the dashboard is one HTML file with its ow
 - **ADR-0031: A compatible migration also keeps older releases' data meaningful.** Additive shape alone is not enough: older releases must still write and read every value safely.
 - **ADR-0032: A GitHub Library's log is ordered by a hybrid logical clock.** An event's time is the later of the wall clock and just after the newest event its copy holds, so a computer whose clock runs ahead cannot sort its older edit after a newer one. A rebuild replays into a new file beside the copy and swaps the rows in, so other sessions keep reading meanwhile.
 - **ADR-0033: A removed computer comes back when it changes something.** In local mode, removal tidies the list: a later change from the removed computer adds it again, so replay never stops and nothing is lost. Cutting a computer off there means revoking its access to the repository.
+- **[ADR-0035: The program does the mechanical work](adr/0035-the-program-does-the-mechanical-work.md).** The installed program executes server sync and session-start hooks through the existing MCP tools and transfer URLs. Computer codes connect another computer, with approval on by default; an optional fingerprint detects accidental copied connections. Keep legacy clients working through additive inputs, results and compatible migrations.
 
-## 4. What is built
+## 4. Product plan
 
-One Docker container. One volume (SQLite file + config). FastMCP served over streamable HTTP, plus plain HTTP routes on the same port: two that carry skill archives (ADR-0010), setup, health, and the dashboard with its JSON API (ADR-0017). The same package is also local mode (ADR-0020): `aistack` over stdio, started by the agent, with a few terminal commands beside it (§4 Local mode). Nothing syncs in the background; the only background work is local mode's daily check for a newer release. The connected agent, Claude Code or Codex, syncs both skills folders on its computer: Claude Code's and the shared agents folder that Codex and others read (ADR-0018, ADR-0021).
+One Docker container. One volume (SQLite file + config). FastMCP served over streamable HTTP, plus plain HTTP routes on the same port: two that carry skill archives (ADR-0010), setup, health, and the dashboard with its JSON API (ADR-0017). The same package is also local mode (ADR-0020): `aistack` over stdio, started by the agent, with a few terminal commands beside it (§4 Local mode). Nothing syncs in the background; the only background work is local mode's daily check for a newer release. The installed program syncs both skills folders on its computer through the existing remote MCP connection: Claude Code's and the shared agents folder that Codex and others read (ADR-0018, ADR-0021).
 
 ### State model (ADR-0004)
 
@@ -86,29 +87,32 @@ The server holds **desired** state: which of a user's own skills are enabled per
 
 Two MCP principals, one centralized authorization rule enforced before any tool logic runs:
 
-- **Bootstrap principal**: an invite code presented as a bearer token: the server's, or a team's, which `join` also makes the new user a member of (ADR-0019). May call `join` and nothing else.
+- **Bootstrap principal**: an invite code, computer code or pairing request bearer. Invites create accounts as before (ADR-0019); computer codes only add a computer to the issuing account. Each credential reaches only its own `join` operation and no machine tools. Recheck it inside the tool transaction (ADR-0035).
 - **Machine principal**: a machine token (sha256-hashed at rest). May call everything except `join`.
 
 The dashboard has its own credential and reaches no MCP tool: a session cookie holding a signed ticket for one user, set by opening the link `open_dashboard` returns (ADR-0017). `/app` and `/api/*` refuse without it, and a request that changes state must also carry a header a cross-site form cannot send.
 
 `join` creates the user and their first machine and returns the permanent machine token. The agent writes it into the MCP config; from then on it authenticates every connection silently. The first user to join is marked the server's admin (`is_admin`), but no code reads that mark today, so it grants no power: server-level operations are `aistack admin` commands (`docs/OPERATING.md`).
 
-**Secrets rule.** Tokens appear exactly once: in the `join` / `add_machine` result (and therefore in the local Claude Code transcript, accepted for the MVP), or in what `aistack admin rotate` and `register-machine` print to the operator's terminal. They never appear in server logs, HTTP logs, error messages, or any other tool result. The invite code is never emitted in logs, errors, tool arguments, or tool results; it exists only as the bootstrap `Authorization` bearer and as operator-supplied config. A team's invite code is made by the server, stored only as a hash, and appears once, in the answer to the admin who asked for it. A dashboard link is a credential for five minutes and is never logged.
+**Secrets rule.** Tokens appear exactly once: in the `join` / `add_machine` result (and therefore in the local Claude Code transcript, accepted for the MVP), or in what legacy operator commands print to the terminal. Computer-code setup keeps the permanent token in restricted agent configuration and never prints it; recovery can issue a code instead. They never appear in server logs, HTTP logs, error messages, or any other tool result. The invite code is never emitted in logs, errors, tool arguments, or tool results; it exists only as the bootstrap `Authorization` bearer and as operator-supplied config. A team's invite code is made by the server, stored only as a hash, and appears once, in the answer to the admin who asked for it. A dashboard link is a credential for five minutes and is never logged.
 
 **Revocation** (lost or stolen machine): the user removes the computer on the dashboard, which ends its token, its dashboard sessions and its transfer URLs at once (ADR-0027); the user's last computer cannot be removed there. The operator can also remove the computer with `aistack admin remove-machine`. If that was the user's only machine, recovery is `aistack admin register-machine` or `aistack admin rotate` for that same user. Never delete the user: `pushed_by` is a non-null FK from `SKILL` and `SKILL_VERSION`, so deleting a contributor either fails or destroys provenance.
 
 ### Tools (all thirteen, nothing else)
 
 ```text
-join(username, machine_name, os, full_name?)
+join(username?, machine_name?, os?, full_name?, pairing?, fingerprint?, setup?)
                               → creates user + first machine; returns the machine token
                                 (bootstrap principal only; first user becomes admin.
                                 `os` is required: MACHINE.os is NOT NULL and MCP cannot
                                 reveal the client's platform; `full_name` is what
                                 teammates read beside the username)
-add_machine(name, os)         → registers another machine for this user; returns a
+add_machine(name?, os?, computer_code?, options?)
+                              → registers another machine for this user; returns a
                                 paste-ready Claude Code command and Codex config
-                                block, each with that machine's token
+                                block, each with that machine's token (legacy). Explicit
+                                computer_code opt-in returns a one-use code instead;
+                                join pairing reserves, polls and completes that request
 list_skills(team?, query?)    → the caller's own skills, then every team skill they may
                                 see (this is also the search, and the only discovery
                                 mechanism, sync is not); team keeps one team's, query
@@ -142,7 +146,7 @@ list_teams, create_team(name), invite_to_team(team), join_team(code)
                               → the teams the caller is in; make one; get its invite
                                 code (admins); join one with a code
 open_dashboard                → a short-lived link that signs a browser in (ADR-0017)
-sync(local: {name: {path: sha256}}, harness?, here?, project?, repository?)
+sync(local: {name: {path: sha256}}, harness?, here?, project?, repository?, fingerprint?)
                               → reconcile desired vs actual for one harness; see the sync
                                 contract. `here` names the session's repository, and
                                 `project` syncs that project's folder instead (ADR-0026)
@@ -183,7 +187,7 @@ open_dashboard                → starts the dashboard on 127.0.0.1 inside this 
                                 returns a sign-in link
 ```
 
-The `aistack` command (`bootstrap/__main__.py`) also takes these terminal commands: `serve` runs the server; `dashboard` serves the Library's dashboard on 127.0.0.1 and opens it; `setup` prints local mode's setup steps and `sync-skill` its sync skill (there is no server to fetch them from); `check` sets up this computer's side of the Library once and says whether it works; `github` signs in to GitHub and finds or creates the private repository a Library lives in; `export` writes every skill in the Library to a folder; `status --hook` is local mode's session-start hook, which reminds the agent to sync only when a dry run of sync, rolled back, has something to do; `move github`, `move postgresql` or `move here` moves the Library with its history; `connect claude-code` or `connect codex` connects an agent to it. When local mode runs from a uv tool install, `bootstrap/self_update.py` checks for a newer release once a day in a background thread and installs it for the next start.
+The `aistack` command (`bootstrap/__main__.py`) also takes these terminal commands: `serve` runs the server; `dashboard` serves the Library's dashboard on 127.0.0.1 and opens it; `setup` prints local mode's setup steps and `sync-skill` its sync skill (there is no server to fetch them from); `check` sets up this computer's side of the Library once and says whether it works; `github` signs in to GitHub and finds or creates the private repository a Library lives in; `export` writes every skill in the Library to a folder; `sync` executes server sync and `join <server> <code>` connects another computer (ADR-0035); `status --hook` is local mode's session-start hook, which reminds the agent to sync only when a dry run of sync, rolled back, has something to do; `move github`, `move postgresql` or `move here` moves the Library with its history; `connect claude-code` or `connect codex` connects an agent to it. When local mode runs from a uv tool install, `bootstrap/self_update.py` checks for a newer release once a day in a background thread and installs it for the next start.
 
 ### Flows
 
@@ -191,7 +195,13 @@ The `aistack` command (`bootstrap/__main__.py`) also takes these terminal comman
 
 **Onboarding (user)**: paste one sentence into Claude Code: "Set up AIStack: fetch `<server>/setup` and follow it. Invite code: …". The server serves those instructions itself, with its own address filled in, because they cannot come from the vault they set up. The agent creates the skills directory if missing, fetches the `sync-aistack` skill from the server, calls `join` with one HTTP request carrying the invite code as its bearer (ADR-0013), writes the returned machine token into the MCP config at user scope, and tells the user to restart Claude Code once. After that restart, installed skills load live, mid-session, no further restarts (Claude Code watches the skills directory, verified against its docs; the one exception is a directory created after session start, which this flow handles by creating it first).
 
-**Adding a machine**: on an already-registered machine: "add my Windows PC". `add_machine` returns the full Claude Code command and the Codex `config.toml` block, each with the new machine's token; the user pastes the one for their agent on the other computer. No redeem step; the invite code is only for new users.
+**Adding a computer** (ADR-0035): Computers → Add a computer immediately creates a one-use code and shows `uvx aistack-mcp join <server> <code>`, Copy, Cancel code and the actual expiry. Options default to hostname, 24 hours (also 1 hour or 7 days), find coding agents (also Claude Code or Codex), add active Library skills (also start empty), session-start sync on, and approval on. Updating an unused code keeps the command; reservation freezes its options. Expiry never exceeds seven days from creation and an expired code cannot be revived. At most five live codes, including approval requests, may exist per account under concurrent creation.
+
+The program preflights configuration and installation, reserves the code through `join`, and saves a separate random request bearer in a restricted recovery file. The dialog polls `/api/state` to show the reported name, OS, request arrival time, Approve and Deny; those details do not prove identity. No permanent token exists until approval. A single completion poll consumes the request, creates the machine and returns its token only to the request bearer. The code cannot poll or collect that token. With approval off, the same flow completes without a click. Setup completion is separate from connection: agents and installed skills are reported only after the program confirms them.
+
+`aistack join <server> <code>` installs the program through `uv tool install aistack-mcp`, preserves unrelated agent configuration and hooks, writes the remote token with restricted permissions, installs the bundled skill and optional hook using the program's full path, applies the selected initial placements and syncs. It never prints a permanent credential. Start empty leaves placements undecided and still backs up private local skills. Existing local conflicts remain questions. Reruns resume from saved state or an authenticated existing connection. A lost token response requires removing the incomplete computer and issuing another code; the server stores no recoverable plaintext token. Restart the coding agent once.
+
+Legacy `add_machine(name, os)` retains its token-bearing command and TOML fields until a separately approved minor release. New clients explicitly opt into additive computer-code results; no permanent token accompanies a code. Check advertised tool schemas before new inputs and explain when the server needs upgrading. Existing account and team-invite onboarding stays available.
 
 **Back up** (push): "push my wizard skill to aistack", or a name sync listed under `backup`: the agent calls `push_skill` with the skill's name and gets back a signed upload URL, then sends a gzipped tar of the skill directory to it with `tar` and `curl`, as the tool's description spells out. The server validates the archive, stores the revision in the caller's own skills, and answers the upload with the result the agent reports; a rejection comes back as the same kind of sentence a tool error would carry. Uploading content identical to the latest revision creates nothing and says so, so repeating "push all my skills" does not mint a revision per skill per run. Pushing a name the user already has adds a revision. Push records an optional `origin` URL (GitHub repo, marketplace page) the first time, when the agent knows it. Push enables the skill for the calling machine and shares nothing.
 
@@ -207,9 +217,9 @@ The `aistack` command (`bootstrap/__main__.py`) also takes these terminal comman
 
 ### The sync contract
 
-Sync is **manual**: the user says "sync aistack" (a one-liner local skill, **written directly to disk by the `setup-aistack` snippet**, because a fresh vault cannot install the very skill that talks to it, plus the habit documented in the README: sync when you start work, like `git pull`). Nothing runs in the background; the server never polls upstream. Sync is not discovery: it reconciles what this machine manages, `list_skills` finds what it doesn't.
+The installed program runs `aistack sync` manually or `aistack sync --hook` at session start (ADR-0035). It reads remote connections from agent configuration, respecting `CODEX_HOME`. Equal connections are used once for every harness in use; conflicting addresses or credentials stop with repair instructions. Local-mode entries keep their meaning. The connection remains direct remote MCP, with no proxy or separate sync API. Nothing runs as a daemon; the server never polls upstream. Sync is not discovery: it reconciles what this machine manages, `list_skills` finds what it doesn't.
 
-**Per harness.** One sync call covers one harness's folder. The server reads only that harness's decisions for the machine, so every table below applies per folder, unchanged (ADR-0018): a skill enabled in Claude Code and never decided in the agents folder is undecided there. A skill backed up from a folder is placed in that folder only. Sync records that the harness synced, and when, in `machine_harness`; that is the only thing it writes. The report's `first_sync` says whether this call created that row, which is when the agent asks once whether both folders should hold the same skills (ADR-0021).
+**Per harness.** One sync call covers one harness's folder. The server reads only that harness's decisions for the machine, so every table below applies per folder, unchanged (ADR-0018): a skill enabled in Claude Code and never decided in the agents folder is undecided there. A skill backed up from a folder is placed in that folder only. Sync records that the harness synced, and when, in `machine_harness`; it may also bind the first optional fingerprint (ADR-0035), but never changes desired state. The report's `first_sync` says whether this call created that row, which is when the agent asks once whether both folders should hold the same skills (ADR-0021).
 
 One rule: **sync acts silently only on skills enabled for this machine, and only when the local copy is absent or matches a revision the server knows. Everything else is reported, and the user decides.**
 
@@ -232,7 +242,7 @@ Not enabled for this machine, but present on disk:
 | in the Library, no decision here (no row) | matches latest | report: adopt (no rewrite) |
 | in the Library, no decision here | matches an older revision | report: adopt **and update** (states that files will be replaced) |
 | in the Library, no decision here | matches no revision | report: push / adopt-and-replace (**states this discards local edits**) / skip |
-| not among the user's own skills | any | list under `backup`; the agent backs it up to the Library **without asking**. That space is private, so nothing is shared and nobody else sees the user as the pusher of something they only downloaded (this replaces "never auto-push", which guarded a vault everyone shared) |
+| not among the user's own skills | any | list under `backup`; the program backs it up to the Library **without asking**. That space is private, so nothing is shared and nobody else sees the user as the pusher of something they only downloaded (this replaces "never auto-push", which guarded a vault everyone shared) |
 
 A prompt that leads to overwriting local content must say so. "Adopt?" on its own is not informed consent when the local copy matches no revision.
 
@@ -242,9 +252,9 @@ A prompt that leads to overwriting local content must say so. "Adopt?" on its ow
 
 Every answer maps to an existing tool: restore / re-enable / adopt → `get_skill` (on the wire, `restore` for a skill already enabled here and `enable` for the other two); push → `push_skill`; remove → the flag is already false, the agent just deletes the folder; skip → nothing. No hidden verbs.
 
-**Wire contract**: the agent sends, for every skill folder in the harness's skills folder, each file's relative path and the sha256 of its bytes. The server derives the canonical hash from those (ADR-0011) and returns *action metadata only*: skills to install, skills to update, questions, the names to back up, and team updates on offer. For each entry that is the skill name, the target revision, and who pushed it; a question also carries the state that was found, the options the user may choose, and for each option whether it replaces local files and whether it discards local edits (ADR-0012). It never returns file content. The agent then calls `get_skill` per install or update, and `push_skill` per name to back up. This keeps a sync of fifty skills small, and makes `get_skill` the single materialization path rather than a second one hiding inside sync.
+**Wire contract**: the program (or the retained manual fallback) sends, for every skill folder in the harness's skills folder, each file's relative path and the sha256 of its bytes. The server derives the canonical hash from those (ADR-0011) and returns *action metadata only*: skills to install, skills to update, questions, the names to back up, and team updates on offer. For each entry that is the skill name, the target revision, and who pushed it; a question also carries the state that was found, the options the user may choose, and for each option whether it replaces local files and whether it discards local edits (ADR-0012). It never returns file content. The program calls `get_skill` per install or update, and `push_skill` per name to back up, moving bytes through scoped transfer URLs without attaching the permanent bearer. This keeps a sync of fifty skills small, and makes `get_skill` the single materialization path rather than a second one hiding inside sync.
 
-Two folders are never reported: `synced`, which Claude Code reserves for skills it downloads from claude.ai, and anything starting with a dot. The `sync-aistack` skill leaves them out of what it sends, along with `.DS_Store` files. The `sync-aistack` folder itself is never listed under `backup`: setup wrote it from the server, so it needs no backing up. Instead the server compares it with the copy it ships, and when the machine's is missing or different the report carries `sync_skill_url`, which the agent downloads over it without asking. In the agents folder that happens only where the skill already is, because setup put it there for a connected Codex, or on a computer whose Claude Code never synced: there the agent syncing that folder is the one connected to AIStack, as on a Codex-only computer added with `add_machine`. Anywhere else it would tell an unconnected agent to sync (ADR-0021). That is how the skill follows a server upgrade, and how a machine connected with `add_machine`, which never ran setup, gets it at all; the download uses `curl --create-dirs`, because such a machine has no `sync-aistack` folder yet. If the user pushes their own copy of the skill, it is reconciled like any other and the field stays null.
+Two folders are never reported: `synced`, which Claude Code reserves for skills it downloads from claude.ai, and anything starting with a dot. The `sync-aistack` skill leaves them out of what it sends, along with `.DS_Store` files. The `sync-aistack` folder itself is never listed under `backup`: setup wrote it from the server, so it needs no backing up. Instead the server compares it with the copy it ships, and when the machine's is missing or different the report carries `sync_skill_url`, which the program refreshes from bundled package data without asking, preserving a person's own Library copy. In the agents folder that happens only where the skill already is, because setup put it there for a connected Codex, or on a computer whose Claude Code never synced: there the agent syncing that folder is the one connected to AIStack, as on a Codex-only computer added with `add_machine`. Anywhere else it would tell an unconnected agent to sync (ADR-0021). That is how the skill follows a server upgrade, and how a machine connected with `add_machine`, which never ran setup, gets it at all; the download uses `curl --create-dirs`, because such a machine has no `sync-aistack` folder yet. If the user pushes their own copy of the skill, it is reconciled like any other and the field stays null.
 
 Three invariants:
 
@@ -252,7 +262,19 @@ Three invariants:
 2. **Sync never flips `enabled` silently.** Adoption and re-enable are always questions, because both mean later revisions will overwrite that folder: something the user must agree to once.
 3. **Sync never applies a teammate's change.** A newer revision in a team is listed under `team_updates` and reaches a machine only when the user accepts it, each time (ADR-0015).
 
-Known, accepted quirks: a renamed local folder shows up as one missing skill plus one new one to back up (self-explaining, not destructive); a user who never says "sync aistack" never receives updates (background sync is roadmap item 4).
+Known, accepted quirks: a renamed local folder shows up as one missing skill plus one new one to back up (self-explaining, not destructive); a computer with the session-start hook off receives updates only when sync runs manually.
+
+### Executing server sync (ADR-0035)
+
+Reuse local observation, packing, validation and staged installation. For global folders and folders in the current managed project, observe and call `sync`, install/update through `get_skill`, and upload `backup` through `push_skill`. Preserve project discovery and git exclusions: never start managing a project, change ignore rules or replace repository skills without the existing explicit action.
+
+Serialize cooperating commands, use independent staging, recheck the observation before replacement, and preserve a displaced copy on installation failure. Local changes during download become questions. A failed download after `get_skill` records its revision remains retryable without making unknown edits safe to replace. Keep network and filesystem work outside database transactions. The manual fallback uses independent staging too; a failed program run is no permission to repeat writes through the fallback.
+
+Manual output reports installs, updates, revisions and who pushed them. Hook output is empty after successful automatic work when nothing needs attention; questions include facts, permitted choices, tool calls and all replacement warnings. Bound network waits and polling, with a hook timeout sufficient for sync. Offline failures produce a short notice and leave installed skills usable. The bundled skill runs the program first and retains shell steps for computers without it and cloud sessions.
+
+An additive `sync` result identifies the authenticated machine. The program discovers that id without disk actions, then submits an optional fingerprint computed as sha256 of a single documented byte encoding of machine id and OS hardware id. Never send, store or log the raw hardware id. Atomically bind the first supplied fingerprint in nullable `machine.fingerprint_hash`; refuse later mismatches before disk actions with instructions to add the computer separately. Pairing reserves the machine id so the program can supply its fingerprint on creation. Missing hardware ids omit the fingerprint and produce a diagnostic. Older clients may omit it; modified clients may lie; full clones may retain the OS id; the first binding wins. This detects accidental copies, not hardware identity or token theft. Never reset or automatically replace a binding.
+
+Measure a fifty-skill first sync and a no-change sync before adding bundles. Record environment, latency, archive sizes, request counts, elapsed time and hook startup. No-change transfers no archives, creates no revisions and changes no placements; last-synced timestamps may advance. The target is session-start sync in seconds; propose bundles only if measured results justify them.
 
 ### Versions
 
@@ -369,6 +391,10 @@ The page is the only client these were written for, and they are documented so t
 | `GET /api/teams/{team}/skills/{name}/changes` | | What taking the team's latest would change in the user's copy: `from_revision` (theirs), `to_revision`, `pushed_by`, `files` (each `path`, `change` as `added`, `removed` or `changed`, and a unified `diff`), and `truncated` when the diff was cut |
 | `POST /api/skills/{name}/remove` | `{}` | Removes the skill from the Library on every computer |
 | `POST /api/machines/{machine_id}/remove` | `{}` | `removed`: the computer's name. Its token, sessions and transfer URLs end at once. The user's last computer is refused with `409`. Server only (ADR-0027) |
+| `POST /api/computer-codes` | Options (defaults above) | One-use code, command, id and expiry, shown once; server only |
+| `POST /api/computer-codes/{id}` | Options | Updates an unused code, without reviving expiry; server only |
+| `POST /api/computer-codes/{id}/cancel` | `{}` | Cancels the code and any uncompleted request; server only |
+| `POST /api/computer-codes/{id}/approve` or `/deny` | `{}` | Owner-scoped decision on the frozen waiting request; server only |
 | `POST /api/machines/{machine_id}/rename` | `name` | `name`, unique among the user's computers. Server only |
 | `POST /api/account` | `full_name` (blank clears it) | `full_name`. Server only |
 | `POST /api/teams` | `name` | `name`. The caller is the new team's admin |
@@ -464,6 +490,7 @@ A group's path contains slashes, so it always travels in the body and never in t
 | `library.provider`, `host` | For a PostgreSQL Library: the provider recognised from the host (Neon, Supabase, or PostgreSQL), and the host |
 | `library.repository`, `problem`, `unpublished` | For a GitHub Library: the repository as owner/name, why it could not be reached the last time it was tried (null when it answered), and how many changes made here have not reached it yet |
 | `user` | The signed-in user: `username`, and `full_name` or null |
+| `computer_codes` | Pending codes and waiting requests with options, reported details, arrival, expiry and completion status; never plaintext credentials. The dialog polls while open |
 | `machines` | The user's computers, oldest first. `id` is the machine id the routes take, `name` its name, and `os` is `MACOS`, `WINDOWS`, or `LINUX` |
 | `machines[].added_on`, `added_by` | When the computer was registered, and the name of the computer whose `add_machine` registered it: null for a first computer. `added_by_removed` is true when that computer has since been removed (ADR-0027) |
 | `machines[].last_synced` | Each of its harnesses, with when it last synced (UTC), or null for one that never has |
@@ -510,11 +537,27 @@ MACHINE
   name          VARCHAR(64)  NOT NULL
   os            ENUM(MACOS, WINDOWS, LINUX) NOT NULL   -- varchar+check, not native enum
   token_hash    VARCHAR(64)  NOT NULL UNIQUE           -- sha256 of bearer token; the auth lookup
+  fingerprint_hash VARCHAR(64) NULL                  -- optional copied-connection check (ADR-0035)
   created_on    TIMESTAMPTZ  NOT NULL
   added_by_machine_id UUID   NULL                      -- the computer whose add_machine registered
                                                        -- it; null for a first computer. No FK, so
                                                        -- it outlives that computer (ADR-0027)
   UNIQUE (user_id, name)
+
+COMPUTER_CODE                                  -- ADR-0035: new compatible table
+  id            UUID PK
+  user_id       FK → USER NOT NULL
+  issuing_machine_id UUID NULL                  -- null for operator recovery
+  issuing_token_hash VARCHAR(64) NULL            -- bind to current issuing token
+  code_hash     VARCHAR(64) NOT NULL UNIQUE
+  created_on, expires_on TIMESTAMPTZ NOT NULL
+  options       JSON NOT NULL                    -- frozen on reservation
+  state         VARCHAR NOT NULL                 -- stored value set, unknown-safe
+  request_hash  VARCHAR(64) NULL UNIQUE           -- separate 256-bit request bearer
+  reserved_machine_id UUID NULL
+  request_name, request_os, requested_on          -- reported details, not identity proof
+  approved_on, denied_on, cancelled_on, completed_on TIMESTAMPTZ NULL
+                                                -- no placeholder MACHINE before completion
 
 TEAM                                           -- ADR-0015
   team_id       UUID PK
@@ -699,7 +742,11 @@ Trusted team, honestly stated:
 - Usernames and team names share one server-wide namespace, so anyone holding an invite code, or any account through `create_team`, can learn whether a name is taken. That limit makes listing them slow, not impossible: a private team's name should not itself be a secret. A team's invite is a row with a hashed code (ADR-0022): it admits one person, expires after seven days, and can be cancelled on its own. Since ADR-0019 it also creates accounts, which the expiry bounds even when a link lands in a proxy's log.
 - The dashboard has no passwords. A sign-in link is a credential for five minutes, the session cookie for eight hours, and both die with the process because the signing key is in memory.
 
-Deferred deliberately: audit trail, signing, approval workflows, per-skill push permissions.
+Deferred deliberately: audit trail, signing, per-skill approval workflows and push permissions. Computer connection approval follows ADR-0035.
+
+Computer codes use twelve cryptographically random characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (31 characters, about 59.4 bits), displayed as three groups of four. Accept ASCII case variants with or without grouping dashes. Store only normalized sha256 hashes with indexed lookup. Unknown, expired, cancelled, denied and claimed codes give the same refusal; include transactional race losers in the existing failure limiter. Codes and request bearers travel only as bootstrap Authorization bearers, never arguments or URLs. Only creation returns the plaintext code. Dashboard state returns status and expiry, never code or command; no browser persistence. Removal or token rotation of the issuer invalidates uncompleted codes and requests, rechecked at redemption and approval. Operator `register-machine` can issue an explicitly labelled recovery code without approval when no computer remains. Owner-scoped dashboard mutations require the request header. Pending requests survive restart without automatic approval.
+
+Joining and syncing use verified HTTPS. Loopback, RFC 1918, RFC 4193 and 100.64.0.0/10 addresses, or names resolving only to these, permit HTTP with one unencrypted-connection warning. Public HTTP requires `--allow-http` and a warning that the computer key can be read. Never forward credentials across an origin-changing redirect. OPERATING documents HTTPS through a reverse proxy or a VPN.
 
 ### Explicitly not built
 
@@ -759,7 +806,7 @@ src/aistack/
   bootstrap/               # app assembly & entrypoint
     __main__.py            #   `aistack` (local mode), `serve` (the server), `dashboard`,
                            #   `setup`, `sync-skill`, `check`, `github`, `export`, `move`,
-                           #   and `connect` (§4 Local mode)
+                           #   `connect` (§4 Local mode), `sync` and `join` (ADR-0035)
     admin_cli.py           #   `aistack admin`: the operator's commands
     self_update.py         #   local mode's daily upgrade, in a background thread
     configuration/
