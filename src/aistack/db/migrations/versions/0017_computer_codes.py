@@ -7,6 +7,7 @@ OPERATING requires: that command cancels its records on offboarding or forgettin
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "0017"
 down_revision = "0016"
@@ -23,8 +24,8 @@ def upgrade() -> None:
         sa.Column("code_hash", sa.String(64), nullable=False),
         sa.Column("request_hash", sa.String(64), nullable=True),
         sa.Column("machine_id", sa.Uuid(), nullable=True),
-        sa.Column("options", sa.JSON(), nullable=False),
-        sa.Column("request", sa.JSON(), nullable=True),
+        sa.Column("options", sa.JSON().with_variant(postgresql.JSONB(), "postgresql"), nullable=False),
+        sa.Column("request", sa.JSON().with_variant(postgresql.JSONB(), "postgresql"), nullable=True),
         sa.Column("created_on", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_on", sa.DateTime(timezone=True), nullable=False),
         sa.Column("requested_on", sa.DateTime(timezone=True), nullable=True),

@@ -11,11 +11,11 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from aistack.bootstrap import hardware, server_join
+from aistack.bootstrap import server_join
 from aistack.commons.exceptions import ValidationError
 from aistack.db.models.computer_code import ComputerCode
 from aistack.db.models.machine import Machine
-from aistack.services import computer_codes, operator_service
+from aistack.services import computer_codes, hardware, operator_service
 from aistack.services.token_service import hash_token
 from tests.archives import skill_document
 from tests.mcp.conftest import call, join, push

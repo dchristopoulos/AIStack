@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import JSON, DateTime, ForeignKey, String, Uuid
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aistack.db.models.base import Base
@@ -20,9 +21,15 @@ class ComputerCode(Base):
     code_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     request_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     machine_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
-    options: Mapped[dict] = mapped_column(JSON, nullable=False)
+    options: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        nullable=False,
+    )
     # Reported name, OS and setup result. No credentials or hardware ids.
-    request: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    request: Mapped[dict | None] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"),
+        nullable=True,
+    )
     created_on: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -85,6 +85,24 @@ def test_with_no_address_to_fall_back_to_the_request_is_refused(context, host):
     assert host not in str(rejection.value)
 
 
+@pytest.mark.parametrize(("host", "root_path"), [
+    ("example.com", "/$(id)"),
+    ("example.com:999999", ""),
+])
+def test_a_refused_address_is_not_repeated_in_the_error(context, host, root_path):
+    context()
+    request = _request(host)
+    request.scope["server"] = None
+    request.scope["root_path"] = root_path
+
+    with pytest.raises(ValidationError) as rejection:
+        server_base_url(request)
+
+    assert "AISTACK_PUBLIC_URL" in str(rejection.value)
+    assert "example.com" not in str(rejection.value)
+    assert "$(id)" not in str(rejection.value)
+
+
 def test_the_mcp_endpoint_follows_the_configured_path(context):
     context(aistack_mcp_path="/vault")
 

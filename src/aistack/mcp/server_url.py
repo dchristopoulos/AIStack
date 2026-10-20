@@ -37,9 +37,9 @@ def server_base_url(request: Request) -> str:
     derived = str(request.base_url).rstrip("/")
     if not is_plain_http_url(derived):
         raise ValidationError(
-            "This server cannot tell what address it is reached at: the request arrived for "
-            f"'{loggable(derived)}', which is not a plain http(s) URL. Ask whoever runs the "
-            "server to set AISTACK_PUBLIC_URL."
+            "This server cannot tell what address it is reached at: the address the request "
+            "arrived on is not a plain http(s) URL. Ask whoever runs the server to set "
+            "AISTACK_PUBLIC_URL to the address people reach it at."
         )
     if derived.startswith("http://"):
         _warn_of_untrusted_proxy(request)

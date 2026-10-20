@@ -11,12 +11,11 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 from fastmcp.exceptions import ToolError
 
-from aistack.bootstrap import hardware
 from aistack.bundled import SYNC_SKILL_NAME, sync_skill_document
 from aistack.commons.exceptions import AIStackError, ValidationError
 from aistack.commons.text import sanitized
 from aistack.db.models.harness import Harness
-from aistack.services import local_skills
+from aistack.services import hardware, local_skills
 from aistack.services.server_connection import Connection, client
 from aistack.services.skill_archive import read_archive
 from aistack.services.skill_validation import validated_skill, validated_skill_name

@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from types import SimpleNamespace
@@ -14,12 +15,12 @@ def as_a_uv_tool_fixture(monkeypatch):
     monkeypatch.setattr(self_update.metadata, "version", lambda _: "0.1.0")
 
 
-def _recorder(returncode=0):
+def _recorder(returncode=0, stderr=""):
     calls = []
 
     def run(command, **_):
         calls.append(command)
-        return SimpleNamespace(returncode=returncode, stderr="")
+        return SimpleNamespace(returncode=returncode, stderr=stderr)
     return calls, run
 
 
@@ -30,6 +31,19 @@ def test_a_newer_release_is_installed_for_the_next_start(tmp_path, as_a_uv_tool)
 
     assert installed == "0.1.3"
     assert calls == [["/opt/uv", "tool", "upgrade", "aistack-mcp"]]
+
+
+def test_a_failed_upgrade_is_logged_where_local_mode_shows_it(tmp_path, as_a_uv_tool, caplog):
+    """Local mode logs at WARNING. uv's own output stays out: it can name a private index."""
+    caplog.set_level(logging.DEBUG)
+    _, run = _recorder(returncode=2, stderr="error: https://person:s3cret@index.example/simple")
+
+    assert self_update.check_and_upgrade(tmp_path, lambda: "0.1.3", run) is None
+
+    failures = [record for record in caplog.records if "uv tool upgrade" in record.getMessage()]
+    assert [record.levelno for record in failures] == [logging.WARNING]
+    assert "s3cret" not in caplog.text
+    assert "index.example" not in caplog.text
 
 
 def test_a_new_minor_version_waits_for_the_person(tmp_path, as_a_uv_tool):

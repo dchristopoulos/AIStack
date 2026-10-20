@@ -68,9 +68,12 @@ def check_and_upgrade(home: Path, latest_release=None, run=subprocess.run,
                        f"`uv tool upgrade {PACKAGE}` on each of your computers when you are "
                        "ready.")
         return None
+    # Captured so nothing reaches local mode's stdout, which is the MCP channel. uv's output is
+    # not logged: it can name the person's package index, credentials included.
     done = run([uv, "tool", "upgrade", PACKAGE], capture_output=True, text=True, timeout=300)
     if done.returncode != 0:
-        logger.info(f"`uv tool upgrade {PACKAGE}` failed: {(done.stderr or '').strip()[-300:]}")
+        logger.warning(f"`uv tool upgrade {PACKAGE}` failed with exit code {done.returncode}, "
+                       f"so AIStack stays at {current}. Run it yourself to see why.")
         return None
     return latest
 

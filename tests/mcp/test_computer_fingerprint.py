@@ -10,11 +10,10 @@ from fastmcp.exceptions import ToolError
 from sqlalchemy import select
 from sqlalchemy.sql.dml import Update
 
-from aistack.bootstrap import hardware
 from aistack.bootstrap.context.application_context import get_session_factory
 from aistack.commons.exceptions import AIStackError, Conflict
 from aistack.db.models.machine import Machine
-from aistack.services import computer_fingerprint, server_sync
+from aistack.services import computer_fingerprint, hardware, server_sync
 from aistack.services.server_connection import Connection
 from tests.mcp.conftest import call, join
 

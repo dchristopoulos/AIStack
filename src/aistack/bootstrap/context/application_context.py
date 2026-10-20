@@ -23,8 +23,6 @@ from aistack.bootstrap.configuration.settings.settings_config import (
     resolved_invite_code,
     validate_invite_code,
 )
-from aistack.bootstrap.hardware import fingerprint as _fingerprint
-from aistack.bootstrap.hardware import hardware_id
 from aistack.commons.exceptions import AIStackError, Conflict, NeedsNewerRelease
 from aistack.commons.release import UPDATE_AND_RESTART
 from aistack.db.backup import checkpoint
@@ -40,6 +38,8 @@ from aistack.mcp.auth.failure_limiter import (
 )
 from aistack.mcp.auth.principal import MachinePrincipal
 from aistack.services import library_log
+from aistack.services.hardware import fingerprint as _fingerprint
+from aistack.services.hardware import hardware_id
 from aistack.services.library_repo import LibraryRepo, validate_repository
 from aistack.services.library_sharing import LibrarySharing
 from aistack.services.local_identity import local_machine

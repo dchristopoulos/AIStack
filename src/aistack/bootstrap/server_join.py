@@ -18,11 +18,11 @@ from urllib.parse import urlsplit
 import httpx
 from fastmcp.exceptions import ToolError
 
-from aistack.bootstrap import agent_config, hardware, self_update, sync_lock
+from aistack.bootstrap import agent_config, self_update, sync_lock
 from aistack.commons.exceptions import AIStackError, ValidationError
 from aistack.commons.text import sanitized
 from aistack.db.models.harness import Harness
-from aistack.services import computer_codes, local_skills, server_connection, server_sync
+from aistack.services import computer_codes, hardware, local_skills, server_connection, server_sync
 from aistack.services.content_hash import canonical_content_hash
 from aistack.services.server_connection import Connection
 from aistack.services.skill_validation import validated_skill_name
