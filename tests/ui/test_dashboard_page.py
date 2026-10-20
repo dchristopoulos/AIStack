@@ -330,17 +330,42 @@ async def test_a_skill_is_added_to_the_agents_folder_from_the_library(sign_in):
                                                                 "sql-style")["placements"], macbook, "agents")
 
 
-async def test_adding_a_computer_says_what_to_ask_the_agent(sign_in):
-    dimitris = await sign_in("dimitris")
+async def test_adding_a_computer_uses_a_code_and_approval(sign_in, server_url):
+    import shlex
+
+    dimitris = await sign_in("dimitris", viewport=(390, 844))
     page = dimitris.page
-
+    await page.get_by_role("button", name="Open navigation").click()
     await page.get_by_role("navigation", name="Main").get_by_role("button", name="Add a computer").click()
-
-    sentence = page.get_by_role("dialog").get_by_role("textbox", name="What to say")
-    await expect(sentence).to_have_value("add my Windows PC to aistack")
-    # UX-20: what the agent answers is a credential, and the person carries it.
-    await expect(page.get_by_role("dialog").get_by_text("holds that computer's key")).to_be_visible()
-    await page.get_by_role("dialog").get_by_role("button", name="Done").click()
+    dialog = page.get_by_role("dialog")
+    command = await dialog.get_by_role("textbox", name="Command for the new computer").input_value()
+    code = shlex.split(command)[-1]
+    await dialog.get_by_text("Options", exact=True).click()
+    await dialog.get_by_label("Computer name", exact=True).fill("travel")
+    await dialog.get_by_role("button", name="Save options").click()
+    # The server state, not the rendered dialog, confirms the saved choice.
+    await expect(dialog.get_by_text(re.compile("^Expires "))).to_be_visible()
+    for _ in range(30):
+        state = await dimitris.state()
+        if state['computer_codes'][0]['options']['name'] == 'travel':
+            break
+        await page.wait_for_timeout(100)
+    assert state['computer_codes'][0]['options']['name'] == 'travel'
+    request = await call(server_url, code, "join", pairing="reserve", machine_name="hostname", os="LINUX")
+    await dialog.get_by_role("button", name="Approve this computer").click()
+    await expect(dialog.get_by_text("Approved. Waiting for the new computer…", exact=True)).to_be_visible()
+    assert (await dimitris.state())['computer_codes'][0]['status'] == 'approved'
+    added = await call(server_url, request['request_bearer'], "join", pairing="poll")
+    assert added['token'].startswith('aist_')
+    await expect(dialog.get_by_text("Connected. Setup has not been confirmed yet.")).to_be_visible()
+    await call(server_url, request['request_bearer'], "join", pairing="confirm", setup={'agents': ['codex'], 'skills': 0})
+    await expect(dialog.get_by_text("Setup complete: Codex; 0 skills installed.")).to_be_visible()
+    assert (await dimitris.state())['computer_codes'][0]['status'] == 'complete'
+    assert await page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    await page.screenshot(path='/tmp/187-computer-code-light.png')
+    await page.emulate_media(color_scheme='dark')
+    await page.screenshot(path='/tmp/187-computer-code-dark.png')
+    await dialog.get_by_role("button", name="Done").click()
     await expect(page.get_by_role("dialog")).to_have_count(0)
 
 

@@ -295,3 +295,21 @@ def test_nobody_can_take_a_forgotten_persons_name(server, capsys):
     assert "former-member-" in _refused(capsys, "rename-user", "maria", "former-member-1a2b")
     with pytest.raises(ValidationError, match="former-member-"):
         onboarding_service.validated_username("former-member-1a2b")
+
+
+def test_operator_recovery_code_is_one_use_and_offboarding_revokes_it(server, capsys):
+    from aistack.commons.exceptions import NotFound
+    from aistack.db.models.computer_code import ComputerCode
+    from aistack.services import computer_codes
+
+    _admin(capsys, "remove-machine", "maria", "laptop")
+    output = _admin(capsys, "register-machine", "maria", "--computer-code", "--url", URL)
+    assert "without approval" in output and "aist_" not in output
+    code = re.search(r"[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}){2}", output).group()
+    with server.begin() as session:
+        row = session.scalar(select(ComputerCode))
+        assert row.issuing_machine_id is None and row.options['approval'] is False
+        assert computer_codes.normalized(code) is not None
+    _admin(capsys, "offboard", "maria")
+    with server.begin() as session, pytest.raises(NotFound):
+        computer_codes.reserve(session, code, "recovery", "LINUX")

@@ -1094,6 +1094,24 @@ const WORDS = {
     legend: 'Coding agent',
     readBy: '{folder}, read by {readers}',
   },
+  computerCode: {
+    lead: 'Run this command in a terminal on the new computer. Keep this dialog open to approve its request.',
+    command: 'Command for the new computer', platform: 'Terminal', posix: 'macOS / Linux', windows: 'Windows PowerShell',
+    expiry: 'Expires {time}', options: 'Options', name: 'Computer name', hostname: 'Use its hostname',
+    expires: 'Code expires after', hours1: '1 hour', hours24: '24 hours', days7: '7 days',
+    agents: 'Agents', find: 'Find them', claude: 'Claude Code', codex: 'Codex', skills: 'Initial skills',
+    library: "Add my Library’s skills", empty: 'Start empty', hook: 'Install the session-start hook', approval: 'Require approval here',
+    save: 'Save options', cancel: 'Cancel code', approve: 'Approve this computer', deny: 'Deny request',
+    warning: 'These are reported details, not proof of identity. Approve only the request you just started.',
+    arrived: 'Request: {name} · {os} · arrived {time}', pending: 'Waiting for the new computer…',
+    waiting: 'Waiting for your approval', approved: 'Approved. Waiting for the new computer…',
+    connected: 'Connected. Setup has not been confirmed yet.', complete: 'Setup complete: {agents}; {skills} skills installed.',
+    cancelled: 'Code cancelled.', denied: 'Request denied.', expired: 'Code expired. Make another with Add a computer.',
+    revoked: 'The issuing computer’s key changed or was removed. Make another code from a connected computer.',
+    help: 'No uv command?', helpText: 'Install uv, then run this command again. Or paste the sentence below into your coding agent.',
+    fallback: 'What to paste into the coding agent', sentence: 'Connect this computer to AIStack by running: {command}',
+    request: 'Computer request', recover: 'If setup lost its key, remove the incomplete computer and make another code.',
+  },
   addComputer: {
     title: 'Add a computer',
     whatToPaste: 'What to paste on the new computer',
@@ -2232,7 +2250,8 @@ function computerTree(r) {
         on: { click: () => { if (open) folded.add(m.id); else folded.delete(m.id); render(); } },
       }, el('span', { class: 'chev' }, icon('chev', 14)), icon(m.os === 'MACOS' ? 'laptop' : 'monitor', 15), el('span', { class: 'label', title: m.name }, m.name)),
       kids);
-  }));
+  }), (state.computer_codes || []).filter(c => ['pending', 'waiting', 'approved', 'connected'].includes(c.status)).map(c =>
+    btn(W.computerCode.request + (c.request ? ': ' + c.request.name : ''), { class: 'tree-add', on: { click: () => computerCodeDialog(c) } }, 'monitor')));
 }
 
 function addAgentDialog(m, missing) {
@@ -2260,7 +2279,7 @@ function addAgentDialog(m, missing) {
 
 // A read-only line with a Copy button, for anything a person pastes somewhere else.
 function copyField(value, label, done = W.copied) {
-  const input = el('input', { class: 'input mono', type: 'text', value, spellcheck: false, autocomplete: 'off', 'aria-label': label });
+  const input = el('input', { class: 'input mono', type: 'text', value, readOnly: true, spellcheck: false, autocomplete: 'off', 'aria-label': label });
   const said = el('span', { class: 'help', role: 'status' });
   const copy = btn(W.copy, { on: { click: async () => {
     try { await navigator.clipboard.writeText(input.value); }
@@ -2293,8 +2312,78 @@ const ADD_COMPUTER = {
   ],
 };
 
+async function computerCodeDialog(existing) {
+  const C = W.computerCode;
+  let record;
+  try { record = existing || await api('/api/computer-codes', {}); }
+  catch (error) { toast(error.message, 'error'); return; }
+  const container = el('div'), error = el('p', { class: 'form-error', role: 'alert', hidden: true });
+  const status = el('p', { role: 'status' }), request = el('div'), controls = el('div', { class: 'actions' });
+  const expiry = el('p', { class: 'help' });
+  const action = async (kind) => {
+    try { record = await api('/api/computer-codes/' + record.id + '/' + kind, {}); error.hidden = true; draw(); }
+    catch (failure) { error.textContent = failure.message; error.hidden = false; }
+  };
+  function draw() {
+    expiry.textContent = say(C.expiry, { time: new Date(record.expires_on).toLocaleString() });
+    const setup = record.request && record.request.setup;
+    status.textContent = setup ? say(C.complete, { agents: setup.agents.map(a => a === 'codex' ? C.codex : C.claude).join(', '), skills: setup.skills }) : C[record.status] || C.pending;
+    request.replaceChildren(); controls.replaceChildren();
+    if (record.request) {
+      request.append(el('p', null, say(C.arrived, { name: record.request.name, os: record.request.os, time: new Date(record.requested_on).toLocaleString() })));
+    }
+    if (record.status === 'waiting' && record.options.approval) {
+      request.append(el('p', { class: 'help' }, C.warning));
+      controls.append(btn(C.approve, { on: { click: () => action('approve') } }), btn(C.deny, { on: { click: () => action('deny') } }));
+    }
+    if (['pending', 'waiting', 'approved'].includes(record.status)) controls.append(btn(C.cancel, { on: { click: () => action('cancel') } }));
+    if (record.status === 'connected') request.append(el('p', { class: 'help' }, C.recover));
+    if (optionsBox) optionsBox.hidden = record.status !== 'pending';
+  }
+  let optionsBox;
+  if (record.command) {
+    const command = copyField(record.command, C.command);
+    const terminal = el('select', { class: 'input', on: { change: () => { command.querySelector('input').value = terminal.value === 'windows' ? record.powershell_command : record.command; } } },
+      el('option', { value: 'posix' }, C.posix), el('option', { value: 'windows' }, C.windows));
+    const opts = record.options;
+    const name = el('input', { class: 'input', value: opts.name || '', placeholder: C.hostname, maxLength: 64 });
+    const select = (values, current) => el('select', { class: 'input' }, values.map(([value, label]) => el('option', { value, selected: String(value) === String(current) }, label)));
+    const expires = select([[1, C.hours1], [24, C.hours24], [168, C.days7]], opts.expires_hours);
+    const agents = select([['find', C.find], ['claude-code', C.claude], ['codex', C.codex]], opts.agents);
+    const skills = select([['library', C.library], ['empty', C.empty]], opts.skills);
+    const hook = el('input', { type: 'checkbox', checked: opts.hook });
+    const approval = el('input', { type: 'checkbox', checked: opts.approval });
+    optionsBox = el('details', null, el('summary', null, C.options), field(C.name, name), field(C.expires, expires),
+      field(C.agents, agents), field(C.skills, skills), el('label', { class: 'choice' }, hook, C.hook), el('label', { class: 'choice' }, approval, C.approval),
+      btn(C.save, { on: { click: async () => {
+        try {
+          const updated = await api('/api/computer-codes/' + record.id, { name: name.value.trim() || null, expires_hours: Number(expires.value), agents: agents.value, skills: skills.value, hook: hook.checked, approval: approval.checked });
+          record = { ...record, ...updated }; error.hidden = true; draw();
+        } catch (failure) { error.textContent = failure.message; error.hidden = false; }
+      } } }));
+    container.append(el('p', null, C.lead), field(C.platform, terminal), command,
+      el('details', null, el('summary', null, C.help), el('p', { class: 'help' }, C.helpText), copyField(say(C.sentence, { command: record.command }), C.fallback)), optionsBox);
+  }
+  container.append(expiry, status, request, controls, error);
+  const dlg = openDialog({ title: W.addComputer.title, body: container, submitLabel: W.done, cancelLabel: null });
+  draw();
+  let polling = false;
+  const timer = setInterval(async () => {
+    if (polling) return;
+    polling = true;
+    try {
+      const next = await api('/api/state');
+      const updated = next.computer_codes.find(c => c.id === record.id);
+      if (updated) { record = { ...record, ...updated }; draw(); }
+    } catch (failure) { error.textContent = failure.message; error.hidden = false; }
+    finally { polling = false; }
+  }, 2000);
+  dlg.addEventListener('close', () => { clearInterval(timer); load(); });
+}
+
 function addComputerDialog() {
   const lib = library();
+  if (lib.kind === 'server') return computerCodeDialog();
   openDialog({ title: W.addComputer.title, submitLabel: W.done, cancelLabel: null, body: ADD_COMPUTER[lib.kind](lib) });
 }
 

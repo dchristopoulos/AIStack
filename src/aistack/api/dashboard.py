@@ -42,8 +42,9 @@ from aistack.mcp.auth.failure_limiter import client_address, note_failure
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.request_body import bounded_body
 from aistack.mcp.routes.route_error_handler import handle_route_errors
-from aistack.mcp.server_url import APP_PATH, DASHBOARD_LOGIN_PATH, server_base_url
+from aistack.mcp.server_url import APP_PATH, DASHBOARD_LOGIN_PATH, mcp_endpoint_url, server_base_url
 from aistack.services import (
+    computer_codes,
     dashboard_service,
     library_log,
     onboarding_service,
@@ -289,13 +290,14 @@ Action = Callable[[Session, uuid.UUID, dict[str, str], dict[str, Any]], dict[str
 
 
 def _action(path: str, local: bool = True,
-            credential: str | None = None) -> Callable[[Action], Action]:
+            credential: str | None = None, with_holder: bool = False) -> Callable[[Action], Action]:
     """Register a POST route that runs `function` for the signed-in user in one transaction.
 
     The function takes the session, the caller's user id, the path parameters, and the JSON
     body. The user id comes from the session cookie and from nowhere else. `local` false keeps
     a team action off the localhost dashboard. `credential` names what the body carries when
     it is one, such as an invite code: a NotFound then counts toward the throttle.
+    `with_holder` also passes the verified issuing computer and the validated endpoint.
     """
     def register(function: Action) -> Action:
         @wraps(function)
@@ -306,8 +308,12 @@ def _action(path: str, local: bool = True,
                 await asyncio.to_thread(refuse_when_moved)
             body = await _json_body(request)
             try:
-                result = await asyncio.to_thread(_in_transaction, _as_user(function), holder,
-                                                 dict(request.path_params), body)
+                parameters = dict(request.path_params)
+                if with_holder:
+                    parameters["server"] = mcp_endpoint_url(request)
+                target = function if with_holder else _as_user(function)
+                result = await asyncio.to_thread(_in_transaction, target, holder,
+                                                 parameters, body)
             except NotFound:
                 if credential is not None:
                     _refused(request, f"Dashboard {function.__name__} refused: the "
@@ -322,6 +328,40 @@ def _action(path: str, local: bool = True,
         _route(API_PATH + path, methods=["POST"], local=local)(handle_route_errors(route))
         return function
     return register
+
+
+@_action("/computer-codes", local=False, with_holder=True)
+def create_computer_code(session, holder, path, body):
+    return computer_codes.commands(
+        computer_codes.create(
+            session,
+            holder.user_id,
+            holder.machine_id,
+            holder.token_prefix,
+            body,
+        ),
+        path["server"],
+    )
+
+
+@_action("/computer-codes/{id}", local=False)
+def change_computer_code(session, user_id, path, body):
+    return computer_codes.change(session, user_id, path["id"], body)
+
+
+@_action("/computer-codes/{id}/cancel", local=False)
+def cancel_computer_code(session, user_id, path, body):
+    return computer_codes.decide(session, user_id, path["id"], "cancel")
+
+
+@_action("/computer-codes/{id}/approve", local=False)
+def approve_computer_code(session, user_id, path, body):
+    return computer_codes.decide(session, user_id, path["id"], "approve")
+
+
+@_action("/computer-codes/{id}/deny", local=False)
+def deny_computer_code(session, user_id, path, body):
+    return computer_codes.decide(session, user_id, path["id"], "deny")
 
 
 @_action("/skills/{name}/machines/{machine_id}")

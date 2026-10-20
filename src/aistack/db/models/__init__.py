@@ -1,4 +1,5 @@
 from aistack.db.models.base import Base
+from aistack.db.models.computer_code import ComputerCode
 from aistack.db.models.harness import Harness
 from aistack.db.models.invite import Invite
 from aistack.db.models.library_event import LibraryEvent
@@ -29,6 +30,7 @@ from aistack.db.models.user import User
 # that happen to have been imported by whatever ran first.
 __all__ = [
     "Base",
+    "ComputerCode",
     "GroupMember",
     "GroupUnsubscribed",
     "Harness",

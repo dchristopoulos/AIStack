@@ -5,23 +5,32 @@ from typing import Literal, TypedDict
 
 from fastmcp.server.dependencies import get_access_token, get_http_request
 
-from aistack.bootstrap.context.application_context import get_join_limiter, get_session_factory
+from aistack.bootstrap.context.application_context import (
+    get_failure_limiter,
+    get_join_limiter,
+    get_session_factory,
+)
 from aistack.commons.connect_commands import claude_code_command, codex_config
-from aistack.commons.exceptions import Conflict, TooManyAttempts
+from aistack.commons.exceptions import Conflict, NotFound, TooManyAttempts, ValidationError
 from aistack.commons.text import loggable
-from aistack.mcp.auth.failure_limiter import client_address
+from aistack.mcp.auth.failure_limiter import client_address, note_failure
 from aistack.mcp.auth.policy import ONBOARDING_TAG
 from aistack.mcp.auth.principal import current_machine
 from aistack.mcp.mcp import mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.mcp.server_url import mcp_endpoint_url
-from aistack.services import onboarding_service
+from aistack.services import computer_codes, onboarding_service
 from aistack.services.token_service import hash_token
 
 logger = logging.getLogger(__name__)
 
 
-class JoinResult(TypedDict):
+class JoinResult(TypedDict, total=False):
+    status: str
+    machine_id: str
+    request_bearer: str
+    options: dict
+    expires_on: str
     username: str
     machine_name: str
     token: str
@@ -31,37 +40,42 @@ class JoinResult(TypedDict):
 @mcp.tool(
     # The only tool an invite code may reach; the policy reads this tag, not the name.
     tags={ONBOARDING_TAG},
-    description=cleandoc("""Register a new user and their first machine on this AIStack server.
+    description=cleandoc("""Join with an invite, or explicitly select computer pairing.
 
-    Call this once per person, from the machine they are setting up, while connected with an
-    invite code as the bearer token: the server's own, or a team's (it starts with 'aistinv_'),
-    which also makes them a member of that team. It returns that machine's permanent token,
-    which goes into the MCP configuration and authenticates every later connection.
-    Registering another computer for someone who has already joined is add_machine, not this.
+    Legacy invite calls need username, machine_name and os (MACOS, WINDOWS, LINUX),
+    with optional full_name. They create an account and first computer and return
+    username, machine_name, token and team. Store the token only in agent configuration.
 
-    Args:
-        username: A lowercase handle (letters, digits, single . - _), up to 64 characters. It is
-                 shown as the pusher of every skill revision they upload, so a recognizable
-                 handle beats a display name.
-        machine_name: What this computer is called, up to 64 characters, unique among that
-                     user's machines (e.g. "macbook", "work-laptop", "desktop").
-        os: This machine's operating system: MACOS, WINDOWS, or LINUX. Required: the server
-           cannot observe the client's platform, so state it.
-        full_name: Optional. The person's name as teammates read it beside the username,
-                  such as "Maria Lopez", when they gave one.
-
-    Returns:
-        JoinResult containing:
-            - username: the registered username
-            - machine_name: the registered machine name
-            - token: this machine's permanent token. Write it into the MCP configuration and
-                    tell the user to restart their harness once. It is shown exactly here and
-                    never again: the server stores only a hash of it.
-            - team: the team they joined with its invite code, or null for the server's code.
+    Computer pairing never creates an account. With a computer code as Authorization
+    bearer, pairing=reserve and reported machine_name/os reserve one request and return
+    its separate request_bearer, reserved machine_id, options and expiry. With that
+    request bearer, pairing=poll waits for approval, then returns a permanent token once.
+    An optional fingerprint binds the OS-id digest on completion. pairing=confirm with
+    setup={agents: [...], skills: count} reports setup after the token is configured.
+    Codes cannot poll or retrieve a token. No credential belongs in a tool argument.
     """))
 @handle_mcp_errors
-def join(username: str, machine_name: str, os: Literal["MACOS", "WINDOWS", "LINUX"],
-         full_name: str | None = None) -> JoinResult:
+def join(username: str | None = None, machine_name: str | None = None,
+         os: Literal["MACOS", "WINDOWS", "LINUX"] | None = None,
+         full_name: str | None = None, pairing: Literal["reserve", "poll", "confirm"] | None = None,
+         fingerprint: str | None = None, setup: dict | None = None) -> JoinResult:
+    bearer = get_access_token()
+    kind = bearer.claims.get("pairing")
+    if pairing is not None or kind is not None:
+        try:
+            with get_session_factory().begin() as session:
+                if pairing == "reserve" and kind == "computer_code":
+                    return computer_codes.reserve(session, bearer.token, machine_name, os)
+                if pairing == "poll" and kind == "computer_request":
+                    return computer_codes.poll(session, bearer.token, fingerprint)
+                if pairing == "confirm" and kind == "computer_request":
+                    return computer_codes.confirm(session, bearer.token, setup)
+                raise NotFound(computer_codes.REFUSAL)
+        except NotFound:
+            note_failure(get_failure_limiter(), client_address(get_http_request()), "computer code")
+            raise
+    if username is None or machine_name is None or os is None:
+        raise ValidationError("Joining with an invite needs username, machine_name and os. To add another computer, use Add a computer in the dashboard.")
     started_at = perf_counter()
     logger.debug(
         f"Joining. Username: '{loggable(username)}'. "
@@ -113,7 +127,17 @@ def join(username: str, machine_name: str, os: Literal["MACOS", "WINDOWS", "LINU
     return result
 
 
-class AddMachineResult(TypedDict):
+class AddMachineResult(TypedDict, total=False):
+    id: str
+    code: str
+    status: str
+    options: dict
+    expires_on: str
+    requested_on: str | None
+    request: dict | None
+    machine_id: str | None
+    operator_issued: bool
+    powershell_command: str
     machine_name: str
     os: str
     command: str
@@ -121,39 +145,41 @@ class AddMachineResult(TypedDict):
 
 
 @mcp.tool(
-    description=cleandoc("""Register another computer for the user who is already connected.
+    description=cleandoc("""Add another computer to the connected user's account.
 
-    Call this from a machine that has joined, when the user wants AIStack on a second computer
-    ("add my Windows PC"). It returns what connects that other computer's coding agent:
-    a command for Claude Code and a config block for Codex. There is nothing to redeem and
-    the invite code is not involved.
+    Prefer computer_code=true: returns a one-use code and join command, approval on by
+    default. Options: name (otherwise hostname), expires_hours (1, 24, 168), agents
+    (find, claude-code, codex), skills (library, empty), hook and approval (booleans).
+    No permanent token accompanies a code. The dashboard can edit unused options,
+    cancel the code and approve or deny its reported request.
 
-    Args:
-        name: What the new computer is called, up to 64 characters, unique among this user's
-             machines (e.g. "windows-pc", "work-laptop").
-        os: The new computer's operating system: MACOS, WINDOWS, or LINUX. Ask the user if it
-           is not obvious from what they said: it is the other computer's, not this one's.
-
-    Returns:
-        AddMachineResult containing:
-            - machine_name: the registered machine name
-            - os: its operating system
-            - command: a complete `claude mcp add` command carrying the new machine's
-                      permanent token, to run in a terminal there for Claude Code.
-            - codex_config: the same connection for Codex, to add to ~/.codex/config.toml
-                           there, keeping what the file already holds.
-            Ask which agent that computer uses, then show its one exactly as returned in a
-            code block, or both if they do not know. Tell them, in one line, that it holds
-            a permanent key for that computer: paste it only there, and delete it from
-            anywhere it was carried. If it leaks, the operator revokes the machine
-            (docs/OPERATING.md). Then tell them to create the skills folder there first
-            (mkdir -p ~/.claude/skills for Claude Code, ~/.agents/skills for Codex), start
-            the agent, and say "sync aistack": the first sync installs the sync skill and
-            offers their Library. The token is shown here and never again: the server
-            stores only a hash of it.
+    Legacy calls with name and os still return machine_name, os, a paste-ready command
+    and codex_config, each carrying a permanent token. Ask which agent the computer
+    uses, then show its result exactly. Tell the person that it holds a permanent key for that computer:
+    paste it only there, and delete it from anywhere it was carried. If it leaks,
+    revoke the computer. Create the skills folder first (mkdir -p ~/.claude/skills for
+    Claude Code, ~/.agents/skills for Codex), restart the agent and say "sync aistack".
+    Legacy token fields stay until an owner-approved minor release.
     """))
 @handle_mcp_errors
-def add_machine(name: str, os: Literal["MACOS", "WINDOWS", "LINUX"]) -> AddMachineResult:
+def add_machine(name: str | None = None, os: Literal["MACOS", "WINDOWS", "LINUX"] | None = None,
+                computer_code: bool = False, options: dict | None = None) -> AddMachineResult:
+    if computer_code:
+        caller = current_machine()
+        base = mcp_endpoint_url(get_http_request())
+        with get_session_factory().begin() as session:
+            return computer_codes.commands(
+                computer_codes.create(
+                    session,
+                    caller.user_id,
+                    caller.machine_id,
+                    caller.token_prefix,
+                    options,
+                ),
+                base,
+            )
+    if name is None or os is None:
+        raise ValidationError("Legacy add_machine needs name and os. Use computer_code=true for a one-use code with approval.")
     started_at = perf_counter()
     caller = current_machine()
     logger.debug(

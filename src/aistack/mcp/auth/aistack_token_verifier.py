@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from aistack.db.models.machine import Machine
 from aistack.mcp.auth.failure_limiter import FailureLimiter, client_address, note_failure
 from aistack.mcp.auth.scopes import BOOTSTRAP_SCOPE, MACHINE_SCOPE
-from aistack.services import team_service
+from aistack.services import computer_codes, team_service
 from aistack.services.token_service import TEAM_INVITE_PREFIX, hash_token, matches_invite_code
 from aistack.services.transfer_ticket import token_prefix
 
@@ -61,6 +61,18 @@ class AIStackTokenVerifier(TokenVerifier):
                 )
                 return AIStackAccessToken(token=token, client_id="bootstrap",
                                           scopes=[BOOTSTRAP_SCOPE], claims={"invite": "team"})
+
+        if computer_codes.normalized(token) is not None or token.startswith(computer_codes.REQUEST_PREFIX):
+            # Pairing bearers reach only join, which resolves their hash and rechecks
+            # every condition transactionally. Uniform scope gives no validity oracle
+            # and lets transport cleanup finish after reserve consumes the short code.
+            kind = "computer_request" if token.startswith(computer_codes.REQUEST_PREFIX) else "computer_code"
+            return AIStackAccessToken(
+                token=token,
+                client_id="bootstrap",
+                scopes=[BOOTSTRAP_SCOPE],
+                claims={"pairing": kind},
+            )
 
         # FastMCP requires async here; keep the blocking driver off the event loop.
         machine = await asyncio.to_thread(self._find_machine, hash_token(token))

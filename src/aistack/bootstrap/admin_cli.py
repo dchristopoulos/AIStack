@@ -12,7 +12,7 @@ from sqlalchemy.exc import OperationalError
 
 from aistack.bootstrap.configuration.settings.settings_config import Settings
 from aistack.commons.connect_commands import claude_code_command, codex_config
-from aistack.commons.exceptions import AIStackError
+from aistack.commons.exceptions import AIStackError, ValidationError
 from aistack.commons.text import loggable
 from aistack.commons.urls import is_plain_http_url
 from aistack.db.engine import build_engine, build_session_factory
@@ -56,6 +56,16 @@ def _run(session, parsed: argparse.Namespace, endpoint: str | None) -> list[str]
         return _connect_lines(operator_service.rotate(session, parsed.username, parsed.machine),
                               endpoint, replaces=True)
     if command == "register-machine":
+        if parsed.computer_code:
+            from aistack.services.computer_codes import commands
+
+            result = commands(operator_service.register_computer_code(
+                session, parsed.username, parsed.machine), endpoint)
+            return ["Recovery code: connects without approval. Verify who is asking before sharing it.",
+                    f"Expires {result['expires_on']}. Run on the new computer:", result["command"],
+                    "Use this server's deployed admin command for offboarding and forgetting accounts."]
+        if parsed.machine is None or parsed.os is None:
+            raise ValidationError("Legacy register-machine needs a computer name and --os. Use --computer-code for recovery with a one-use code.")
         return _connect_lines(operator_service.register_machine(
             session, parsed.username, parsed.machine, parsed.os.upper()), endpoint,
             replaces=False)
@@ -106,9 +116,12 @@ def _parser() -> argparse.ArgumentParser:
                        ("remove-machine", "take a computer off the server")):
         machine = commands.add_parser(name, help=text)
         machine.add_argument("username")
-        machine.add_argument("machine", help="the computer's name, as 'machines' lists it")
+        machine.add_argument("machine", nargs="?" if name == "register-machine" else None,
+                             help="the computer's name, as 'machines' lists it")
         if name == "register-machine":
-            machine.add_argument("--os", required=True, choices=OPERATING_SYSTEMS)
+            machine.add_argument("--os", choices=OPERATING_SYSTEMS)
+            machine.add_argument("--computer-code", action="store_true",
+                                 help="issue a one-use recovery code without approval")
         if name in ("rotate", "register-machine"):
             machine.add_argument("--url", help="the address computers reach this server at, "
                                                "when AISTACK_PUBLIC_URL is not set")

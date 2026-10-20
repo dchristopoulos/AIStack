@@ -30,6 +30,7 @@ from aistack.db.models.user import User
 from aistack.db.models.value_set import known
 from aistack.db.ordering import bytewise
 from aistack.services import (
+    computer_codes,
     onboarding_service,
     project_service,
     projects,
@@ -95,6 +96,7 @@ def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
         "user": dict(session.execute(
             select(User.username, User.full_name).where(User.user_id == user_id)).one()._mapping),
         "machines": _machines(session, user_id),
+        "computer_codes": computer_codes.overview(session, user_id),
         "skills": [{key: value for key, value in skill.items() if key != "source_id"}
                    for skill in mine],
         # Removed from the Library, by name: what Bring back can return (PH-11).

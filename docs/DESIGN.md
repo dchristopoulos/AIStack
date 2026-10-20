@@ -394,7 +394,8 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/computer-codes` | Options (defaults above) | One-use code, command, id and expiry, shown once; server only |
 | `POST /api/computer-codes/{id}` | Options | Updates an unused code, without reviving expiry; server only |
 | `POST /api/computer-codes/{id}/cancel` | `{}` | Cancels the code and any uncompleted request; server only |
-| `POST /api/computer-codes/{id}/approve` or `/deny` | `{}` | Owner-scoped decision on the frozen waiting request; server only |
+| `POST /api/computer-codes/{id}/approve` | `{}` | Owner-scoped approval of the frozen waiting request; server only |
+| `POST /api/computer-codes/{id}/deny` | `{}` | Owner-scoped denial; server only |
 | `POST /api/machines/{machine_id}/rename` | `name` | `name`, unique among the user's computers. Server only |
 | `POST /api/account` | `full_name` (blank clears it) | `full_name`. Server only |
 | `POST /api/teams` | `name` | `name`. The caller is the new team's admin |
@@ -545,17 +546,17 @@ MACHINE
   UNIQUE (user_id, name)
 
 COMPUTER_CODE                                  -- ADR-0035: new compatible table
-  id            UUID PK
+  code_id            UUID PK
   user_id       FK → USER NOT NULL
   issuing_machine_id UUID NULL                  -- null for operator recovery
   issuing_token_hash VARCHAR(64) NULL            -- bind to current issuing token
   code_hash     VARCHAR(64) NOT NULL UNIQUE
   created_on, expires_on TIMESTAMPTZ NOT NULL
   options       JSON NOT NULL                    -- frozen on reservation
-  state         VARCHAR NOT NULL                 -- stored value set, unknown-safe
   request_hash  VARCHAR(64) NULL UNIQUE           -- separate 256-bit request bearer
-  reserved_machine_id UUID NULL
-  request_name, request_os, requested_on          -- reported details, not identity proof
+  machine_id    UUID NULL                         -- reserved identity, no MACHINE yet
+  request       JSON NULL                        -- reported name/OS, then setup confirmation
+  requested_on  TIMESTAMPTZ NULL                  -- arrival, not identity proof
   approved_on, denied_on, cancelled_on, completed_on TIMESTAMPTZ NULL
                                                 -- no placeholder MACHINE before completion
 
@@ -744,7 +745,7 @@ Trusted team, honestly stated:
 
 Deferred deliberately: audit trail, signing, per-skill approval workflows and push permissions. Computer connection approval follows ADR-0035.
 
-Computer codes use twelve cryptographically random characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (31 characters, about 59.4 bits), displayed as three groups of four. Accept ASCII case variants with or without grouping dashes. Store only normalized sha256 hashes with indexed lookup. Unknown, expired, cancelled, denied and claimed codes give the same refusal; include transactional race losers in the existing failure limiter. Codes and request bearers travel only as bootstrap Authorization bearers, never arguments or URLs. Only creation returns the plaintext code. Dashboard state returns status and expiry, never code or command; no browser persistence. Removal or token rotation of the issuer invalidates uncompleted codes and requests, rechecked at redemption and approval. Operator `register-machine` can issue an explicitly labelled recovery code without approval when no computer remains. Owner-scoped dashboard mutations require the request header. Pending requests survive restart without automatic approval.
+Computer codes use twelve cryptographically random characters from `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (31 characters, about 59.4 bits), displayed as three groups of four. Accept ASCII case variants with or without grouping dashes. Store only normalized sha256 hashes with indexed lookup. Unknown, expired, cancelled, denied and claimed codes give the same refusal; include transactional race losers in the existing failure limiter. Codes and request bearers travel only as bootstrap Authorization bearers, never arguments or URLs. Only creation returns the plaintext code. Dashboard state returns status and expiry, never code or command; no browser persistence. Removal or token rotation of the issuer invalidates uncompleted codes and requests, rechecked at redemption and approval. Operator `register-machine` can issue an explicitly labelled recovery code without approval when no computer remains. Recovery issuance, offboarding and forgetting use the admin command in the deployed server container, as OPERATING requires; never run an older admin package against that database. Older MCP clients remain supported. Owner-scoped dashboard mutations require the request header. Pending requests survive restart without automatic approval.
 
 Joining and syncing use verified HTTPS. Loopback, RFC 1918, RFC 4193 and 100.64.0.0/10 addresses, or names resolving only to these, permit HTTP with one unencrypted-connection warning. Public HTTP requires `--allow-http` and a warning that the computer key can be read. Never forward credentials across an origin-changing redirect. OPERATING documents HTTPS through a reverse proxy or a VPN.
 

@@ -25,7 +25,7 @@ from aistack.db.models.skill import Skill
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc
 from aistack.db.models.user import User
-from aistack.services import onboarding_service, team_service, visibility
+from aistack.services import computer_codes, onboarding_service, team_service, visibility
 from aistack.services.token_service import generate_machine_token, hash_token
 
 logger = logging.getLogger(__name__)
@@ -142,6 +142,12 @@ def register_machine(session: Session, username: str, machine: str, os: str) -> 
     return NewToken(username=username, machine=added.machine.name, token=added.token)
 
 
+def register_computer_code(session: Session, username: str, name: str | None = None) -> dict:
+    """Issue recovery without inventing an issuing computer or awaiting its approval."""
+    user = _user(session, username)
+    return computer_codes.create(session, user.user_id, None, None, {"name": name})
+
+
 def remove_machine(session: Session, username: str, machine: str) -> None:
     """Take a computer off the server. Unlike its owner, the operator may remove the last
     one: that is how someone leaves. Its placements and sync records go with it."""
@@ -159,6 +165,7 @@ def offboard(session: Session, username: str,
     account and what they pushed stay. Returns the teams and the computers."""
     teams = take_out_of_teams(session, username, successors)
     user_id = _user(session, username).user_id
+    computer_codes.cancel_for_user(session, user_id)
     removed = session.scalars(select(Machine).where(Machine.user_id == user_id)
                               .order_by(Machine.name)).all()
     for machine in removed:
