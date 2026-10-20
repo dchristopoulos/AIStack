@@ -491,6 +491,12 @@ def run() -> None:
     if sys.argv[1:2] == ["admin"]:
         admin_cli.run(sys.argv[2:])
         return
+    if sys.argv[1:2] == ["join"]:
+        from aistack.bootstrap import server_join
+
+        configure_logging("WARNING")
+        server_join.run(sys.argv[2:])
+        return
     parser = argparse.ArgumentParser(
         prog="aistack",
         description="With no command, serve your own Library to the coding agent that started "
@@ -503,11 +509,12 @@ def run() -> None:
                     "'move postgresql' or 'move here' moves it with its history; 'connect' "
                     "connects Claude Code or Codex to it; 'serve' runs the AIStack server, "
                     "'backup' and 'restore' copy its database, and 'admin' manages its "
-                    "users, computers and teams.")
+                    "users, computers and teams; 'join <server> <code>' adds this computer "
+                    "with a computer code, and 'sync' reconciles its skills.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
                                                        "sync-skill", "check", "export",
                                                        "github", "move", "connect", "backup",
-                                                       "restore", "admin", "status", "sync"])
+                                                       "restore", "admin", "status", "sync", "join"])
     parser.add_argument("folder", nargs="?",
                         help="Where 'export' writes the skills, ./aistack-library by default; "
                              "the skills folder 'sync-skill' writes its skill into, instead of "
