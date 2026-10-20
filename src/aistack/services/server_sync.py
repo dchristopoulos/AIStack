@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
+from fastmcp.exceptions import ToolError
 
 from aistack.bootstrap import hardware
 from aistack.bundled import SYNC_SKILL_NAME, sync_skill_document
@@ -85,7 +86,11 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path) -> list[d
     async with asyncio.timeout(SYNC_TIMEOUT):
         async with client(connection) as mcp, httpx.AsyncClient(timeout=15, follow_redirects=False) as http:
             async def call(tool, **arguments):
-                result = await mcp.call_tool(tool, arguments)
+                try:
+                    result = await mcp.call_tool(tool, arguments)
+                except ToolError as error:
+                    # A server refusal fails one skill, as a local one does, not the whole sync.
+                    raise AIStackError(str(error)) from None
                 if result.is_error or not isinstance(result.structured_content, dict):
                     raise ValidationError("AIStack returned no usable sync result. Check the server and try again.")
                 return result.structured_content
@@ -196,7 +201,8 @@ def output(reports: list[dict], hook: bool = False) -> str:
             lines.append(f"AIStack decisions for {report['folder']} ({report['harness']}): " + json.dumps(attention, ensure_ascii=True))
             lines.append("Ask the person before acting. enable/restore: get_skill then install; push: push_skill then upload; remove: delete only the already-disabled local folder; skip: no action. Preserve overwrites_local and loses_local_edits warnings. Team updates require an explicit get_skill(name, team) answer. First sync: ask whether to use the same skills in both folders; project offers: ask before installing from other computers.")
         lines.extend(report["failures"])
-        lines.extend(report.get("diagnostics", []))
+        if not hook:
+            lines.extend(report.get("diagnostics", []))
     if not lines and not hook:
         lines.append("AIStack skills are up to date.")
     return "\n".join(sanitized(line) for line in lines)

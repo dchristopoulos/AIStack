@@ -15,7 +15,8 @@ from aistack.bootstrap import hardware, server_join
 from aistack.commons.exceptions import ValidationError
 from aistack.db.models.computer_code import ComputerCode
 from aistack.db.models.machine import Machine
-from aistack.services import computer_codes
+from aistack.services import computer_codes, operator_service
+from aistack.services.token_service import hash_token
 from tests.archives import skill_document
 from tests.mcp.conftest import call, join, push
 
@@ -44,6 +45,25 @@ def joining_home(tmp_path, monkeypatch):
         )
     )
     return tmp_path
+
+
+def _code_hash(code: dict) -> str:
+    return hash_token(computer_codes.normalized(code["code"]))
+
+
+async def _reserved_user(session_factory, code: dict) -> uuid.UUID:
+    for _ in range(200):
+        with session_factory.begin() as session:
+            row = session.get(ComputerCode, uuid.UUID(code["id"]))
+            if row.request_hash is not None:
+                return row.user_id
+        await asyncio.sleep(0.01)
+    raise AssertionError("the joining program never reserved its code")
+
+
+async def _completed(session_factory, code: dict) -> bool:
+    with session_factory.begin() as session:
+        return session.get(ComputerCode, uuid.UUID(code["id"])).completed_on is not None
 
 
 async def test_join_waits_for_approval_and_finishes_setup(
@@ -201,7 +221,7 @@ async def test_copied_recovery_file_refuses_before_configuration_or_skills(
         pairing="poll",
         fingerprint=hardware.fingerprint(uuid.UUID(reserved["machine_id"]), "other-computer"),
     )
-    state = reserved | connected | {"url": server_url}
+    state = reserved | connected | {"url": server_url, "code_hash": _code_hash(code)}
     server_join._json(joining_home / ".aistack/joining.json", state)
     config = joining_home / ".codex/config.toml"
     before = config.read_bytes()
@@ -290,3 +310,100 @@ async def test_lost_setup_confirmation_leaves_only_configured_key(
     assert (await server_join.join_computer(server_url, code["code"], say=lambda line: None))[
         "already_connected"
     ]
+
+
+async def test_new_code_after_a_denied_request_starts_over(server_url, session_factory, joining_home):
+    from fastmcp.exceptions import ToolError
+
+    owner = await join(server_url)
+    denied = await call(
+        server_url, owner, "add_machine", computer_code=True, options={"agents": "codex", "skills": "empty"}
+    )
+    running = asyncio.create_task(
+        server_join.join_computer(server_url, denied["code"], say=lambda line: None)
+    )
+    user = await _reserved_user(session_factory, denied)
+    with session_factory.begin() as session:
+        computer_codes.decide(session, user, denied["id"], "deny")
+    with pytest.raises(ToolError, match="make another"):
+        await running
+    assert (joining_home / ".aistack/joining.json").exists()
+    again = await call(
+        server_url,
+        owner,
+        "add_machine",
+        computer_code=True,
+        options={"agents": "codex", "approval": False, "skills": "empty"},
+    )
+    assert (await server_join.join_computer(server_url, again["code"], say=lambda line: None))[
+        "agents"
+    ] == ["codex"]
+    assert await _completed(session_factory, again)
+    assert not (joining_home / ".aistack/joining.json").exists()
+
+
+async def test_new_code_after_a_lost_key_starts_over(server_url, session_factory, joining_home):
+    owner = await join(server_url)
+    lost = await call(
+        server_url,
+        owner,
+        "add_machine",
+        computer_code=True,
+        options={"agents": "codex", "approval": False, "skills": "empty"},
+    )
+    reserved = await call(
+        server_url, lost["code"], "join", pairing="reserve", machine_name="new-computer", os="LINUX"
+    )
+    server_join._json(
+        joining_home / ".aistack/joining.json",
+        reserved | {"url": server_url, "code_hash": _code_hash(lost)},
+    )
+    # The server committed the token, and its response never reached this computer.
+    await call(server_url, reserved["request_bearer"], "join", pairing="poll")
+    with pytest.raises(ValidationError, match="remove the incomplete computer"):
+        await server_join.join_computer(server_url, lost["code"], say=lambda line: None)
+    # Exactly what that message tells the person to do.
+    with session_factory.begin() as session:
+        operator_service.remove_machine(session, "dimitris", "new-computer")
+    again = await call(
+        server_url,
+        owner,
+        "add_machine",
+        computer_code=True,
+        options={"agents": "codex", "approval": False, "skills": "empty"},
+    )
+    await server_join.join_computer(server_url, again["code"], say=lambda line: None)
+    assert await _completed(session_factory, again)
+
+
+async def test_removed_computer_joins_again_from_a_new_code(server_url, session_factory, joining_home):
+    owner = await join(server_url)
+    options = {"agents": "codex", "approval": False, "skills": "empty"}
+    first = await call(server_url, owner, "add_machine", computer_code=True, options=options)
+    await server_join.join_computer(server_url, first["code"], say=lambda line: None)
+    with session_factory.begin() as session:
+        operator_service.remove_machine(session, "dimitris", "new-computer")
+    # The agent configuration still holds the removed computer's key.
+    second = await call(server_url, owner, "add_machine", computer_code=True, options=options)
+    result = await server_join.join_computer(server_url, second["code"], say=lambda line: None)
+    assert "already_connected" not in result
+    assert await _completed(session_factory, second)
+    config = tomllib.loads((joining_home / ".codex/config.toml").read_text())
+    token = config["mcp_servers"]["aistack"]["http_headers"]["Authorization"].removeprefix("Bearer ")
+    assert (await call(server_url, token, "sync", local={}, identify=True))["machine_id"]
+
+
+async def test_accepted_plain_http_reaches_the_session_start_hook(server_url, joining_home):
+    owner = await join(server_url)
+    code = await call(
+        server_url,
+        owner,
+        "add_machine",
+        computer_code=True,
+        options={"agents": "codex", "approval": False, "skills": "empty"},
+    )
+    await server_join.join_computer(server_url, code["code"], allow_http=True, say=lambda line: None)
+    entries = json.loads((joining_home / ".codex/hooks.json").read_text())["hooks"]["SessionStart"]
+    commands = [hook["command"] for entry in entries for hook in entry["hooks"]]
+    assert commands[0] == "keep-me"
+    assert commands[1].endswith(" sync --hook --allow-http") and len(commands) == 2

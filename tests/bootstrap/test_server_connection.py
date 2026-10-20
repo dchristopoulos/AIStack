@@ -79,6 +79,33 @@ def test_server_hook_preserves_other_hooks_and_has_full_sync_timeout(tmp_path, m
     entries = json.loads(path.read_text())["hooks"]["SessionStart"]
     assert len(entries) == 2
     assert entries[1]["hooks"][0]["timeout"] > 150
+    accepted = agent_config.server_hook_command(Path("/installed/aistack"), allow_http=True)
+    assert accepted == command + " --allow-http"
+    agent_config.add_session_start_hook("claude-code", accepted)
+    entries = json.loads(path.read_text())["hooks"]["SessionStart"]
+    assert [entry["hooks"][0]["command"] for entry in entries] == ["keep me", accepted]
+    assert entries[1]["hooks"][0]["timeout"] > 150
+
+
+@pytest.mark.parametrize("hook", [False, True])
+def test_only_manual_sync_repeats_the_plain_http_warning(tmp_path, monkeypatch, capsys, hook):
+    import sys
+
+    from aistack.bootstrap import __main__ as command
+    from aistack.services import server_sync
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(sys, "argv", ["aistack", "sync", *(["--hook"] if hook else [])])
+    monkeypatch.setattr(agent_config, "remote_connection", lambda _: Connection("http://127.0.0.1/mcp", "secret"))
+
+    async def nothing_to_do(*args):
+        return []
+
+    monkeypatch.setattr(server_sync, "sync_computer", nothing_to_do)
+    command.run()
+    printed = capsys.readouterr().out
+    assert ("not encrypted" in printed) is not hook
+    assert printed == "" if hook else "up to date" in printed
 
 
 def test_sync_command_explains_a_copied_connection(tmp_path, monkeypatch):

@@ -15,16 +15,18 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import httpx
 from fastmcp.exceptions import ToolError
 
 from aistack.bootstrap import agent_config, hardware, self_update, sync_lock
 from aistack.commons.exceptions import AIStackError, ValidationError
 from aistack.commons.text import sanitized
 from aistack.db.models.harness import Harness
-from aistack.services import local_skills, server_connection, server_sync
+from aistack.services import computer_codes, local_skills, server_connection, server_sync
 from aistack.services.content_hash import canonical_content_hash
 from aistack.services.server_connection import Connection
 from aistack.services.skill_validation import validated_skill_name
+from aistack.services.token_service import hash_token
 
 JOIN_TIMEOUT = 600
 POLL_INTERVAL = 2
@@ -268,12 +270,17 @@ async def join_computer(server: str, code: str, *, allow_http: bool = False, say
     if warning:
         say(warning)
     state_path = home / ".aistack" / "joining.json"
+    code_hash = hash_token(computer_codes.normalized(code) or code)
     with sync_lock.locked(home):
         state = _read(state_path)
         if state and state.get("url") != url:
             raise ValidationError(
                 "Another AIStack setup is unfinished. Finish it first, or remove its incomplete computer and .aistack/joining.json before changing servers."
             )
+        # The same command resumes; a new code is the person starting over after a
+        # refusal or a lost key, so the earlier request must not be retried instead.
+        if state.get("code_hash") != code_hash:
+            state = {}
         # Existing configuration warrants "already connected" only after authentication
         # and the copied-computer check succeed. No used-code lookup can establish it.
         existing = _existing(url)
@@ -282,6 +289,11 @@ async def join_computer(server: str, code: str, *, allow_http: bool = False, say
                 binding = await _binding(existing)
                 await _call(existing, "sync", local={}, identify=True, fingerprint=binding)
             except ToolError:
+                existing = None
+            except httpx.HTTPStatusError as error:
+                # A removed or rotated computer's key: pair again from the new code.
+                if error.response.status_code != 401:
+                    raise
                 existing = None
             else:
                 reports = await server_sync.sync_computer(existing, home, home)
@@ -306,7 +318,7 @@ async def join_computer(server: str, code: str, *, allow_http: bool = False, say
                     machine_name=socket.gethostname(),
                     os={"Darwin": "MACOS", "Windows": "WINDOWS"}.get(platform.system(), "LINUX"),
                 )
-                state = reserved | {"url": url}
+                state = reserved | {"url": url, "code_hash": code_hash}
                 _json(state_path, state)
             selected = state["options"]
             agents = _agents(selected["agents"])
@@ -348,7 +360,7 @@ async def join_computer(server: str, code: str, *, allow_http: bool = False, say
                 folder.mkdir(parents=True, exist_ok=True)
                 if selected["hook"]:
                     path = agent_config.add_session_start_hook(
-                        agent, agent_config.server_hook_command(program)
+                        agent, agent_config.server_hook_command(program, allow_http)
                     )
                     _write(path, path.read_text(encoding="utf-8"))
             installed, questions = (0, [])

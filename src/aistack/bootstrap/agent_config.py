@@ -245,5 +245,6 @@ def remote_connection(agent: str | None = None):
     return connections[0]
 
 
-def server_hook_command(program: Path) -> str:
-    return f'"{program}" sync --hook'
+def server_hook_command(program: Path, allow_http: bool = False) -> str:
+    # Carries the person's acceptance of public plain HTTP at join into every session start.
+    return f'"{program}" sync --hook' + (" --allow-http" if allow_http else "")

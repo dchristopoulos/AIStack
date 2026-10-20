@@ -136,7 +136,7 @@ Ask whether to sync at session start and recommend it. If they decline, keep man
 {"matcher": "startup", "hooks": [{"type": "command", "command": "\"/full/path/to/aistack\" sync --hook", "timeout": 180}]}
 ```
 
-The hook holds no token: the program reads the existing remote MCP configuration. Quiet sync prints nothing; questions, failures and unencrypted-connection warnings reach the agent. Review JSON before saving. Codex asks the user to trust a new hook once in `/hooks`; tell them to accept it. Sync does not delete files or choose an answer about local edits or team offers.
+The hook holds no token: the program reads the existing remote MCP configuration. Quiet sync prints nothing; questions and failures reach the agent, and only manual sync repeats the unencrypted-connection warning. A public server over plain HTTP needs `--allow-http` after `--hook`, added only when the person has accepted it. Review JSON before saving. Codex asks the user to trust a new hook once in `/hooks`; tell them to accept it. Sync does not delete files or choose an answer about local edits or team offers.
 
 ## 6. Finish
 

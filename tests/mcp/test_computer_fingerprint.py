@@ -12,7 +12,7 @@ from sqlalchemy.sql.dml import Update
 
 from aistack.bootstrap import hardware
 from aistack.bootstrap.context.application_context import get_session_factory
-from aistack.commons.exceptions import Conflict
+from aistack.commons.exceptions import AIStackError, Conflict
 from aistack.db.models.machine import Machine
 from aistack.services import computer_fingerprint, server_sync
 from aistack.services.server_connection import Connection
@@ -86,7 +86,7 @@ async def test_program_checks_binding_before_observation_or_transfer(server_url,
         pytest.fail("The program touched disk before validating this computer")
 
     monkeypatch.setattr(server_sync.local_skills, "observed", no_disk)
-    with pytest.raises(ToolError, match="different computer"):
+    with pytest.raises(AIStackError, match="different computer"):
         await server_sync.sync_computer(Connection(server_url, token), tmp_path, tmp_path)
 
 
@@ -104,6 +104,7 @@ async def test_identity_discovery_keeps_first_sync_and_no_hardware_is_diagnostic
     reports = await server_sync.sync_computer(Connection(server_url, token), tmp_path, tmp_path)
     assert reports[0]["first_sync"]
     assert reports[0]["failures"] == []
-    assert "cannot be detected" in server_sync.output(reports, hook=True)
+    assert "cannot be detected" in server_sync.output(reports)
+    assert "cannot be detected" not in server_sync.output(reports, hook=True)
     with get_session_factory().begin() as session:
         assert session.scalar(select(Machine.fingerprint_hash)) is None

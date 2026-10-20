@@ -91,7 +91,7 @@ Chat can also make a code with `add_machine(computer_code=true)`. Older callers 
 | "share wizard with backend" | Gives the team a copy of your latest revision |
 | "remove wizard from this machine" | Disables it here; it stays in your Library and on other computers |
 
-On a server connection, `aistack sync` does the file work through the existing MCP tools and signed downloads. Setup can install `aistack sync --hook` at session start using the installed command's full path. The hook is silent when nothing needs attention (plain HTTP still warns); questions about local edits, disabled skills and team offers still reach your agent for you to decide. Installs remain usable while the server is unavailable. A copied connection is refused when the operating system's computer id differs; add that computer separately. Older clients may omit the check, and a full clone may preserve that id ([ADR-0035](docs/adr/0035-the-program-does-the-mechanical-work.md)).
+On a server connection, `aistack sync` does the file work through the existing MCP tools and signed downloads. Setup can install `aistack sync --hook` at session start using the installed command's full path. The hook is silent when nothing needs attention, and only manual sync repeats the plain-HTTP warning; questions about local edits, disabled skills and team offers still reach your agent for you to decide. Installs remain usable while the server is unavailable. A copied connection is refused when the operating system's computer id differs; add that computer separately. Older clients may omit the check, and a full clone may preserve that id ([ADR-0035](docs/adr/0035-the-program-does-the-mechanical-work.md)).
 
 ### Try the dashboard without an agent
 

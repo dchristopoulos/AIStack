@@ -116,3 +116,25 @@ async def test_project_discovery_does_not_manage_or_read_repository_skills(serve
     assert (project / ".claude/skills/wizard/SKILL.md").is_file()
     assert document.read_text() == "repository content"
     assert not (project / ".claude/skills/sync-aistack").exists()
+
+
+async def test_refused_skill_fails_alone(server_url, home, monkeypatch):
+    from aistack.commons.exceptions import Busy
+    from aistack.services import skill_service
+
+    token = await join(server_url)
+    await push(server_url, token, name="alpha")
+    await push(server_url, token)
+    get_skill = skill_service.get_skill
+
+    def busy_for_alpha(session, machine_id, user_id, name, *args, **kwargs):
+        if name == "alpha":
+            raise Busy("The server is busy. Try again.")
+        return get_skill(session, machine_id, user_id, name, *args, **kwargs)
+
+    monkeypatch.setattr(skill_service, "get_skill", busy_for_alpha)
+    reports = await server_sync.sync_computer(Connection(server_url, token), home, home)
+    assert reports[0]["failures"] == ["The server is busy. Try again."]
+    assert (home / ".claude/skills/wizard/SKILL.md").is_file()
+    assert not (home / ".claude/skills/alpha").exists()
+    assert "Installed wizard revision 1" in server_sync.output(reports)

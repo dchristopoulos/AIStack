@@ -557,7 +557,8 @@ def run() -> None:
         try:
             connection = agent_config.remote_connection(arguments.agent)
             warning = server_connection.checked_server(connection.url, arguments.allow_http)
-            if warning:
+            # The person accepted plain HTTP at join; repeating it fills every new chat.
+            if warning and not arguments.hook:
                 print(warning)
             with locked(Path.home()):
                 reports = asyncio.run(server_sync.sync_computer(connection, Path.home(), Path.cwd()))
