@@ -58,7 +58,7 @@ def folders_in_use(home: Path) -> list[str]:
     return folders
 
 
-def observed(folder: Path) -> dict[str, dict[str, str]]:
+def observed(folder: Path, excluded: Iterable[str] = ()) -> dict[str, dict[str, str]]:
     """`{skill folder: {relative path: sha256}}`, the listing sync's shell command sends.
 
     Matches `find -L . -mindepth 2 -type f ! -name .DS_Store ! -path './.*' ! -path
@@ -69,7 +69,8 @@ def observed(folder: Path) -> dict[str, dict[str, str]]:
         return {}
     listing = {}
     for skill in sorted(folder.iterdir()):
-        if skill.name.startswith(".") or skill.name == _CLAUDE_CODE_SYNCED or not skill.is_dir():
+        if (skill.name in excluded or skill.name.startswith(".")
+                or skill.name == _CLAUDE_CODE_SYNCED or not skill.is_dir()):
             continue
         # Links below the skill folder are not followed: one that loops would never end, and
         # push refuses a skill that contains one anyway.
@@ -181,20 +182,27 @@ def _swap_in(staged: Path, destination: Path, staging: Path) -> None:
     """Put `staged` at `destination` by renames on one filesystem, so the folder is always a
     whole revision. A concurrent install can put its own copy there between the two renames;
     that one is moved out in turn."""
+    displaced = []
     for _ in range(_SWAP_ATTEMPTS):
         replaced = staging / f"{destination.name}.{uuid.uuid4().hex}.replaced"
         try:
             if destination.is_symlink() or destination.exists():
                 with contextlib.suppress(FileNotFoundError):
                     destination.rename(replaced)
+                    displaced.append(replaced)
             staged.rename(destination)
-            return
         except OSError:
+            # Restore the displaced copy if replacement failed with no contender.
+            # Otherwise keep it until this attempt succeeds, or for manual recovery.
+            if ((replaced.exists() or replaced.is_symlink())
+                    and not destination.exists() and not destination.is_symlink()):
+                replaced.rename(destination)
             continue
-        finally:
-            _discard(replaced)
+        for previous in displaced:
+            _discard(previous)
+        return
     raise Busy(f"Another session kept installing '{destination.name}' at the same moment. "
-               "Try again.")
+               f"Try again. Displaced copies, if any, are kept in {staging}.")
 
 
 def refresh(folder: Path, name: str, document: str) -> None:

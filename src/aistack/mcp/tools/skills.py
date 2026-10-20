@@ -308,18 +308,13 @@ class GetSkillResult(TypedDict):
     is first copied into the user's own skills: that is how a team's skill is installed
     and an offered update accepted. Refused over their own namesake: ask, then replace.
 
-    Install from a shell, where <skills> is the result's folder and <stage> is
-    <skills>/.aistack-staging. Run these per skill with every path written out: Claude
-    Code refuses an rm of a shell variable, so no loops or functions.
-
-        curl -sS -o <stage>/<name>.tgz "<download_url>"
-        mkdir <stage>/<name>, then: tar -xzf <stage>/<name>.tgz -C <stage>/<name>
-        remove <skills>/<name> if it exists, then move <stage>/<name> to <skills>/<name>
-        delete <stage>/<name>.tgz
-
-    Create <stage> first and clear any leftover <stage>/<name>. If tar fails, the .tgz is a
-    JSON error: read it. On Windows use curl.exe and tar.exe. No restart is needed; if it
-    is not found at once, try again. Leave <stage>; sync ignores it.
+    Prefer `aistack sync` for automatic installs. Manual fallback: use a fresh unique
+    directory under <skills>/.aistack-staging per attempt. Download and extract a complete
+    revision there; on failure leave installed files alone. Recheck local digests before
+    replacement: changed files need a decision. Rename the old folder into this attempt's
+    stage, then rename the new one into place. On failure restore the old copy if possible,
+    otherwise keep it and report its path. Clean up only this attempt after success.
+    Never clear shared staging. Windows: curl.exe and tar.exe. See sync-aistack for details.
 
     Args:
         name: The skill's name.

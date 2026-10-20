@@ -7,6 +7,12 @@ description: Sync this machine's skills with the user's own skills on AIStack. U
 
 Bring this machine's skills in line with the Library, the user's private space on the AIStack server. It mirrors their computers and is the only place this machine installs from. Sync when work starts, the way you would `git pull`.
 
+## Run the installed program first
+
+When `aistack` is installed, run `aistack sync` from the current project. It observes files, backs up private skills, installs safe revisions and reports decisions. Ask the person about those decisions, preserving every replacement and lost-edit warning, then use the tools below to carry out their answer. After the command succeeds, stop here unless an answer needs a tool call. If the command fails, report its failure; do not repeat writes through the manual fallback.
+
+Use the manual steps below only in a cloud session or on a computer without the installed program.
+
 ## 0. Check that AIStack is connected
 
 The `sync` tool and the others below come from the `aistack` MCP server. If they are not available in this session, stop: do not reach the server another way, such as `curl`, and never read a token out of a configuration file. Tell the user AIStack is not connected in this session, and what to do:
@@ -89,6 +95,10 @@ Work through the fields in this order, passing the same harness to every tool yo
 **`up_to_date`** is a count of enabled skills that already match. It needs no action.
 
 Sync changes no decision and deletes nothing. Only the calls you make afterwards do.
+
+### Manual staging
+
+Each install uses its own fresh directory under `<skills>/.aistack-staging/`, made with `mktemp -d` on POSIX or a new GUID on Windows. Download into that directory and extract into a new child directory. Never reuse a directory or clear the shared staging folder. If download or extraction fails, leave installed files alone. Recheck the original local file digests before replacement: changed files need a new decision. Rename the old destination into this attempt's directory as a backup, then rename the complete new directory into place. On failure restore the backup if the destination is absent; otherwise retain it and report its path. Clean up only this attempt's files after success. Use `curl.exe` and `tar.exe` on Windows.
 
 ### Asking
 

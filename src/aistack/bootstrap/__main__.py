@@ -506,7 +506,7 @@ def run() -> None:
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
                                                        "sync-skill", "check", "export",
                                                        "github", "move", "connect", "backup",
-                                                       "restore", "admin", "status"])
+                                                       "restore", "admin", "status", "sync"])
     parser.add_argument("folder", nargs="?",
                         help="Where 'export' writes the skills, ./aistack-library by default; "
                              "the skills folder 'sync-skill' writes its skill into, instead of "
@@ -524,6 +524,7 @@ def run() -> None:
                         help="For 'connect': also remind the agent to sync at session start. "
                              "'status --hook' is that reminder: printed only when sync has "
                              "something to do")
+    parser.add_argument("--allow-http", action="store_true", help="Allow public plain HTTP, which exposes this computer’s key")
     arguments = parser.parse_args()
     command = arguments.command
     folder = Path(arguments.folder).expanduser() if arguments.folder else None
@@ -540,6 +541,29 @@ def run() -> None:
         return
     if command == "connect" and arguments.folder not in agent_config.AGENTS:
         parser.error("connect takes the agent to connect: claude-code or codex")
+
+    if command == "sync":
+        from aistack.bootstrap.sync_lock import locked
+        from aistack.services import server_connection, server_sync
+
+        try:
+            connection = agent_config.remote_connection(arguments.agent)
+            warning = server_connection.checked_server(connection.url, arguments.allow_http)
+            if warning:
+                print(warning)
+            with locked(Path.home()):
+                reports = asyncio.run(server_sync.sync_computer(connection, Path.home(), Path.cwd()))
+            rendered = server_sync.output(reports, arguments.hook)
+            if rendered:
+                print(rendered)
+            if any(report["failures"] for report in reports):
+                sys.exit(1)
+        except (agent_config.NotConnected, AIStackError) as error:
+            sys.exit(f"AIStack: {error}")
+        except Exception:
+            # Network/SDK exceptions can contain bearers and signed transfer URLs.
+            sys.exit("AIStack sync could not finish. Check the server connection and try again; installed skills remain usable.")
+        return
 
     if command == "status":
         if not arguments.hook:

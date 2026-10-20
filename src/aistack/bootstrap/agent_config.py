@@ -159,9 +159,9 @@ def add_session_start_hook(agent: str, command: str = HOOK_COMMAND) -> Path:
     if any(commands(entry) == [command] for entry in entries):
         return path
     entries[:] = [entry for entry in entries if not any(
-        known == HOOK_COMMAND or " status --hook" in known for known in commands(entry))]
+        known == HOOK_COMMAND or " status --hook" in known or " sync --hook" in known for known in commands(entry))]
     entries.append({"matcher": "startup",
-                    "hooks": [{"type": "command", "command": command, "timeout": 10}]})
+                    "hooks": [{"type": "command", "command": command, "timeout": 180 if " sync --hook" in command else 10}]})
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     return path
@@ -208,3 +208,42 @@ def _read_toml(path: Path) -> dict:
     except tomllib.TOMLDecodeError as error:
         raise NotConnected(f"{path} is not valid TOML ({error}). Fix it, then run this again. "
                            "Nothing was changed.") from error
+
+
+def remote_connection(agent: str | None = None):
+    """One unambiguous remote connection; credentials never enter diagnostics."""
+    from aistack.services.server_connection import Connection
+
+    connections = []
+    local = False
+    for name in (AGENTS if agent is None else (agent,)):
+        if name == "claude-code":
+            entry = _read_json(Path.home() / ".claude.json").get("mcpServers", {}).get(SERVER_NAME)
+        else:
+            entry = _read_toml(codex_home() / "config.toml").get("mcp_servers", {}).get(SERVER_NAME)
+        if entry is None:
+            continue
+        if "url" not in entry:
+            local = True
+            continue
+        headers = entry.get("headers", {}) if name == "claude-code" else entry.get("http_headers", {})
+        authorization = next((value for key, value in headers.items()
+                              if key.lower() == "authorization"), "")
+        if not authorization and name == "codex":
+            variable = entry.get("bearer_token_env_var")
+            authorization = "Bearer " + os.environ.get(variable, "") if variable else ""
+            for key, variable in entry.get("env_http_headers", {}).items():
+                if key.lower() == "authorization":
+                    authorization = os.environ.get(variable, "")
+        if not isinstance(authorization, str) or not authorization.startswith("Bearer ") or not authorization[7:]:
+            raise NotConnected("AIStack's remote entry needs an Authorization bearer. Repair the connection, then sync again.")
+        connections.append(Connection(entry["url"], authorization[7:]))
+    if (local and connections) or any(each != connections[0] for each in connections[1:]):
+        raise NotConnected("AIStack connections disagree. Choose one with --agent claude-code or --agent codex, or repair the connections.")
+    if not connections:
+        raise NotConnected("No remote AIStack connection was found. Keep using the local sync tool for a local Library, or connect this computer to a server first.")
+    return connections[0]
+
+
+def server_hook_command(program: Path) -> str:
+    return f'"{program}" sync --hook'

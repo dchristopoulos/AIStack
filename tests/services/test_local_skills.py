@@ -231,4 +231,25 @@ def test_an_install_racing_between_renames_retries_or_says_to_try_again(
     folder = tmp_path / "wizard"
     assert (folder / "notes.md").read_text() == (folder / "more.md").read_text() == expected
     assert sorted(path.name for path in folder.iterdir()) == ["SKILL.md", "more.md", "notes.md"]
-    assert list((tmp_path / local_skills.STAGING_FOLDER).iterdir()) == []
+    leftovers = list((tmp_path / local_skills.STAGING_FOLDER).iterdir())
+    if collisions == 5:
+        assert leftovers and all(path.name.endswith(".replaced") for path in leftovers)
+        assert any((path / "notes.md").read_text() == "old\n" for path in leftovers)
+    else:
+        assert leftovers == []
+
+
+def test_failed_replacement_preserves_the_displaced_copy(tmp_path, monkeypatch):
+    old, new = _revision("old"), _revision("new")
+    local_skills.install(tmp_path, "wizard", *old)
+    rename = Path.rename
+
+    def fail_new(path, destination):
+        if path.parent.name == local_skills.STAGING_FOLDER and not path.name.endswith(".replaced"):
+            raise OSError("interrupted second rename")
+        return rename(path, destination)
+
+    monkeypatch.setattr(Path, "rename", fail_new)
+    with pytest.raises(Busy):
+        local_skills.install(tmp_path, "wizard", *new)
+    assert (tmp_path / "wizard/notes.md").read_text() == "old"
