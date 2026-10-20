@@ -1122,7 +1122,9 @@ const WORDS = {
     whatToPaste: 'What to paste on the new computer',
     thisComputer: {
       lead: 'Your Library lives only on this computer, so another computer cannot reach it.',
-      move: 'Move it to a private GitHub repository first: every computer of yours then shares it through your own GitHub sign-in, and nothing has to stay switched on.',
+      move: 'Move it to a private GitHub repository first.',
+      why: 'Why GitHub',
+      whyText: 'Every computer of yours then shares it through your own GitHub sign-in, and nothing has to stay switched on.',
     },
     github: {
       lead: 'On the new computer, paste this into the coding agent. Setup asks you to sign in to GitHub once; choose the same repository.',
@@ -1421,6 +1423,7 @@ const WORDS = {
     removeSubmit: 'Remove member',
     stopsSeeing: '{username} stops seeing this team\'s skills and groups.',
     keepTheirs: 'Skills they already added to their library stay theirs.',
+    invitesStop: 'Invite links {username} made that nobody has used yet stop working.',
     removed: 'Removed {username} from {team}.',
   },
   groups: {
@@ -1501,7 +1504,9 @@ const WORDS = {
   storage: {
     title: 'Where your Library lives',
     subtitle: 'The one place every computer of yours reads your skills from.',
-    moveLead: 'Say this to your coding agent on this computer. It moves the Library with its history, connects this computer to the new place, and restarts once. The old place is left as it was.',
+    moveLead: 'Say this to your coding agent on this computer.',
+    moveWhat: 'What it does',
+    moveDoes: 'It moves the Library with its history, connects this computer to the new place, and restarts once. The old place is left as it was.',
     database: 'Database',
     host: 'Host',
     repository: 'Repository',
@@ -2185,7 +2190,7 @@ function renderSidebar(r) {
     el('span', { class: 'avatar round', 'aria-hidden': 'true' }, state.user.username[0]),
     el('span', { class: 'who', title: state.user.full_name ? say(W.nameAndUsername, { name: state.user.full_name, username: state.user.username }) : state.user.username }, el('b', null, state.user.full_name || state.user.username),
       el('span', null, state.user.full_name ? state.user.username : plural(state.machines.length, 'computer'))),
-    btn(null, { class: 'btn ghost icon', fk: 'sign-out', title: W.signOut, 'aria-label': W.signOut, on: { click: ev => signOut(ev.currentTarget) } }, 'logout'));
+    btn(W.signOut, { class: 'btn ghost sm', fk: 'sign-out', on: { click: ev => signOut(ev.currentTarget) } }, 'logout'));
 }
 
 /* ---------- computers, as a folder tree ---------- */
@@ -2306,6 +2311,7 @@ const ADD_COMPUTER = {
     el('p', null, W.addComputer.thisComputer.lead),
     el('p', null, W.addComputer.thisComputer.move),
     el('a', { class: 'btn', style: 'align-self:flex-start', href: '#/storage', on: { click: () => document.querySelector('dialog[open]').close() } }, icon('globe'), el('span', null, W.seeWhereItCanMove)),
+    el('details', null, el('summary', null, W.addComputer.thisComputer.why), el('p', { class: 'help' }, W.addComputer.thisComputer.whyText)),
   ],
   github: lib => [
     el('p', null, W.addComputer.github.lead),
@@ -3259,7 +3265,7 @@ function membersTab(team, admin) {
               on: { click: () => confirmDialog({
                 title: say(W.members.removeTitle, { username: m.username, team: team.name }),
                 submitLabel: W.members.removeSubmit,
-                lines: [say(W.members.stopsSeeing, { username: m.username }), W.members.keepTheirs],
+                lines: [say(W.members.stopsSeeing, { username: m.username }), say(W.members.invitesStop, { username: m.username }), W.members.keepTheirs],
                 onSubmit: async () => {
                   await api(`/api/teams/${enc(team.name)}/members/${enc(m.username)}/remove`, {});
                   return say(W.members.removed, { username: m.username, team: team.name });
@@ -3416,6 +3422,7 @@ function moveLibraryDialog(key) {
     body: [
       el('p', null, W.storage.moveLead),
       copyField(STORAGE[key].say, W.whatToSay),
+      el('details', null, el('summary', null, W.storage.moveWhat), el('p', { class: 'help' }, W.storage.moveDoes)),
       el('p', { class: 'help' }, STORAGE[key].after),
     ],
   });

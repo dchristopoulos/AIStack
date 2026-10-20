@@ -680,6 +680,24 @@ async def test_an_invite_is_listed_as_pending_and_cancelled_from_the_list(sign_i
     assert dimitris.console_errors == []
 
 
+async def test_an_admin_removes_a_member_and_is_told_their_invites_stop(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    await _open_team(dimitris, "aistack")
+    await page.get_by_role("tab", name="Members").click()
+
+    await page.get_by_role("button", name="Remove alex from aistack…").click()
+    dialog = page.get_by_role("dialog", name="Remove alex from aistack?")
+    await expect(dialog).to_have_accessible_description(
+        re.compile("Invite links alex made that nobody has used yet stop working"))
+    await dialog.get_by_role("button", name="Remove member").click()
+
+    await expect(page.get_by_role("button", name="Remove alex from aistack…")).to_have_count(0)
+    members = _team(await dimitris.state(), "aistack")["members"]
+    assert "alex" not in [member["username"] for member in members]
+    assert dimitris.console_errors == []
+
+
 async def test_an_admin_deletes_a_team_and_members_keep_what_they_took(sign_in):
     maria = await sign_in("maria")
     taken = [skill["name"] for skill in (await maria.state())["skills"]
@@ -854,8 +872,10 @@ async def test_coming_back_after_the_session_ended_says_so_before_any_click(sign
 
 async def test_signing_out_closes_the_dashboard_in_that_browser(sign_in):
     maria = await sign_in("maria")
+    sign_out = maria.page.get_by_role("button", name="Sign out")
+    await expect(sign_out).to_have_text("Sign out")
 
-    await maria.page.get_by_role("button", name="Sign out").click()
+    await sign_out.click()
 
     await expect(maria.page.get_by_text("open my aistack dashboard")).to_be_visible()
     assert (await maria.page.request.get(f"{maria.base_url}/api/state")).status == 401
@@ -980,6 +1000,8 @@ async def test_the_longest_names_fit_without_scrolling_sideways(sign_in):
     assert await here.evaluate("node => node.scrollWidth <= node.clientWidth")
     await page.get_by_role("button", name="Open navigation").click()
     await expect(page.get_by_title(f"{LONG_FULL_NAME} ({LONG_USERNAME})")).to_be_visible()
+    # The name gives way, never the word on Sign out.
+    await expect(page.get_by_role("button", name="Sign out")).to_be_in_viewport(ratio=1)
 
 
 @_SQLITE_ONLY
