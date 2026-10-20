@@ -97,7 +97,7 @@ class InviteResult(TypedDict):
     description=cleandoc("""Make a new invite code for a team. Its admins can, and members an admin
     has let invite.
 
-    Use when the user wants to let someone into a team they administer. Show the link to
+    Use when the user wants to let someone into a team they may invite to. Show the link to
     the user exactly as returned and tell them to send it to the person: opening it says
     what to paste into their coding agent, which creates their account if they have none and
     puts them in the team. Someone already on this server can instead say "join a team with
@@ -109,7 +109,7 @@ class InviteResult(TypedDict):
     is shown here and never again: the server keeps only a hash of it.
 
     Args:
-        team: A team the user is an admin of.
+        team: A team the user is an admin of, or a member an admin has let invite.
 
     Returns:
         InviteResult containing:

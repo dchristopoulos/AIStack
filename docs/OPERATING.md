@@ -125,7 +125,7 @@ For Codex, change `url` in the `[mcp_servers.aistack]` block of `~/.codex/config
 
 The dashboard is where people see their skills and manage teams, groups, and members. It needs nothing from you: it is served by the same process at `/app`, with its JSON API under `/api`, on the same port as everything else. There is no second service, no build step, and nothing to configure.
 
-Nobody has a password. A user says "open my aistack dashboard" to their coding agent and gets a link that signs their browser in. The link works for five minutes and the session it starts lasts eight hours. Without a session, `/app` and `/api/...` answer 401.
+Nobody has a password. A user says "open my aistack dashboard" to their coding agent and gets a link that signs their browser in. The link works once, within five minutes, and the session it starts lasts eight hours. Without a session, `/app` and `/api/...` answer 401.
 
 The key that signs links and sessions is made at startup and kept in memory. **A restart signs every dashboard user out and voids every link and transfer URL not yet used.** Nothing is lost: a user asks their agent for a new link, and an agent that was mid-transfer calls the tool again. Machine tokens are not affected.
 

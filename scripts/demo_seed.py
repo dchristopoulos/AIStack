@@ -263,11 +263,11 @@ def main() -> None:
     print("Maria has an update to 'code-review' waiting. Alex is in 'aistack' and in no group, "
           "so the private 'security' group is hidden from him.\n")
     print_links(links)
-    print("\nAfter five minutes, `python scripts/demo_seed.py --links` prints new ones.")
+    print("\nFor new ones, run `python scripts/demo_seed.py --links`.")
 
 
 def print_links(links: dict[str, str]) -> None:
-    print("Dashboard links, each good for five minutes:")
+    print("Dashboard links, each good once, within five minutes:")
     for username, link in links.items():
         print(f"  {username:<9} {link}")
 
