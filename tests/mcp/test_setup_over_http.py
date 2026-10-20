@@ -137,15 +137,17 @@ async def test_the_setup_page_connects_codex_with_one_block_of_valid_toml(server
     assert text.index("grep -c '^\\[mcp_servers.aistack\\]'") < text.index("mkdir -p ~/.agents/skills")
 
 
-async def test_the_setup_page_offers_a_session_start_hook_that_only_prompts_a_sync(server_url):
-    """A hook cannot call an MCP tool at startup, and sync stays read-only (ADR-0018)."""
+async def test_the_setup_page_offers_an_installed_program_session_start_hook(server_url):
+    """The installed program runs sync while older clients retain the shell fallback."""
     text = (await _get(f"{_base(server_url)}/setup")).text
     hook = json.loads(re.search(r"```json\n(\{\"matcher\".*?)\n```", text, re.S).group(1))
 
     assert hook["matcher"] == "startup"
     assert [handler["type"] for handler in hook["hooks"]] == ["command"]
-    assert hook["hooks"][0]["command"].startswith("echo ")
-    assert "sync-aistack" in hook["hooks"][0]["command"]
+    assert hook["hooks"][0]["command"] == '"/full/path/to/aistack" sync --hook'
+    assert hook["hooks"][0]["timeout"] == 180
+    assert "uv tool install aistack-mcp" in text
+    assert "CODEX_HOME" in text
     # Offered, not imposed, and only once the server is connected.
     assert text.index("claude mcp add") < text.index("SessionStart")
     assert "If they decline" in text
@@ -161,16 +163,16 @@ async def test_the_sync_skill_is_served_exactly_as_shipped(server_url):
     assert response.headers["cache-control"] == "no-store"
 
 
-async def test_a_computer_that_skipped_setup_is_offered_the_same_hook_at_its_first_sync(
+async def test_legacy_sync_skill_keeps_the_reminder_for_clients_without_the_program(
         server_url):
-    """AUTO-09: one connected with "add my other computer" never saw setup's step 5."""
+    """Keep the prompt-only hook for older clients alongside program setup."""
     setup = (await _get(f"{_base(server_url)}/setup")).text
     document = sync_skill_document()
     first_sync = document[document.index("## 5. The first sync"):document.index("## 6.")]
     hook = re.search(r"```json\n(\{\"matcher\".*?)\n```", first_sync, re.S).group(1)
 
-    assert hook in setup
-    # Found by the command, so a hook setup already wrote is not offered twice.
+    assert "sync --hook" in setup
+    # Older clients without the program still receive a reminder from the fallback skill.
     assert json.loads(hook)["hooks"][0]["command"].endswith("run the sync-aistack skill.")
     assert "contains `run the sync-aistack skill`" in first_sync
 

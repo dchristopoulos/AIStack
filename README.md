@@ -68,7 +68,17 @@ Set up AIStack: fetch https://aistack.example.com/setup and follow it.
 Invite code: <the invite code>. My username is <a short handle like maria>, and my name is <your name>.
 ```
 
-The agent registers the computer and connects itself. Restart it once when it says so. To add another computer later, say "add my other computer to aistack" on one that is already connected.
+The agent creates your account and connects your first computer. Restart it once when it says so.
+
+For another computer, open **Computers → Add a computer** on the dashboard. Copy its command into a terminal on the new computer, for example:
+
+```text
+uvx aistack-mcp join https://aistack.example.com/mcp <computer-code>
+```
+
+Keep the dialog open and approve the request you just started. Its name and operating system describe the request; they do not prove who sent it. The command installs AIStack, configures the agents it finds, installs your Library's skills and runs sync. Restart the agent once. **Options** lets you choose a name, expiry, agent, an empty start, the hook, or explicitly allow connection without approval. Codes last 24 hours by default and work once. Cancel an unfamiliar request and make a new code.
+
+Chat can also make a code with `add_machine(computer_code=true)`. Older callers of `add_machine` still receive permanent-token setup instructions until a future minor release. If you have no connected computer left, ask the server operator for a recovery code.
 
 ### Everyday use
 
@@ -81,7 +91,7 @@ The agent registers the computer and connects itself. Restart it once when it sa
 | "share wizard with backend" | Gives the team a copy of your latest revision |
 | "remove wizard from this machine" | Disables it here; it stays in your Library and on other computers |
 
-Setup can also add a session-start hook that reminds the agent to sync, so your computers stay current without anyone asking.
+On a server connection, `aistack sync` does the file work through the existing MCP tools and signed downloads. Setup can install `aistack sync --hook` at session start using the installed command's full path. The hook is silent when nothing needs attention (plain HTTP still warns); questions about local edits, disabled skills and team offers still reach your agent for you to decide. Installs remain usable while the server is unavailable. A copied connection is refused when the operating system's computer id differs; add that computer separately. Older clients may omit the check, and a full clone may preserve that id ([ADR-0035](docs/adr/0035-the-program-does-the-mechanical-work.md)).
 
 ### Try the dashboard without an agent
 

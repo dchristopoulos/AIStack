@@ -33,7 +33,7 @@ A full local copy of a canonical skill, materialized into a harness's skill dire
 _Avoid_: Clone, stub, proxy
 
 **Sync**:
-Reconciling a machine's actual local state (what's on disk) with its desired state on the server (which of its user's own skills are enabled for that machine). Installs the missing, updates the stale, backs up what the Library does not have yet, offers team updates, and asks the user about everything else. Never deletes local files, never flips enabled silently, never applies a teammate's change, and is not discovery (that's `list_skills`). See ADR-0004, ADR-0006, ADR-0015.
+Reconciling a machine's actual local state (what's on disk) with its desired state on the server (which of its user's own skills are enabled for that machine). Installs the missing, updates the stale, backs up what the Library does not have yet, offers team updates, and asks the user about everything else. Never deletes local files, never flips enabled silently, never applies a teammate's change, and is not discovery (that's `list_skills`). The server-mode `aistack sync` program does the file work through the existing MCP tools and signed transfer URLs; the agent brings questions to the person. Its session-start hook is silent when nothing needs attention. See ADR-0004, ADR-0006, ADR-0015, ADR-0035.
 _Avoid_: Pull, update-all
 
 **Name**:
@@ -95,6 +95,14 @@ _Avoid_: Mute, leave (that is for teams), hide
 **Invite code**:
 Two different things. The server's invite code is operator config and admits a new person to the server (`join`). A team's invite code is made by a team admin, starts with `aistinv_`, and admits an existing user to that team (`join_team`), or a new person to the server and that team at once (`join`, ADR-0019). Say which one.
 _Avoid_: Bare "invite code" where both could be meant, password, key
+
+**Computer code**:
+A one-use secret for adding a computer to an existing account (ADR-0035), made in Add a computer or through an explicit `add_machine` code request. It lasts 24 hours by default and requires approval unless that code explicitly opts out. Reservation exchanges it for a temporary request bearer used to poll; the permanent machine token is returned only when the request completes. An operator recovery code skips approval and must be issued and revoked with the current server's admin command. Server and team invite codes keep their separate meanings.
+_Avoid_: Invite code, login code, permanent key, proof of identity
+
+**Computer fingerprint**:
+A hash of the registered machine id and the operating system's computer id, optionally supplied on sync to detect an accidentally copied connection. A mismatch requires adding a separate computer. It is not hardware attestation: older clients may omit it, modified clients may lie, and a full system clone may preserve the id. Raw computer ids are never sent or stored.
+_Avoid_: Device identity, second factor, anti-theft protection
 
 **Dashboard**:
 The web application at `/app` where a user sees their skills, machines, teams, and groups and manages them. Signed into by a short-lived link from `open_dashboard`; there are no passwords (ADR-0017).

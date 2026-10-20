@@ -142,6 +142,8 @@ Users create teams and groups themselves and administer them. An admin can delet
 
 No tool and no dashboard page performs the server's own admin operations. They are `aistack admin` commands, run inside the container. Each one is a single transaction on the server's own database setup, so it works the same on SQLite and PostgreSQL, and a name that does not exist answers with a sentence and changes nothing. `docker exec aistack aistack admin --help` lists them.
 
+Use the current deployed server container for recovery, offboarding and forgetting. Never run an older admin package against its database: an old `offboard` or `forget` does not know about computer codes and can leave an operator recovery code usable even when the account has no computers. This is an operator requirement; older connected agents remain supported.
+
 ### List users and machines
 
 ```bash
@@ -181,13 +183,15 @@ Its token is rejected from the next request on, and the record of which skills i
 
 ### A user has no machine left
 
-If their only machine was removed, or their first join went through but its answer never reached them, they cannot call `add_machine`, and joining again is refused because the username exists. Register a machine for them:
+If their only machine was removed, or their first join went through but its answer never reached them, they cannot call `add_machine`, and joining again is refused because the username exists. Make a one-use recovery code for them:
 
 ```bash
-docker exec aistack aistack admin register-machine maria new-laptop --os macos
+docker exec aistack aistack admin register-machine maria --computer-code
 ```
 
-`--os` is `macos`, `windows` or `linux`. It prints the token and what to paste, as `rotate` does.
+The command prints a recovery code and a terminal join command once, with its expiry. It uses `AISTACK_PUBLIC_URL`; otherwise add `--url https://aistack.example.com`. Send the command privately. It lasts 24 hours, is usable once, and deliberately bypasses approval because no connected computer remains. The joining program reports the new computer's name and operating system; no placeholder computer exists before redemption. Recovery codes are secrets, not proof of identity.
+
+For legacy clients, `register-machine maria new-laptop --os macos` still prints permanent-token instructions. Prefer the code flow. A normal dashboard computer code requires approval by default, and removing its issuer or rotating that issuer's token invalidates it and its pending request. Offboarding and forgetting cancel operator recovery codes too, when run with the current server's admin command.
 
 **Never delete a user.** Every skill and revision records who pushed it, and their teams and memberships point at them. Deleting someone either fails or destroys that record, and the record is how a team knows whose instructions their agents are running. To erase someone, forget them, below.
 
@@ -207,7 +211,7 @@ Their computers, sessions and teams keep working, and every revision they pushed
 docker exec aistack aistack admin offboard maria
 ```
 
-This takes them out of every team, then removes every computer of theirs. A team they were the only admin of needs someone to take it over, and the command refuses, changing nothing, until you name one: `--successor acme=dimitris`, once per team. A team they were the only member of is deleted. Their pending invites stop working: an invite works only while its maker is on the server and may still invite into its team.
+This cancels pending computer codes and requests, including operator recovery codes, takes them out of every team, then removes every computer of theirs. A team they were the only admin of needs someone to take it over, and the command refuses, changing nothing, until you name one: `--successor acme=dimitris`, once per team. A team they were the only member of is deleted. Their pending invites stop working: an invite works only while its maker is on the server and may still invite into its team.
 
 With no machine they have no token, so they can reach neither the MCP endpoint nor the dashboard, and a dashboard session they still hold ends with the machine that opened it. Their account, the skills they shared, and the `pushed_by` on each revision stay. Then rotate the server's invite code, below.
 
