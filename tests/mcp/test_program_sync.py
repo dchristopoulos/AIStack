@@ -138,3 +138,23 @@ async def test_refused_skill_fails_alone(server_url, home, monkeypatch):
     assert (home / ".claude/skills/wizard/SKILL.md").is_file()
     assert not (home / ".claude/skills/alpha").exists()
     assert "Installed wizard revision 1" in server_sync.output(reports)
+
+
+def test_a_team_offer_in_two_folders_is_one_question():
+    offer = {"name": "wizard", "team": "aistack", "from_revision": 1, "to_revision": 2, "pushed_by": "maria",
+             "own_changes": False, "different_skill": False}
+
+    def report(folder, harness, project=None):
+        return {"folder": folder, "harness": harness, "project_folder": project, "completed": [], "failures": [],
+                "diagnostics": [], "team_updates": [offer]}
+
+    text = server_sync.output([report("/h/.claude/skills", "claude_code"), report("/h/.agents/skills", "agents"),
+                               report("/p/.claude/skills", "claude_code", "project-key")], hook=True)
+    offers = json.loads(text.splitlines()[0].removeprefix("AIStack team updates: "))
+    assert [entry["name"] for entry in offers] == ["wizard"]
+    assert offers[0]["folders"] == [
+        {"folder": "/h/.claude/skills", "harness": "claude_code"},
+        {"folder": "/h/.agents/skills", "harness": "agents"},
+        {"folder": "/p/.claude/skills", "harness": "claude_code", "project": "project-key"},
+    ]
+    assert "Ask once per skill" in text and text.count("wizard") == 1

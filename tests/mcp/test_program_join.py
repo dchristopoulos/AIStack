@@ -407,3 +407,45 @@ async def test_accepted_plain_http_reaches_the_session_start_hook(server_url, jo
     commands = [hook["command"] for entry in entries for hook in entry["hooks"]]
     assert commands[0] == "keep-me"
     assert commands[1].endswith(" sync --hook --allow-http") and len(commands) == 2
+
+
+async def test_the_program_installs_before_the_code_is_reserved(server_url, session_factory, joining_home, monkeypatch):
+    owner = await join(server_url)
+    code = await call(server_url, owner, "add_machine", computer_code=True, options={"agents": "codex"})
+
+    def no_uv():
+        raise ValidationError("Install uv first, then run the join command again.")
+
+    monkeypatch.setattr(server_join, "_program", no_uv)
+    with pytest.raises(ValidationError, match="Install uv first"):
+        await server_join.join_computer(server_url, code["code"], say=lambda line: None)
+    with session_factory.begin() as session:
+        assert session.get(ComputerCode, uuid.UUID(code["id"])).request_hash is None
+
+
+async def test_rerun_on_a_connected_computer_sets_up_its_agents_again(server_url, joining_home):
+    (joining_home / ".claude").mkdir()
+    owner = await join(server_url)
+    code = await call(
+        server_url,
+        owner,
+        "add_machine",
+        computer_code=True,
+        options={"agents": "find", "approval": False, "skills": "empty"},
+    )
+    await server_join.join_computer(server_url, code["code"], say=lambda line: None)
+    recorded = json.loads((joining_home / ".aistack/setup.json").read_text())
+    assert recorded == {"url": server_url, "agents": ["claude-code", "codex"], "hook": True}
+    # Codex lost its connection and its hook; Claude Code still holds the key.
+    (joining_home / ".codex/config.toml").write_text('model = "favorite"\n')
+    (joining_home / ".codex/hooks.json").write_text(json.dumps({"hooks": {"SessionStart": []}}))
+    lines = []
+    result = await server_join.join_computer(server_url, code["code"], say=lines.append)
+    assert result["already_connected"] and result["agents"] == ["claude-code", "codex"]
+    config = tomllib.loads((joining_home / ".codex/config.toml").read_text())
+    token = json.loads((joining_home / ".claude.json").read_text())["mcpServers"]["aistack"]["headers"]["Authorization"]
+    assert config["model"] == "favorite"
+    assert config["mcp_servers"]["aistack"]["http_headers"]["Authorization"] == token
+    assert "sync --hook" in (joining_home / ".codex/hooks.json").read_text()
+    assert token.removeprefix("Bearer ") not in "\n".join(lines)
+    assert "aist_" not in (joining_home / ".aistack/setup.json").read_text()

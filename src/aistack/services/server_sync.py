@@ -136,7 +136,7 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path) -> list[d
 async def _folder(call, http, folder, arguments, top=None, blocked=()):
     listing = local_skills.observed(folder, excluded=blocked)
     report = await call("sync", local=listing, **arguments)
-    report.update(folder=str(folder), harness=arguments["harness"], completed=[], failures=[], diagnostics=[])
+    report.update(folder=str(folder), harness=arguments["harness"], project_folder=arguments.get("project"), completed=[], failures=[], diagnostics=[])
     for action in (*report["install"], *report["update"]):
         name = validated_skill_name(action["name"])
         try:
@@ -189,20 +189,29 @@ async def _folder(call, http, folder, arguments, top=None, blocked=()):
 
 def output(reports: list[dict], hook: bool = False) -> str:
     lines = []
+    offers: dict[tuple, dict] = {}
     for report in reports:
         if not hook:
             for done in report["completed"]:
                 pusher = f", pushed by {done['pushed_by']}" if "pushed_by" in done else ""
                 lines.append(f"{done['action'].capitalize()} {done['name']} revision {done['revision']}{pusher} ({report['folder']}).")
-        attention = {key: report.get(key) for key in ("ask", "team_updates", "cannot_back_up", "from_other_computers", "left_to_repository") if report.get(key)}
+        attention = {key: report.get(key) for key in ("ask", "cannot_back_up", "from_other_computers", "left_to_repository") if report.get(key)}
+        # One offer per skill, however many folders list it: the skill is one in the Library.
+        for offer in report.get("team_updates") or ():
+            key = (offer["name"], offer["team"], offer["to_revision"])
+            place = {"folder": report["folder"], "harness": report["harness"]} | ({"project": report["project_folder"]} if report.get("project_folder") else {})
+            offers.setdefault(key, offer | {"folders": []})["folders"].append(place)
         if report.get("first_sync"):
             attention["first_sync"] = True
         if attention:
             lines.append(f"AIStack decisions for {report['folder']} ({report['harness']}): " + json.dumps(attention, ensure_ascii=True))
-            lines.append("Ask the person before acting. enable/restore: get_skill then install; push: push_skill then upload; remove: delete only the already-disabled local folder; skip: no action. Preserve overwrites_local and loses_local_edits warnings. Team updates require an explicit get_skill(name, team) answer. First sync: ask whether to use the same skills in both folders; project offers: ask before installing from other computers.")
+            lines.append("Ask the person before acting. enable/restore: get_skill then install; push: push_skill then upload; remove: delete only the already-disabled local folder; skip: no action. Preserve overwrites_local and loses_local_edits warnings. First sync: ask whether to use the same skills in both folders; project offers: ask before installing from other computers.")
         lines.extend(report["failures"])
         if not hook:
             lines.extend(report.get("diagnostics", []))
+    if offers:
+        lines.append("AIStack team updates: " + json.dumps(list(offers.values()), ensure_ascii=True))
+        lines.append("Ask once per skill, even when several folders list it, naming pushed_by and any own_changes or different_skill warning. On yes: get_skill(name, team) once, with the harness and any project of its first folder, then run aistack sync again to install it in every folder listed.")
     if not lines and not hook:
         lines.append("AIStack skills are up to date.")
     return "\n".join(sanitized(line) for line in lines)

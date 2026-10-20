@@ -263,6 +263,40 @@ async def _initial_skills(
     return installed, questions
 
 
+def _configure(agents: list[str], connection: Connection, hook: bool, program: Path, allow_http: bool) -> None:
+    # All document parsing succeeds before any file receives the permanent key.
+    for path, text in _documents(agents, connection).items():
+        _write(path, text)
+    for agent in agents:
+        agent_config.skills_folder(agent).mkdir(parents=True, exist_ok=True)
+        if hook:
+            path = agent_config.add_session_start_hook(
+                agent, agent_config.server_hook_command(program, allow_http)
+            )
+            _write(path, path.read_text(encoding="utf-8"))
+
+
+def _holds(agent: str, connection: Connection) -> bool:
+    try:
+        return agent_config.remote_connection(agent) == connection
+    except agent_config.NotConnected:
+        return False
+
+
+async def _repair(connection: Connection, url: str, allow_http: bool) -> list[str]:
+    """Set up again what a finished join set up, from the choices it recorded (ADR-0035)."""
+    chosen = _read(Path.home() / ".aistack" / "setup.json")
+    if chosen.get("url") != url:
+        # Set up some other way: keep to the agents that hold this connection, add no hook.
+        chosen = {"agents": [agent for agent in agent_config.AGENTS if _holds(agent, connection)], "hook": False}
+    agents = [agent for agent in chosen.get("agents", []) if agent in agent_config.AGENTS]
+    hook = chosen.get("hook") is True
+    program = await asyncio.to_thread(_program)
+    _preflight(agents, hook, connection)
+    _configure(agents, connection, hook, program, allow_http)
+    return agents
+
+
 async def join_computer(server: str, code: str, *, allow_http: bool = False, say=print) -> dict:
     home = Path.home()
     url = _endpoint(server)
@@ -296,11 +330,15 @@ async def join_computer(server: str, code: str, *, allow_http: bool = False, say
                     raise
                 existing = None
             else:
+                agents = await _repair(existing, url, allow_http)
                 reports = await server_sync.sync_computer(existing, home, home)
-                say("This computer is already connected to AIStack.")
+                say("This computer is already connected to AIStack." + (f" Set up {', '.join(agents)} again." if agents else ""))
                 say(server_sync.output(reports, False))
-                return {"agents": [], "skills": 0, "already_connected": True}
+                return {"agents": agents, "skills": 0, "already_connected": True}
         async with asyncio.timeout(JOIN_TIMEOUT):
+            # Install first: a computer that cannot run the program stops before its code is
+            # reserved, and no request waits in Add a computer for a setup that cannot finish.
+            program = await asyncio.to_thread(_program)
             if not state:
                 bootstrap = Connection(url, code)
                 await _capabilities(bootstrap)
@@ -323,7 +361,6 @@ async def join_computer(server: str, code: str, *, allow_http: bool = False, say
             selected = state["options"]
             agents = _agents(selected["agents"])
             _preflight(agents, selected["hook"], Connection(url, "<pending>"))
-            program = await asyncio.to_thread(_program)
             if "token" not in state:
                 request = Connection(url, state["request_bearer"])
                 binding = await _binding(request, state["machine_id"])
@@ -352,17 +389,7 @@ async def join_computer(server: str, code: str, *, allow_http: bool = False, say
             connection = Connection(url, state["token"])
             binding = await _binding(connection, state["machine_id"])
             await _call(connection, "sync", local={}, identify=True, fingerprint=binding)
-            # All document parsing succeeds before any file receives the permanent key.
-            for path, text in _documents(agents, connection).items():
-                _write(path, text)
-            for agent in agents:
-                folder = agent_config.skills_folder(agent)
-                folder.mkdir(parents=True, exist_ok=True)
-                if selected["hook"]:
-                    path = agent_config.add_session_start_hook(
-                        agent, agent_config.server_hook_command(program, allow_http)
-                    )
-                    _write(path, path.read_text(encoding="utf-8"))
+            _configure(agents, connection, selected["hook"], program, allow_http)
             installed, questions = (0, [])
             if selected["skills"] == "library":
                 installed, questions = await _initial_skills(connection, agents, home)
@@ -379,6 +406,8 @@ async def join_computer(server: str, code: str, *, allow_http: bool = False, say
                 # Configuration and sync already succeeded. A lost acknowledgement or
                 # expired request must not retain a second permanent credential store.
                 say("Setup finished here, but the dashboard could not confirm completion.")
+            # No credential: what a rerun on this computer sets up again.
+            _json(home / ".aistack" / "setup.json", {"url": url, "agents": agents, "hook": selected["hook"]})
             state_path.unlink()
             say(f"Connected {', '.join(agents)} to AIStack; installed {installed} skills.")
             for question in questions:

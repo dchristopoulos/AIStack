@@ -47,25 +47,42 @@ def test_redirects_are_disabled():
     assert client.follow_redirects is False
 
 
-def test_two_hooks_cannot_sync_together(tmp_path):
+def test_two_session_start_hooks_sync_one_after_the_other(tmp_path, monkeypatch):
     import threading
-    barrier = threading.Barrier(2)
-    refused = []
+    import time
+    import types
 
-    def contender():
-        barrier.wait(5)
-        try:
-            with locked(tmp_path):
-                pass
-        except Busy:
-            refused.append(True)
+    from aistack.bootstrap import sync_lock
+
+    waiting, release, order = threading.Event(), threading.Event(), []
+
+    def sleep(seconds):
+        # The second sync found the lock taken and is waiting for it, not refusing.
+        waiting.set()
+        release.wait(5)
+
+    monkeypatch.setattr(sync_lock, "time", types.SimpleNamespace(monotonic=time.monotonic, sleep=sleep))
+
+    def second():
+        with locked(tmp_path):
+            order.append("second")
 
     with locked(tmp_path):
-        thread = threading.Thread(target=contender)
+        order.append("first")
+        thread = threading.Thread(target=second)
         thread.start()
-        barrier.wait(5)
-        thread.join(5)
-        assert refused == [True]
+        assert waiting.wait(5)
+        order.append("first done")
+        release.set()
+    thread.join(5)
+    assert order == ["first", "first done", "second"]
+
+
+def test_a_sync_held_past_the_wait_is_busy(tmp_path):
+    with locked(tmp_path):
+        with pytest.raises(Busy, match="Another AIStack sync is running"):
+            with locked(tmp_path, wait=0.3):
+                pass
 
 
 def test_server_hook_preserves_other_hooks_and_has_full_sync_timeout(tmp_path, monkeypatch):
