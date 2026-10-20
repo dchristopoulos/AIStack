@@ -146,7 +146,7 @@ list_teams, create_team(name), invite_to_team(team), join_team(code)
                               → the teams the caller is in; make one; get its invite
                                 code (admins); join one with a code
 open_dashboard                → a short-lived link that signs a browser in (ADR-0017)
-sync(local: {name: {path: sha256}}, harness?, here?, project?, repository?, fingerprint?)
+sync(local: {name: {path: sha256}}, harness?, here?, project?, repository?, fingerprint?, identify?)
                               → reconcile desired vs actual for one harness; see the sync
                                 contract. `here` names the session's repository, and
                                 `project` syncs that project's folder instead (ADR-0026)
@@ -272,7 +272,7 @@ Serialize cooperating commands, use independent staging, recheck the observation
 
 Manual output reports installs, updates, revisions and who pushed them. Hook output is empty after successful automatic work when nothing needs attention; questions include facts, permitted choices, tool calls and all replacement warnings. Bound network waits and polling, with a hook timeout sufficient for sync. Offline failures produce a short notice and leave installed skills usable. The bundled skill runs the program first and retains shell steps for computers without it and cloud sessions.
 
-An additive `sync` result identifies the authenticated machine. The program discovers that id without disk actions, then submits an optional fingerprint computed as sha256 of a single documented byte encoding of machine id and OS hardware id. Never send, store or log the raw hardware id. Atomically bind the first supplied fingerprint in nullable `machine.fingerprint_hash`; refuse later mismatches before disk actions with instructions to add the computer separately. Pairing reserves the machine id so the program can supply its fingerprint on creation. Missing hardware ids omit the fingerprint and produce a diagnostic. Older clients may omit it; modified clients may lie; full clones may retain the OS id; the first binding wins. This detects accidental copies, not hardware identity or token theft. Never reset or automatically replace a binding.
+An additive `sync` result identifies the authenticated machine. `identify=true` returns identity without consuming first-sync choices or reconciling files. The program discovers that id without disk actions, then submits an optional fingerprint computed as sha256 of a single documented byte encoding of machine id and OS hardware id. Never send, store or log the raw hardware id. Atomically bind the first supplied fingerprint in nullable `machine.fingerprint_hash`; refuse later mismatches before disk actions with instructions to add the computer separately. Pairing reserves the machine id so the program can supply its fingerprint on creation. Missing hardware ids omit the fingerprint and produce a diagnostic. Older clients may omit it; modified clients may lie; full clones may retain the OS id; the first binding wins. This detects accidental copies, not hardware identity or token theft. Never reset or automatically replace a binding.
 
 Measure a fifty-skill first sync and a no-change sync before adding bundles. Record environment, latency, archive sizes, request counts, elapsed time and hook startup. No-change transfers no archives, creates no revisions and changes no placements; last-synced timestamps may advance. The target is session-start sync in seconds; propose bundles only if measured results justify them.
 

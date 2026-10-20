@@ -1,7 +1,7 @@
 import logging
 from inspect import cleandoc
 from time import perf_counter
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from fastmcp.server.dependencies import get_http_request
 
@@ -13,7 +13,7 @@ from aistack.mcp.mcp import mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.mcp.routes.setup import SETUP_PATH
 from aistack.mcp.server_url import server_base_url
-from aistack.services import projects, sync_service
+from aistack.services import computer_fingerprint, projects, sync_service
 from aistack.services.harnesses import HarnessKey
 
 logger = logging.getLogger(__name__)
@@ -77,6 +77,7 @@ class Here(TypedDict):
 
 
 class SyncResult(TypedDict):
+    machine_id: NotRequired[str]
     install: list[InstallEntry]
     update: list[UpdateEntry]
     ask: list[AskEntry]
@@ -127,15 +128,38 @@ class SyncResult(TypedDict):
 @handle_mcp_errors
 def sync(local: dict[str, dict[str, str]],
          harness: HarnessKey = "claude_code", here: Here | None = None,
-         project: str | None = None, repository: list[str] | None = None) -> SyncResult:
+         project: str | None = None, repository: list[str] | None = None,
+         fingerprint: str | None = None, identify: bool = False) -> SyncResult:
     started_at = perf_counter()
     caller = current_machine()
+    fingerprint = computer_fingerprint.validated(fingerprint)
+    if identify:
+        if fingerprint is not None:
+            with get_session_factory().begin() as session:
+                computer_fingerprint.bind(session, caller.machine_id, caller.user_id, fingerprint)
+        # Identity discovery consumes no first-sync choice and performs no disk action.
+        return SyncResult(
+            machine_id=str(caller.machine_id),
+            install=[],
+            update=[],
+            ask=[],
+            backup=[],
+            cannot_back_up=[],
+            team_updates=[],
+            up_to_date=0,
+            sync_skill_url=None,
+            first_sync=False,
+            project=None,
+            left_to_repository=[],
+            from_other_computers=[],
+        )
     # Checked before the transaction. A remote can carry a token: it is never logged, and
     # only the key made from it is kept.
     where = None if here is None else projects.validated_here(here.get("path"),
                                                                here.get("remote"))
 
     with get_session_factory().begin() as session:
+        computer_fingerprint.bind(session, caller.machine_id, caller.user_id, fingerprint)
         report = sync_service.sync(session, caller.machine_id, caller.user_id, local, harness,
                                    here=where, project=project, repository=repository or ())
 
@@ -153,7 +177,9 @@ def sync(local: dict[str, dict[str, str]],
         f"Up to date: '{report.up_to_date}'. Project folder: '{project is not None}'. "
         f"Elapsed: '{(perf_counter() - started_at) * 1000:.0f}ms'."
     )
-    return sync_result(report, sync_skill_url)
+    result = sync_result(report, sync_skill_url)
+    result["machine_id"] = str(caller.machine_id)
+    return result
 
 
 def sync_result(report: sync_service.SyncReport, sync_skill_url: str | None) -> SyncResult:

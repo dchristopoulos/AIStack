@@ -33,6 +33,7 @@ class Machine(Base):
     # Only the sha256 of the bearer token is ever stored. Unique so that authentication is one
     # indexed lookup with nothing compared in Python: see the token service.
     token_hash: Mapped[str] = mapped_column(String(TOKEN_HASH_LENGTH), nullable=False, unique=True)
+    fingerprint_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                  default=utc_now)
     # The computer whose `add_machine` registered this one; None for a first computer. No

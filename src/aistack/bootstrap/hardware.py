@@ -4,9 +4,11 @@ Read only to tell a restored home folder from the computer it came from; it is n
 logged, or sent anywhere as it is, only as a hash salted with the machine id.
 """
 
+import hashlib
 import platform
 import re
 import subprocess
+import uuid
 from pathlib import Path
 
 # Linux and the BSDs: written once by the system at install, kept in /etc.
@@ -52,3 +54,12 @@ def _linux() -> str | None:
         if text:
             return text
     return None
+
+
+def fingerprint(machine_id: uuid.UUID, hardware: str) -> str:
+    """sha256 of canonical UUID text, a colon and the OS id, encoded as UTF-8.
+
+    Shared with local mode so existing local bindings retain their byte encoding.
+    Only the digest may leave this computer.
+    """
+    return hashlib.sha256(f"{machine_id}:{hardware}".encode("utf-8")).hexdigest()

@@ -4,11 +4,13 @@ import asyncio
 import json
 import os
 import subprocess
+import uuid
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
+from aistack.bootstrap import hardware
 from aistack.bundled import SYNC_SKILL_NAME, sync_skill_document
 from aistack.commons.exceptions import AIStackError, ValidationError
 from aistack.commons.text import sanitized
@@ -89,6 +91,14 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path) -> list[d
                 return result.structured_content
 
             tools = {tool.name: tool.inputSchema for tool in await mcp.list_tools()}
+            properties = tools.get("sync", {}).get("properties", {})
+            if not {"fingerprint", "identify"} <= properties.keys():
+                raise ValidationError("Upgrade the AIStack server to support the copied-computer check before running program sync. The existing manual sync path remains available.")
+            identity = await call("sync", local={}, identify=True)
+            hardware_id = hardware.hardware_id()
+            binding = None if hardware_id is None else hardware.fingerprint(uuid.UUID(identity["machine_id"]), hardware_id)
+            # The check must succeed before observing or moving skill files.
+            await call("sync", local={}, identify=True, fingerprint=binding)
             project = current_project(cwd, home) if "here" in tools.get("sync", {}).get("properties", {}) else None
             reports = []
             harnesses = local_skills.folders_in_use(home)
@@ -98,10 +108,12 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path) -> list[d
                 raise ValidationError("No coding agent's skills folder was found. Connect Claude Code or Codex first.")
             for harness in harnesses:
                 folder = local_skills.skills_folder(Harness(harness), home)
-                arguments = {"harness": harness}
+                arguments = {"harness": harness, "fingerprint": binding}
                 if project:
                     arguments["here"] = project[1]
                 report = await _folder(call, http, folder, arguments)
+                if hardware_id is None:
+                    report["diagnostics"].append("No OS computer id could be read. Copied connections cannot be detected on this computer; older clients and full clones also remain outside this check.")
                 reports.append(report)
             if project:
                 managed = next((report.get("project") for report in reports if (report.get("project") or {}).get("managed")), None)
@@ -111,7 +123,7 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path) -> list[d
                         _project_destination(project[0], folder)
                         relative = folder.relative_to(project[0]).as_posix()
                         blocked = _repository(project[0], relative)
-                        arguments = {"harness": harness, "here": project[1], "project": managed["key"], "repository": sorted(blocked)}
+                        arguments = {"harness": harness, "fingerprint": binding, "here": project[1], "project": managed["key"], "repository": sorted(blocked)}
                         reports.append(await _folder(call, http, folder, arguments, project[0], blocked))
             return reports
 
@@ -119,7 +131,7 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path) -> list[d
 async def _folder(call, http, folder, arguments, top=None, blocked=()):
     listing = local_skills.observed(folder, excluded=blocked)
     report = await call("sync", local=listing, **arguments)
-    report.update(folder=str(folder), harness=arguments["harness"], completed=[], failures=[])
+    report.update(folder=str(folder), harness=arguments["harness"], completed=[], failures=[], diagnostics=[])
     for action in (*report["install"], *report["update"]):
         name = validated_skill_name(action["name"])
         try:
@@ -184,6 +196,7 @@ def output(reports: list[dict], hook: bool = False) -> str:
             lines.append(f"AIStack decisions for {report['folder']} ({report['harness']}): " + json.dumps(attention, ensure_ascii=True))
             lines.append("Ask the person before acting. enable/restore: get_skill then install; push: push_skill then upload; remove: delete only the already-disabled local folder; skip: no action. Preserve overwrites_local and loses_local_edits warnings. Team updates require an explicit get_skill(name, team) answer. First sync: ask whether to use the same skills in both folders; project offers: ask before installing from other computers.")
         lines.extend(report["failures"])
+        lines.extend(report.get("diagnostics", []))
     if not lines and not hook:
         lines.append("AIStack skills are up to date.")
     return "\n".join(sanitized(line) for line in lines)

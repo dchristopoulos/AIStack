@@ -45,9 +45,10 @@ async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(serv
     await _call(server_url, machine_b, "get_skill", name="wizard")
     on_machine_b = {"wizard": local_digests(files={"notes.md": "one\n"})}
 
+    identity = await _call(server_url, machine_b, "sync", local={}, identify=True)
     before = await _call(server_url, machine_b, "sync", local=on_machine_b)
     skill_url = f"{server_url.removesuffix('/mcp')}/setup/sync-aistack/SKILL.md"
-    assert before == {"install": [], "update": [], "ask": [], "backup": [],
+    assert before == {"machine_id": identity["machine_id"], "install": [], "update": [], "ask": [], "backup": [],
                       "cannot_back_up": [],
                       "team_updates": [], "up_to_date": 1, "sync_skill_url": skill_url,
                       "first_sync": True, "project": None, "left_to_repository": [],
@@ -57,6 +58,7 @@ async def test_an_edit_pushed_on_one_machine_reaches_the_other_through_sync(serv
 
     after = await _call(server_url, machine_b, "sync", local=on_machine_b)
     assert after == {
+        "machine_id": identity["machine_id"],
         "install": [],
         "update": [{"name": "wizard", "from_revision": 1, "to_revision": 2,
                     "pushed_by": "dimitris"}],
@@ -94,14 +96,14 @@ async def test_sync_returns_metadata_and_never_file_content(server_url):
     assert set(report["install"][0]) == {"name", "revision", "pushed_by"}
 
 
-async def test_sync_takes_digests_and_nothing_else(server_url):
+async def test_sync_takes_digests_and_optional_identity_check(server_url):
     token = await _join(server_url)
 
     async with client_for(server_url, token) as client:
         sync = next(tool for tool in await client.list_tools() if tool.name == "sync")
 
     assert set(sync.inputSchema["properties"]) == {"local", "harness", "here", "project",
-                                                   "repository"}
+                                                   "repository", "fingerprint", "identify"}
     assert sync.inputSchema["required"] == ["local"]
     # The agent sees which folders there are, and what omitting one means.
     assert sync.inputSchema["properties"]["harness"]["enum"] == ["claude_code", "agents"]

@@ -15,6 +15,8 @@ pytestmark = pytest.mark.anyio
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
+    from aistack.bootstrap import hardware
+    monkeypatch.setattr(hardware, "hardware_id", lambda: "program-test-computer")
     monkeypatch.delenv("CODEX_HOME", raising=False)
     (tmp_path / ".claude").mkdir()
     return tmp_path

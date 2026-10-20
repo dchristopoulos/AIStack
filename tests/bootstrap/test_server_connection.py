@@ -79,3 +79,23 @@ def test_server_hook_preserves_other_hooks_and_has_full_sync_timeout(tmp_path, m
     entries = json.loads(path.read_text())["hooks"]["SessionStart"]
     assert len(entries) == 2
     assert entries[1]["hooks"][0]["timeout"] > 150
+
+
+def test_sync_command_explains_a_copied_connection(tmp_path, monkeypatch):
+    import sys
+
+    from fastmcp.exceptions import ToolError
+
+    from aistack.bootstrap import __main__ as command
+    from aistack.services import server_sync
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(sys, "argv", ["aistack", "sync"])
+    monkeypatch.setattr(agent_config, "remote_connection", lambda _: Connection("https://server/mcp", "secret"))
+
+    async def copied(*args):
+        raise ToolError("This looks like a different computer. Add it as its own computer from the dashboard.")
+
+    monkeypatch.setattr(server_sync, "sync_computer", copied)
+    with pytest.raises(SystemExit, match="different computer.*dashboard"):
+        command.run()

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import fastmcp
 import uvicorn
+from fastmcp.exceptions import ToolError
 from sqlalchemy.exc import OperationalError
 
 from aistack.bootstrap import admin_cli, agent_config, github_setup, self_update
@@ -558,7 +559,7 @@ def run() -> None:
                 print(rendered)
             if any(report["failures"] for report in reports):
                 sys.exit(1)
-        except (agent_config.NotConnected, AIStackError) as error:
+        except (agent_config.NotConnected, AIStackError, ToolError) as error:
             sys.exit(f"AIStack: {error}")
         except Exception:
             # Network/SDK exceptions can contain bearers and signed transfer URLs.

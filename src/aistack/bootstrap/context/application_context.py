@@ -1,5 +1,4 @@
 import getpass
-import hashlib
 import logging
 import os
 import platform
@@ -24,6 +23,7 @@ from aistack.bootstrap.configuration.settings.settings_config import (
     resolved_invite_code,
     validate_invite_code,
 )
+from aistack.bootstrap.hardware import fingerprint as _fingerprint
 from aistack.bootstrap.hardware import hardware_id
 from aistack.commons.exceptions import AIStackError, Conflict, NeedsNewerRelease
 from aistack.commons.release import UPDATE_AND_RESTART
@@ -412,11 +412,6 @@ def _this_computer(home: Path, machine_id: uuid.UUID) -> uuid.UUID:
     _write_whole(home / _MACHINE_ID_FILE, f"{restored}\n")
     logger.info(f"This home folder came from another computer. Machine: '{restored}'.")
     return restored
-
-
-def _fingerprint(machine_id: uuid.UUID, hardware: str) -> str:
-    # Salted with the id, so the file says nothing about the hardware on its own.
-    return hashlib.sha256(f"{machine_id}:{hardware}".encode()).hexdigest()
 
 
 def _write_whole(path: Path, text: str) -> None:
