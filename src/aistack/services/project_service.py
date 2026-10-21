@@ -186,6 +186,22 @@ def placed_elsewhere(session: Session, user_id: uuid.UUID, project_id: uuid.UUID
     ))
 
 
+def folder_paths(session: Session, user_id: uuid.UUID, machine_id: uuid.UUID,
+                 key: str) -> list[str]:
+    """Where one computer last saw one of the user's projects, in any harness: for
+    `aistack start` on that computer, which checks each on disk before using it."""
+    project = visibility.my_project(session, user_id, key)
+    if project is None:
+        return []
+    return list(dict.fromkeys(session.scalars(
+        select(MachineProject.path)
+        .where(MachineProject.machine_id == machine_id,
+               MachineProject.project_id == project.project_id,
+               MachineProject.path.is_not(None))
+        .order_by(MachineProject.harness)
+    )))
+
+
 _NOT_MANAGED = ("This computer does not manage a project '{key}'. Sync from inside the "
                 "repository first, or add it on the dashboard.")
 

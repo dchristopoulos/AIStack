@@ -497,6 +497,12 @@ def run() -> None:
         configure_logging("WARNING")
         server_join.run(sys.argv[2:])
         return
+    if sys.argv[1:2] == ["start"]:
+        from aistack.bootstrap import start_agent
+
+        configure_logging("WARNING")
+        start_agent.run(sys.argv[2:])
+        return
     parser = argparse.ArgumentParser(
         prog="aistack",
         description="With no command, serve your own Library to the coding agent that started "
@@ -510,7 +516,8 @@ def run() -> None:
                     "connects Claude Code or Codex to it; 'serve' runs the AIStack server, "
                     "'backup' and 'restore' copy its database, and 'admin' manages its "
                     "users, computers and teams; 'join <server> <code>' adds this computer "
-                    "with a computer code, and 'sync' reconciles its skills.")
+                    "with a computer code, and 'sync' reconciles its skills; 'start' starts "
+                    "Claude Code or Codex in a project with only the chosen skills.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
                                                        "sync-skill", "check", "export",
                                                        "github", "move", "connect", "backup",
