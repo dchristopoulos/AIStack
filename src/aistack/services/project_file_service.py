@@ -251,7 +251,7 @@ def _manages(session: Session, machine: Machine, project_id: uuid.UUID) -> bool:
 def set_ticked(session: Session, user_id: uuid.UUID, key: str, path: str,
                ticked: bool) -> None:
     """Show a file on the page, and keep its text current, or stop."""
-    row = _my_file(session, user_id, key, path)
+    row = my_file(session, user_id, key, path)
     row.ticked = bool(ticked)
     if not row.ticked:
         # Only a ticked file is read again; what was read of it goes with the tick.
@@ -263,7 +263,7 @@ def set_turned_off(session: Session, user_id: uuid.UUID, key: str, path: str,
     """Turn a repository's agent file off for this person, or on again. Each computer that
     manages the project does it in the agent's own settings at its next sync; the file itself
     is never touched."""
-    row = _my_file(session, user_id, key, path)
+    row = my_file(session, user_id, key, path)
     reason = _no_turn_off(row.agent)
     if reason is not None:
         raise ValidationError(f"{loggable(path)} cannot be turned off for you. {reason}")
@@ -289,7 +289,7 @@ def save_edit(session: Session, user_id: uuid.UUID, key: str, path: str, text: s
     lines = credential_lines(text)
     if lines and not confirmed:
         return rule_service.Saved(path, saved=False, credential_lines=lines)
-    row = _my_file(session, user_id, key, path)
+    row = my_file(session, user_id, key, path)
     if row.content_hash is None or row.content_hash != base_hash:
         raise Conflict(f"{loggable(path)} changed since you opened it. Open it again to edit "
                        "its current text.")
@@ -331,7 +331,7 @@ def commit(session: Session, user_id: uuid.UUID, key: str, path: str, note: str)
     """Ask the computer that wrote an edit to share it as a pull request, with `note` as the
     commit message. It does so at its next sync."""
     note = validated_note(note)
-    row = _my_file(session, user_id, key, path)
+    row = my_file(session, user_id, key, path)
     edit = session.scalar(select(ProjectFileEdit).where(
         ProjectFileEdit.project_file_id == row.project_file_id,
         ProjectFileEdit.cancelled_on.is_(None), ProjectFileEdit.shared_on.is_(None),
@@ -346,7 +346,7 @@ def commit(session: Session, user_id: uuid.UUID, key: str, path: str, note: str)
     return note
 
 
-def _my_file(session: Session, user_id: uuid.UUID, key: str, path: str) -> ProjectFile:
+def my_file(session: Session, user_id: uuid.UUID, key: str, path: str) -> ProjectFile:
     project = visibility.required_my_project(session, user_id, projects.validated_key(key))
     path = validated_path(path)
     row = session.scalar(select(ProjectFile).where(ProjectFile.project_id == project.project_id,
@@ -361,27 +361,28 @@ def all_files(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
     """Every listed file of the user's projects, as the page reads them: the ticked ones with
     their text, and each file's latest edit that is not cancelled."""
     rows = session.execute(
-        select(ProjectFile, Project.key)
+        select(ProjectFile, Project.key, Project.name)
         .join(Project, Project.project_id == ProjectFile.project_id)
         .where(Project.user_id == user_id)
         .order_by(bytewise(Project.key), bytewise(ProjectFile.path))).all()
-    ids = [row.project_file_id for row, _ in rows]
+    ids = [row.project_file_id for row, _, _ in rows]
     edits: dict[uuid.UUID, ProjectFileEdit] = {}
     for edit in session.scalars(select(ProjectFileEdit).where(
             ProjectFileEdit.project_file_id.in_(ids), ProjectFileEdit.cancelled_on.is_(None))
             .order_by(ProjectFileEdit.created_on)):
         edits[edit.project_file_id] = edit
     listed: dict[str, list[str]] = {}
-    for row, key in rows:
+    for row, key, _ in rows:
         listed.setdefault(key, []).append(row.path)
     read = {key: agent_files.all_readers(paths) for key, paths in listed.items()}
     shown = []
-    for row, key in rows:
+    for row, key, name in rows:
         edit = edits.get(row.project_file_id)
         # An agent this release does not know reads as None (ValueSet).
         agent = row.agent
         shown.append({
-            "project": key, "path": row.path, "agent": None if agent is None else agent.value,
+            "project": key, "project_name": name, "path": row.path,
+            "agent": None if agent is None else agent.value,
             "agents": [reader.value for reader in read[key].get(row.path, ())],
             "ticked": row.ticked, "turned_off": row.turned_off, "size": row.size,
             # Why it cannot be turned off for this person, or null when it can.

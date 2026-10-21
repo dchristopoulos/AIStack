@@ -8,7 +8,7 @@ from aistack.bootstrap import start_agent
 from aistack.bootstrap.context import application_context
 from aistack.bundled import RUN_COMMAND
 from aistack.db.models.harness import Harness
-from aistack.services import project_service, rule_service
+from aistack.services import project_service, repository_work
 from tests.local_dashboard import local_dashboard
 
 pytestmark = pytest.mark.anyio
@@ -74,20 +74,34 @@ async def test_the_local_dashboard_shows_the_library_and_nothing_a_team_needs(br
     assert state["server"] is False
 
 
-async def test_rules_are_listed_with_a_line_that_editing_comes_later(browser, tmp_path,
-                                                                     sqlite_url):
-    async with local_dashboard(tmp_path, sqlite_url) as (_, link):
-        caller = application_context.get_local_principal()
-        with application_context.get_session_factory().begin() as session:
-            rule_service.create(session, caller.user_id, "house-style", "# Style\n")
+async def test_a_rule_is_added_and_edited_here(browser, tmp_path, sqlite_url):
+    """ADR-0039: the localhost dashboard edits rules, and each change is in the Library's log."""
+    async with local_dashboard(tmp_path, sqlite_url) as (base, link):
         context = await browser.new_context()
         page = await context.new_page()
         await page.goto(link)
+        nav = page.get_by_role("navigation", name="Main")
+        await nav.get_by_role("link", name="Every project").click()
+        await nav.get_by_role("button", name="Add to Every project").click()
+        await page.get_by_role("menu", name="Add to Every project").get_by_role(
+            "menuitem", name="A rule…").click()
 
-        await page.get_by_text("Your rules (1)").click()
-        await expect(page.get_by_text("house-style")).to_be_visible()
-        await expect(page.get_by_text("Editing them comes in a later release.")).to_be_visible()
+        dialog = page.get_by_role("dialog", name="A rule for every project")
+        await dialog.get_by_role("textbox", name="Name").fill("house-style")
+        await dialog.get_by_role("textbox", name="Text").fill("# Style\n")
+        await dialog.get_by_role("button", name="Add rule").click()
+        await page.get_by_role("button", name="Open house-style").click()
+        await page.get_by_role("dialog", name="house-style").get_by_role(
+            "button", name="Edit").click()
+        editor = page.get_by_role("dialog", name="Edit house-style")
+        await editor.get_by_role("textbox", name="Text").fill("# Style\n- Short.\n")
+        await editor.get_by_role("button", name="Save").click()
+        await expect(page.get_by_text("Saved house-style as r2.")).to_be_visible()
+
+        state = await (await page.request.get(f"{base}/api/state")).json()
         await context.close()
+
+    assert [(rule["name"], rule["revision"]) for rule in state["rules"]] == [("house-style", 2)]
 
 
 async def test_open_a_terminal_starts_the_agent_on_this_computer(browser, tmp_path, sqlite_url,
@@ -143,9 +157,74 @@ async def test_look_inside_shows_a_folders_files_at_once(browser, tmp_path, sqli
         await expect(dialog.get_by_text("Found shop.")).to_be_visible()
         await expect(dialog.get_by_role("checkbox", name="AGENTS.md")).to_be_checked()
         await expect(dialog.get_by_role("checkbox", name="README.md")).not_to_be_checked()
-        await expect(dialog.get_by_label("What to say inside the repository")).to_have_value(
-            "add this project to aistack")
         await context.close()
+
+
+def _git(top, *arguments):
+    return subprocess.run(["git", "-C", str(top), "-c", "user.name=t",
+                           "-c", "user.email=t@example.com", *arguments], check=True,
+                          capture_output=True, text=True).stdout
+
+
+async def test_a_folder_here_is_added_then_a_file_is_edited_and_shared(browser, tmp_path,
+                                                                       sqlite_url, monkeypatch):
+    """ADR-0039: Add keeps the ticked files at once, Edit writes into this working copy, and
+    Commit… pushes a branch holding only that file."""
+    for name in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(name, "t")
+    for name in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(name, "t@example.com")
+    monkeypatch.setattr(repository_work.shutil, "which", lambda name: None)
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+    top = tmp_path / "shop"
+    top.mkdir()
+    for path, text in {"AGENTS.md": "# Shop\n", "README.md": "readme\n"}.items():
+        (top / path).write_bytes(text.encode())
+    _git(top, "init", "-q", "-b", "main")
+    _git(top, "add", ".")
+    _git(top, "commit", "-qm", "init")
+    _git(top, "remote", "add", "origin", str(remote))
+    _git(top, "push", "-qu", "origin", "main")
+    async with local_dashboard(tmp_path, sqlite_url) as (_, link):
+        context = await browser.new_context()
+        page = await context.new_page()
+        await page.goto(link)
+        await page.get_by_role("button", name="Add to Projects").click()
+        await page.get_by_role("menu", name="Add to Projects").get_by_role(
+            "menuitem", name="A folder on this computer…").click()
+        dialog = page.get_by_role("dialog", name="Add a project")
+        await dialog.get_by_label(re.compile("^Folder on ")).fill(str(top))
+        await dialog.get_by_role("button", name="Look inside").click()
+        await dialog.get_by_role("button", name="Add shop").click()
+
+        await expect(page.get_by_role("heading", name="shop", level=1)).to_be_visible()
+        table = page.get_by_role("table", name="What your agents read in shop")
+        await table.get_by_role("button", name="Open AGENTS.md").click()
+        panel = page.get_by_role("dialog", name="AGENTS.md")
+        await expect(panel.get_by_text("# Shop")).to_be_visible()
+        await panel.get_by_role("button", name="Edit").click()
+        editor = page.get_by_role("dialog", name="Edit AGENTS.md")
+        await editor.get_by_label("Text").fill("# Shop\nTests first.\n")
+        await editor.get_by_role("button", name="Save").click()
+        await expect(page.get_by_text("Wrote your edit into AGENTS.md on this computer.")
+                     ).to_be_visible()
+        assert (top / "AGENTS.md").read_text() == "# Shop\nTests first.\n"
+
+        await table.get_by_role("button", name="Open AGENTS.md").click()
+        panel = page.get_by_role("dialog", name="AGENTS.md")
+        await expect(panel.get_by_text(re.compile("^Changed on .+, not committed yet$"))
+                     ).to_be_visible()
+        await panel.get_by_role("button", name="Commit…").click()
+        share = page.get_by_role("dialog", name="Share your change to AGENTS.md")
+        await share.get_by_label("What is this change about?").fill("Say tests come first")
+        await share.get_by_role("button", name="Open a pull request").click()
+        await expect(page.get_by_text(re.compile("^Pushed branch aistack/agents-md-"))
+                     ).to_be_visible()
+        await context.close()
+
+    branches = _git(remote, "branch", "--list", "aistack/*")
+    assert _git(remote, "show", f"{branches.strip()}:AGENTS.md") == "# Shop\nTests first.\n"
 
 
 async def test_the_page_says_where_the_library_lives(browser, tmp_path, sqlite_url):

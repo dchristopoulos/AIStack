@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import re
+import subprocess
 import uuid
 from collections.abc import Callable
 from functools import wraps
@@ -36,7 +37,13 @@ from aistack.bootstrap.context.application_context import (
     refuse_when_moved,
 )
 from aistack.bundled import PLAIN_PAGE_SCRIPT, dashboard_page, plain_page, script_source
-from aistack.commons.exceptions import InvalidTicket, NotFound, SignedOut, ValidationError
+from aistack.commons.exceptions import (
+    AIStackError,
+    InvalidTicket,
+    NotFound,
+    SignedOut,
+    ValidationError,
+)
 from aistack.commons.release import release
 from aistack.mcp.auth.failure_limiter import client_address, note_failure
 from aistack.mcp.mcp import mcp
@@ -49,11 +56,13 @@ from aistack.services import (
     library_log,
     onboarding_service,
     project_file_service,
+    projects,
     repository_work,
     rule_service,
     skill_service,
     team_service,
 )
+from aistack.services.rule_validation import credential_lines, validated_rule_text
 from aistack.services.skill_archive import build_archive
 from aistack.services.transfer_ticket import DASHBOARD_SESSION_LIFETIME_SECONDS, DashboardHolder
 
@@ -233,8 +242,14 @@ async def state(request: Request) -> Response:
     holder = _signed_in(request)
     if is_local_mode():
         await asyncio.to_thread(library_before_read)
-    shown = await asyncio.to_thread(_in_transaction, _as_user(dashboard_service.state), holder,
-                                    read_only=True)
+        shown, folders = await asyncio.to_thread(_in_transaction, _state_here, holder,
+                                                 read_only=True)
+        # Read after the transaction: on SQLite a read must not hold anything while it works.
+        await asyncio.to_thread(_read_working_copies, shown["project_files"], folders,
+                                holder.machine_id)
+    else:
+        shown = await asyncio.to_thread(_in_transaction, _as_user(dashboard_service.state),
+                                        holder, read_only=True)
     # The page hides what only a server can do, such as creating a team, when this is false.
     # `this_computer` is the one whose link opened this session: the page says "This one".
     return _json(shown | {"server": not is_local_mode(), "library": library_description(),
@@ -473,55 +488,77 @@ def change_account(session, user_id, path, body):
                                                           _text(body, "full_name"))}
 
 
-# Rules (ADR-0036). Server only for now: in local mode each change is a log event, which
-# every computer must replay a release before any records one (ADR-0026). A project's key has
-# slashes in it, so `project` travels in the body.
-@_action("/rules", local=False, body_limit=_RULE_BODY_BYTES)
+# Rules (ADR-0036). Local mode records each change as a log event, in the release that adds
+# them (ADR-0039). A project's key has slashes in it, so `project` travels in the body.
+@_action("/rules", body_limit=_RULE_BODY_BYTES)
 def create_rule(session, user_id, path, body):
-    return _saved(rule_service.create(
-        session, user_id, _text(body, "name"), _text(body, "text"),
-        _text(body, "project", required=False), _texts(body, "agents"),
-        bool(_flag(body, "confirmed", required=False))))
+    project, text, agents = (_text(body, "project", required=False), _text(body, "text"),
+                             _texts(body, "agents"))
+    saved = rule_service.create(session, user_id, _text(body, "name"), text, project, agents,
+                                bool(_flag(body, "confirmed", required=False)))
+    if saved.saved:
+        _logged(session, library_log.RULE_CREATED, name=saved.name, project=project, text=text,
+                agents=agents)
+    return _saved(saved)
 
 
-@_action("/rules/{name}/edit", local=False, body_limit=_RULE_BODY_BYTES)
+@_action("/rules/{name}/edit", body_limit=_RULE_BODY_BYTES)
 def edit_rule(session, user_id, path, body):
-    return _saved(rule_service.edit(
-        session, user_id, path["name"], _text(body, "text"),
-        _text(body, "project", required=False), bool(_flag(body, "confirmed", required=False))))
+    project, text = _text(body, "project", required=False), _text(body, "text")
+    saved = rule_service.edit(session, user_id, path["name"], text, project,
+                              bool(_flag(body, "confirmed", required=False)))
+    if saved.saved and not saved.unchanged:
+        _logged(session, library_log.RULE_EDITED, name=saved.name, project=project, text=text)
+    return _saved(saved)
 
 
-@_action("/rules/{name}/rename", local=False)
+@_action("/rules/{name}/rename")
 def rename_rule(session, user_id, path, body):
-    return {"name": rule_service.rename(session, user_id, path["name"], _text(body, "new_name"),
-                                        _text(body, "project", required=False))}
+    project = _text(body, "project", required=False)
+    renamed = rule_service.rename(session, user_id, path["name"], _text(body, "new_name"),
+                                  project)
+    if renamed != path["name"]:
+        _logged(session, library_log.RULE_RENAMED, name=path["name"], project=project,
+                new_name=renamed)
+    return {"name": renamed}
 
 
-@_action("/rules/{name}/agents", local=False)
+@_action("/rules/{name}/agents")
 def set_rule_agents(session, user_id, path, body):
-    return {"agents": rule_service.set_agents(session, user_id, path["name"],
-                                              _texts(body, "agents"),
-                                              _text(body, "project", required=False))}
+    project = _text(body, "project", required=False)
+    agents = rule_service.set_agents(session, user_id, path["name"], _texts(body, "agents"),
+                                     project)
+    _logged(session, library_log.RULE_AGENTS_SET, name=path["name"], project=project,
+            agents=agents)
+    return {"agents": agents}
 
 
-@_action("/rules/{name}/remove", local=False)
+@_action("/rules/{name}/remove")
 def remove_rule(session, user_id, path, body):
-    return {"name": rule_service.archive(session, user_id, path["name"],
-                                         _text(body, "project", required=False))}
+    project = _text(body, "project", required=False)
+    removed = rule_service.archive(session, user_id, path["name"], project)
+    _logged(session, library_log.RULE_REMOVED, name=removed, project=project)
+    return {"name": removed}
 
 
 # A project's own files (ADR-0036): which the page shows, turning one off for this person, and
-# an edit for one computer to write and share. Server only, as rules are.
-@_action("/projects/files/tick", local=False)
+# an edit for one computer to write and share. Local mode logs a tick and a turn-off, and
+# writes and shares an edit on this computer through its own routes below (ADR-0039).
+@_action("/projects/files/tick")
 def tick_project_file(session, user_id, path, body):
-    project_file_service.set_ticked(session, user_id, _text(body, "project"),
-                                    _text(body, "path"), _flag(body, "ticked"))
+    project, file, ticked = _text(body, "project"), _text(body, "path"), _flag(body, "ticked")
+    project_file_service.set_ticked(session, user_id, project, file, ticked)
+    _logged(session, library_log.PROJECT_FILE_TICKED, project=project, path=file,
+            ticked=ticked)
 
 
-@_action("/projects/files/turn-off", local=False)
+@_action("/projects/files/turn-off")
 def turn_off_project_file(session, user_id, path, body):
-    project_file_service.set_turned_off(session, user_id, _text(body, "project"),
-                                        _text(body, "path"), _flag(body, "turned_off"))
+    project, file = _text(body, "project"), _text(body, "path")
+    turned_off = _flag(body, "turned_off")
+    project_file_service.set_turned_off(session, user_id, project, file, turned_off)
+    _logged(session, library_log.PROJECT_FILE_TURNED_OFF, project=project, path=file,
+            turned_off=turned_off)
 
 
 @_action("/projects/files/edit", local=False, body_limit=_RULE_BODY_BYTES)
@@ -536,6 +573,14 @@ def edit_project_file(session, user_id, path, body):
 def commit_project_file(session, user_id, path, body):
     return {"note": project_file_service.commit(session, user_id, _text(body, "project"),
                                                 _text(body, "path"), _text(body, "note"))}
+
+
+def _logged(session: Session, kind: str, **data: Any) -> None:
+    """In local mode, record a change as an event in its transaction, so every computer
+    sharing the Library makes it too (ADR-0025)."""
+    if is_local_mode():
+        library_log.record(session, library_log.new_event(
+            session, get_local_principal().machine_id, kind, **data))
 
 
 def _saved(saved: rule_service.Saved) -> dict[str, Any]:
@@ -675,6 +720,114 @@ async def look_inside(request: Request) -> Response:
 
 
 LOCAL_ROUTES.append(Route(API_PATH + "/projects/look-inside", look_inside, methods=["POST"]))
+
+
+# A project's own files on the localhost dashboard (ADR-0039). Adding one is a change to the
+# Library and is logged; an edit and its pull request change this computer's working copy and
+# its remote, not the Library. The folder is read before the transaction, and written after.
+@handle_route_errors
+async def add_project_here(request: Request) -> Response:
+    """Keep the files of the project a folder on this computer is in, ticked as the page
+    ticked them, as `aistack project add` does on a server."""
+    holder = _signed_in(request)
+    _require_request_header(request)
+    await asyncio.to_thread(refuse_when_moved)
+    body = await _json_body(request)
+    found = await asyncio.to_thread(repository_work.look_inside, _text(body, "folder"),
+                                    Path.home())
+    ticked = set(_texts(body, "ticked"))
+    key = found["key"] or projects.local_project_key(holder.machine_id, found["top"])
+    files = [{"path": file["path"], "size": file["size"]} for file in found["files"]]
+
+    def add(session, holder):
+        event = library_log.new_event(
+            session, holder.machine_id, library_log.PROJECT_FILES_LISTED, project=key,
+            project_name=found["name"], path=found["top"], files=files,
+            ticked=[file["path"] for file in files if file["path"] in ticked])
+        # The call replay makes, so this computer and every other one keep the same files.
+        library_log.apply(session, event)
+        library_log.record(session, event)
+
+    await asyncio.to_thread(_in_transaction, add, holder)
+    shared = await asyncio.to_thread(library_after_write)
+    return _json({"project": key, "name": found["name"], "shared": shared})
+
+
+@handle_route_errors
+async def edit_file_here(request: Request) -> Response:
+    """Write an edit of a repository file into this computer's working copy, only while the
+    file still has the text the edit started from."""
+    holder = _signed_in(request)
+    _require_request_header(request)
+    body = await _json_body(request, _RULE_BODY_BYTES)
+    text = validated_rule_text(_text(body, "text"))
+    lines = credential_lines(text)
+    if lines and not _flag(body, "confirmed", required=False):
+        return _json({"name": _text(body, "path"), "saved": False, "credential_lines": lines,
+                      "revision": None, "unchanged": False})
+    top, path = await _working_copy(holder, body)
+    written = await asyncio.to_thread(repository_work.write_here, top, path, text,
+                                      _text(body, "base_hash"))
+    return _json({"name": path, "saved": True, "credential_lines": lines, "revision": None,
+                  "unchanged": not written})
+
+
+@handle_route_errors
+async def share_file_here(request: Request) -> Response:
+    """Share a repository file as this computer's working copy has it: a branch holding only
+    that file, pushed, and a pull request opened with gh when it is signed in."""
+    holder = _signed_in(request)
+    _require_request_header(request)
+    body = await _json_body(request)
+    note = project_file_service.validated_note(_text(body, "note"))
+    top, path = await _working_copy(holder, body)
+    return _json(await asyncio.to_thread(repository_work.share_here, top, path, note)
+                 | {"note": note})
+
+
+async def _working_copy(holder: DashboardHolder, body: dict[str, Any]) -> tuple[Path, str]:
+    """Where a listed file of one of the person's projects is on this computer, checked on
+    disk: the folder this computer listed the project from, still that project's repository."""
+    key, path = _text(body, "project"), _text(body, "path")
+
+    def listed(session, holder):
+        row = project_file_service.my_file(session, holder.user_id, key, path)
+        folder = library_log.listed_from(session, holder.machine_id, key)
+        if folder is None:
+            raise NotFound("This project was not added on this computer, so its files are not "
+                           "here. Add it by its folder on this computer first.")
+        return folder, row.path
+
+    folder, path = await asyncio.to_thread(_in_transaction, listed, holder, read_only=True)
+    top = await asyncio.to_thread(repository_work.working_copy, folder, key, holder.machine_id,
+                                  Path.home())
+    return top, path
+
+
+def _state_here(session: Session, holder: DashboardHolder) -> tuple[dict, dict[str, str]]:
+    """The page's state, and the folder this computer listed each project from."""
+    shown = dashboard_service.state(session, holder.user_id)
+    keys = {file["project"] for file in shown["project_files"] if file["ticked"]}
+    return shown, {key: folder for key in keys
+                   if (folder := library_log.listed_from(session, holder.machine_id, key))}
+
+
+def _read_working_copies(files: list[dict], folders: dict[str, str], machine_id) -> None:
+    for key, folder in folders.items():
+        here = [file for file in files if file["project"] == key and file["ticked"]]
+        try:
+            top = repository_work.working_copy(folder, key, machine_id, Path.home())
+            repository_work.read_here(here, top, machine_id)
+        except (OSError, subprocess.SubprocessError, AIStackError):
+            # Moved or gone: the page shows the files unread until it is added again.
+            continue
+
+
+LOCAL_ROUTES.extend([
+    Route(API_PATH + "/projects/add", add_project_here, methods=["POST"]),
+    Route(API_PATH + "/projects/files/edit", edit_file_here, methods=["POST"]),
+    Route(API_PATH + "/projects/files/commit", share_file_here, methods=["POST"]),
+])
 
 
 def _session_cookie(request: Request) -> str:
