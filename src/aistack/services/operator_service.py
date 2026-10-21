@@ -21,6 +21,7 @@ from aistack.commons.text import loggable
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
 from aistack.db.models.project import Project
+from aistack.db.models.rule import Rule
 from aistack.db.models.skill import Skill
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
 from aistack.db.models.timestamps import as_utc
@@ -204,6 +205,8 @@ def forget(session: Session, username: str,
     # in this team, so both stay.
     team_service._delete_skills(session, select(Skill.skill_id)
                                 .where(Skill.team_id == personal.team_id))
+    # Their rules too; a project's go with the project, and revisions with their rule.
+    session.execute(delete(Rule).where(Rule.team_id == personal.team_id))
     session.execute(delete(Project).where(Project.user_id == user.user_id))
     user.full_name = None
     # Random, never derived from the old name, so it cannot be turned back into one.

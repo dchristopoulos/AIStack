@@ -48,3 +48,12 @@ def canonical_content_hash(digests: Mapping[str, str]) -> str:
         outer.update(path_bytes)
         outer.update(bytes.fromhex(digest))
     return outer.hexdigest()
+
+
+def text_hash(text: str) -> str:
+    """The content hash of a rule or a project's Markdown file (ADR-0036).
+
+    One file, whose name differs from agent to agent, so no path is framed in: the digest of
+    its UTF-8 bytes alone, which a computer gets from `file_digest` of the file it read.
+    """
+    return file_digest(text.encode("utf-8"))

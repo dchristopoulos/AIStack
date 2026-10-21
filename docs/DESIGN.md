@@ -390,6 +390,12 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/skills/{name}/restore` | `revision` | `revision`, the new one, and `unchanged`. Stores that revision's files as the newest, pushed by the user; every computer that has the skill installs it at its next sync. Server only |
 | `GET /api/teams/{team}/skills/{name}/changes` | | What taking the team's latest would change in the user's copy: `from_revision` (theirs), `to_revision`, `pushed_by`, `files` (each `path`, `change` as `added`, `removed` or `changed`, and a unified `diff`), and `truncated` when the diff was cut |
 | `POST /api/skills/{name}/remove` | `{}` | Removes the skill from the Library on every computer |
+| `POST /api/rules` | `name`, `text`, optional `project` (a key), optional `agents` (a list of `claude_code` and `codex`), optional `confirmed` | Keeps a new rule in the Library, for every project or for that project (ADR-0036); a rule of that name the user removed comes back with this text. Answers `name`, `saved`, `credential_lines`, `revision` and `unchanged`. When the text has lines that look like a credential and `confirmed` is not true, nothing is stored: `saved` is false and `credential_lines` names the lines (1-based). A rule for every project is its agents' whole file for every project, so each agent takes one such rule (`409` otherwise). At most 64 KiB. Server only |
+| `POST /api/rules/{name}/edit` | `text`, optional `project`, optional `confirmed` | Saves the text as the rule's next revision, or answers `unchanged` when it is the latest already. Answers as creating one does. Server only |
+| `GET /api/rules/{name}/text` | `?project=<key>` for a project's rule | `name`, `project`, `revision`, `text` (the latest), and `credential_lines`. Server only |
+| `POST /api/rules/{name}/rename` | `new_name`, optional `project` | `name`. Unique among the user's rules in the same place. Server only |
+| `POST /api/rules/{name}/agents` | `agents` (a list), optional `project` | `agents`: the agents the rule is now used for, replacing the choice before. Server only |
+| `POST /api/rules/{name}/remove` | optional `project` | `name`. Removes the rule from the Library; files on computers are left as they are. Server only |
 | `POST /api/machines/{machine_id}/remove` | `{}` | `removed`: the computer's name. Its token, sessions and transfer URLs end at once. The user's last computer is refused with `409`. Server only (ADR-0027) |
 | `POST /api/computer-codes` | Options (defaults above) | One-use code, command, id and expiry, shown once; server only |
 | `POST /api/computer-codes/{id}` | Options | Updates an unused code, without reviving expiry; server only |
@@ -450,6 +456,10 @@ A group's path contains slashes, so it always travels in the body and never in t
     }
   ],
   "removed": ["old-notes"],
+  "rules": [
+    {"name": "house-style", "project": null, "agents": ["claude_code", "codex"],
+     "revision": 3, "pushed_by": "dimitris", "updated_on": "2026-10-21T09:02:11.507114+00:00"}
+  ],
   "teams": [
     {
       "name": "acme", "kind": "SHARED", "role": "ADMIN", "sees_all_groups": false,
@@ -500,6 +510,7 @@ A group's path contains slashes, so it always travels in the body and never in t
 | `machines[].projects` | The projects this computer manages (ADR-0026), by name: each with its `key` and `name`, and its `folders`, one per harness, with the top level last seen there (`path`, null until that folder syncs, and shown only) and `last_synced_on` |
 | `skills` | The Library, by name, without the ones removed from it. Each has its `name` and `description` |
 | `removed` | The names of the skills removed from the Library, which Bring back can return |
+| `rules` | The user's rules (ADR-0036), not the removed ones: those for every project first, then each project's, by name. Each has its `name`, `project` (a key, or null for every project), `agents` (`claude_code`, `codex`), and its latest revision: `revision`, `pushed_by`, `updated_on` (UTC). The text is read with `GET /api/rules/{name}/text` |
 | `skills[].revision`, `pushed_by`, `updated_on`, `files` | The latest revision of the user's own copy: its number, who pushed it, when (UTC), and how many files it has |
 | `skills[].placements` | Where the skill is switched on: each a computer's id (`machine`) and a `harness`, oldest computer first. On is a decision the server holds, not proof the files are there yet. `revision` is the one last installed or pushed there, null until it has synced. `project` is the key of the project folder it is in, or null for the computer's own folder |
 | `skills[].source` | The team skill this copy was taken from or shared to, or null. Null also when the user can no longer see that skill: the copy is then simply theirs |
@@ -710,6 +721,71 @@ MACHINE_PROJECT_SKILL                          -- desired state in a project fol
   updated_on        TIMESTAMPTZ  NOT NULL
   UNIQUE (machine_project_id, skill_id)
 
+RULE                                           -- a rule kept in the Library (ADR-0036)
+  rule_id           UUID PK
+  team_id           FK → TEAM NOT NULL ON DELETE CASCADE      -- the personal team, as a skill's
+  project_id        FK → PROJECT NULL ON DELETE CASCADE      -- null: a rule for every project
+  name              VARCHAR(64)  NOT NULL
+  created_on        TIMESTAMPTZ  NOT NULL
+  pushed_by         FK → USER NOT NULL ON DELETE CASCADE
+  archived          BOOLEAN      NOT NULL      -- removed; the row stays, as a skill's does
+  UNIQUE (team_id, project_id, name)
+  UNIQUE INDEX (team_id, name) WHERE project_id IS NULL
+  INDEX (project_id)
+
+RULE_REVISION                                  -- immutable, like SKILL_VERSION
+  rule_revision_id  UUID PK
+  rule_id           FK → RULE NOT NULL ON DELETE CASCADE
+  revision          INT NOT NULL
+  text              TEXT NOT NULL              -- at most 64 KiB of UTF-8, enforced in the service
+  content_hash      VARCHAR(64) NOT NULL       -- sha256 of the text's UTF-8 bytes
+  created_on        TIMESTAMPTZ  NOT NULL
+  pushed_by         FK → USER NOT NULL ON DELETE CASCADE
+  UNIQUE (rule_id, revision)
+
+RULE_AGENT                                     -- an agent the rule is written for
+  rule_agent_id     UUID PK
+  rule_id           FK → RULE NOT NULL ON DELETE CASCADE
+  agent             ENUM(claude_code, codex, gemini_cli, cursor, copilot_cli, opencode) NOT NULL
+  UNIQUE (rule_id, agent)
+
+MACHINE_RULE                                   -- what a computer last had of a rule, per agent
+  machine_rule_id   UUID PK
+  machine_id        FK → MACHINE NOT NULL ON DELETE CASCADE
+  rule_id           FK → RULE NOT NULL ON DELETE CASCADE
+  agent             ENUM(as RULE_AGENT) NOT NULL
+  revision          INT NULL                   -- last written or backed up there
+  created_on, updated_on TIMESTAMPTZ NOT NULL
+  UNIQUE (machine_id, rule_id, agent)
+  INDEX (rule_id)
+
+PROJECT_FILE                                   -- a Markdown file tracked in a project
+  project_file_id   UUID PK
+  project_id        FK → PROJECT NOT NULL ON DELETE CASCADE
+  path              VARCHAR(1024) NOT NULL     -- relative to the top level
+  agent             ENUM(as RULE_AGENT) NULL   -- null: not an agent's file
+  ticked            BOOLEAN NOT NULL           -- only a ticked file is read again
+  turned_off        BOOLEAN NOT NULL           -- off for this person, through the agent's settings
+  size              INT NULL
+  text              TEXT NULL                  -- the last text a computer uploaded
+  content_hash      VARCHAR(64) NULL
+  snapshot_machine_id FK → MACHINE NULL ON DELETE SET NULL
+  snapshot_on       TIMESTAMPTZ NULL
+  created_on        TIMESTAMPTZ NOT NULL
+  UNIQUE (project_id, path)
+
+PROJECT_FILE_EDIT                              -- an edit waiting for a working copy, then a pull request
+  project_file_edit_id UUID PK
+  project_file_id   FK → PROJECT_FILE NOT NULL ON DELETE CASCADE
+  machine_id        FK → MACHINE NULL ON DELETE SET NULL   -- the working copy it goes to
+  text              TEXT NOT NULL
+  content_hash      VARCHAR(64) NOT NULL
+  base_hash         VARCHAR(64) NOT NULL       -- the text it started from
+  note              VARCHAR(4096) NULL         -- the commit message
+  pull_request_url  VARCHAR(2048) NULL
+  created_on        TIMESTAMPTZ NOT NULL
+  written_on, shared_on, cancelled_on TIMESTAMPTZ NULL
+
 LIBRARY_EVENT                                  -- local mode: one change to the Library, as a
   event_id          UUID PK                    -- GitHub Library's log holds it (ADR-0025).
                                                -- Written in the change's own transaction
@@ -727,7 +803,7 @@ SCHEMA_COMPATIBILITY                           -- one row (ADR-0024)
   updated_on        TIMESTAMPTZ  NOT NULL      -- written by migrate_schema after each upgrade
 ```
 
-Every foreign key in the project tables cascades, because a release from before them rebuilds a GitHub Library's copy by deleting only the tables it knows (ADR-0025).
+Every foreign key in the project and rule tables cascades or sets null, because a release from before them rebuilds a GitHub Library's copy by deleting only the tables it knows (ADR-0025).
 
 Behavior summary: install/adopt/restore/re-enable = `get_skill` (upsert MACHINE_SKILL enabled=true for that harness + materialize latest revision); remove = `disable_skill` + local folder deletion by the agent. Enabled skills always resolve to the latest revision (no pinning). One MCP call is one transaction: a push lands whole or not at all.
 

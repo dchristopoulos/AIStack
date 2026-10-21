@@ -35,6 +35,7 @@ from aistack.services import (
     project_service,
     projects,
     revisions,
+    rule_service,
     skill_service,
     team_service,
     visibility,
@@ -103,6 +104,8 @@ def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
         "removed": list(session.scalars(
             visibility.my_skills(user_id).with_only_columns(Skill.name)
             .where(Skill.archived.is_(True)).order_by(bytewise(Skill.name)))),
+        # The user's rules for every project and for each of their projects (ADR-0036).
+        "rules": rule_service.all_rules(session, user_id),
         "teams": teams,
     }
 

@@ -14,6 +14,7 @@ from aistack.mcp.mcp import mcp
 from aistack.services import (
     dashboard_service,
     onboarding_service,
+    rule_service,
     skill_service,
     team_service,
 )
@@ -101,6 +102,8 @@ def shown_fixture(engine):
         skill_service.share(session, maria.user.user_id, "code-review", "acme", "backend")
         skill_service.get_skill(session, me.machine.machine_id, me.user.user_id,
                                 "code-review", "acme")
+        rule_service.create(session, me.user.user_id, "house-style", "# Style\n",
+                            agents=["claude_code"])
         return dashboard_service.state(session, me.user.user_id)
 
 

@@ -5,8 +5,8 @@ place their machines install from. Every other team holds what its members share
 member sees a team skill when it sits at team level or in a group they may see; `group_access`
 has that rule.
 
-This is the only module that decides whether a user may reach a skill, a group, a team, or a
-project. Code elsewhere looks a skill up by team and name only after this module has
+This is the only module that decides whether a user may reach a skill, a group, a team, a
+project, or a rule. Code elsewhere looks a skill up by team and name only after this module has
 established the caller's place in that team. Anything the caller may not see is answered
 exactly like something that does not exist: same exception, same sentence.
 """
@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from aistack.commons.exceptions import NotFound
 from aistack.commons.text import loggable
 from aistack.db.models.project import Project
+from aistack.db.models.rule import Rule
 from aistack.db.models.skill import Skill
 from aistack.db.models.team import (
     GroupMember,
@@ -32,6 +33,7 @@ from aistack.db.models.team import (
 )
 from aistack.db.models.value_set import known
 from aistack.db.ordering import bytewise
+from aistack.services.rule_validation import validated_rule_name
 from aistack.services.skill_validation import validated_skill_name
 
 
@@ -90,6 +92,36 @@ def required_my_project(session: Session, user_id: uuid.UUID, key: str) -> Proje
         raise NotFound(f"You have no project '{loggable(key)}'. A project is added by syncing "
                        "inside its repository, or on the dashboard.")
     return project
+
+
+def my_rules(user_id: uuid.UUID) -> Select[tuple[Rule]]:
+    """The rules in the user's personal team, removed ones included (ADR-0036)."""
+    return (
+        select(Rule)
+        .join(Team, Team.team_id == Rule.team_id)
+        .where(Team.kind == TeamKind.PERSONAL, Team.created_by == user_id)
+    )
+
+
+def my_rule(session: Session, user_id: uuid.UUID, name: str,
+            project: Project | None) -> Rule | None:
+    """One of the user's rules for every project, or, with `project`, one of theirs for that
+    project. `project` is one `required_my_project` returned."""
+    where = Rule.project_id.is_(None) if project is None else (
+        Rule.project_id == project.project_id)
+    return session.scalar(my_rules(user_id).where(Rule.name == validated_rule_name(name), where))
+
+
+def required_my_rule(session: Session, user_id: uuid.UUID, name: str,
+                     project: str | None = None) -> tuple[Rule, Project | None]:
+    """One of the user's own rules, not removed, with its project when it has one. Another
+    person's rule, or one in another person's project, is answered as an unknown one."""
+    found = None if project is None else required_my_project(session, user_id, project)
+    rule = my_rule(session, user_id, name, found)
+    if rule is None or rule.archived:
+        where = "for every project" if found is None else f"for project '{found.key}'"
+        raise NotFound(f"You have no rule named '{name}' {where}. Names are exact.")
+    return rule, found
 
 
 @dataclass(frozen=True)
