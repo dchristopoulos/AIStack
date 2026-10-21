@@ -33,6 +33,7 @@ from aistack.db.models.machine_project import MachineProject
 from aistack.db.models.machine_project_skill import MachineProjectSkill
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.project import Project
+from aistack.db.models.rule import Rule, RuleAgent, RuleRevision
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.skill_version import SkillVersion
@@ -114,7 +115,19 @@ def _snapshot(session) -> dict:
             MachineProject.harness,
         ))
     }
+    # "" for a rule for every project, so the rows sort.
+    rules = {rule_id: (project_keys.get(project_id, ""), name)
+             for rule_id, project_id, name in session.execute(
+                 select(Rule.rule_id, Rule.project_id, Rule.name))}
     return {
+        "rules": sorted((*rules[rule_id], archived) for rule_id, archived in session.execute(
+            select(Rule.rule_id, Rule.archived)).all()),
+        "rule_revisions": sorted((*rules[rule_id], revision, content_hash)
+                                 for rule_id, revision, content_hash in session.execute(select(
+                                     RuleRevision.rule_id, RuleRevision.revision,
+                                     RuleRevision.content_hash)).all()),
+        "rule_agents": sorted((*rules[rule_id], agent.value) for rule_id, agent in session.execute(
+            select(RuleAgent.rule_id, RuleAgent.agent)).all()),
         "users": sorted(session.execute(select(User.user_id, User.username)).all()),
         "machines": sorted(session.execute(select(Machine.machine_id, Machine.name)).all()),
         "skills": sorted(session.execute(select(Skill.name, Skill.archived, Skill.description)
@@ -644,6 +657,108 @@ def test_project_replay_checks_names_harnesses_and_paths(tmp_path, invalid):
     with pytest.raises(AIStackError) as refused:
         _replayed(tmp_path, [_added(1, LAPTOP, "laptop"), event])
     assert f"log/{event.path}" in str(refused.value)
+
+
+def _rule_baseline() -> list[library_log.Event]:
+    return [
+        _added(1, LAPTOP, "laptop"),
+        _added(2, DESKTOP, "desktop"),
+        _event(3, LAPTOP, library_log.PROJECT_FOLDER_ADDED, project=PROJECT_KEY,
+               project_name="billing", harness="claude_code", path="/work/billing"),
+    ]
+
+
+def _random_rule_changes(seed: int, steps: int = 30) -> list[library_log.Event]:
+    """Two computers changing rules offline, in any order: names collide, a change reaches a
+    rule the other computer renamed or removed, both claim one agent's file for every project."""
+    chance = random.Random(seed)
+    names = ["style", "tests", "review"]
+    agents = ["claude_code", "codex"]
+    changes = []
+    for second in range(4, 4 + steps):
+        kind = chance.choice(sorted(library_log._RULE_KINDS))
+        data = {"name": chance.choice(names),
+                "project": chance.choice([None, PROJECT_KEY])}
+        if kind in (library_log.RULE_CREATED, library_log.RULE_EDITED):
+            data["text"] = f"# {chance.randrange(4)}\n"
+        if kind in (library_log.RULE_CREATED, library_log.RULE_AGENTS_SET):
+            data["agents"] = chance.sample(agents, chance.randrange(3))
+        if kind == library_log.RULE_RENAMED:
+            data["new_name"] = chance.choice(names)
+        at = f"2026-10-15T09:{second // 60:02d}:{second % 60:02d}.000000Z"
+        changes.append(library_log.Event(uuid.uuid4(), at, chance.choice([LAPTOP, DESKTOP]),
+                                         kind, data))
+    return changes
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_rule_events_converge_when_appended_or_rebuilt(portable_engine, tmp_path, seed):
+    baseline, changes = _rule_baseline(), _random_rule_changes(seed)
+    expected = _replayed(tmp_path, [*baseline, *changes])
+    # At most one live rule for every project per agent, however the computers raced.
+    every_project = [agent for project, name, agent in expected["rule_agents"]
+                     if project == "" and ("", name, False) in expected["rules"]]
+    assert len(every_project) == len(set(every_project))
+
+    session_factory = build_session_factory(portable_engine)
+    arrived = list(baseline)
+    with session_factory.begin() as session:
+        assert library_log.append(session, arrived)
+    random.Random(seed).shuffle(changes)
+    for event in changes:
+        arrived.append(event)
+        with session_factory.begin() as session:
+            if not library_log.append(session, library_log.arrivals(session, arrived)):
+                library_log.rebuild(session, arrived)
+    with session_factory() as session:
+        assert _snapshot(session) == expected
+
+
+def test_rule_events_replay_each_change_a_person_made(tmp_path):
+    def rule(second, kind, **data):
+        return _event(second, LAPTOP, kind, **{"project": None} | data)
+
+    replayed = _replayed(tmp_path, [
+        *_rule_baseline(),
+        rule(4, library_log.RULE_CREATED, name="style", text="# Style\n",
+             agents=["claude_code"]),
+        rule(5, library_log.RULE_EDITED, name="style", text="# Style\n- Short.\n"),
+        rule(6, library_log.RULE_RENAMED, name="style", new_name="house-style"),
+        rule(7, library_log.RULE_AGENTS_SET, name="house-style", agents=["codex", "claude_code"]),
+        # Confirmed on the computer that recorded it, so replay never asks again.
+        rule(8, library_log.RULE_CREATED, name="billing", project=PROJECT_KEY,
+             text="key: ghp_" + "a" * 36 + "\n", agents=[]),
+        rule(9, library_log.RULE_REMOVED, name="billing", project=PROJECT_KEY),
+        # The desktop, offline, made a rule for Claude Code's file too: it is kept, unused.
+        _event(10, DESKTOP, library_log.RULE_CREATED, name="other", project=None, text="b",
+               agents=["claude_code"]),
+    ])
+
+    assert replayed["rules"] == [("", "house-style", False), ("", "other", False),
+                                 (PROJECT_KEY, "billing", True)]
+    assert [row[:3] for row in replayed["rule_revisions"]] == [
+        ("", "house-style", 1), ("", "house-style", 2), ("", "other", 1),
+        (PROJECT_KEY, "billing", 1)]
+    assert replayed["rule_agents"] == [("", "house-style", "claude_code"),
+                                       ("", "house-style", "codex")]
+
+
+@pytest.mark.parametrize("data, sentence", [
+    ({"name": "Not A Name"}, "lowercase letters"),
+    ({"text": 5}, "must be text"),
+    ({"agents": ["cursor"]}, "writes rules for"),
+    ({"agents": "claude_code"}, "must be a list"),
+    ({"project": "example.com/someone/else"}, "no project"),
+    ({"project": "example.com/user@token/repo"}, "project"),
+], ids=["name", "text", "agent", "agents", "unknown-project", "forged-project"])
+def test_rule_replay_refuses_a_hand_edited_value_and_names_its_file(tmp_path, data, sentence):
+    event = _event(4, LAPTOP, library_log.RULE_CREATED,
+                   **{"name": "style", "project": None, "text": "a", "agents": []} | data)
+    with pytest.raises(AIStackError) as refused:
+        _replayed(tmp_path, [*_rule_baseline(), event])
+    assert f"log/{event.path}" in str(refused.value)
+    assert sentence in str(refused.value)
+    assert "token" not in str(refused.value)
 
 
 def _moves(second: int, by, **place) -> library_log.Event:
