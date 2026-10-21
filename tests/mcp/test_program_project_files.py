@@ -251,12 +251,13 @@ async def test_sharing_pushes_a_branch_holding_only_that_file(server_url, home, 
         [shown] = [file for file in project_file_service.all_files(session, user_id)
                    if file["path"] == "AGENTS.md"]
     assert shown["edit"]["branch"] == branch
-    assert _edits(session_factory)[-1].cancelled_on is None
+    assert _edits(session_factory)[-1].settled_on is None
 
     # Merged and pulled through the person's own git: the row is as it was before the edit.
     _git(repository, "commit", "-qm", "merged", "--", "AGENTS.md")
     await _sync(server_url, token, home, repository)
-    assert _edits(session_factory)[-1].cancelled_on is not None
+    settled = _edits(session_factory)[-1]
+    assert settled.settled_on is not None and settled.cancelled_on is None
     with session_factory() as session:
         [shown] = [file for file in project_file_service.all_files(session, user_id)
                    if file["path"] == "AGENTS.md"]

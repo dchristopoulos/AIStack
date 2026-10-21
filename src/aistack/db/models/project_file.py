@@ -107,10 +107,11 @@ class ProjectFileEdit(Base):
                                                  default=utc_now)
     written_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     shared_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # When the page stopped showing it: cancelled, or, once shared, settled when the working
-    # copy's commit had the shared text.
     cancelled_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
                                                           nullable=True)
+    # Once shared, when the working copy's commit had the shared text: the page stops showing
+    # it. None for an edit an older release saw settle, which then reads as still shared.
+    settled_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("ix_project_file_edit_project_file_id", "project_file_id"),
