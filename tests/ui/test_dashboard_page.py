@@ -14,9 +14,8 @@ from tests.mcp.conftest import call, join
 
 pytestmark = pytest.mark.anyio
 
-# The macbook's global Claude Code folder, and not its folder in the aistack project.
-GLOBAL_MACBOOK = re.compile(r"^macbook \/ Claude Code \d")
-
+# demo-api's page: its key, as the address carries it.
+DEMO_API = "github.com%2Fdemo-team%2Fdemo-api"
 
 def _skill(state: dict, name: str) -> dict:
     return next(skill for skill in state["skills"] if skill["name"] == name)
@@ -44,11 +43,25 @@ async def _open_team(opened, name: str) -> None:
         "link", name=name, exact=True).click()
 
 
-async def _open_computer(opened, name: str, agent: str = "Claude Code") -> None:
+async def _open_computer(opened, name: str) -> None:
     await opened.page.get_by_role("navigation", name="Main").get_by_role(
-        "link", name=f"{name} / {agent}, global folder").click()
-    await expect(opened.page.get_by_role("heading", name=f"{agent} on {name}", level=1)
+        "link", name=name).click()
+    await expect(opened.page.get_by_role("heading", name=name, level=1)).to_be_visible()
+
+
+async def _open_every_project(opened) -> None:
+    await opened.page.get_by_role("navigation", name="Main").get_by_role(
+        "link", name="Every project").click()
+    await expect(opened.page.get_by_role("heading", name="Every project", level=1)
                  ).to_be_visible()
+
+
+async def _add_to(page, place: str, item: str) -> None:
+    """Open the + beside a place in the sidebar and choose what to add there."""
+    await page.get_by_role("navigation", name="Main").get_by_role(
+        "button", name=f"Add to {place}").click()
+    await page.get_by_role("menu", name=f"Add to {place}").get_by_role(
+        "menuitem", name=item).click()
 
 
 async def test_a_sign_in_link_opens_the_library_and_the_page_talks_only_to_this_server(sign_in):
@@ -57,7 +70,7 @@ async def test_a_sign_in_link_opens_the_library_and_the_page_talks_only_to_this_
     await expect(maria.page.get_by_role("row").filter(has_text="code-review").get_by_role(
         "link", name="work-laptop / Claude Code")).to_be_visible()
     await expect(maria.page.get_by_role("navigation", name="Spaces")
-                 .get_by_role("link", name="aistack", exact=True)).to_be_visible()
+                 .get_by_role("link", name="demo-team", exact=True)).to_be_visible()
     assert "/app/login" not in maria.page.url
     assert maria.console_errors == []
     assert maria.foreign_requests == []
@@ -85,7 +98,7 @@ async def test_an_update_over_your_own_changes_names_them_before_it_is_taken(sig
 
 async def test_a_team_skill_named_like_one_of_yours_replaces_it_only_once_confirmed(sign_in):
     alex = await sign_in("alex")
-    await _open_team(alex, "aistack")
+    await _open_team(alex, "demo-team")
     row = alex.page.get_by_role("row").filter(has_text="release-notes")
 
     await row.get_by_role("button", name="Replace yours with the team's release-notes…").click()
@@ -100,7 +113,7 @@ async def test_a_team_skill_named_like_one_of_yours_replaces_it_only_once_confir
     await expect(row.get_by_text("In your library")).to_be_visible()
     mine = _skill(await alex.state(), "release-notes")
     assert (mine["revision"], mine["pushed_by"], mine["source"]["team"]) == (
-        2, "dimitris", "aistack")
+        2, "dimitris", "demo-team")
     assert alex.console_errors == []
 
 
@@ -120,7 +133,7 @@ async def test_an_offered_update_is_read_line_by_line_before_it_is_taken(sign_in
 async def test_your_own_version_comes_back_from_history_after_taking_the_teams(sign_in):
     """PH-08: 'yours stays in your history' had no way back."""
     alex = await sign_in("alex")
-    await _open_team(alex, "aistack")
+    await _open_team(alex, "demo-team")
     row = alex.page.get_by_role("row").filter(has_text="release-notes")
     await row.get_by_role("button", name="Replace yours with the team's release-notes…").click()
     await alex.page.get_by_role("dialog", name="Replace your release-notes?").get_by_role(
@@ -177,11 +190,11 @@ async def test_the_share_dialog_says_what_sharing_would_go_over_before_it_does(s
         "button", name="Share with a team…").click()
     dialog = alex.page.get_by_role("dialog", name="Share release-notes")
 
-    await expect(dialog.get_by_text("aistack already has a different release-notes, last "
+    await expect(dialog.get_by_text("demo-team already has a different release-notes, last "
                                     "pushed by dimitris")).to_be_visible()
     await expect(dialog.get_by_role("button", name="Share anyway")).to_be_visible()
     await dialog.get_by_role("button", name="Cancel").click()
-    assert _skill(_team(await alex.state(), "aistack"), "release-notes")["revision"] == 1
+    assert _skill(_team(await alex.state(), "demo-team"), "release-notes")["revision"] == 1
 
     maria = await sign_in("maria")
     await maria.page.get_by_role("button", name="Details of code-review").click()
@@ -189,7 +202,7 @@ async def test_the_share_dialog_says_what_sharing_would_go_over_before_it_does(s
         "button", name="Share with a team…").click()
     dialog = maria.page.get_by_role("dialog", name="Share code-review")
 
-    await expect(dialog.get_by_text("aistack has r2 of code-review from dimitris, which you "
+    await expect(dialog.get_by_text("demo-team has r2 of code-review from dimitris, which you "
                                     "never took")).to_be_visible()
     await expect(dialog.get_by_role("button", name="Share anyway")).to_be_visible()
     assert alex.console_errors == [] and maria.console_errors == []
@@ -203,7 +216,7 @@ async def test_a_skill_is_added_to_another_computer_from_the_library(sign_in):
     await row.get_by_role("button", name="Add to computer").click()
     dialog = page.get_by_role("dialog")
     await expect(dialog.get_by_role("checkbox", name="macbook / Claude Code", exact=True)).to_be_checked()
-    await dialog.get_by_role("checkbox", name="desktop / Claude Code").check()
+    await dialog.get_by_role("checkbox", name="desktop / Claude Code", exact=True).check()
     await dialog.get_by_role("button", name="Save").click()
 
     await expect(row.get_by_role("link", name="desktop / Claude Code")).to_be_visible()
@@ -238,109 +251,92 @@ async def test_ticks_in_a_skills_details_are_kept_when_another_button_leaves_it(
     await page.get_by_role("button", name="Details of release-notes").click()
     details = page.get_by_role("dialog", name="release-notes")
 
-    await details.get_by_role("checkbox", name="desktop / Claude Code").check()
+    await details.get_by_role("checkbox", name="desktop / Claude Code", exact=True).check()
     await details.get_by_role("button", name="Share with a team…").click()
 
     await expect(page.get_by_role("dialog", name="Share release-notes")).to_be_visible()
     assert _on(await dimitris.state(), "release-notes") == ["desktop", "macbook"]
     assert dimitris.console_errors == []
 
-async def test_a_computer_page_lists_what_it_has_and_removes_one(sign_in):
+async def test_a_skill_on_one_computer_says_so_and_a_tick_puts_it_on_every_one(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    await _open_computer(dimitris, "macbook")
-    table = page.get_by_role("table", name="Skills in Claude Code on macbook")
-    await expect(table.get_by_text("sql-style", exact=True)).to_be_visible()
+    await _open_every_project(dimitris)
+    table = page.get_by_role("table", name="Skills for every project")
+    row = table.get_by_role("row").filter(has_text="sql-style")
+    await expect(row.get_by_text("Only on macbook")).to_be_visible()
+    tick = row.get_by_role("checkbox", name="sql-style for Claude Code")
+    await expect(tick).not_to_be_checked()
 
-    await page.get_by_role("button", name="Remove sql-style from Claude Code on macbook").click()
+    await tick.click()
 
-    await expect(table.get_by_text("sql-style", exact=True)).to_have_count(0)
+    await expect(row.get_by_text("Only on macbook")).to_have_count(0)
+    await expect(tick).to_be_checked()
+    assert _on(await dimitris.state(), "sql-style") == ["desktop", "macbook"]
+
+    await tick.click()
+
     # Sync asks there before it deletes anything, and the Library keeps it.
     await expect(page.get_by_role("status").get_by_text(
-        "Removed sql-style from Claude Code on macbook. Its next sync asks whether to delete "
-        "the folder; it stays in your library.")).to_be_visible()
+        "Saved where sql-style is. Each computer picks up the change at its next sync "
+        "aistack.")).to_be_visible()
+    await expect(table.get_by_text("sql-style", exact=True)).to_have_count(0)
     state = await dimitris.state()
     assert _on(state, "sql-style") == []
     assert "sql-style" in [skill["name"] for skill in state["skills"]]
     assert dimitris.console_errors == []
 
 
-async def test_skills_are_added_to_a_computer_from_its_page(sign_in):
+async def test_skills_are_added_to_a_computer_from_its_plus_menu(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    await _open_computer(dimitris, "desktop")
-    await expect(page.get_by_text("Nothing in Claude Code on desktop yet")).to_be_visible()
 
-    await page.get_by_role("button", name="Add skills").first.click()
-    dialog = page.get_by_role("dialog")
+    await _add_to(page, "desktop", "Skills…")
+    dialog = page.get_by_role("dialog", name="Add skills to desktop")
     await dialog.get_by_label("Search your library").fill("notes")
     await expect(dialog.get_by_role("checkbox", name="code-review")).to_be_hidden()
     await dialog.get_by_role("checkbox", name="meeting-notes").check()
     await dialog.get_by_role("button", name="Add", exact=True).click()
 
-    await expect(page.get_by_role("table", name="Skills in Claude Code on desktop")
-                 .get_by_text("meeting-notes", exact=True)).to_be_visible()
+    await expect(dialog).to_have_count(0)
     assert _on(await dimitris.state(), "meeting-notes") == ["desktop", "macbook"]
-
-
-async def test_a_computer_copies_what_another_one_has(sign_in):
-    dimitris = await sign_in("dimitris")
-    page = dimitris.page
-    on_macbook = [skill["name"] for skill in (await dimitris.state())["skills"]
-                  if skill["placements"]]
-    await _open_computer(dimitris, "desktop")
-
-    await page.get_by_role("button", name="Copy from…").click()
-    dialog = page.get_by_role("dialog")
-    await expect(dialog.get_by_role("radio", name=GLOBAL_MACBOOK)).to_be_checked()
-    await dialog.get_by_role("button", name="Copy").click()
-
-    await expect(dialog).to_have_count(0)
-    state = await dimitris.state()
-    assert [name for name in on_macbook if _on(state, name) != ["desktop", "macbook"]] == []
-    assert len(on_macbook) == 7
-
-
-async def test_the_agents_folder_has_its_own_page_and_says_who_reads_it(sign_in):
-    dimitris = await sign_in("dimitris")
-    page = dimitris.page
-    await _open_computer(dimitris, "macbook", "Agents folder")
-    await expect(page.get_by_text("Read by Codex", exact=False)).to_be_visible()
-    table = page.get_by_role("table", name="Skills in Agents folder on macbook")
-    await expect(table.get_by_text("meeting-notes", exact=True)).to_be_visible()
-
-    await page.get_by_role("button", name="Copy from…").click()
-    dialog = page.get_by_role("dialog")
-    await expect(dialog.get_by_role("radio", name=GLOBAL_MACBOOK)).to_be_checked()
-    await dialog.get_by_role("button", name="Copy").click()
-
-    await expect(dialog).to_have_count(0)
-    await expect(table.get_by_text("sql-style", exact=True)).to_be_visible()
-    state = await dimitris.state()
-    macbook = state["machines"][0]["id"]
-    in_agents = sorted(skill["name"] for skill in state["skills"]
-                       if _placed(skill["placements"], macbook, "agents"))
-    in_claude = sorted(skill["name"] for skill in state["skills"]
-                       if _placed(skill["placements"], macbook, "claude_code"))
-    assert in_agents == in_claude
     assert dimitris.console_errors == []
 
 
-async def test_a_skill_is_added_to_the_agents_folder_from_the_library(sign_in):
+async def test_codex_is_a_column_that_names_the_other_agents_reading_the_same_folder(sign_in):
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    await _open_every_project(dimitris)
+    table = page.get_by_role("table", name="Skills for every project")
+    codex = table.get_by_role("columnheader", name="Codex")
+    await expect(codex.locator("[title*='Gemini CLI']")).to_have_count(1)
+    await expect(table.get_by_role("checkbox", name="meeting-notes for Codex")).to_be_checked()
+    # The `agents` harness is never shown as a place of its own.
+    await expect(page.get_by_text("Agents folder")).to_have_count(0)
+
+    await table.get_by_role("checkbox", name="sql-style for Codex").check()
+
+    await expect(table.get_by_role("checkbox", name="sql-style for Codex")).to_be_checked()
+    state = await dimitris.state()
+    macbook = state["machines"][0]["id"]
+    assert _placed(_skill(state, "sql-style")["placements"], macbook, "agents")
+    assert dimitris.console_errors == []
+
+
+async def test_a_skill_is_added_to_codex_from_the_library(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
     row = page.get_by_role("row").filter(has_text="sql-style")
 
     await row.get_by_role("button", name="Add to computer").click()
     dialog = page.get_by_role("dialog")
-    await expect(dialog.get_by_role("checkbox", name="macbook / Agents folder")).not_to_be_checked()
-    await dialog.get_by_role("checkbox", name="macbook / Agents folder").check()
+    await expect(dialog.get_by_role("checkbox", name="macbook / Codex")).not_to_be_checked()
+    await dialog.get_by_role("checkbox", name="macbook / Codex").check()
     await dialog.get_by_role("button", name="Save").click()
 
-    await expect(row.get_by_role("link", name="macbook / Agents folder")).to_be_visible()
+    await expect(row.get_by_role("link", name="macbook / Codex")).to_be_visible()
     macbook = (await dimitris.state())["machines"][0]["id"]
-    assert _placed(_skill(await dimitris.state(),
-                                                                "sql-style")["placements"], macbook, "agents")
+    assert _placed(_skill(await dimitris.state(), "sql-style")["placements"], macbook, "agents")
 
 
 async def test_adding_a_computer_uses_a_code_and_approval(sign_in, server_url):
@@ -405,44 +401,45 @@ async def test_a_code_waits_under_the_computers_until_it_is_cancelled(sign_in):
 async def test_an_agent_is_added_to_a_computer_and_given_a_skill(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    navigation = page.get_by_role("navigation", name="Main")
 
-    await navigation.get_by_role("button", name="Add an agent to desktop").click()
-    dialog = page.get_by_role("dialog")
-    await dialog.get_by_role("radio", name="Agents folder").check()
-    await dialog.get_by_role("button", name="Open its folder").click()
-    await expect(page.get_by_role("heading", name="Agents folder on desktop", level=1)).to_be_visible()
-    await expect(navigation.get_by_role("link", name="desktop / Agents folder")).to_be_visible()
+    await _add_to(page, "desktop", "A coding agent…")
+    dialog = page.get_by_role("dialog", name="Add an agent to desktop")
+    await dialog.get_by_role("radio", name="Codex").check()
+    await dialog.get_by_role("button", name="Add", exact=True).click()
+    await expect(page.get_by_role("heading", name="desktop", level=1)).to_be_visible()
+    await expect(page.get_by_role("table", name="Coding agents").get_by_text("Codex")).to_be_visible()
 
-    await page.get_by_role("button", name="Add skills").first.click()
-    await page.get_by_role("dialog").get_by_role("checkbox", name="meeting-notes").check()
-    await page.get_by_role("dialog").get_by_role("button", name="Add", exact=True).click()
+    await _add_to(page, "desktop", "Skills…")
+    dialog = page.get_by_role("dialog", name="Add skills to desktop")
+    # Each agent there is ticked to start with; one is taken off for this skill.
+    await dialog.get_by_role("checkbox", name="Claude Code").uncheck()
+    await dialog.get_by_role("checkbox", name="meeting-notes").check()
+    await dialog.get_by_role("button", name="Add", exact=True).click()
 
-    await expect(page.get_by_role("table", name="Skills in Agents folder on desktop")
-                 .get_by_text("meeting-notes", exact=True)).to_be_visible()
+    await expect(dialog).to_have_count(0)
     state = await dimitris.state()
     desktop = next(m["id"] for m in state["machines"] if m["name"] == "desktop")
     assert _placed(_skill(state, "meeting-notes")["placements"], desktop, "agents")
+    assert not _placed(_skill(state, "meeting-notes")["placements"], desktop, "claude_code")
     assert dimitris.console_errors == []
-
 
 
 async def test_an_agent_picked_by_mistake_is_taken_off_the_list(sign_in):
     """UI-20: an agent added in this browser could not be removed again."""
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    navigation = page.get_by_role("navigation", name="Main")
-    await navigation.get_by_role("button", name="Add an agent to desktop").click()
-    dialog = page.get_by_role("dialog")
-    await dialog.get_by_role("radio", name="Agents folder").check()
-    await dialog.get_by_role("button", name="Open its folder").click()
+    await _add_to(page, "desktop", "A coding agent…")
+    dialog = page.get_by_role("dialog", name="Add an agent to desktop")
+    await dialog.get_by_role("radio", name="Codex").check()
+    await dialog.get_by_role("button", name="Add", exact=True).click()
+    agents = page.get_by_role("table", name="Coding agents")
 
-    await page.get_by_role("button", name="Remove from this list").click()
+    await page.get_by_role("button", name="Remove Codex from this list").click()
 
-    await expect(navigation.get_by_role("link", name="desktop / Agents folder")).to_have_count(0)
+    await expect(agents.get_by_text("Codex")).to_have_count(0)
     await page.reload()
-    await expect(navigation.get_by_role("link", name="desktop / Claude Code")).to_be_visible()
-    await expect(navigation.get_by_role("link", name="desktop / Agents folder")).to_have_count(0)
+    await expect(agents.get_by_text("Claude Code")).to_be_visible()
+    await expect(agents.get_by_text("Codex")).to_have_count(0)
     assert dimitris.console_errors == []
 
 
@@ -484,7 +481,7 @@ async def test_a_full_name_set_in_settings_is_what_teammates_read(sign_in):
     await expect(alex.page.get_by_text("Your teammates now see Alex Georgiou.")).to_be_visible()
     assert (await alex.state())["user"] == {"username": "alex", "full_name": "Alex Georgiou"}
     dimitris = await sign_in("dimitris")
-    await _open_team(dimitris, "aistack")
+    await _open_team(dimitris, "demo-team")
     await dimitris.page.get_by_role("tab", name="Members").click()
     row = dimitris.page.get_by_role("row").filter(has_text="Alex Georgiou")
     await expect(row.get_by_text("alex", exact=True)).to_be_visible()
@@ -499,14 +496,14 @@ async def test_a_skill_is_shared_into_a_nested_group_from_a_dialog(sign_in):
     await page.get_by_role("dialog", name="meeting-notes").get_by_role(
         "button", name="Share with a team…").click()
     dialog = page.get_by_role("dialog")
-    await dialog.get_by_label("Team", exact=True).select_option("aistack")
+    await dialog.get_by_label("Team", exact=True).select_option("demo-team")
     await dialog.get_by_role("radio", name="developers/backend").check()
     await dialog.get_by_role("button", name="Share", exact=True).click()
 
     await expect(dialog).to_have_count(0)
-    aistack = _team(await dimitris.state(), "aistack")
+    team = _team(await dimitris.state(), "demo-team")
     assert ("meeting-notes", "developers/backend", "dimitris") in [
-        (skill["name"], skill["group"], skill["pushed_by"]) for skill in aistack["skills"]]
+        (skill["name"], skill["group"], skill["pushed_by"]) for skill in team["skills"]]
     assert dimitris.console_errors == []
 
 
@@ -521,13 +518,13 @@ async def test_escape_closes_a_dialog_and_gives_focus_back(sign_in):
 
     await expect(page.get_by_role("dialog")).to_have_count(0)
     await expect(opener).to_be_focused()
-    assert [team["name"] for team in (await dimitris.state())["teams"]] == ["aistack"]
+    assert [team["name"] for team in (await dimitris.state())["teams"]] == ["demo-team"]
 
 
 async def test_an_admin_makes_a_group_inside_a_group(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    await _open_team(dimitris, "aistack")
+    await _open_team(dimitris, "demo-team")
     await page.get_by_role("tab", name="Groups").click()
 
     await page.get_by_role("button", name="New group").click()
@@ -539,15 +536,15 @@ async def test_an_admin_makes_a_group_inside_a_group(sign_in):
     await expect(dialog).to_have_count(0)
     await expect(page.get_by_role("switch", name="developers/backend/frontend is private")
                  ).to_be_visible()
-    aistack = _team(await dimitris.state(), "aistack")
-    assert "developers/backend/frontend" in [group["path"] for group in aistack["groups"]]
+    team = _team(await dimitris.state(), "demo-team")
+    assert "developers/backend/frontend" in [group["path"] for group in team["groups"]]
 
 
 
 async def test_an_admin_moves_a_team_skill_into_a_group(sign_in):
     """IMP-04: no browser test opened Move…."""
     dimitris = await sign_in("dimitris")
-    await _open_team(dimitris, "aistack")
+    await _open_team(dimitris, "demo-team")
     page = dimitris.page
 
     await page.get_by_role("button", name="Manage release-notes").click()
@@ -557,19 +554,19 @@ async def test_an_admin_moves_a_team_skill_into_a_group(sign_in):
     await dialog.get_by_role("button", name="Move").click()
 
     await expect(page.get_by_text("Moved release-notes to")).to_be_visible()
-    moved = _skill(_team(await dimitris.state(), "aistack"), "release-notes")
+    moved = _skill(_team(await dimitris.state(), "demo-team"), "release-notes")
     assert moved["group"] == "developers"
 
 
 async def test_removing_a_team_skill_says_its_history_there_goes_with_it(sign_in):
     """The team's revisions are deleted for good, so the dialog says so before it happens."""
     dimitris = await sign_in("dimitris")
-    await _open_team(dimitris, "aistack")
+    await _open_team(dimitris, "demo-team")
     page = dimitris.page
 
     await page.get_by_role("button", name="Manage commit-messages").click()
     await page.get_by_role("menuitem", name="Remove from team").click()
-    confirm = page.get_by_role("dialog", name="Remove commit-messages from aistack?")
+    confirm = page.get_by_role("dialog", name="Remove commit-messages from demo-team?")
     await expect(confirm.get_by_text("Its history in the team is deleted and cannot be "
                                      "restored.")).to_be_visible()
     await expect(confirm.get_by_text("People who already added it to their library keep "
@@ -577,9 +574,9 @@ async def test_removing_a_team_skill_says_its_history_there_goes_with_it(sign_in
     await confirm.get_by_role("button", name="Remove from team").click()
 
     await expect(page.get_by_role("status").get_by_text(
-        "Removed commit-messages from aistack.")).to_be_visible()
+        "Removed commit-messages from demo-team.")).to_be_visible()
     state = await dimitris.state()
-    assert "commit-messages" not in [skill["name"] for skill in _team(state, "aistack")["skills"]]
+    assert "commit-messages" not in [skill["name"] for skill in _team(state, "demo-team")["skills"]]
     assert _skill(state, "commit-messages")["source"] is None
 
 
@@ -589,11 +586,11 @@ async def test_a_skill_you_shared_shows_the_team_it_is_linked_to_not_as_from_it(
     dimitris = await sign_in("dimitris")
     page = dimitris.page
     sql_style = _skill(await dimitris.state(), "sql-style")
-    assert (sql_style["pushed_by"], sql_style["source"]["team"]) == ("dimitris", "aistack")
+    assert (sql_style["pushed_by"], sql_style["source"]["team"]) == ("dimitris", "demo-team")
 
     await expect(page.get_by_role("columnheader", name="Linked team")).to_be_visible()
     await expect(page.get_by_role("row").filter(has_text="sql-style").get_by_role(
-        "link", name="aistack", exact=True)).to_be_visible()
+        "link", name="demo-team", exact=True)).to_be_visible()
     await expect(page.get_by_text("from a team")).to_have_count(0)
     assert dimitris.console_errors == []
 
@@ -601,13 +598,13 @@ async def test_a_skill_you_shared_shows_the_team_it_is_linked_to_not_as_from_it(
 async def test_an_admin_makes_an_existing_group_private_and_open_again(sign_in):
     """IMP-04: the privacy switch of a group that already exists never ran."""
     dimitris = await sign_in("dimitris")
-    await _open_team(dimitris, "aistack")
+    await _open_team(dimitris, "demo-team")
     page = dimitris.page
     await page.get_by_role("tab", name="Groups").click()
     switch = page.get_by_role("switch", name="developers is private", exact=True)
 
     def private() -> bool:
-        return next(group["private"] for group in _team(state, "aistack")["groups"]
+        return next(group["private"] for group in _team(state, "demo-team")["groups"]
                     if group["path"] == "developers")
 
     await switch.click()
@@ -622,7 +619,7 @@ async def test_an_admin_makes_an_existing_group_private_and_open_again(sign_in):
 async def test_a_member_is_shown_no_private_group_and_no_admin_control(sign_in):
     alex = await sign_in("alex")
     page = alex.page
-    await _open_team(alex, "aistack")
+    await _open_team(alex, "demo-team")
 
     await expect(page.get_by_role("button", name="developers", exact=False).first).to_be_visible()
     await expect(page.get_by_text("pentest-checklist")).to_have_count(0)
@@ -638,12 +635,12 @@ async def test_a_member_is_shown_no_private_group_and_no_admin_control(sign_in):
 async def test_an_admin_outside_a_private_group_is_shown_it_as_private_not_empty(sign_in):
     dimitris = await sign_in("dimitris")
     made_admin = await dimitris.page.request.post(
-        f"{dimitris.base_url}/api/teams/aistack/members/alex", data={"role": "ADMIN"},
+        f"{dimitris.base_url}/api/teams/demo-team/members/alex", data={"role": "ADMIN"},
         headers={"X-AIStack-Request": "1"})
     assert made_admin.ok
     alex = await sign_in("alex")
     page = alex.page
-    await _open_team(alex, "aistack")
+    await _open_team(alex, "demo-team")
 
     await expect(page.get_by_text("Private: only the people added to it see its skills.")
                  ).to_be_visible()
@@ -665,11 +662,11 @@ async def test_an_admin_outside_a_private_group_is_shown_it_as_private_not_empty
                  ).to_be_visible()
     await expect(page.get_by_text("As an admin you see every group")).to_have_count(0)
 
-    aistack = _team(await alex.state(), "aistack")
-    assert aistack["role"] == "ADMIN"
-    assert {group["path"]: group["sees_skills"] for group in aistack["groups"]} == {
+    team = _team(await alex.state(), "demo-team")
+    assert team["role"] == "ADMIN"
+    assert {group["path"]: group["sees_skills"] for group in team["groups"]} == {
         "developers": True, "developers/backend": True, "security": False}
-    assert [skill["name"] for skill in aistack["skills"] if skill["group"] == "security"] == []
+    assert [skill["name"] for skill in team["skills"] if skill["group"] == "security"] == []
 
 
 async def test_a_team_is_created_and_joined_with_its_invite_code(sign_in):
@@ -729,18 +726,18 @@ async def test_a_signed_in_member_joins_from_the_invite_page_in_one_click(sign_i
 
 async def test_an_admin_lets_a_member_invite_and_the_member_can(sign_in):
     dimitris = await sign_in("dimitris")
-    await _open_team(dimitris, "aistack")
+    await _open_team(dimitris, "demo-team")
     await dimitris.page.get_by_role("tab", name="Members").click()
 
     await dimitris.page.get_by_role("switch", name="maria can invite").click()
 
     await expect(dimitris.page.get_by_role("switch", name="maria can invite")
                  ).to_have_attribute("aria-checked", "true")
-    members = _team(await dimitris.state(), "aistack")["members"]
+    members = _team(await dimitris.state(), "demo-team")["members"]
     assert next(m for m in members if m["username"] == "maria")["can_invite"] is True
 
     maria = await sign_in("maria")
-    await _open_team(maria, "aistack")
+    await _open_team(maria, "demo-team")
     await maria.page.get_by_role("tab", name="Settings").click()
     await maria.page.get_by_role("button", name="Create invite link").click()
     link = await maria.page.get_by_role("dialog").get_by_label("Invite link").input_value()
@@ -751,7 +748,7 @@ async def test_an_admin_lets_a_member_invite_and_the_member_can(sign_in):
 async def test_an_invite_is_listed_as_pending_and_cancelled_from_the_list(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    await _open_team(dimitris, "aistack")
+    await _open_team(dimitris, "demo-team")
     await page.get_by_role("tab", name="Settings").click()
     await page.get_by_role("button", name="Create invite link").click()
     await page.get_by_role("dialog").get_by_role("button", name="Done").click()
@@ -762,7 +759,7 @@ async def test_an_invite_is_listed_as_pending_and_cancelled_from_the_list(sign_i
         "button", name=re.compile(r"^Cancel invite #\w{4}, made by dimitris$")).click()
 
     await expect(invites.get_by_text("Cancelled")).to_be_visible()
-    assert [invite["status"] for invite in _team(await dimitris.state(), "aistack")["invites"]
+    assert [invite["status"] for invite in _team(await dimitris.state(), "demo-team")["invites"]
             if invite["created_by"] == "dimitris"][0] == "CANCELLED"
     assert dimitris.console_errors == []
 
@@ -770,17 +767,17 @@ async def test_an_invite_is_listed_as_pending_and_cancelled_from_the_list(sign_i
 async def test_an_admin_removes_a_member_and_is_told_their_invites_stop(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    await _open_team(dimitris, "aistack")
+    await _open_team(dimitris, "demo-team")
     await page.get_by_role("tab", name="Members").click()
 
-    await page.get_by_role("button", name="Remove alex from aistack…").click()
-    dialog = page.get_by_role("dialog", name="Remove alex from aistack?")
+    await page.get_by_role("button", name="Remove alex from demo-team…").click()
+    dialog = page.get_by_role("dialog", name="Remove alex from demo-team?")
     await expect(dialog).to_have_accessible_description(
         re.compile("Invite links alex made that nobody has used yet stop working"))
     await dialog.get_by_role("button", name="Remove member").click()
 
-    await expect(page.get_by_role("button", name="Remove alex from aistack…")).to_have_count(0)
-    members = _team(await dimitris.state(), "aistack")["members"]
+    await expect(page.get_by_role("button", name="Remove alex from demo-team…")).to_have_count(0)
+    members = _team(await dimitris.state(), "demo-team")["members"]
     assert "alex" not in [member["username"] for member in members]
     assert dimitris.console_errors == []
 
@@ -788,20 +785,20 @@ async def test_an_admin_removes_a_member_and_is_told_their_invites_stop(sign_in)
 async def test_an_admin_deletes_a_team_and_members_keep_what_they_took(sign_in):
     maria = await sign_in("maria")
     taken = [skill["name"] for skill in (await maria.state())["skills"]
-             if (skill.get("source") or {}).get("team") == "aistack"]
+             if (skill.get("source") or {}).get("team") == "demo-team"]
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    await _open_team(dimitris, "aistack")
+    await _open_team(dimitris, "demo-team")
     await page.get_by_role("tab", name="Settings").click()
 
     await page.get_by_role("button", name="Delete team").click()
-    await page.get_by_role("dialog", name="Delete aistack?").get_by_role(
+    await page.get_by_role("dialog", name="Delete demo-team?").get_by_role(
         "button", name="Delete team").click()
 
     await expect(page.get_by_role("heading", name="Library", level=1)).to_be_visible()
-    assert "aistack" not in [team["name"] for team in (await dimitris.state())["teams"]]
+    assert "demo-team" not in [team["name"] for team in (await dimitris.state())["teams"]]
     after = await maria.state()
-    assert "aistack" not in [team["name"] for team in after["teams"]]
+    assert "demo-team" not in [team["name"] for team in after["teams"]]
     assert taken and set(taken) <= {skill["name"] for skill in after["skills"]}
     assert dimitris.console_errors == []
 
@@ -810,7 +807,7 @@ async def test_an_admin_deletes_a_team_and_members_keep_what_they_took(sign_in):
 async def test_an_admin_renames_a_group_and_deletes_only_an_empty_one(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    await _open_team(dimitris, "aistack")
+    await _open_team(dimitris, "demo-team")
     await page.get_by_role("tab", name="Groups").click()
 
     await page.get_by_role("button", name="Manage developers", exact=True).click()
@@ -819,7 +816,7 @@ async def test_an_admin_renames_a_group_and_deletes_only_an_empty_one(sign_in):
     await rename.get_by_label("New name").fill("engineering")
     await rename.get_by_role("button", name="Rename").click()
     await expect(page.get_by_role("button", name="Manage engineering/backend")).to_be_visible()
-    paths = [group["path"] for group in _team(await dimitris.state(), "aistack")["groups"]]
+    paths = [group["path"] for group in _team(await dimitris.state(), "demo-team")["groups"]]
     assert "engineering/backend" in paths and "developers" not in paths
 
     await page.get_by_role("button", name="Manage security", exact=True).click()
@@ -830,7 +827,7 @@ async def test_an_admin_renames_a_group_and_deletes_only_an_empty_one(sign_in):
     await refused.get_by_role("button", name="Cancel").click()
 
     await page.get_by_role("button", name="New group").first.click()
-    create = page.get_by_role("dialog", name="New group in aistack")
+    create = page.get_by_role("dialog", name="New group in demo-team")
     await create.get_by_label("Name").fill("typo")
     await create.get_by_role("button", name="Create group").click()
     await page.get_by_role("button", name="Manage typo", exact=True).click()
@@ -839,7 +836,7 @@ async def test_an_admin_renames_a_group_and_deletes_only_an_empty_one(sign_in):
         "button", name="Delete group").click()
 
     await expect(page.get_by_role("button", name="Manage typo", exact=True)).to_have_count(0)
-    paths = [group["path"] for group in _team(await dimitris.state(), "aistack")["groups"]]
+    paths = [group["path"] for group in _team(await dimitris.state(), "demo-team")["groups"]]
     assert "typo" not in paths and "security" in paths
     # The refusal's own answer is the one error a browser reports.
     assert [error for error in dimitris.console_errors if "409" not in error] == []
@@ -884,7 +881,7 @@ async def test_add_skills_with_an_empty_library_offers_nothing_to_add(browser, s
     page = await context.new_page()
     await page.goto((await call(server_url, token, "open_dashboard"))["url"])
     await page.get_by_role("navigation", name="Main").get_by_role(
-        "link", name="laptop / Agents folder").click()
+        "link", name="Every project").click()
 
     await page.get_by_role("button", name="Add skills").first.click()
 
@@ -906,15 +903,19 @@ async def test_a_computer_that_never_synced_shows_no_agent_until_it_does(browser
     await page.goto((await call(server_url, token, "open_dashboard"))["url"])
     navigation = page.get_by_role("navigation", name="Main")
 
-    await expect(navigation.get_by_text('Not synced yet: say "sync aistack" there.')
-                 ).to_have_count(2)
-    await expect(navigation.get_by_role("link", name="windows-pc / Claude Code")).to_have_count(0)
+    await navigation.get_by_role("link", name="Every project").click()
+    await expect(page.get_by_role("heading", name="No coding agent has synced yet")).to_be_visible()
+    await navigation.get_by_role("link", name="windows-pc").click()
+    await expect(page.get_by_text('Not synced yet: say "sync aistack" there.')).to_be_visible()
 
     await call(server_url, token, "sync", local={}, harness="agents")
     await page.reload()
-    await expect(navigation.get_by_role("link", name="laptop / Agents folder")).to_be_visible()
-    await expect(navigation.get_by_text('Not synced yet: say "sync aistack" there.')
-                 ).to_have_count(1)
+    await expect(page.get_by_text('Not synced yet: say "sync aistack" there.')).to_be_visible()
+    await navigation.get_by_role("link", name="Every project").click()
+    # The columns are the agents found on the person's computers, and nothing else.
+    table = page.get_by_role("table", name="Skills for every project")
+    await expect(table.get_by_role("columnheader", name="Codex")).to_be_visible()
+    await expect(table.get_by_role("columnheader", name="Claude Code")).to_have_count(0)
     await context.close()
 
 
@@ -968,8 +969,9 @@ async def test_signing_out_closes_the_dashboard_in_that_browser(sign_in):
     assert (await maria.page.request.get(f"{maria.base_url}/api/state")).status == 401
 
 
-@pytest.mark.parametrize("route", ["#/library", "#/f/{macbook}/claude_code", "#/t/aistack/skills",
-                                   "#/t/aistack/groups", "#/t/aistack/members"])
+@pytest.mark.parametrize("route", ["#/library", "#/every", "#/c/{macbook}", f"#/p/{DEMO_API}",
+                                   "#/t/demo-team/skills", "#/t/demo-team/groups",
+                                   "#/t/demo-team/members"])
 async def test_nothing_scrolls_sideways_on_a_phone(sign_in, route):
     dimitris = await sign_in("dimitris", viewport=(390, 844))
     macbook = (await dimitris.state())["machines"][0]["id"]
@@ -1042,8 +1044,8 @@ async def test_tables_keep_their_columns_apart_at_tablet_width(sign_in):
     problems = []
     for width, height in ((834, 1194), (900, 900)):
         await dimitris.page.set_viewport_size({"width": width, "height": height})
-        for route in ("#/library", f"#/f/{macbook}/claude_code", "#/t/aistack/skills",
-                      "#/t/aistack/groups", "#/t/aistack/members"):
+        for route in ("#/library", "#/every", f"#/c/{macbook}", f"#/p/{DEMO_API}",
+                      "#/t/demo-team/skills", "#/t/demo-team/groups", "#/t/demo-team/members"):
             problems += [f"{width}px {problem}"
                          for problem in await _layout_problems(dimitris, route)]
 
@@ -1113,7 +1115,7 @@ async def test_the_phone_menu_opens_and_closes_with_a_control_you_can_see(sign_i
     await expect(navigation).to_be_hidden()
 
     await page.get_by_role("button", name="Open navigation").click()
-    await expect(spaces.get_by_role("link", name="aistack", exact=True)).to_be_visible()
+    await expect(spaces.get_by_role("link", name="demo-team", exact=True)).to_be_visible()
     await expect(navigation.get_by_role("link", name="desktop")).to_be_visible()
     close = page.get_by_label("Navigation").get_by_role("button", name="Close navigation")
     await expect(close).to_be_visible()
@@ -1126,33 +1128,33 @@ async def test_the_phone_menu_opens_and_closes_with_a_control_you_can_see(sign_i
 async def test_a_group_is_opened_from_the_sidebar_and_shows_only_what_is_in_it(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    await _open_team(dimitris, "aistack")
+    await _open_team(dimitris, "demo-team")
 
     await page.get_by_role("navigation", name="Main").get_by_role("link", name="backend").click()
 
     await expect(page.get_by_role("table", name="Skills in developers/backend")).to_be_visible()
-    await expect(page.get_by_text("aistack-api-notes")).to_be_visible()
+    await expect(page.get_by_text("demo-api-notes")).to_be_visible()
     await expect(page.get_by_text("sql-style")).to_have_count(0)
-    assert page.url.endswith("#/t/aistack/skills/developers/backend")
+    assert page.url.endswith("#/t/demo-team/skills/developers/backend")
 
     await page.reload()
     await expect(page.get_by_role("table", name="Skills in developers/backend")).to_be_visible()
 
-    await page.get_by_role("link", name="All of aistack").click()
+    await page.get_by_role("link", name="All of demo-team").click()
     await expect(page.get_by_text("sql-style")).to_be_visible()
     assert dimitris.console_errors == []
 
 
 async def test_the_sidebar_shows_a_member_no_private_group_they_are_not_in(sign_in):
     alex = await sign_in("alex")
-    await _open_team(alex, "aistack")
+    await _open_team(alex, "demo-team")
     navigation = alex.page.get_by_role("navigation", name="Main")
 
     await expect(navigation.get_by_role("link", name="developers")).to_be_visible()
     await expect(navigation.get_by_role("link", name="security")).to_have_count(0)
 
-    await alex.page.goto(f"{alex.base_url}/app#/t/aistack/skills/security")
-    await expect(alex.page.get_by_role("table", name="Skills in aistack")).to_be_visible()
+    await alex.page.goto(f"{alex.base_url}/app#/t/demo-team/skills/security")
+    await expect(alex.page.get_by_role("table", name="Skills in demo-team")).to_be_visible()
     await expect(alex.page.get_by_text("pentest-checklist")).to_have_count(0)
 
 
@@ -1179,7 +1181,7 @@ async def test_a_computer_says_where_it_came_from_and_is_renamed(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
     await _open_computer(dimitris, "desktop")
-    await expect(page.get_by_text("Last synced")).to_be_visible()
+    await expect(page.get_by_role("columnheader", name="Last synced").first).to_be_visible()
 
     await page.get_by_role("button", name="Computer settings").click()
     dialog = page.get_by_role("dialog", name="desktop")
@@ -1208,7 +1210,7 @@ async def test_a_lost_computer_is_removed_from_its_page(sign_in):
 
     await expect(page.get_by_role("heading", name="Library", level=1)).to_be_visible()
     await expect(page.get_by_role("navigation", name="Main").get_by_role(
-        "link", name="desktop / Claude Code")).to_have_count(0)
+        "link", name="desktop")).to_have_count(0)
     assert [machine["name"] for machine in (await dimitris.state())["machines"]] == ["macbook"]
     assert dimitris.console_errors == []
 
@@ -1216,10 +1218,9 @@ async def test_a_lost_computer_is_removed_from_its_page(sign_in):
 # What a keyboard and a screen reader meet. Each test walks several screens in one tab, so the
 # whole set costs a few seconds and needs no second database.
 
-_AXE_ROUTES = ("#/library", "#/f/{macbook}/claude_code",
-               "#/f/{macbook}/claude_code/github.com%2Fdchristopoulos%2Faistack",
-               "#/t/aistack/skills",
-               "#/t/aistack/members", "#/t/aistack/groups", "#/t/aistack/settings",
+_AXE_ROUTES = ("#/library", "#/every", "#/c/{macbook}", f"#/p/{DEMO_API}",
+               "#/t/demo-team/skills",
+               "#/t/demo-team/members", "#/t/demo-team/groups", "#/t/demo-team/settings",
                "#/settings", "#/storage")
 
 
@@ -1257,13 +1258,13 @@ async def test_axe_finds_nothing_on_any_screen_in_either_theme_or_on_a_phone(sig
             await page.keyboard.press("Escape")
         else:
             # A confirmation, and a switch that cannot be turned because a group above is off.
-            await page.goto(f"{dimitris.base_url}/app#/t/aistack/skills")
+            await page.goto(f"{dimitris.base_url}/app#/t/demo-team/skills")
             await page.get_by_role("switch", name="Subscribed to developers", exact=True).click()
             await expect(page.get_by_role("switch", name="Subscribed to developers/backend")
                          ).to_have_attribute("aria-disabled", "true")
             problems[(1280, scheme, "switch off through a group")] = await _axe_violations(page)
             await page.get_by_role("switch", name="Subscribed to developers", exact=True).click()
-            await page.goto(f"{dimitris.base_url}/app#/t/aistack/settings")
+            await page.goto(f"{dimitris.base_url}/app#/t/demo-team/settings")
             await page.get_by_role("button", name="Leave team").click()
             await expect(page.get_by_role("dialog")).to_be_visible()
             problems[(1280, scheme, "confirm")] = await _axe_violations(page)
@@ -1292,14 +1293,14 @@ async def test_a_keyboard_skips_to_the_page_and_lands_on_each_new_page_s_heading
 
     titles = {}
     for tab in ("skills", "members", "groups", "settings"):
-        await page.goto(f"{dimitris.base_url}/app#/t/aistack/{tab}")
+        await page.goto(f"{dimitris.base_url}/app#/t/demo-team/{tab}")
         await expect(page.get_by_role("heading", level=1)).to_be_visible()
         titles[tab] = await page.title()
-    assert titles == {"skills": "Skills, aistack, AIStack", "members": "Members, aistack, AIStack",
-                      "groups": "Groups, aistack, AIStack",
-                      "settings": "Team settings, aistack, AIStack"}
-    await page.goto(f"{dimitris.base_url}/app#/t/aistack/members")
-    await expect(page.get_by_role("button", name="Remove alex from aistack…")).to_have_text("Remove…")
+    assert titles == {"skills": "Skills, demo-team, AIStack", "members": "Members, demo-team, AIStack",
+                      "groups": "Groups, demo-team, AIStack",
+                      "settings": "Team settings, demo-team, AIStack"}
+    await page.goto(f"{dimitris.base_url}/app#/t/demo-team/members")
+    await expect(page.get_by_role("button", name="Remove alex from demo-team…")).to_have_text("Remove…")
     assert dimitris.console_errors == []
 
 
@@ -1310,7 +1311,7 @@ async def test_tables_read_cell_by_cell_and_name_which_row_each_button_is_for(si
     await expect(page.get_by_role("button", name="Take update to code-review")).to_be_visible()
     await expect(page.get_by_role("button", name="Add to computer: sql-style")).to_be_visible()
     shapes = {}
-    for route in ("#/library", "#/t/aistack/skills", "#/t/aistack/members"):
+    for route in ("#/library", "#/every", "#/t/demo-team/skills", "#/t/demo-team/members"):
         await page.goto(f"{maria.base_url}/app{route}")
         await expect(page.get_by_role("table").first).to_be_visible()
         shapes[route] = await page.get_by_role("table").first.evaluate("""table => {
@@ -1339,23 +1340,23 @@ async def test_tables_read_cell_by_cell_and_name_which_row_each_button_is_for(si
 async def test_a_confirmation_opens_on_cancel_and_a_held_enter_does_not_answer_it(sign_in):
     alex = await sign_in("alex")
     page = alex.page
-    await page.goto(f"{alex.base_url}/app#/t/aistack/settings")
+    await page.goto(f"{alex.base_url}/app#/t/demo-team/settings")
 
     await page.get_by_role("button", name="Leave team").focus()
     await page.keyboard.down("Enter")
-    dialog = page.get_by_role("dialog", name="Leave aistack?")
+    dialog = page.get_by_role("dialog", name="Leave demo-team?")
     await expect(dialog.get_by_role("button", name="Cancel")).to_be_focused()
     await expect(dialog).to_have_accessible_description(
         re.compile("Skills you added to your library stay yours"))
     await page.keyboard.down("Enter")  # the same key, still held: a repeat
     await page.keyboard.up("Enter")
-    assert [team["name"] for team in (await alex.state())["teams"]] == ["aistack"]
+    assert [team["name"] for team in (await alex.state())["teams"]] == ["demo-team"]
 
     # Back closes the dialog instead of leaving it over a page it has nothing to do with.
     await expect(dialog).to_be_visible()
     await page.go_back()
     await expect(page.get_by_role("dialog")).to_have_count(0)
-    assert [team["name"] for team in (await alex.state())["teams"]] == ["aistack"]
+    assert [team["name"] for team in (await alex.state())["teams"]] == ["demo-team"]
 
 
 @_SQLITE_ONLY
@@ -1391,7 +1392,7 @@ async def test_toasts_are_said_after_the_dialog_and_stay_until_dismissed(sign_in
 
     await page.get_by_role("button", name="Add to computer: sql-style").click()
     dialog = page.get_by_role("dialog")
-    await dialog.get_by_role("checkbox", name="desktop / Claude Code").check()
+    await dialog.get_by_role("checkbox", name="desktop / Claude Code", exact=True).check()
     await dialog.get_by_role("button", name="Save").click()
     toast = page.get_by_role("status").get_by_text("sql-style")
     await expect(toast).to_be_visible()
@@ -1405,7 +1406,7 @@ async def test_toasts_are_said_after_the_dialog_and_stay_until_dismissed(sign_in
     # Later outcomes must not discard one that is still waiting to be read.
     for name in ("code-review", "release-notes", "commit-messages", "pentest-checklist"):
         await page.get_by_role("button", name=f"Add to computer: {name}").click()
-        await page.get_by_role("dialog").get_by_role("checkbox", name="desktop / Claude Code").check()
+        await page.get_by_role("dialog").get_by_role("checkbox", name="desktop / Claude Code", exact=True).check()
         await page.get_by_role("dialog").get_by_role("button", name="Save").click()
     await expect(page.get_by_role("status").get_by_role("button", name="Dismiss")).to_have_count(5)
     await page.clock.fast_forward("01:00")
@@ -1424,11 +1425,11 @@ async def test_toasts_are_said_after_the_dialog_and_stay_until_dismissed(sign_in
     await page.route("**/api/skills/**", lambda route: route.fulfill(
         status=400, json={"error": "Nothing changed: the server said no."}))
     await page.get_by_role("button", name="Add to computer: sql-style").click()
-    await page.get_by_role("dialog").get_by_role("checkbox", name="desktop / Claude Code").uncheck()
+    await page.get_by_role("dialog").get_by_role("checkbox", name="desktop / Claude Code", exact=True).uncheck()
     await page.get_by_role("dialog").get_by_role("button", name="Save").click()
     await expect(page.get_by_role("dialog").get_by_text("the server said no")).to_be_visible()
     await page.keyboard.press("Escape")
-    await page.goto(f"{dimitris.base_url}/app#/t/aistack/skills")
+    await page.goto(f"{dimitris.base_url}/app#/t/demo-team/skills")
     await page.route("**/api/teams/**", lambda route: route.fulfill(
         status=400, json={"error": "Nothing changed: the server said no."}))
     await page.get_by_role("switch", name="Subscribed to developers", exact=True).click()
@@ -1444,7 +1445,7 @@ async def test_toasts_are_said_after_the_dialog_and_stay_until_dismissed(sign_in
 async def test_a_switch_says_the_same_word_on_or_off_and_why_it_cannot_be_turned(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    await page.goto(f"{dimitris.base_url}/app#/t/aistack/skills")
+    await page.goto(f"{dimitris.base_url}/app#/t/demo-team/skills")
     parent = page.get_by_role("switch", name="Subscribed to developers", exact=True)
     child = page.get_by_role("switch", name="Subscribed to developers/backend")
 
@@ -1455,9 +1456,9 @@ async def test_a_switch_says_the_same_word_on_or_off_and_why_it_cannot_be_turned
     await expect(child).to_have_accessible_description("Off through developers")
     await child.focus()
     await expect(child).to_be_focused()
-    before = _team(await dimitris.state(), "aistack")["groups"]
+    before = _team(await dimitris.state(), "demo-team")["groups"]
     await page.keyboard.press("Enter")
-    assert _team(await dimitris.state(), "aistack")["groups"] == before
+    assert _team(await dimitris.state(), "demo-team")["groups"] == before
 
     # Escape hides a tooltip that is in the way.
     await parent.hover()
@@ -1475,7 +1476,7 @@ async def test_the_pages_before_sign_in_pass_axe_and_follow_the_theme(browser, s
     on the pages a newcomer or a signed-out person meets first."""
     base = server_url.removesuffix("/mcp")
     dimitris = await sign_in("dimitris")
-    invite = await dimitris.page.request.post(f"{base}/api/teams/aistack/invite",
+    invite = await dimitris.page.request.post(f"{base}/api/teams/demo-team/invite",
                                               headers={"X-AIStack-Request": "1"})
     code = (await invite.json())["code"]
     problems, backgrounds = {}, {}

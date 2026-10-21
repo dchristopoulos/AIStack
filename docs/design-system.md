@@ -101,15 +101,15 @@ fetch one, and embedding one costs ~100 KB for no gain in a tool.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│ ◆ AIStack  [▢ dimitris / computers / macbook / Claude Code]  ● Library: GitHub │
+│ ◆ AIStack  [▢ dimitris / projects / demo-api]        ● Library: GitHub │
 ├──┬──────────────┬──────────────────────────────────────────────┤
 │P │ Personal     │ Page title                         [actions] │
 │──│ Library    7 │ one line on what this page is for            │
-│A │ Computers  + │──────────────────────────────────────────────│
-│+ │ ▾ macbook    │ content: a table, cards, or an empty state   │
-│  │   Claude Code│                                              │
-│  │     Global 7 │                                              │
-│  │ + Add agent  │                                              │
+│A │ Every proj 5 │──────────────────────────────────────────────│
+│+ │ Projects   + │ content: a table, cards, or an empty state   │
+│  │ ▤ demo-api + │                                              │
+│  │ Computers  + │                                              │
+│  │ ▭ macbook ●This one                                         │
 │  │ Where it lives                                              │
 │  │ Settings     │                                              │
 │  ├──────────────┤                                              │
@@ -119,8 +119,10 @@ fetch one, and embedding one costs ~100 KB for no gain in a tool.
 
 - **Rail** (left column): Personal, then each team, then Add a team. Hidden in local mode
   (`state.server === false`), which has no teams.
-- **Sidebar**: the space's own navigation. In Personal: Library, the computer tree, then Where
-  it lives and Settings at the foot.
+- **Sidebar**: the space's own navigation, by the places a person thinks in (ADR-0037). In
+  Personal: Library; Every project; Projects, each by name with its team when the repository's
+  owner is one of the person's teams; Computers, each by name, the one whose link opened the
+  page marked "This one" (`state.this_computer`); then Where it lives and Settings at the foot.
 - **Top bar**: the logo (home), the path, and a pill saying where the Library lives, which
   opens that page.
 - Under 820px the rail and sidebar become a drawer behind the menu button, and the path keeps
@@ -145,8 +147,10 @@ cannot be said with what is there.
 | Dialog | `openDialog()` | centred (a decision or a form), `sheet: true` (a side panel about one thing: a skill's details) |
 | Confirm | `confirmDialog()` | for anything that removes; says what stays; opens on Cancel, and its lines are the dialog's description |
 | Copy field | `copyField(value, label)` | any sentence or command a person pastes elsewhere |
-| Menu | `menu(label, fk, items)` | a labelled "Manage" button, never a bare "⋯"; only for secondary admin actions in a row |
-| Table | `.tbl` + `.tr` + `td()` | `library`, `folder`, `tree` (indent guides), member and group grids |
+| Menu | `menu(label, fk, items, opts)` | a labelled "Manage" button, never a bare "⋯", for secondary admin actions in a row; the + menu (`plusMenu`) |
+| + menu | `plusMenu(place, items)`, `navRow(link, place, items)` | a + labelled "Add to <place>" that opens what can be added there, with that label above its items |
+| Tick table | `tickTable(label, groups)` | a column per coding agent found on the person's computers; a group per heading row; ticks are checkboxes, or read-only marks in a group changed elsewhere |
+| Table | `.tbl` + `.tr` + `td()` | `library`, `plain` (a computer's agents and projects), `ticks`, `tree` (indent guides), member and group grids |
 | Empty state | `empty(icon, title, …body)` | says what to do next, with the button that does it |
 | Toast | `toast(text, kind)` | `ok`, `warn`, `error`; the sentence names what happened; outcomes stay until dismissed |
 | Card | `.card` + `.card-body` + `.card-foot` | `danger`, `choice-card` (an option with its own button) |
@@ -162,20 +166,36 @@ one entry per place the Library can live.
 - **Clicking a thing opens it.** A skill's name opens its side panel: what it is, where it is
   (ticks per computer and agent), its revision and files, Share, Remove.
 - **Where something is, is information.** Computers and agents are listed as words with links
-  to that folder. Removal happens in the panel or on the folder page, never by clicking a tag.
-- **Computers are a folder tree**: computer, then each coding agent, then its folders: Global
-  (its home skills folder), then each project the computer manages, by the repository's name
-  in monospace with the `repo` icon.
-- **A project folder reads as "<agent> in <project>"** everywhere a folder is named: the
-  picker, "Where it is", page titles. Its page says the folder relative to the repository
-  (`.claude/skills`), where the repository was last seen on that computer, and, until it
-  syncs there, a card saying how its skills arrive. A skill also in the global folder gets one
-  help line saying which copy the agent uses. "Add a project" offers two cards: a project
-  another computer manages, added at once, and a new repository, which starts with a sentence
-  said inside it. "Stop managing…" confirms and says the files stay. Project folders are a
-  server's for now: the localhost dashboard shows no "Add a project".
+  to that computer or project. Removal happens in the panel or with a tick, never by clicking a
+  tag.
+- **A project is one page** (ADR-0037): a card per computer that manages it (its folder, its
+  agents, when it synced, "Stop managing here…"), then one tick table of what its agents read,
+  top to bottom: skills for every project (read-only, changed on Every project), then the
+  project's own skills. Rules join as groups above the skills. A skill in both gets one line
+  saying which copy Claude Code uses. Until a computer syncs inside the project, its card says
+  how skills arrive. Project folders are a server's for now: the localhost dashboard offers
+  no project to add.
+- **Every project is one page**: the same tick table over each agent's global folder on every
+  computer.
+- **A computer's page is about the computer**: its coding agents with their folders, its
+  projects with their folders, when each last synced, and Computer settings.
+- **The tick table says where once.** Its columns are the coding agents found on the person's
+  computers, in a fixed order. The `agents` harness is the column "Codex", whose tooltip says
+  Gemini CLI, Cursor and the other agents reading `~/.agents/skills` get the same skills; it
+  is never shown as a folder. A tick turns the skill on or off for that agent on every
+  computer the place is on. Something true on one computer only says so on its row ("Only on
+  macbook"), and its tick is partly on (a bar); clicking it turns it on everywhere. One
+  computer at a time is chosen in the skill's panel. On a narrow page each tick carries its
+  agent's name.
+- **Adding happens from a + on the thing you add to.** Every project: Skills. Projects (the
+  heading): A folder on this computer, A project from another computer. A project: Skills,
+  Another computer. A computer: A coding agent, A project, Skills. Each opens the existing
+  dialog. The + shows on hover, focus and the current item, always on a touch screen, and
+  always on headings; it stands where the item's count was. Computers keeps its own + that
+  adds a computer.
 - **Adding an agent is local until it matters.** A picked agent shows on its computer at once
-  (kept in this browser), and becomes real when a skill is placed there or it syncs.
+  (kept in this browser), and becomes real when a skill is placed there or it syncs. Until
+  then its computer's page offers to take it off the list.
 - **Say what is true for this setup.** Text that depends on where the Library lives, or on
   server versus local mode, is chosen from `state`, never written for the server and left
   wrong elsewhere.

@@ -232,8 +232,9 @@ async def state(request: Request) -> Response:
     shown = await asyncio.to_thread(_in_transaction, _as_user(dashboard_service.state), holder,
                                     read_only=True)
     # The page hides what only a server can do, such as creating a team, when this is false.
+    # `this_computer` is the one whose link opened this session: the page says "This one".
     return _json(shown | {"server": not is_local_mode(), "library": library_description(),
-                          "release": release()})
+                          "release": release(), "this_computer": str(holder.machine_id)})
 
 
 @_route(API_PATH + "/skills/{name}/history", methods=["GET"], local=False)

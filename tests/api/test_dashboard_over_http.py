@@ -89,6 +89,8 @@ async def test_a_link_from_chat_signs_the_browser_in_and_leaves_the_address_bar(
     assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
     assert state["user"] == {"username": "dimitris", "full_name": None}
     assert [machine["name"] for machine in state["machines"]] == ["laptop"]
+    # The computer whose link opened the session, which the page calls "This one".
+    assert state["this_computer"] == state["machines"][0]["id"]
 
 
 async def test_over_https_the_session_cookie_is_one_only_this_host_can_set(server_url):

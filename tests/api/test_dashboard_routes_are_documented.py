@@ -22,7 +22,7 @@ from tests.archives import skill_archive
 
 _DESIGN = pathlib.Path(__file__).parents[2] / "docs" / "DESIGN.md"
 # What the route adds to what `dashboard_service.state` returns.
-_ADDED_BY_THE_ROUTE = {"server", "library"}
+_ADDED_BY_THE_ROUTE = {"server", "library", "this_computer"}
 # Every key `library` can hold: on a server, a computer, a database, and a GitHub Library.
 _LIBRARY_KEYS = {"kind", "provider", "host", "repository", "problem", "unpublished"}
 # Objects keyed by data, not by field name: their keys are harness names.
