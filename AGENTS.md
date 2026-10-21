@@ -99,6 +99,7 @@ The program does mechanical work; the agent handles what the person asks and dec
 
 - Trust boundaries are not optional: validate skill names and file paths at push exactly as the schema in `docs/DESIGN.md` specifies.
 - Skill versions are immutable, never update a `SKILL_VERSION` row; a change is a new revision.
+- Rules (ADR-0036) are owned as skills are: a `rule` row sits in the personal team, reached only through `visibility.my_rules` and `required_my_rule`, and a project rule's project through `required_my_project`. A `RULE_REVISION` is immutable like a skill version, and its hash is `content_hash.text_hash`. Where each agent reads rules is `services/agent_files.py` and nowhere else. Rule text is never logged; a rule with a credential-looking line is saved only with `confirmed`.
 - Push validation is pure: `services/` functions that take bytes and return values or raise `ValidationError`, with no session. The archive is read in memory and never extracted to disk.
 - The canonical content hash has one implementation, `services/content_hash.py` (ADR-0011). Push and sync both call it; nothing else frames a hash.
 - Provenance columns are `pushed_by` and mean exactly that, never render them as "author" or "created by".

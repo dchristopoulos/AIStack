@@ -18,6 +18,7 @@ import aistack.db.schema
 from aistack.db.backup import SNAPSHOT_PREFIX
 from aistack.db.engine import build_engine, build_session_factory
 from aistack.db.models import Base
+from aistack.db.models.coding_agent import CodingAgent
 from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_harness import MachineHarness
@@ -25,6 +26,8 @@ from aistack.db.models.machine_project import MachineProject
 from aistack.db.models.machine_project_skill import MachineProjectSkill
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.project import Project
+from aistack.db.models.project_file import ProjectFile, ProjectFileEdit
+from aistack.db.models.rule import MachineRule, Rule, RuleAgent, RuleRevision
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
 from aistack.db.models.team import Team, TeamKind, TeamMember, TeamRole
@@ -357,11 +360,15 @@ def test_rebuilding_a_table_does_not_cascade_into_the_rows_that_reference_it(emp
 
 
 PROJECT_TABLES = {"project", "machine_project", "machine_project_skill"}
+# Each kind of row is made below, so a count of zero is a cascade, not an empty table.
+RULE_TABLES = {"rule", "rule_revision", "rule_agent", "machine_rule", "project_file",
+               "project_file_edit"}
 
 
 def test_an_older_release_rebuilding_a_copy_empties_its_project_rows(portable_engine):
     """ADR-0025 rebuilds a copy by deleting every table it knows, children first. A release
-    from before the project tables knows none of them, so only their cascades empty them."""
+    from before the project tables, or the rule tables, knows none of them, so only their
+    cascades empty them."""
     factory = build_session_factory(portable_engine)
     with factory.begin() as session:
         joined = onboarding_service.join(session, "dimitris", "laptop", "LINUX")
@@ -376,14 +383,33 @@ def test_an_older_release_rebuilding_a_copy_empties_its_project_rows(portable_en
         session.flush()
         session.add(MachineProjectSkill(machine_project_id=folder.machine_project_id,
                                         skill_id=skill.skill_id, enabled=True))
+        for project_id in (None, project.project_id):
+            rule = Rule(team_id=skill.team_id, project_id=project_id, name="style",
+                        pushed_by=joined.user.user_id)
+            session.add(rule)
+            session.flush()
+            session.add_all([
+                RuleRevision(rule_id=rule.rule_id, revision=1, text="a", content_hash="0" * 64,
+                             pushed_by=joined.user.user_id),
+                RuleAgent(rule_id=rule.rule_id, agent=CodingAgent.CODEX),
+                MachineRule(machine_id=joined.machine.machine_id, rule_id=rule.rule_id,
+                            agent=CodingAgent.CODEX)])
+        file = ProjectFile(project_id=project.project_id, path="AGENTS.md",
+                           snapshot_machine_id=joined.machine.machine_id)
+        session.add(file)
+        session.flush()
+        session.add(ProjectFileEdit(project_file_id=file.project_file_id,
+                                    machine_id=joined.machine.machine_id, text="b",
+                                    content_hash="1" * 64, base_hash="0" * 64))
 
+    known = PROJECT_TABLES | RULE_TABLES | {"alembic_version", "schema_compatibility"}
     with factory.begin() as session:
         for table in reversed(Base.metadata.sorted_tables):
-            if table.name not in PROJECT_TABLES | {"alembic_version", "schema_compatibility"}:
+            if table.name not in known:
                 session.execute(delete(table))
 
     with portable_engine.connect() as connection:
-        for table in PROJECT_TABLES:
+        for table in PROJECT_TABLES | RULE_TABLES:
             assert connection.scalar(select(func.count()).select_from(
                 Base.metadata.tables[table])) == 0, table
 

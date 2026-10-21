@@ -1,4 +1,5 @@
 from aistack.db.models.base import Base
+from aistack.db.models.coding_agent import CodingAgent
 from aistack.db.models.computer_code import ComputerCode
 from aistack.db.models.harness import Harness
 from aistack.db.models.invite import Invite
@@ -10,6 +11,8 @@ from aistack.db.models.machine_project_skill import MachineProjectSkill
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.operating_system import OperatingSystem
 from aistack.db.models.project import Project
+from aistack.db.models.project_file import ProjectFile, ProjectFileEdit
+from aistack.db.models.rule import MachineRule, Rule, RuleAgent, RuleRevision
 from aistack.db.models.schema_compatibility import SchemaCompatibility
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
@@ -30,6 +33,7 @@ from aistack.db.models.user import User
 # that happen to have been imported by whatever ran first.
 __all__ = [
     "Base",
+    "CodingAgent",
     "ComputerCode",
     "GroupMember",
     "GroupUnsubscribed",
@@ -40,9 +44,15 @@ __all__ = [
     "MachineHarness",
     "MachineProject",
     "MachineProjectSkill",
+    "MachineRule",
     "MachineSkill",
     "OperatingSystem",
     "Project",
+    "ProjectFile",
+    "ProjectFileEdit",
+    "Rule",
+    "RuleAgent",
+    "RuleRevision",
     "SchemaCompatibility",
     "Skill",
     "SkillFile",

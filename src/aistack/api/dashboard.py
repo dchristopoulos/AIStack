@@ -46,6 +46,7 @@ from aistack.services import (
     dashboard_service,
     library_log,
     onboarding_service,
+    rule_service,
     skill_service,
     team_service,
 )
@@ -61,6 +62,9 @@ SESSION_COOKIE = "aistack_session"
 REQUEST_HEADER = "x-aistack-request"
 
 _MAX_BODY_BYTES = 16 * 1024
+# A rule's text is up to 64 KiB of UTF-8, and JSON may spell one byte in six (`\u0001`), so
+# the service, not this, says what was too long.
+_RULE_BODY_BYTES = 6 * 64 * 1024 + _MAX_BODY_BYTES
 _BODY_READ_TIMEOUT_SECONDS = 10
 
 _SIGNED_OUT = ("You are not signed in to this dashboard. Ask your coding agent to \"open my "
@@ -250,6 +254,16 @@ async def team_update_changes(request: Request) -> Response:
         request.path_params["team"], request.path_params["name"], read_only=True))
 
 
+# A project's key has slashes in it, so it travels in the query, as `?project=<key>`.
+@_route(API_PATH + "/rules/{name}/text", methods=["GET"], local=False)
+@handle_route_errors
+async def rule_text(request: Request) -> Response:
+    holder = _signed_in(request)
+    return _json(await asyncio.to_thread(
+        _in_transaction, _as_user(rule_service.text_of), holder, request.path_params["name"],
+        request.query_params.get("project"), read_only=True))
+
+
 @_route(API_PATH + "/library.tar.gz", methods=["GET"])
 @handle_route_errors
 async def download_library(request: Request) -> Response:
@@ -286,8 +300,9 @@ async def sign_out(request: Request) -> Response:
 Action = Callable[[Session, uuid.UUID, dict[str, str], dict[str, Any]], dict[str, Any] | None]
 
 
-def _action(path: str, local: bool = True,
-            credential: str | None = None, with_holder: bool = False) -> Callable[[Action], Action]:
+def _action(path: str, local: bool = True, credential: str | None = None,
+            with_holder: bool = False,
+            body_limit: int = _MAX_BODY_BYTES) -> Callable[[Action], Action]:
     """Register a POST route that runs `function` for the signed-in user in one transaction.
 
     The function takes the session, the caller's user id, the path parameters, and the JSON
@@ -295,6 +310,7 @@ def _action(path: str, local: bool = True,
     a team action off the localhost dashboard. `credential` names what the body carries when
     it is one, such as an invite code: a NotFound then counts toward the throttle.
     `with_holder` also passes the verified issuing computer and the validated endpoint.
+    `body_limit` is the most the body may be, in bytes.
     """
     def register(function: Action) -> Action:
         @wraps(function)
@@ -303,7 +319,7 @@ def _action(path: str, local: bool = True,
             _require_request_header(request)
             if is_local_mode():
                 await asyncio.to_thread(refuse_when_moved)
-            body = await _json_body(request)
+            body = await _json_body(request, body_limit)
             try:
                 parameters = dict(request.path_params)
                 if with_holder:
@@ -452,6 +468,48 @@ def change_account(session, user_id, path, body):
                                                           _text(body, "full_name"))}
 
 
+# Rules (ADR-0036). Server only for now: in local mode each change is a log event, which
+# every computer must replay a release before any records one (ADR-0026). A project's key has
+# slashes in it, so `project` travels in the body.
+@_action("/rules", local=False, body_limit=_RULE_BODY_BYTES)
+def create_rule(session, user_id, path, body):
+    return _saved(rule_service.create(
+        session, user_id, _text(body, "name"), _text(body, "text"),
+        _text(body, "project", required=False), _texts(body, "agents"),
+        bool(_flag(body, "confirmed", required=False))))
+
+
+@_action("/rules/{name}/edit", local=False, body_limit=_RULE_BODY_BYTES)
+def edit_rule(session, user_id, path, body):
+    return _saved(rule_service.edit(
+        session, user_id, path["name"], _text(body, "text"),
+        _text(body, "project", required=False), bool(_flag(body, "confirmed", required=False))))
+
+
+@_action("/rules/{name}/rename", local=False)
+def rename_rule(session, user_id, path, body):
+    return {"name": rule_service.rename(session, user_id, path["name"], _text(body, "new_name"),
+                                        _text(body, "project", required=False))}
+
+
+@_action("/rules/{name}/agents", local=False)
+def set_rule_agents(session, user_id, path, body):
+    return {"agents": rule_service.set_agents(session, user_id, path["name"],
+                                              _texts(body, "agents"),
+                                              _text(body, "project", required=False))}
+
+
+@_action("/rules/{name}/remove", local=False)
+def remove_rule(session, user_id, path, body):
+    return {"name": rule_service.archive(session, user_id, path["name"],
+                                         _text(body, "project", required=False))}
+
+
+def _saved(saved: rule_service.Saved) -> dict[str, Any]:
+    return {"name": saved.name, "saved": saved.saved, "credential_lines": saved.credential_lines,
+            "revision": saved.revision, "unchanged": saved.unchanged}
+
+
 @_action("/teams", local=False)
 def create_team(session, user_id, path, body):
     return {"name": team_service.create_team(session, user_id, _text(body, "name"))}
@@ -586,9 +644,8 @@ def _require_request_header(request: Request) -> None:
             "This request did not come from the dashboard page, so it was not carried out.")
 
 
-async def _json_body(request: Request) -> dict[str, Any]:
-    raw = await bounded_body(request, _MAX_BODY_BYTES,
-                             f"The request is larger than {_MAX_BODY_BYTES} bytes.",
+async def _json_body(request: Request, limit: int = _MAX_BODY_BYTES) -> dict[str, Any]:
+    raw = await bounded_body(request, limit, f"The request is larger than {limit} bytes.",
                              _BODY_READ_TIMEOUT_SECONDS)
     try:
         body = json.loads(raw or b"{}")
@@ -614,6 +671,14 @@ def _flag(body: dict[str, Any], key: str, required: bool = True) -> bool | None:
         return None
     if not isinstance(value, bool):
         raise ValidationError(f"'{key}' must be true or false.")
+    return value
+
+
+def _texts(body: dict[str, Any], key: str) -> list[str]:
+    """A list of text, empty when the body leaves it out."""
+    value = body.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValidationError(f"'{key}' must be a list of text.")
     return value
 
 
