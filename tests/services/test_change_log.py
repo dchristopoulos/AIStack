@@ -83,7 +83,7 @@ LOGGED_BY_CALLERS = {"push", "store", "get_skill", "disable_skill", "set_enabled
                      "new_invite_code", "admit", "lock"}
 READERS = {"invited_to", "is_open_invite", "invited_team", "invites", "list_teams", "overview",
            "members", "groups", "list_skills", "changed_since_taken", "replaced_since_taken",
-           "archive_of", "export_library"}
+           "archive_of", "export_library", "require_registered_machine"}
 
 
 @pytest.fixture(name="world")

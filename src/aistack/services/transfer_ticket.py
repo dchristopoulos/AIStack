@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import jwt
 
 from aistack.commons.exceptions import InvalidTicket
+from aistack.db.models.coding_agent import CodingAgent
 from aistack.db.models.harness import Harness
 
 TICKET_LIFETIME_SECONDS = 300
@@ -27,6 +28,9 @@ _ALGORITHM = "HS256"
 # before any claim is read.
 _UPLOAD_AUDIENCE = "aistack:upload"
 _DOWNLOAD_AUDIENCE = "aistack:download"
+# A rule's text (ADR-0036): neither skill route accepts one, nor these a skill's.
+_RULE_UPLOAD_AUDIENCE = "aistack:rule-upload"
+_RULE_DOWNLOAD_AUDIENCE = "aistack:rule-download"
 # A link cannot be replayed as a session cookie, nor a cookie as a link.
 _DASHBOARD_LINK_AUDIENCE = "aistack:dashboard-link"
 _DASHBOARD_SESSION_AUDIENCE = "aistack:dashboard-session"
@@ -64,6 +68,33 @@ class DownloadTicket:
     machine_id: uuid.UUID
     token_prefix: str
     skill_version_id: uuid.UUID
+
+
+@dataclass(frozen=True)
+class RuleUploadTicket:
+    """Permission for one machine to store the text of one agent's file as one named rule,
+    for every project or for one project the machine manages (ADR-0036)."""
+
+    machine_id: uuid.UUID
+    user_id: uuid.UUID
+    token_prefix: str
+    rule_name: str
+    agent: CodingAgent
+    project_id: uuid.UUID | None
+    # Sync found the file with no rule in the Library, or edited from the latest revision:
+    # the rule is used for this agent from now on. A push the person chose is not a backup.
+    backup: bool
+
+
+@dataclass(frozen=True)
+class RuleDownloadTicket:
+    """Permission for one machine to read one exact revision of a rule, for one agent's
+    file."""
+
+    machine_id: uuid.UUID
+    token_prefix: str
+    rule_revision_id: uuid.UUID
+    agent: CodingAgent
 
 
 @dataclass(frozen=True)
@@ -154,6 +185,54 @@ class TicketSigner:
             )
         except (KeyError, ValueError, TypeError) as error:
             raise _not_valid("get_skill") from error
+
+    def sign_rule_upload(self, ticket: RuleUploadTicket) -> str:
+        return self._signed(_RULE_UPLOAD_AUDIENCE, ticket.machine_id, {
+            "user_id": str(ticket.user_id),
+            "tkh": ticket.token_prefix,
+            "rule_name": ticket.rule_name,
+            "agent": ticket.agent.value,
+            "project_id": None if ticket.project_id is None else str(ticket.project_id),
+            "backup": ticket.backup,
+        })
+
+    def sign_rule_download(self, ticket: RuleDownloadTicket) -> str:
+        return self._signed(_RULE_DOWNLOAD_AUDIENCE, ticket.machine_id, {
+            "tkh": ticket.token_prefix,
+            "rule_revision_id": str(ticket.rule_revision_id),
+            "agent": ticket.agent.value,
+        })
+
+    def verified_rule_upload(self, token: str) -> RuleUploadTicket:
+        claims = self._verified(token, _RULE_UPLOAD_AUDIENCE, retry_with="aistack sync")
+        try:
+            backup = claims["backup"]
+            if not isinstance(backup, bool):
+                raise TypeError("backup is not a boolean")
+            return RuleUploadTicket(
+                machine_id=uuid.UUID(claims["sub"]),
+                user_id=uuid.UUID(claims["user_id"]),
+                token_prefix=_text(claims["tkh"]),
+                rule_name=_text(claims["rule_name"]),
+                agent=CodingAgent(claims["agent"]),
+                project_id=(None if claims["project_id"] is None
+                            else uuid.UUID(claims["project_id"])),
+                backup=backup,
+            )
+        except (KeyError, ValueError, TypeError) as error:
+            raise _not_valid("aistack sync") from error
+
+    def verified_rule_download(self, token: str) -> RuleDownloadTicket:
+        claims = self._verified(token, _RULE_DOWNLOAD_AUDIENCE, retry_with="aistack sync")
+        try:
+            return RuleDownloadTicket(
+                machine_id=uuid.UUID(claims["sub"]),
+                token_prefix=_text(claims["tkh"]),
+                rule_revision_id=uuid.UUID(claims["rule_revision_id"]),
+                agent=CodingAgent(claims["agent"]),
+            )
+        except (KeyError, ValueError, TypeError) as error:
+            raise _not_valid("aistack sync") from error
 
     def sign_dashboard_link(self, holder: DashboardHolder) -> str:
         """A link that signs a browser in as `holder`, once, within a few minutes

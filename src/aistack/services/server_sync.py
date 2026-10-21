@@ -14,8 +14,10 @@ from fastmcp.exceptions import ToolError
 from aistack.bundled import SYNC_SKILL_NAME, sync_skill_document
 from aistack.commons.exceptions import AIStackError, ValidationError
 from aistack.commons.text import sanitized
+from aistack.db.models.coding_agent import CodingAgent
 from aistack.db.models.harness import Harness
-from aistack.services import hardware, local_skills, projects
+from aistack.services import agent_files, hardware, local_skills, projects, rule_files
+from aistack.services.rule_validation import validated_rule_name
 from aistack.services.server_connection import Connection, client
 from aistack.services.skill_archive import read_archive
 from aistack.services.skill_validation import validated_skill, validated_skill_name
@@ -115,8 +117,12 @@ def _ignore_install(top: Path, folder: Path, name: str) -> None:
     _git(top, "check-ignore", "-q", f"{relative}/{name}/")
 
 
-async def sync_computer(connection: Connection, home: Path, cwd: Path) -> list[dict]:
-    """Return reports with automatic results and all unresolved decisions intact."""
+async def sync_computer(connection: Connection, home: Path, cwd: Path,
+                        rule_choices: dict[str, str] | None = None) -> list[dict]:
+    """Return reports with automatic results and all unresolved decisions intact.
+
+    `rule_choices` carries the person's answers to rule questions, by the key the question
+    was reported under; only an option the server offers is carried out."""
     async with asyncio.timeout(SYNC_TIMEOUT):
         async with client(connection) as mcp, httpx.AsyncClient(timeout=15, follow_redirects=False) as http:
             async def call(tool, **arguments):
@@ -145,12 +151,23 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path) -> list[d
                 harnesses.append("agents")
             if not harnesses:
                 raise ValidationError("No coding agent's skills folder was found. Connect Claude Code or Codex first.")
+            # Rules ride on the first folder's sync, from a server that takes them (ADR-0036).
+            rules = None
+            if "rules" in tools.get("sync", {}).get("properties", {}):
+                rules = _observed_rules(home, project[0] if project else None)
             for harness in harnesses:
                 folder = local_skills.skills_folder(Harness(harness), home)
                 arguments = {"harness": harness, "fingerprint": binding}
                 if project:
                     arguments["here"] = project[1]
+                if rules is not None and harness == harnesses[0]:
+                    arguments["rules"] = rules.observation
                 report = await _folder(call, http, folder, arguments)
+                if "rules" in arguments:
+                    rules.entries = report.pop("rules", [])
+                    rules.repository_files = report.pop("repository_files", [])
+                    managed = (report.get("project") or {}).get("managed") is True
+                    rules.top = project[0] if project and managed else None
                 if hardware_id is None:
                     report["diagnostics"].append("No OS computer id could be read. Copied connections cannot be detected on this computer; older clients and full clones also remain outside this check.")
                 reports.append(report)
@@ -167,7 +184,235 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path) -> list[d
                         blocked = _repository(project[0], relative)
                         arguments = {"harness": harness, "fingerprint": binding, "here": project[1], "project": managed["key"], "repository": sorted(blocked)}
                         reports.append(await _folder(call, http, folder, arguments, project[0], blocked))
+            if rules is not None:
+                done = await _apply_rules(http, rules, rule_choices or {})
+                if done["completed"] or done["failures"] or done["rule_questions"]:
+                    reports.append(done)
             return reports
+
+
+class _Rules:
+    """What sync read of the rule files here, and what the server answered about them."""
+
+    def __init__(self, project_top: Path | None):
+        self.observation: list[dict] = []
+        # (place, agent, name) -> (path, content as read); name is None for every project.
+        self.files: dict[tuple, tuple[Path, bytes | None]] = {}
+        self.agents: list[CodingAgent] = []
+        self.project_top = project_top
+        self.tracked: set[str] | None = None
+        self.override: bytes | None = None
+        self.sections: dict[str, str] | None = None
+        self.entries: list[dict] = []
+        self.repository_files: list[dict] = []
+        # The project's top level once the server says this computer manages it.
+        self.top: Path | None = None
+
+    def observe(self, agent: CodingAgent, place: str, name: str | None, path: Path,
+                content: bytes | None) -> None:
+        self.files[(place, agent, name)] = (path, content)
+        self.observation.append({"agent": agent.value, "place": place, "name": name,
+                                 "digest": None if content is None else rule_files.digest(content)})
+
+
+def _observed_rules(home: Path, top: Path | None) -> _Rules:
+    rules = _Rules(top)
+    for agent in agent_files.agents_writing_rules():
+        path = rule_files.every_project_file(agent, home)
+        if path is not None:
+            rules.agents.append(agent)
+            rules.observe(agent, "every_project", None, path, rule_files.read(path))
+    if top is None:
+        return rules
+    try:
+        rules.tracked = rule_files.tracked(top)
+    except (ValidationError, OSError, subprocess.SubprocessError):
+        return rules
+    if CodingAgent.CLAUDE_CODE in rules.agents:
+        for name, content in rule_files.claude_rules(top, rules.tracked).items():
+            rules.observe(CodingAgent.CLAUDE_CODE, "project", name,
+                          rule_files.claude_rule_path(top, name), content)
+    if CodingAgent.CODEX in rules.agents:
+        path = rule_files.override_path(top)
+        rules.override = rule_files.read(path)
+        if path.name not in rules.tracked and not path.is_symlink():
+            rules.sections = rule_files.parsed_override(rules.override)
+        for name, text in (rules.sections or {}).items():
+            rules.observe(CodingAgent.CODEX, "project", name, path, text.encode("utf-8"))
+    return rules
+
+
+_ANSWERED = {"restore": "update", "push": "backup", "remove": "remove", "skip": "nothing"}
+
+
+async def _apply_rules(http, rules: _Rules, choices: dict[str, str]) -> dict:
+    """Carry out the server's action for each rule file, and every answer the person gave."""
+    report = {"folder": "rules", "harness": "rules", "rules": True, "completed": [],
+              "failures": [], "diagnostics": [], "rule_questions": []}
+    top = rules.top
+    sections: dict[str, str] = {}
+    for entry in rules.entries:
+        try:
+            agent, place = CodingAgent(entry["agent"]), entry["place"]
+            name = validated_rule_name(entry["name"])
+            if place not in ("every_project", "project") or (place == "project" and top is None):
+                raise ValueError(place)
+        except (KeyError, ValueError, TypeError, AIStackError):
+            report["failures"].append("AIStack returned a rule file it cannot place. Upgrade "
+                                      "this program and sync again.")
+            continue
+        key = f"{place}:{agent.value}:{name}"
+        codex_section = place == "project" and agent is CodingAgent.CODEX
+        if codex_section:
+            path = rule_files.override_path(top)
+            observed = None if rules.sections is None or name not in rules.sections else (
+                rules.sections[name].encode("utf-8"))
+        elif place == "project":
+            path = rule_files.claude_rule_path(top, name)
+            observed = rules.files.get((place, agent, name), (path, None))[1]
+        elif (place, agent, None) in rules.files:
+            path, observed = rules.files[(place, agent, None)]
+        else:
+            report["failures"].append(f"AIStack returned a rule for {agent.value}, which this "
+                                      "computer did not report. Sync again.")
+            continue
+        step = entry["action"]
+        if step == "ask":
+            offered = {option["choice"] for option in entry["options"]}
+            choice = choices.get(key)
+            if choice is None or choice not in offered:
+                if choice is not None:
+                    report["failures"].append(f"'{choice}' is not an answer to {key}; it offers "
+                                              f"{', '.join(sorted(offered))}.")
+                report["rule_questions"].append(_question(key, path, entry))
+                if observed is not None and codex_section:
+                    sections[name] = observed.decode("utf-8")
+                continue
+            step = _ANSWERED[choice]
+        try:
+            if step in ("install", "update"):
+                response = await http.get(entry["download_url"])
+                response.raise_for_status()
+                text = response.content.decode("utf-8")
+                if codex_section:
+                    sections[name] = text
+                    continue
+                if place == "project":
+                    _check_project_file(top, rules, path)
+                    rule_files.exclude(top, path.relative_to(top).as_posix())
+                if not rule_files.replace(path, text.encode("utf-8"), observed,
+                                          follow_link=place == "every_project"):
+                    report["failures"].append(f"{path} changed during sync. Its edits were kept; "
+                                              "sync again to decide.")
+                    continue
+                report["completed"].append(f"Wrote rule {name} revision {entry['revision']}, "
+                                           f"pushed by {entry['pushed_by']}, to {path}.")
+            elif step == "backup":
+                if codex_section:
+                    sections[name] = observed.decode("utf-8")
+                elif rule_files.read(path) != observed:
+                    report["failures"].append(f"{path} changed during sync. Sync again to back it "
+                                              "up.")
+                    continue
+                report["completed"].append(await _upload(http, entry["upload_url"], observed,
+                                                          path, report["failures"]))
+            elif step == "remove":
+                if codex_section:
+                    continue
+                if not rule_files.remove(path, observed):
+                    report["failures"].append(f"{path} changed during sync, so it was kept.")
+                    continue
+                report["completed"].append(f"Removed {path}.")
+            elif codex_section and observed is not None:
+                sections[name] = observed.decode("utf-8")
+        except (OSError, httpx.HTTPError, UnicodeDecodeError):
+            report["failures"].append(f"Could not sync rule {name} for {path}. Its file was kept; "
+                                      "sync again to retry.")
+        except AIStackError as error:
+            report["failures"].append(error.message)
+    report["completed"] = [line for line in report["completed"] if line]
+    if top is not None:
+        _write_project_settings(top, rules, sections, report)
+    return report
+
+
+def _check_project_file(top: Path, rules: _Rules, path: Path) -> None:
+    relative = path.relative_to(top).as_posix()
+    if rules.tracked is None or relative in rules.tracked:
+        raise ValidationError(f"The repository holds {relative}, so AIStack did not write it.")
+    if not rule_files.inside(top, path.parent) or path.is_symlink():
+        raise ValidationError(f"{relative} leads outside the project, so AIStack did not write "
+                              "it.")
+
+
+async def _upload(http, url: str, content: bytes, path: Path, failures: list[str]) -> str | None:
+    response = await http.put(url, content=content)
+    try:
+        result = response.json()
+    except ValueError:
+        response.raise_for_status()
+        raise
+    if "error" in result:
+        failures.append(f"Did not back up {path}: {result['error']}")
+        return None
+    if not result.get("saved"):
+        lines = ", ".join(str(line) for line in result.get("credential_lines", []))
+        failures.append(f"Did not back up {path}: line {lines} looks like it holds a credential. "
+                        "Remove it, or save the rule on the AIStack page to keep it as it is.")
+        return None
+    return f"Backed up {path} as rule {result['name']} revision {result['revision']}."
+
+
+def _write_project_settings(top: Path, rules: _Rules, sections: dict[str, str],
+                            report: dict) -> None:
+    """Codex's override, and the files turned off for Claude Code, in a managed project."""
+    turned: dict[str, bool] = {}
+    for listed in rules.repository_files:
+        try:
+            turned[rule_files.validated_repository_path(listed.get("path"))] = (
+                listed.get("turned_off") is True)
+        except (AIStackError, AttributeError) as error:
+            report["failures"].append(getattr(error, "message", "A repository file was not "
+                                                                "understood."))
+    try:
+        if CodingAgent.CLAUDE_CODE in rules.agents and turned and rule_files.turn_off_for_claude(
+                top, turned):
+            report["completed"].append(f"Updated the files turned off for Claude Code in "
+                                       f"{top / rule_files.SETTINGS_LOCAL}.")
+        if CodingAgent.CODEX not in rules.agents or rules.tracked is None:
+            return
+        path = rule_files.override_path(top)
+        off = turned.get("AGENTS.md", False)
+        if not (sections or off or rules.sections is not None):
+            return
+        if path.name in rules.tracked or (rules.override is not None and rules.sections is None):
+            report["failures"].append(f"{path} is not one AIStack made, so your Codex rules for "
+                                      "this project were not written. Move it away and sync again.")
+            return
+        text = rule_files.override_text("" if off else rule_files.repository_text(top),
+                                        sorted(sections.items()))
+        if text.encode("utf-8") == rules.override:
+            return
+        if not rule_files.inside(top, path.parent):
+            raise ValidationError(f"{path} leads outside the project, so it was not written.")
+        rule_files.exclude(top, path.name)
+        if rule_files.replace(path, text.encode("utf-8"), rules.override):
+            report["completed"].append(f"Wrote {path} for Codex.")
+        else:
+            report["failures"].append(f"{path} changed during sync. Sync again to rewrite it.")
+    except OSError:
+        report["failures"].append("Could not write this project's rule settings. Sync again to "
+                                  "retry.")
+    except AIStackError as error:
+        report["failures"].append(error.message)
+
+
+def _question(key: str, path: Path, entry: dict) -> dict:
+    """A rule question as the person's agent reads it: never with a transfer URL, which is a
+    credential."""
+    return {"key": key, "file": str(path)} | {
+        field: entry.get(field) for field in ("local", "desired", "revision", "edited_from",
+                                              "pushed_by", "options", "removed_from_library")}
 
 
 async def _folder(call, http, folder, arguments, top=None, blocked=()):
@@ -228,6 +473,14 @@ def output(reports: list[dict], hook: bool = False) -> str:
     lines = []
     offers: dict[tuple, dict] = {}
     for report in reports:
+        if report.get("rules"):
+            if not hook:
+                lines.extend(report["completed"])
+            if report["rule_questions"]:
+                lines.append("AIStack rule decisions: " + json.dumps(report["rule_questions"], ensure_ascii=True))
+                lines.append("Ask the person before acting, naming the file. To carry out an answer, run aistack sync --rule-choice <key>=<choice>: restore writes the Library's text over the file, push keeps the file's text in the Library, remove deletes the file (or its part of AGENTS.override.md), skip changes nothing. Preserve overwrites_local and loses_local_edits warnings; edited_from below revision means the rule was also edited on the page.")
+            lines.extend(report["failures"])
+            continue
         if not hook:
             for done in report["completed"]:
                 pusher = f", pushed by {done['pushed_by']}" if "pushed_by" in done else ""

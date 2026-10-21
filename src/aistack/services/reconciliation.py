@@ -33,6 +33,10 @@ class Observed(StrEnum):
     STALE = "stale"
     # Matches no revision: edited locally, or never from the vault.
     UNKNOWN = "unknown"
+    # Matches no revision, and was edited from the latest one, which this machine last had:
+    # nothing anybody else changed meanwhile would be lost by keeping it. Only rules tell this
+    # apart from UNKNOWN; for a skill it is the same question.
+    EDITED = "edited"
 
 
 class Step(StrEnum):
@@ -40,6 +44,9 @@ class Step(StrEnum):
     INSTALL = "install"
     UPDATE = "update"
     ASK = "ask"
+    # Send the local copy to the vault as its next revision, without asking. Overwrites
+    # nothing on disk.
+    BACKUP = "backup"
 
 
 class Choice(StrEnum):
@@ -96,12 +103,15 @@ _POLICY: dict[tuple[Desired, Observed], Verdict] = {
     (Desired.ENABLED, Observed.CURRENT): _NOTHING,
     (Desired.ENABLED, Observed.STALE): Verdict(Step.UPDATE),
     (Desired.ENABLED, Observed.UNKNOWN): Verdict(Step.ASK, (_RESTORE, _PUSH, _SKIP)),
+    (Desired.ENABLED, Observed.EDITED): Verdict(Step.ASK, (_RESTORE, _PUSH, _SKIP)),
 
     # Explicitly disabled here, yet present on disk.
     (Desired.DISABLED, Observed.ABSENT): _NOTHING,
     (Desired.DISABLED, Observed.CURRENT): Verdict(Step.ASK, (_KEEP_AS_IS, _REMOVE)),
     (Desired.DISABLED, Observed.STALE): Verdict(Step.ASK, (_REPLACE_UNMODIFIED, _REMOVE)),
     (Desired.DISABLED, Observed.UNKNOWN): Verdict(
+        Step.ASK, (_PUSH, _REPLACE_EDITED, _REMOVE_EDITED, _SKIP)),
+    (Desired.DISABLED, Observed.EDITED): Verdict(
         Step.ASK, (_PUSH, _REPLACE_EDITED, _REMOVE_EDITED, _SKIP)),
 
     # In the vault and on disk, with no decision here. Never enabled silently: enabling means
@@ -110,9 +120,36 @@ _POLICY: dict[tuple[Desired, Observed], Verdict] = {
     (Desired.UNDECIDED, Observed.CURRENT): Verdict(Step.ASK, (_KEEP_AS_IS, _SKIP)),
     (Desired.UNDECIDED, Observed.STALE): Verdict(Step.ASK, (_REPLACE_UNMODIFIED, _SKIP)),
     (Desired.UNDECIDED, Observed.UNKNOWN): Verdict(Step.ASK, (_PUSH, _REPLACE_EDITED, _SKIP)),
+    (Desired.UNDECIDED, Observed.EDITED): Verdict(Step.ASK, (_PUSH, _REPLACE_EDITED, _SKIP)),
+}
+
+# Rules (ADR-0036) follow the person, never one computer, so nothing is undecided: a rule is
+# wanted here when it is in the Library and used for this agent, and not wanted once it was
+# removed or taken off this agent. Two rows differ from a skill's. An edit made only here is
+# backed up without asking, because it replaces nothing anybody else wrote and the Library
+# mirrors the computer; an edit made here and on the page as well is a question. A rule that
+# is no longer wanted is never brought back from a computer by keeping it: the page does
+# that, so the question is only whether to remove the file.
+_RULE_POLICY: dict[tuple[Desired, Observed], Verdict] = {
+    (Desired.ENABLED, Observed.ABSENT): Verdict(Step.INSTALL),
+    (Desired.ENABLED, Observed.CURRENT): _NOTHING,
+    (Desired.ENABLED, Observed.STALE): Verdict(Step.UPDATE),
+    (Desired.ENABLED, Observed.EDITED): Verdict(Step.BACKUP),
+    (Desired.ENABLED, Observed.UNKNOWN): Verdict(Step.ASK, (_RESTORE, _PUSH, _SKIP)),
+
+    (Desired.DISABLED, Observed.ABSENT): _NOTHING,
+    (Desired.DISABLED, Observed.CURRENT): Verdict(Step.ASK, (_REMOVE, _SKIP)),
+    (Desired.DISABLED, Observed.STALE): Verdict(Step.ASK, (_REMOVE, _SKIP)),
+    (Desired.DISABLED, Observed.EDITED): Verdict(Step.ASK, (_PUSH, _REMOVE_EDITED, _SKIP)),
+    (Desired.DISABLED, Observed.UNKNOWN): Verdict(Step.ASK, (_PUSH, _REMOVE_EDITED, _SKIP)),
 }
 
 
 def reconcile(desired: Desired, observed: Observed) -> Verdict:
     """What sync does for one resource, given what is wanted and what was found."""
     return _POLICY[desired, observed]
+
+
+def reconcile_rule(desired: Desired, observed: Observed) -> Verdict:
+    """What sync does for one rule in one agent's file. Never UNDECIDED: see `_RULE_POLICY`."""
+    return _RULE_POLICY[desired, observed]

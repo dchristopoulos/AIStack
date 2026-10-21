@@ -8,9 +8,13 @@ from aistack.services.reconciliation import (
     Observed,
     Step,
     reconcile,
+    reconcile_rule,
 )
 
 EVERY_PAIR = list(itertools.product(Desired, Observed))
+# Content the vault has no revision of. For a skill, an edit made here and one made anywhere
+# are the same question.
+UNMATCHED = (Observed.UNKNOWN, Observed.EDITED)
 
 
 def _choices(desired, observed) -> list[Choice]:
@@ -35,14 +39,17 @@ def _option(desired, observed, choice):
     (Desired.UNDECIDED, Observed.CURRENT, Step.ASK),
     (Desired.UNDECIDED, Observed.STALE, Step.ASK),
     (Desired.UNDECIDED, Observed.UNKNOWN, Step.ASK),
+    (Desired.ENABLED, Observed.EDITED, Step.ASK),
+    (Desired.DISABLED, Observed.EDITED, Step.ASK),
+    (Desired.UNDECIDED, Observed.EDITED, Step.ASK),
 ])
 def test_the_sync_contract_table(desired, observed, step):
-    """All twelve rows of `docs/DESIGN.md` §4 The sync contract."""
+    """The rows of `docs/DESIGN.md` §4 The sync contract."""
     assert reconcile(desired, observed).step is step
 
 
 def test_every_combination_has_a_verdict():
-    assert len(EVERY_PAIR) == 12
+    assert len(EVERY_PAIR) == 15
     for desired, observed in EVERY_PAIR:
         assert reconcile(desired, observed).step in Step
 
@@ -60,7 +67,7 @@ def test_sync_acts_silently_only_when_enabled_and_the_local_copy_is_known(desire
 @pytest.mark.parametrize(("desired", "observed"), EVERY_PAIR)
 def test_local_content_the_vault_does_not_have_is_never_touched_without_asking(desired,
                                                                              observed):
-    if observed is Observed.UNKNOWN:
+    if observed in UNMATCHED:
         assert reconcile(desired, observed).step is Step.ASK
 
 
@@ -83,14 +90,14 @@ def test_only_a_question_carries_options(desired, observed):
 def test_a_choice_loses_edits_only_when_there_are_edits_to_lose(desired, observed):
     for option in reconcile(desired, observed).options:
         if option.loses_local_edits:
-            assert observed is Observed.UNKNOWN
+            assert observed in UNMATCHED
             assert option.choice in (Choice.ENABLE, Choice.RESTORE, Choice.REMOVE)
 
 
 @pytest.mark.parametrize(("desired", "observed"), EVERY_PAIR)
 def test_every_destructive_choice_on_unknown_content_is_flagged(desired, observed):
     """The inverse: no way to overwrite or delete edited content behind an unflagged option."""
-    if observed is not Observed.UNKNOWN:
+    if observed not in UNMATCHED:
         return
     for option in reconcile(desired, observed).options:
         if option.choice in (Choice.ENABLE, Choice.RESTORE, Choice.REMOVE):
@@ -111,7 +118,7 @@ def test_a_skill_already_enabled_is_restored_and_never_enabled_again(desired, ob
     choices = _choices(desired, observed)
 
     assert (Choice.RESTORE in choices) == (
-        desired is Desired.ENABLED and observed is Observed.UNKNOWN)
+        desired is Desired.ENABLED and observed in UNMATCHED)
     if desired is Desired.ENABLED:
         assert Choice.ENABLE not in choices
     for option in reconcile(desired, observed).options:
@@ -121,7 +128,7 @@ def test_a_skill_already_enabled_is_restored_and_never_enabled_again(desired, ob
 
 @pytest.mark.parametrize(("desired", "observed"), EVERY_PAIR)
 def test_pushing_is_offered_exactly_when_the_local_copy_is_new_to_the_vault(desired, observed):
-    assert (Choice.PUSH in _choices(desired, observed)) == (observed is Observed.UNKNOWN)
+    assert (Choice.PUSH in _choices(desired, observed)) == (observed in UNMATCHED)
 
 
 @pytest.mark.parametrize(("desired", "observed"), EVERY_PAIR)
@@ -155,3 +162,65 @@ def test_removing_an_unmodified_copy_loses_nothing():
     assert _option(Desired.DISABLED, Observed.CURRENT, Choice.REMOVE).loses_local_edits is False
     assert _option(Desired.DISABLED, Observed.STALE, Choice.REMOVE).loses_local_edits is False
     assert _option(Desired.DISABLED, Observed.UNKNOWN, Choice.REMOVE).loses_local_edits is True
+
+
+RULE_PAIRS = list(itertools.product((Desired.ENABLED, Desired.DISABLED), Observed))
+
+
+def _rule_choices(desired, observed) -> list[Choice]:
+    return [option.choice for option in reconcile_rule(desired, observed).options]
+
+
+def test_a_rule_is_never_undecided():
+    """A rule follows the person, so there is no per-computer decision to lack (ADR-0036)."""
+    for observed in Observed:
+        with pytest.raises(KeyError):
+            reconcile_rule(Desired.UNDECIDED, observed)
+    for desired, observed in RULE_PAIRS:
+        assert reconcile_rule(desired, observed).step in Step
+
+
+@pytest.mark.parametrize(("desired", "observed"), RULE_PAIRS)
+def test_a_rule_is_written_silently_only_when_wanted_and_the_file_is_known(desired, observed):
+    step = reconcile_rule(desired, observed).step
+    if step in (Step.INSTALL, Step.UPDATE):
+        assert desired is Desired.ENABLED
+        assert observed in (Observed.ABSENT, Observed.STALE)
+
+
+@pytest.mark.parametrize(("desired", "observed"), RULE_PAIRS)
+def test_a_rule_is_backed_up_silently_only_when_the_edit_replaces_nobody_elses(desired,
+                                                                              observed):
+    """Edited here from the latest revision: the Library takes it. Edited on the page too,
+    or from an unknown base: a question."""
+    step = reconcile_rule(desired, observed).step
+    assert (step is Step.BACKUP) == (desired is Desired.ENABLED and observed is Observed.EDITED)
+    if observed is Observed.UNKNOWN:
+        assert step is Step.ASK
+
+
+@pytest.mark.parametrize(("desired", "observed"), RULE_PAIRS)
+def test_a_rule_question_flags_every_cost(desired, observed):
+    verdict = reconcile_rule(desired, observed)
+    assert bool(verdict.options) == (verdict.step is Step.ASK)
+    for option in verdict.options:
+        if option.choice in (Choice.PUSH, Choice.SKIP):
+            assert not option.overwrites_local and not option.loses_local_edits
+        if option.choice in (Choice.RESTORE, Choice.REMOVE):
+            assert option.loses_local_edits == (observed in UNMATCHED)
+        if option.choice is Choice.RESTORE:
+            assert option.overwrites_local
+
+
+@pytest.mark.parametrize(("desired", "observed"), RULE_PAIRS)
+def test_a_rules_file_is_removed_only_once_the_library_no_longer_wants_it(desired, observed):
+    """Keeping a removed rule is the page's Bring back, never a computer's answer."""
+    choices = _rule_choices(desired, observed)
+    assert (Choice.REMOVE in choices) == (desired is Desired.DISABLED
+                                          and observed is not Observed.ABSENT)
+    assert Choice.ENABLE not in choices
+    assert (Choice.RESTORE in choices) == (desired is Desired.ENABLED
+                                           and observed is Observed.UNKNOWN)
+    assert (Choice.PUSH in choices) == (observed is Observed.UNKNOWN
+                                        or (desired is Desired.DISABLED
+                                            and observed is Observed.EDITED))

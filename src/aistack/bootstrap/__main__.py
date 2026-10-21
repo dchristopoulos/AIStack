@@ -553,6 +553,9 @@ def run() -> None:
                              "'status --hook' is that reminder: printed only when sync has "
                              "something to do")
     parser.add_argument("--allow-http", action="store_true", help="Allow public plain HTTP, which exposes this computer’s key")
+    parser.add_argument("--rule-choice", action="append", default=[], metavar="KEY=CHOICE",
+                        help="For 'sync': the person's answer to a rule question sync "
+                             "reported, by its key, such as project:claude_code:house-style=push")
     arguments = parser.parse_args()
     command = arguments.command
     folder = Path(arguments.folder).expanduser() if arguments.folder else None
@@ -574,6 +577,9 @@ def run() -> None:
         from aistack.bootstrap.sync_lock import locked
         from aistack.services import server_connection, server_sync
 
+        choices = dict(choice.partition("=")[::2] for choice in arguments.rule_choice)
+        if any(not key or not value for key, value in choices.items()):
+            parser.error("--rule-choice takes the question's key and an answer: KEY=CHOICE")
         try:
             connection = agent_config.remote_connection(arguments.agent)
             warning = server_connection.checked_server(connection.url, arguments.allow_http)
@@ -581,7 +587,8 @@ def run() -> None:
             if warning and not arguments.hook:
                 print(warning)
             with locked(Path.home()):
-                reports = asyncio.run(server_sync.sync_computer(connection, Path.home(), Path.cwd()))
+                reports = asyncio.run(server_sync.sync_computer(connection, Path.home(), Path.cwd(),
+                                                                choices))
             rendered = server_sync.output(reports, arguments.hook)
             if rendered:
                 print(rendered)

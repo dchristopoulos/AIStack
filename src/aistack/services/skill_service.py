@@ -90,7 +90,7 @@ def store(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
     is slow, and nothing slow runs while SQLite's write lock is held."""
     started_at = perf_counter()
     harness = validated_harness(harness)
-    _require_registered_machine(session, machine_id, user_id, token_prefix)
+    require_registered_machine(session, machine_id, user_id, token_prefix)
 
     skill, created = _find_or_create_skill(
         session, visibility.personal_team(session, user_id).team_id, uploaded, origin, user_id)
@@ -597,7 +597,7 @@ def archive_of(session: Session, machine_id: uuid.UUID, skill_version_id: uuid.U
     tool call and the download cannot serve files that disagree with what the tool described.
     A download URL passes the `token_prefix` it was minted with (ADR-0027).
     """
-    machine = _require_registered_machine(session, machine_id, None, token_prefix)
+    machine = require_registered_machine(session, machine_id, None, token_prefix)
 
     revision = session.execute(
         select(Skill.skill_id, Skill.name, SkillVersion.created_on)
@@ -695,7 +695,7 @@ def _bring_back(session: Session, skill: Skill) -> None:
     session.execute(update(Skill).where(Skill.skill_id == skill.skill_id).values(archived=False))
 
 
-def _require_registered_machine(session: Session, machine_id: uuid.UUID,
+def require_registered_machine(session: Session, machine_id: uuid.UUID,
                                 user_id: uuid.UUID | None, token_prefix: str | None) -> Machine:
     """A ticket outlives the tool call that minted it, so the machine may be gone by now, or
     hold a new token after the old one was lost (ADR-0027)."""

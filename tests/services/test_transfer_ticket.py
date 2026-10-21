@@ -5,11 +5,14 @@ import jwt
 import pytest
 
 from aistack.commons.exceptions import InvalidTicket
+from aistack.db.models.coding_agent import CodingAgent
 from aistack.db.models.harness import Harness
 from aistack.services.transfer_ticket import (
     SIGNING_KEY_BYTES,
     DashboardHolder,
     DownloadTicket,
+    RuleDownloadTicket,
+    RuleUploadTicket,
     TicketSigner,
     UploadTicket,
 )
@@ -189,3 +192,55 @@ def test_a_session_from_before_tickets_named_their_computer_is_refused(signer):
 
     with pytest.raises(InvalidTicket):
         signer.verified_dashboard_session(jwt.encode(claims, KEY, algorithm="HS256"))
+
+
+# --- rule text (ADR-0036) ----------------------------------------------------------------------
+
+RULE_UPLOAD = RuleUploadTicket(machine_id=uuid.uuid4(), user_id=uuid.uuid4(),
+                               token_prefix=TOKEN_PREFIX, rule_name="house-style",
+                               agent=CodingAgent.CODEX, project_id=uuid.uuid4(), backup=True)
+RULE_DOWNLOAD = RuleDownloadTicket(machine_id=uuid.uuid4(), token_prefix=TOKEN_PREFIX,
+                                   rule_revision_id=uuid.uuid4(), agent=CodingAgent.CLAUDE_CODE)
+
+
+def test_rule_tickets_round_trip(signer):
+    assert signer.verified_rule_upload(signer.sign_rule_upload(RULE_UPLOAD)) == RULE_UPLOAD
+    assert signer.verified_rule_download(
+        signer.sign_rule_download(RULE_DOWNLOAD)) == RULE_DOWNLOAD
+
+
+def test_each_ticket_opens_only_its_own_purpose(signer):
+    """The audience is the purpose: no skill ticket reads or writes a rule, nor the reverse."""
+    signed = {"upload": signer.sign_upload(UPLOAD), "download": signer.sign_download(DOWNLOAD),
+              "rule_upload": signer.sign_rule_upload(RULE_UPLOAD),
+              "rule_download": signer.sign_rule_download(RULE_DOWNLOAD)}
+    verifiers = {"upload": signer.verified_upload, "download": signer.verified_download,
+                 "rule_upload": signer.verified_rule_upload,
+                 "rule_download": signer.verified_rule_download}
+    # Every claim any purpose reads, so only the audience tells them apart.
+    every_claim = {}
+    for token in signed.values():
+        every_claim |= jwt.decode(token, options={"verify_signature": False})
+    for purpose, token in signed.items():
+        audience = jwt.decode(token, options={"verify_signature": False})["aud"]
+        forged = jwt.encode(every_claim | {"aud": audience}, KEY, algorithm="HS256")
+        for other, verify in verifiers.items():
+            if other != purpose:
+                with pytest.raises(InvalidTicket):
+                    verify(token)
+                with pytest.raises(InvalidTicket):
+                    verify(forged)
+
+
+@pytest.mark.parametrize("claims", [{"agent": "gemini"}, {"backup": "yes"}, {"rule_name": ...},
+                                    {"project_id": "not-a-uuid"}])
+def test_a_rule_upload_ticket_with_malformed_claims_is_not_valid(claims):
+    signer = TicketSigner(KEY)
+    forged = jwt.decode(signer.sign_rule_upload(RULE_UPLOAD), options={"verify_signature": False})
+    for claim, value in claims.items():
+        if value is ...:
+            del forged[claim]
+        else:
+            forged[claim] = value
+    with pytest.raises(InvalidTicket, match="not valid"):
+        signer.verified_rule_upload(jwt.encode(forged, KEY, algorithm="HS256"))
