@@ -4,6 +4,49 @@ One section per release, written when the release is cut, in the form of [Keep a
 
 The image tag `0.1` follows the releases of 0.1, and the package on PyPI is `aistack-mcp`. The tag pipeline publishes a release only when this file has a section for it, and uses that section as the GitHub Release's notes.
 
+## 0.1.2 (2026-10-21)
+
+Works beside 0.1.1: computers and servers on either release can share one database while they update.
+
+### Upgrade notes
+
+- Two schema changes run at startup. On SQLite the server keeps a copy of the database from before the upgrade; on PostgreSQL, take a backup first.
+- Run `aistack admin` from the upgraded server for recovery, offboarding and forgetting. An older release's `offboard` or `forget` does not know about computer codes and can leave a recovery code usable. Computers on older releases keep working.
+
+### Added
+
+- Connect another computer with a one-use code instead of carrying its permanent key ([ADR-0035](docs/adr/0035-the-program-does-the-mechanical-work.md)). **Computers → Add a computer** on the dashboard makes the code and the command to run on the new computer, `uvx aistack-mcp join <server> <code>`, and you approve the request it starts in the same dialog. A code works once and lasts 24 hours, or 1 hour or 7 days if you choose; its options set the name, the agents, an empty start, the session-start hook, and whether approval is needed. Codes in use are listed under Computers with their expiry and a Cancel code button. In chat, `add_machine(computer_code=true)` makes one.
+- The `aistack` program on each computer does the mechanical work itself. `aistack join` installs AIStack, configures the agents it finds, installs your Library's skills and runs the first sync, and picks up where it stopped when run again. `aistack sync` on a server connection downloads, installs and backs up skills, and leaves local edits, disabled skills and team offers for your agent to ask about. Setup can run `aistack sync --hook` at session start, which says nothing when nothing needs attention.
+- A computer's connection can carry a fingerprint of its operating system's computer id. A connection copied onto another computer, as when a home folder is restored there, is refused before sync touches a skill folder; that computer gets its own code. Older clients that send no fingerprint are still accepted.
+- Operators: `aistack admin register-machine <username> --computer-code` makes a one-use recovery code, valid for 24 hours and without approval, for someone with no computer left.
+
+### Changed
+
+- Setup for a first computer installs the program and points the session-start hook at `aistack sync --hook` by its full path, in place of the old reminder line.
+- `add_machine` with a name and an operating system, and `register-machine` with a computer name and `--os`, still return permanent-token setup for older callers, until a future minor release.
+- Removing the computer that made a code, or rotating its token, cancels the code and its request. Offboarding and forgetting someone cancel their pending codes and requests, recovery codes included.
+- Sign out shows its word beside the icon, the local Move dialogs are shorter, and removing a member says that the invite links they made stop working.
+
+### Fixed
+
+- A setup that was denied, expired or lost its key starts over from a new code instead of resuming the old request, and a computer removed on the dashboard can join again.
+- One refused skill no longer stops sync for every other skill, and a second session starting at the same time waits up to 20 seconds for the first sync instead of skipping its project folder.
+- Running `aistack join` again on a connected computer sets up its agents and hook again. The program is installed before the code is used, so a computer without uv no longer leaves a request waiting. A team update offered by several folders is listed once.
+- A hook installed after accepting a public server over plain HTTP no longer refuses that server at every session start, and the plain-HTTP warning and the missing computer id note appear only in a manual sync.
+- Focus stays in the Add a computer dialog while it refreshes, and moves to the next button when an action removes the one it was on.
+- An admin saw a private group they are not in as an empty one, with a Subscribed switch the server refused and a place in the share picker. It now reads as private, and Team Settings says an admin sees its skills only from inside it or with sight of every group.
+- A team invite code sent again by the person who used it, after the answer was lost, names the team again instead of being refused and counted as a failed attempt.
+- The invite tool told members an admin lets invite that they could not, and the sync skill's manual hook step could add a second hook beside the program's.
+- An install writes its files to disk before it replaces the old folder, so a power cut cannot leave a skill with empty files.
+- A failed self-update in local mode is logged as a warning, without uv's output.
+
+### Security
+
+- A code and the request it starts each carry a credential of their own, and the new computer's permanent key reaches it only through the program, kept in a protected file until setup finishes. A refused code is throttled like any refused credential.
+- Replaying a Library's log places a skill only on the person's own computers, as it already did for project folders.
+- A refused server address is no longer repeated in the error that refuses it.
+- certifi 2026.10.19 fixes GHSA-6q48-6c7w-9gw2.
+
 ## 0.1.1 (2026-10-19)
 
 Works beside 0.1.0: computers and servers on either release can share one database while they update.

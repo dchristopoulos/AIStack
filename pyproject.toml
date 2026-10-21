@@ -2,7 +2,7 @@
 # "aistack" on PyPI belongs to an unrelated project, and PyPI refuses look-alikes of it.
 # The import package and the command are still `aistack`.
 name = "aistack-mcp"
-version = "0.1.1"
+version = "0.1.2"
 description = "A self-hosted home for your AI coding skills, shared with your team over MCP."
 readme = "README.md"
 license = "MIT"
