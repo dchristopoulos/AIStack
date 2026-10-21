@@ -30,7 +30,7 @@ One step of an issue is one branch and one pull request (`docs/agents/issue-trac
 
 ## 4. Gate
 
-Work that was decided and planned, and passes, merges without waiting for a manual review. Arm auto-merge with the squash method on every PR: `gh pr merge <n> --auto --squash --delete-branch`. `main` gets one commit per PR, carrying the commit's message with `(#n)` added to its subject. Nothing reaches `main` except through a merged PR: never push to it, and never force-push it. `main` requires `pytest`, `browsers (firefox)`, `browsers (webkit)` and `container`, and GitHub refuses auto-merge on a branch with no required checks.
+Work that was decided and planned, and passes, merges without waiting for a manual review. Arm auto-merge with the squash method on every PR: `gh pr merge <n> --auto --squash --delete-branch`. `main` gets one commit per PR, carrying the commit's message with `(#n)` added to its subject. Nothing reaches `main` except through a merged PR: never push to it, and never force-push it. `main` requires `pytest`, `browsers (chromium)`, `browsers (firefox)`, `browsers (webkit)`, `container`, `windows` and `macos`, and GitHub refuses auto-merge on a branch with no required checks.
 
 A **trust-boundary** change (auth, sync, push validation and hashing, migrations or migration tooling, anything that deletes, any route that answers without a session) earns its merge with more evidence instead of a wait. Before arming it:
 

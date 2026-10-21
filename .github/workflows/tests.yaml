@@ -179,8 +179,9 @@ jobs:
           poetry run pytest tests/ui -q -p no:cacheprovider --no-header -rs -o faulthandler_timeout=120 --shard ${{ matrix.shard }} | tee result.txt
           ! grep -q "skipped" result.txt
 
-  # The checks `main` requires by name, `browsers (firefox)` and `browsers (webkit)`, one per
-  # engine as before the halves. Always run, for the reason given at `pytest`.
+  # The checks `main` requires by name, `browsers (chromium)`, `browsers (firefox)` and
+  # `browsers (webkit)`, one per engine as before the halves. Always run, for the reason given
+  # at `pytest`.
   browsers:
     if: always()
     needs: [browser-tests]

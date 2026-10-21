@@ -211,7 +211,7 @@ TEST_DATABASE_URL=postgresql+psycopg://aistack:aistack@localhost:5433/aistack_te
 
 Tests against real GitHub are opt-in: `AISTACK_E2E_GITHUB_REPO=<owner>/<scratch-repo> poetry run pytest tests/e2e`.
 
-CI runs the suite on SQLite and PostgreSQL, the dashboard tests in Chromium, Firefox, and WebKit, a Windows job, and a container job that drives the built image as two users across a restart on both databases.
+CI runs the suite on SQLite and PostgreSQL, the dashboard tests in Chromium, Firefox, and WebKit, a Windows and a macOS job, and a container job that drives the built image as two users across a restart on both databases.
 
 Where to start reading the code:
 
