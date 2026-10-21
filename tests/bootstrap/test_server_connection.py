@@ -115,11 +115,16 @@ def test_only_manual_sync_repeats_the_plain_http_warning(tmp_path, monkeypatch, 
     monkeypatch.setattr(sys, "argv", ["aistack", "sync", *(["--hook"] if hook else [])])
     monkeypatch.setattr(agent_config, "remote_connection", lambda _: Connection("http://127.0.0.1/mcp", "secret"))
 
-    async def nothing_to_do(*args):
+    asked = {}
+
+    async def nothing_to_do(*args, **keywords):
+        asked.update(keywords)
         return []
 
     monkeypatch.setattr(server_sync, "sync_computer", nothing_to_do)
     command.run()
+    # Only a manual sync covers every project; the session-start hook stays fast.
+    assert asked == {"every_project": not hook}
     printed = capsys.readouterr().out
     assert ("not encrypted" in printed) is not hook
     assert printed == "" if hook else "up to date" in printed
@@ -137,7 +142,7 @@ def test_sync_command_explains_a_copied_connection(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["aistack", "sync"])
     monkeypatch.setattr(agent_config, "remote_connection", lambda _: Connection("https://server/mcp", "secret"))
 
-    async def copied(*args):
+    async def copied(*args, **_):
         raise ToolError("This looks like a different computer. Add it as its own computer from the dashboard.")
 
     monkeypatch.setattr(server_sync, "sync_computer", copied)

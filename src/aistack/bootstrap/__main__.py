@@ -521,6 +521,12 @@ def run() -> None:
         configure_logging("WARNING")
         computer_link.run(sys.argv[2:])
         return
+    if sys.argv[1:2] == ["link"]:
+        from aistack.bootstrap import computer_link
+
+        configure_logging("WARNING")
+        computer_link.run_link(sys.argv[2:])
+        return
     parser = argparse.ArgumentParser(
         prog="aistack",
         description="With no command, serve your own Library to the coding agent that started "
@@ -537,7 +543,8 @@ def run() -> None:
                     "with a computer code, and 'sync' reconciles its skills; 'start' starts "
                     "Claude Code or Codex in a project with only the chosen skills; 'project add "
                     "<folder>' adds a project and lists its Markdown files; 'open' acts on "
-                    "an aistack:// link from the dashboard.")
+                    "an aistack:// link from the dashboard, which 'link' registers and "
+                    "'link remove' removes.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
                                                        "sync-skill", "check", "export",
                                                        "github", "move", "connect", "backup",
@@ -594,8 +601,14 @@ def run() -> None:
             if warning and not arguments.hook:
                 print(warning)
             with locked(Path.home()):
-                reports = asyncio.run(server_sync.sync_computer(connection, Path.home(), Path.cwd(),
-                                                                choices))
+                # The session-start hook stays fast: the agents' folders and this project.
+                reports = asyncio.run(server_sync.sync_computer(
+                    connection,
+                    Path.home(),
+                    Path.cwd(),
+                    choices,
+                    every_project=not arguments.hook,
+                ))
             rendered = server_sync.output(reports, arguments.hook)
             if rendered:
                 print(rendered)
