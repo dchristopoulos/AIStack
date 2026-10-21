@@ -355,7 +355,7 @@ The web application is the product; MCP connects an agent to the account. The da
 | Team admin | Invite code; members, roles, and sight of every group; create groups and nest them; make one private; add people; move or remove a skill |
 | Teams | Create a team; join one with a code; leave one |
 
-**Two columns are the map.** A rail on the left holds the user's spaces, the way a chat application lists servers: *Personal* on top, then each team, then one *+* that creates a team or joins one with a code. The column beside it lists what is in the chosen space, and the account bar with sign-out runs under both at the bottom. For Personal that is the Library, with a blue dot and a count when updates are waiting, and then each computer as one row per coding agent on it, opening that agent's page at `#/f/<machine id>/<agent>`. The *+* beside the Computers heading makes a one-use computer code (ADR-0035); a code still in use is listed under the computers with its expiry and Cancel code. A computer's agents are the `harnesses` `/api/state` lists for it, and a skill is placed in one of them, not on the computer as a whole. For a team it is All skills, the team's groups nested a step in per level, then Members and Settings. A private group has a lock, every group shows how many skills are in it and below it, and a blue dot marks one with an update waiting for a skill the user took. Choosing a group opens the team's skills narrowed to that group and the groups under it, at `#/t/<team>/skills/<group path>`, an address that can be reloaded or sent to a teammate. The tree is built from the groups `/api/state` sends, so a private group the user is not in is absent from it, and its address opens the whole team exactly as an unknown one does.
+**Two columns are the map.** A rail on the left holds the user's spaces, the way a chat application lists servers: *Personal* on top, then each team, then one *+* that creates a team or joins one with a code. The column beside it lists what is in the chosen space, and the account bar with sign-out runs under both at the bottom. For Personal that is the Library, with a blue dot and a count when updates are waiting, then the places a person thinks in (ADR-0037): Every project (`#/every`), each project by name (`#/p/<key>`), assembled in the page from every computer's `projects`, and each computer (`#/c/<machine id>`). A project's page and Every project show one table of skills with a column per coding agent and a tick where that agent gets the skill; a computer's page lists its agents and projects with their folders. A *+* on a heading or an item opens what can be added there. The *+* beside the Computers heading makes a one-use computer code (ADR-0035); a code still in use is listed under the computers with its expiry and Cancel code. A computer's agents are the `harnesses` `/api/state` lists for it, and a skill is placed in one of them, not on the computer as a whole. For a team it is All skills, the team's groups nested a step in per level, then Members and Settings. A private group has a lock, every group shows how many skills are in it and below it, and a blue dot marks one with an update waiting for a skill the user took. Choosing a group opens the team's skills narrowed to that group and the groups under it, at `#/t/<team>/skills/<group path>`, an address that can be reloaded or sent to a teammate. The tree is built from the groups `/api/state` sends, so a private group the user is not in is absent from it, and its address opens the whole team exactly as an unknown one does.
 
 **Placing a skill is three gestures over one route.** A tag per computer on a Library row, with a cross to take it off; Add to… on the row, a box per computer; and on a computer's page, Add skills and Copy from…, which adds what another computer has and removes nothing. Each is a series of `POST /api/skills/{name}/machines/{machine_id}` calls, one per change, and the page reloads its state once they are done.
 
@@ -428,8 +428,8 @@ A group's path contains slashes, so it always travels in the body and never in t
     {"id": "af6c2628-…", "name": "macbook", "os": "MACOS", "harnesses": ["claude_code"],
      "added_on": "2026-10-13T09:12:01.402113+00:00", "added_by": null, "added_by_removed": false,
      "last_synced": {"claude_code": "2026-10-14T00:40:12.513920+00:00"},
-     "projects": [{"key": "github.com/dchristopoulos/aistack", "name": "aistack",
-                   "folders": [{"harness": "claude_code", "path": "/Users/dimitris/code/aistack",
+     "projects": [{"key": "github.com/demo-team/demo-api", "name": "demo-api",
+                   "folders": [{"harness": "claude_code", "path": "/Users/dimitris/code/demo-api",
                                 "last_synced_on": "2026-10-14T00:41:02.104771+00:00"}]}]}
   ],
   "skills": [
@@ -480,13 +480,15 @@ A group's path contains slashes, so it always travels in the body and never in t
   ],
   "server": true,
   "library": {"kind": "server"},
-  "release": "0.1.0"
+  "release": "0.1.0",
+  "this_computer": "af6c2628-…"
 }
 ```
 
 | Field | Meaning |
 |---|---|
 | `release` | The AIStack release serving the page, as the startup log names it (Settings shows it) |
+| `this_computer` | The `id` of the computer whose link opened this session, which the page marks "This one" |
 | `server` | False on the localhost dashboard in local mode, where the page hides what only a server can do: creating, joining, and sharing with a team |
 | `library` | Where the Library lives, by `kind`: `{"kind": "server"}`, `{"kind": "this_computer"}`, `{"kind": "postgresql", "provider": "Neon", "host": "…"}`, or `{"kind": "github", "repository": "owner/name", "problem": null, "unpublished": 0}`. Never an address or a password |
 | `library.provider`, `host` | For a PostgreSQL Library: the provider recognised from the host (Neon, Supabase, or PostgreSQL), and the host |

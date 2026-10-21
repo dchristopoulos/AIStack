@@ -50,9 +50,8 @@ SKILLS = {
     "sql-style": ("Formats SQL the way the developers agreed. Use when writing or "
                   "reviewing a query.", {"examples/select.sql": "SELECT id\nFROM skill\n"
                                                                 "WHERE archived = FALSE;\n"}),
-    "aistack-api-notes": ("How AIStack's own routes and tools are laid out. Use when changing "
-                          "the server.", {"routes.md": "- /mcp: the tools\n- /transfer: "
-                                                       "bytes\n- /api: the dashboard\n"}),
+    "demo-api-notes": ("How demo-api's routes are laid out. Use when changing the API.",
+                       {"routes.md": "- /orders: the orders\n- /customers: who ordered\n"}),
     "pentest-checklist": ("Steps for a first-pass security review of a web service. Use "
                           "before a release.", {"steps.md": "1. authentication\n2. "
                                                             "authorization\n3. input\n"}),
@@ -62,10 +61,16 @@ SKILLS = {
 }
 
 
-# A repository on the macbook, as its sync skill reports it.
-PROJECT_HERE = {"path": "/Users/dimitris/code/aistack",
-                "remote": "git@github.com:dchristopoulos/AIStack.git"}
-PROJECT_KEY = "github.com/dchristopoulos/aistack"
+# The team's repositories, as the sync skill reports them: demo-api on both of Dimitris's
+# computers, demo-website on the macbook only.
+PROJECT_KEY = "github.com/demo-team/demo-api"
+PROJECT_HERE = {"path": "/Users/dimitris/code/demo-api",
+                "remote": "git@github.com:demo-team/demo-api.git"}
+PROJECT_ON_DESKTOP = {"path": "/home/dimitris/code/demo-api",
+                      "remote": "git@github.com:demo-team/demo-api.git"}
+WEBSITE_KEY = "github.com/demo-team/demo-website"
+WEBSITE_HERE = {"path": "/Users/dimitris/code/demo-website",
+                "remote": "https://github.com/demo-team/demo-website.git"}
 
 
 def archive(name: str, extra: str = "") -> bytes:
@@ -132,7 +137,7 @@ async def seed(base_url: str, invite_code: str, long_names: bool = False,
     await maria.join(invite_code, "work-laptop", "LINUX")
     await alex.join(invite_code, "thinkpad", "WINDOWS")
 
-    for name in ("code-review", "release-notes", "sql-style", "aistack-api-notes",
+    for name in ("code-review", "release-notes", "sql-style", "demo-api-notes",
                  "pentest-checklist", "meeting-notes", "commit-messages"):
         await dimitris.push(name)
     for person in (dimitris, maria, alex):
@@ -147,37 +152,40 @@ async def seed(base_url: str, invite_code: str, long_names: bool = False,
     for name in ("commit-messages", "meeting-notes"):
         await dimitris.page(f"/skills/{name}/machines/{macbook}", enabled=True, harness="agents")
 
-    # The aistack repository on the macbook is a project: its Claude Code folder synced once,
-    # and holds one skill of its own (ADR-0026).
+    # demo-api is a project on both computers: its Claude Code folder synced once on each, and
+    # holds one skill of its own on the macbook only (ADR-0026). demo-website is on the macbook.
     await dimitris.tool("sync", local={}, here=PROJECT_HERE, project=PROJECT_KEY)
-    await dimitris.page(f"/skills/aistack-api-notes/machines/{macbook}", enabled=True,
+    await dimitris.call(desktop_token, "sync", local={}, here=PROJECT_ON_DESKTOP,
                         project=PROJECT_KEY)
+    await dimitris.page(f"/skills/demo-api-notes/machines/{macbook}", enabled=True,
+                        project=PROJECT_KEY)
+    await dimitris.tool("sync", local={}, here=WEBSITE_HERE, project=WEBSITE_KEY)
 
     # A company team, with a group per discipline and a narrower one inside it.
-    await dimitris.page("/teams", name="aistack")
+    await dimitris.page("/teams", name="demo-team")
     for person in (maria, alex):
-        code = (await dimitris.page("/teams/aistack/invite"))["code"]
+        code = (await dimitris.page("/teams/demo-team/invite"))["code"]
         await person.page("/teams/join", code=code)
-    await dimitris.page("/teams/aistack/groups", name="developers")
-    await dimitris.page("/teams/aistack/groups", name="backend", parent="developers")
-    await dimitris.page("/teams/aistack/groups", name="security", private=True)
-    await dimitris.page("/teams/aistack/group/members", path="developers", username="maria",
+    await dimitris.page("/teams/demo-team/groups", name="developers")
+    await dimitris.page("/teams/demo-team/groups", name="backend", parent="developers")
+    await dimitris.page("/teams/demo-team/groups", name="security", private=True)
+    await dimitris.page("/teams/demo-team/group/members", path="developers", username="maria",
                         member=True)
 
     for name, group in (("code-review", None), ("release-notes", None),
-                        ("sql-style", "developers"), ("aistack-api-notes", "developers/backend"),
+                        ("sql-style", "developers"), ("demo-api-notes", "developers/backend"),
                         ("pentest-checklist", "security")):
-        await dimitris.page(f"/skills/{name}/share", team="aistack", group=group)
-    await dimitris.page("/skills/commit-messages/share", team="aistack")
+        await dimitris.page(f"/skills/{name}/share", team="demo-team", group=group)
+    await dimitris.page("/skills/commit-messages/share", team="demo-team")
 
     # Maria takes two skills and switches them on, and edits one; then it changes under her.
     maria_laptop = (await maria.browser.get("/api/state")).json()["machines"][0]["id"]
     for name in ("code-review", "sql-style"):
-        await maria.page("/teams/aistack/take", name=name)
+        await maria.page("/teams/demo-team/take", name=name)
         await maria.page(f"/skills/{name}/machines/{maria_laptop}", enabled=True)
     await maria.push("code-review", extra="Read the tests before the code.\n")
     await dimitris.push("code-review", extra="Also check that migrations are reviewed.\n")
-    await dimitris.page("/skills/code-review/share", team="aistack")
+    await dimitris.page("/skills/code-review/share", team="demo-team")
 
     # Alex wrote a release-notes of his own, unrelated to the one the team has.
     await alex.push("release-notes", extra="Alex's own checklist for a release.\n")
@@ -258,9 +266,9 @@ def main() -> None:
     descriptor = os.open(TOKENS_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w") as file:
         json.dump({"server": base_url, "tokens": tokens}, file)
-    print("Seeded: 3 people, 4 computers, teams 'aistack' and 'friends', 3 groups (one nested, "
-          "one private), and the aistack repository as a project on the macbook.")
-    print("Maria has an update to 'code-review' waiting. Alex is in 'aistack' and in no group, "
+    print("Seeded: 3 people, 4 computers, teams 'demo-team' and 'friends', 3 groups (one "
+          "nested, one private), and the projects demo-api and demo-website.")
+    print("Maria has an update to 'code-review' waiting. Alex is in 'demo-team' and in no group, "
           "so the private 'security' group is hidden from him.\n")
     print_links(links)
     print("\nFor new ones, run `python scripts/demo_seed.py --links`.")

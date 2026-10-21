@@ -258,24 +258,27 @@ h1 .mono { font-size: inherit; letter-spacing: -.03em; }
 .space-head h2.mono { font-size: 15px; overflow-wrap: anywhere; }
 .space-head h2 { font-size: 15px; font-weight: 600; letter-spacing: -.02em; }
 .space-head p { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-/* Computers as a folder tree: computer, then each coding agent, then its folders. */
-.tree { display: flex; flex-direction: column; gap: 1px; }
-.tree-comp { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px 0 4px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text); font-weight: 500; cursor: pointer; text-align: left; }
-.tree-comp:hover { background: var(--active); }
-.tree-comp .chev { flex: none; display: grid; place-items: center; width: 16px; color: var(--faint); transition: transform .15s var(--ease); }
-.tree-comp[aria-expanded="true"] .chev { transform: rotate(90deg); }
-.tree-comp svg.ico { color: var(--muted); }
-.tree-comp .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-kids { margin: 0 0 6px 15px; padding-left: 8px; border-left: 1px solid var(--border); }
-.tree-agent { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; color: var(--muted); font-size: 13px; }
-.tree-agent svg { color: var(--faint); }
-.nav-item.leaf { height: 30px; padding-left: 30px; font-size: 13px; }
-.nav-item.leaf .path { color: var(--faint); font: 11.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-add { display: flex; align-items: center; gap: 8px; height: 28px; width: 100%; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--faint); font-size: 13px; cursor: pointer; text-align: left; }
-.tree-add:hover { background: var(--active); color: var(--text); }
-.tree-code .tree-add span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-code-line { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px 0 30px; color: var(--faint); font-size: 12px; }
-.tree-code-line > span { flex: 1; min-width: 0; }
+/* A sidebar item that can take something has a + beside it: on hover, on focus, on the current
+   item, and always on a touch screen. It stands where the count was. */
+.nav-row { position: relative; }
+.nav-row > .menu-wrap { position: absolute; right: 4px; top: calc(50% - 12px); }
+.nav-row .btn.plus, .nav-heading .btn.plus { width: 24px; height: 24px; padding: 0; }
+.nav-row .btn.plus { opacity: 0; }
+.nav-row:is(:hover, :focus-within, .current) .btn.plus, .nav-row .btn.plus[aria-expanded="true"] { opacity: 1; }
+.nav-row:is(:hover, :focus-within, .current) > .nav-item { padding-right: 34px; }
+.nav-row:is(:hover, :focus-within, .current) > .nav-item .count { display: none; }
+@media (hover: none) {
+  .nav-row .btn.plus { opacity: 1; }
+  .nav-row > .nav-item { padding-right: 34px; }
+  .nav-row > .nav-item .count { display: none; }
+}
+.nav-heading .menu-wrap { margin-left: auto; margin-right: -4px; }
+.nav-item .aside { display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 400; color: var(--faint); }
+.nav-item[aria-current="page"] .aside { color: var(--muted); }
+.menu-head { padding: 6px 8px 4px; font-size: 12px; color: var(--faint); white-space: nowrap; }
+.code-row .nav-btn span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-line { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px 0 34px; color: var(--faint); font-size: 12px; }
+.code-line > span { flex: 1; min-width: 0; }
 .sidebar {
   grid-area: side; min-height: 0;
   display: flex; flex-direction: column;
@@ -406,6 +409,8 @@ input[type="checkbox"] { border-radius: 4px; }
 input[type="radio"]:hover, input[type="checkbox"]:hover { border-color: var(--accent); }
 input[type="radio"]:checked { border-color: var(--accent); background-image: radial-gradient(circle, var(--accent) 0 3.5px, transparent 4px); }
 input[type="checkbox"]:checked { border-color: var(--accent); background-color: var(--accent); background-image: var(--tick); }
+/* On for some of what it stands for: a bar, never a tick. */
+input[type="checkbox"]:indeterminate { border-color: var(--accent); background-image: linear-gradient(var(--accent), var(--accent)); background-size: 8px 2px; }
 .search { position: relative; flex: 0 1 300px; min-width: 180px; }
 .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--faint); pointer-events: none; }
 .search .input { padding-left: 32px; padding-right: 36px; }
@@ -471,7 +476,30 @@ input[type="checkbox"]:checked { border-color: var(--accent); background-color: 
 /* ---------- tables ---------- */
 .tbl { display: grid; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
 .tbl.library { grid-template-columns: minmax(240px, 1fr) fit-content(180px) minmax(0, 1.1fr) auto; }
-.tbl.folder { grid-template-columns: minmax(240px, 1fr) fit-content(180px) auto auto; }
+.tbl.plain { grid-template-columns: minmax(160px, 1fr) minmax(0, 1.4fr) auto auto auto; }
+/* The tick table: a column per coding agent, a tick where that agent gets the row. */
+.tbl.ticks .th:not(:first-child):not(:last-child), .tbl.ticks .td.tick { align-items: center; justify-content: center; }
+.tick { display: inline-flex; align-items: center; gap: 8px; min-height: 24px; color: var(--faint); }
+.tick.on { color: var(--accent-text); }
+.tick-name { display: none; }
+.grp-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
+.grp-cell svg { color: var(--muted); }
+.grp-cell strong { font-weight: 600; }
+.t2.row-note { display: flex; align-items: center; gap: 6px; }
+.t2.row-note svg { flex: none; color: var(--faint); }
+h2.sec { margin: 0 0 12px; font-size: 15px; font-weight: 600; letter-spacing: -.02em; }
+.wrap.body > h2.sec ~ h2.sec { margin-top: 32px; }
+.head-chips { margin-top: 8px; }
+.where-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.where-cards .card + .card { margin-top: 0; }
+.where-card .card-body { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 16px; }
+.where-card h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.where-card h3 svg { color: var(--muted); }
+.where-card .aside { font-size: 12px; font-weight: 400; color: var(--faint); display: inline-flex; align-items: center; gap: 6px; }
+.where-card code.path { align-self: stretch; padding: 4px 8px; border-radius: var(--r-sm); background: var(--surface-2); font: 12.5px var(--mono); overflow-wrap: anywhere; }
+.picker.inline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-bottom: 12px; }
+.picker.inline legend { float: left; margin: 0 4px 0 0; }
+.picker.inline .choice { display: inline-flex; align-items: center; gap: 6px; }
 .tbl.tree { grid-template-columns: minmax(240px, 1fr) auto fit-content(180px) auto; }
 .tbl.groups { --gx: 8px; }
 .tr {
@@ -866,6 +894,8 @@ dialog.dlg.sheet[open] { animation: slide .2s var(--ease); }
   .tr > .td.wide { flex: 1 1 100%; }
   .td.end .menu-wrap, .td.end .push { margin-left: auto; }
   .tr > .td.update-cell { flex: 1 1 100%; }
+  .tick-name { display: inline; }
+  .tbl.ticks .tr > .td.tick { flex: 0 0 auto; }
   .tr.update-row:not(.grp):not(.hint-row):not(.th-row) { padding-top: 0; }
   .tr:has(+ .update-row) { padding-bottom: 6px; }
   .tr.grp { padding-right: 8px; }
@@ -965,8 +995,7 @@ const WORDS = {
   titles: {
     page: '{place}, AIStack',
     team: '{place}, {team}',
-    folder: '{agent} on {computer}',
-    projectFolder: '{agent} in {project} on {computer}',
+    every: 'Every project',
   },
   count: {
     skill: { one: '{n} skill', other: '{n} skills' },
@@ -1029,10 +1058,6 @@ const WORDS = {
   rev: 'r{revision}',
   revisionTitle: 'Revision {revision}',
   revisionFiles: 'Revision {revision}, {files}',
-  revisionHere: 'r{revision} here',
-  revisionArrives: 'r{revision} in your library arrives at the next sync',
-  lastSyncedWhen: 'Last synced {when}',
-  notSyncedYet: 'Not synced yet: say "{sync}" there',
   arrivesLater: 'It reaches your other computers once GitHub can be reached again.',
   updatesWaiting: { one: '{n} update waiting', other: '{n} updates waiting' },
   updatesWaitingAfter: { one: ', {n} update waiting', other: ', {n} updates waiting' },
@@ -1050,7 +1075,7 @@ const WORDS = {
     revision: 'Revision',
     pushedBy: 'Pushed by',
   },
-  where: { teams: 'teams', computers: 'computers' },
+  where: { teams: 'teams', computers: 'computers', projects: 'projects', every: 'every project' },
   placeShort: { this_computer: 'This computer', github: 'GitHub', postgresql: 'PostgreSQL', server: 'Server' },
   pill: {
     label: 'Library: {place}, {state}',
@@ -1071,29 +1096,35 @@ const WORDS = {
     onlyYou: 'Only you see this',
     main: 'Main',
     computers: 'Computers',
+    projects: 'Projects',
+    every: 'Every project',
+    thisOne: 'This one',
     allSkills: 'All skills',
     team: 'Team',
     youAdmin: '{members}, you are an admin',
     youMember: '{members}, you are a member',
     updateWaiting: 'An update is waiting',
   },
-  tree: {
-    notSynced: 'Not synced yet: say "{sync}" there.',
-    global: 'Global',
-    globalLabel: '{computer} / {agent}, global folder, {skills}',
-    projectLabel: '{computer} / {agent}, project {project}, {skills}',
-    addAgent: 'Add an agent',
-    addProject: 'Add a project',
-    toComputer: ' to {computer}',
+  plus: {
+    label: 'Add to {place}',
+    agent: 'A coding agent…',
+    project: 'A project…',
+    skills: 'Skills…',
+    anotherComputer: 'Another computer…',
+    folderHere: 'A folder on this computer…',
+    fromOther: 'A project from another computer…',
   },
-  agentsFolder: {
-    name: 'Agents folder',
-    readers: 'Codex, Gemini CLI, Kimi Code, Cursor, Copilot CLI, opencode, and Amp',
+  notSynced: 'Not synced yet: say "{sync}" there.',
+  // The `agents` harness is ~/.agents/skills, read by Codex and every agent that follows it.
+  codex: {
+    name: 'Codex',
+    readers: 'Codex, Gemini CLI, Cursor and other agents',
+    tip: 'Gemini CLI, Cursor and the other agents that read ~/.agents/skills get the same skills as Codex.',
   },
   addAgent: {
     title: 'Add an agent to {computer}',
-    submit: 'Open its folder',
-    lead: 'Pick the coding agent. Its folder opens empty; add skills there and they arrive the next time you say {sync} on that computer.',
+    submit: 'Add',
+    lead: 'Pick the coding agent. Add skills for it, and they arrive the next time you say {sync} on that computer.',
     legend: 'Coding agent',
     readBy: '{folder}, read by {readers}',
   },
@@ -1226,35 +1257,53 @@ const WORDS = {
     restored: 'Restored r{revision} of {skill} as r{as}. Each computer installs it at its next {sync}.',
     newest: 'Newest',
   },
-  folder: {
-    where: '{agent} on {computer}',
-    heading: '{agent} on {computer}',
-    projectHeading: '{agent} in {project} on {computer}',
-    projectFolder: 'Project folder',
-    globalFolder: 'Global folder',
-    lastSeen: 'Where this repository was last seen on {computer}',
-    notSyncedHere: 'Not synced here yet',
-    readBy: 'Read by {readers}',
+  every: {
+    lead: 'Skills your agents get in every project, on every computer.',
+    table: 'Skills for every project',
+    noAgent: 'No coding agent has synced yet',
+    noAgentText: 'Say "{sync}" on one of your computers, and its coding agents show here.',
+    none: 'No skill reaches every project yet.',
+  },
+  project: {
+    team: 'Team project of {team}',
+    computers: 'Where it is',
+    table: 'What your agents read in {project}',
+    everyGroup: 'Skills for every project',
+    everyNote: 'Change them on Every project',
+    ownGroup: 'Skills in {project}',
+    ownNote: 'Only in this project, never committed',
+    noneOwn: 'No skill only for this project yet.',
+    synced: '{agents}. Synced {when}',
+    notSynced: '{agents}. Not synced here yet',
+    firstSync: 'Skills arrive the first time {computer} syncs inside {project}: open your coding agent in the repository there and say {sync}.',
+    stop: 'Stop managing here…',
+    stopLabel: 'Stop managing {project} on {computer}…',
+    gone: 'No computer manages this project any more.',
+  },
+  computerPage: {
+    agents: 'Coding agents',
+    projects: 'Projects',
+    agent: 'Agent',
+    folder: 'Folder',
+    skills: 'For every project',
+    synced: 'Last synced',
+    noProjects: 'No project on {computer} yet.',
+    settings: 'Computer settings',
     unpick: 'Remove from this list',
-    stopManaging: 'Stop managing {project}…',
-    computerSettings: 'Computer settings',
-    copyFrom: 'Copy from…',
-    addSkills: 'Add skills',
-    notSyncedOn: 'Not synced on {computer} yet',
-    firstSync: 'Skills added here arrive the first time {computer} syncs inside {project}: open your coding agent in the repository there and say {sync}.',
-    twice: { one: '{skills} is also in the global folder. ', other: '{skills} are also in the global folder. ' },
-    claudeUsesGlobal: 'Claude Code uses the global copy.',
-    agentsListBoth: 'The agents reading this folder list both copies.',
-    removeLabel: 'Remove {skill} from {place}',
-    removed: 'Removed {skill} from {place}. Its next sync asks whether to delete the folder; it stays in your library.',
-    emptyTitle: 'Nothing in {place} yet',
-    empty: 'Add skills from your library, or copy what another agent has.',
-    everyCopy: 'Every copy of this repository on {computer} shares these skills, and git never sees them.',
+    unpickLabel: 'Remove {agent} from this list',
+  },
+  tick: {
+    label: '{skill} for {agent}',
+    gets: '{agent} gets it',
+    not: 'Not for {agent}',
+    noFolder: '{agent} is not used here',
+    onlyOn: 'Only on {computers}',
+    alsoEvery: 'Also for every project; Claude Code uses that copy.',
   },
   stopManaging: {
     title: 'Stop managing {project} on {computer}?',
     submit: 'Stop managing',
-    stops: 'AIStack stops syncing {agent} on {computer}, and forgets which skills belong there.',
+    stops: 'AIStack stops syncing {project} on {computer}, and forgets which skills belong there.',
     stay: 'The skills stay in your library, on your other computers, and in the folder on disk, still hidden from git.',
     done: 'Stopped managing {project} on {computer}.',
   },
@@ -1263,6 +1312,13 @@ const WORDS = {
     fromOthers: 'From your other computers',
     legend: 'A project your other computers have',
     forAgent: '{project} for {agent}',
+    onComputer: '{computer}, {agent}',
+    fromComputer: '{project} on {computer}, for {agent}',
+    titleFor: 'Add {project} to a computer',
+    titleFrom: 'Add a project from another computer',
+    noneMore: 'Every computer already manages it for each of its agents.',
+    folderHere: 'Add a folder on this computer',
+    folderHereLead: 'Open your coding agent inside the repository and say this. It adds the project and syncs it.',
     noneElsewhere: 'None of your computers manages a project this one does not.',
     unseen: 'A repository AIStack has not seen',
     unseenLead: 'On {computer}, open your coding agent inside the repository and say this. It adds the project and syncs it.',
@@ -1290,22 +1346,17 @@ const WORDS = {
     done: 'Removed {computer}.',
   },
   addSkills: {
-    title: 'Add to {place}',
+    title: 'Add skills to {place}',
+    agents: 'For',
+    noAgent: 'No coding agent has synced here yet: say "{sync}" there first.',
     elsewhere: 'in use elsewhere',
     onlyInLibrary: 'only in your library',
     empty: 'Your library is empty. Say "{sync}" on a computer to back up its skills.',
     emptyWithTeams: 'Your library is empty. Say "{sync}" on a computer to back up its skills, or add one from a team.',
     allHere: 'Every skill in your library is here already.',
+    button: 'Add skills',
     added: 'Added {skills} to {place}. ',
     arrive: 'They arrive at its next {sync}.',
-  },
-  copyFrom: {
-    title: 'Copy skills to {place}',
-    lead: 'Adds every skill the other one has and this one does not. Nothing is removed here.',
-    legend: 'Copy from',
-    added: 'Added {skills} from {from}. ',
-    arrive: 'They arrive at the next {sync} on {computer}.',
-    nothing: 'Nothing to copy: {place} already has every skill {from} has.',
   },
   take: {
     applies: 'Applies on {computers} at the next sync.',
@@ -1932,13 +1983,16 @@ function checkName(value, what) {
 
 /* ================= menu ================= */
 
-function menu(label, fk, items) {
-  const list = el('div', { class: 'menu', role: 'menu', hidden: true }, items.map(it =>
-    btn(it.label, { class: 'menu-item' + (it.danger ? ' danger' : ''), role: 'menuitem', tabIndex: -1,
+// `face` replaces the button's "Manage ▾" (the sidebar's + passes an icon and a tooltip), and
+// `heading` names the menu above its items.
+function menu(label, fk, items, { face, cls = 'btn sm', heading } = {}) {
+  const list = el('div', { class: 'menu', role: 'menu', 'aria-label': label, hidden: true },
+    heading && el('div', { class: 'menu-head', 'aria-hidden': 'true' }, heading),
+    items.map(it => btn(it.label, { class: 'menu-item' + (it.danger ? ' danger' : ''), role: 'menuitem', tabIndex: -1,
       on: { click: () => { close(); trigger.focus(); it.run(); } } }, it.icon)));
   // Labelled, never a bare "⋯": a person should know what is behind it before opening it.
-  const trigger = el('button', { type: 'button', class: 'btn sm', fk, 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-label': label,
-    on: { click: () => (list.hidden ? open() : close()) } }, el('span', null, W.manage), icon('down', 14));
+  const trigger = el('button', { type: 'button', class: cls, fk, 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-label': label, title: face ? label : null,
+    on: { click: () => (list.hidden ? open() : close()) } }, face || [el('span', null, W.manage), icon('down', 14)]);
   const wrap = el('div', { class: 'menu-wrap' }, trigger, list);
   const outside = ev => { if (!wrap.contains(ev.target)) close(); };
   function open() {
@@ -1947,7 +2001,7 @@ function menu(label, fk, items) {
     const at = trigger.getBoundingClientRect(), need = list.offsetHeight + 12;
     list.classList.toggle('up', innerHeight - at.bottom < need && at.top - 100 > need);
     trigger.setAttribute('aria-expanded', 'true');
-    list.firstChild.focus();
+    list.querySelector('[role=menuitem]').focus();
     document.addEventListener('pointerdown', outside, true);
   }
   function close() {
@@ -1957,7 +2011,7 @@ function menu(label, fk, items) {
   }
   wrap.addEventListener('keydown', ev => {
     if (list.hidden) return;
-    const all = [...list.children], i = all.indexOf(document.activeElement);
+    const all = [...list.querySelectorAll('[role=menuitem]')], i = all.indexOf(document.activeElement);
     if (ev.key === 'Escape') { ev.stopPropagation(); close(); trigger.focus(); }
     else if (ev.key === 'Tab') close();
     else if (ev.key === 'ArrowDown') { ev.preventDefault(); all[(i + 1) % all.length].focus(); }
@@ -2019,19 +2073,18 @@ function route() {
   const path = parts.slice(3).join('/');
   const group = team && tab === 'skills' && team.groups.some(g => g.path === path) ? path : null;
   if (team) return { view: 'team', team, tab, group };
-  // Any agent opens on any computer: one it has not synced to yet opens empty, ready for skills.
-  const machine = parts[0] === 'f' && state.machines.find(m => m.id === parts[1]);
-  if (machine && Object.hasOwn(AGENTS, parts[2])) {
-    // A project folder this computer manages, or, for a key it does not, its global folder.
-    const project = parts[3] ? projectFolder(machine, parts[2], parts[3]) : null;
-    return { view: 'folder', machine, agent: parts[2], project };
-  }
+  const machine = parts[0] === 'c' && state.machines.find(m => m.id === parts[1]);
+  if (machine) return { view: 'computer', machine };
+  // A project no computer manages any more opens as one with nothing in it, saying so.
+  if (parts[0] === 'p' && parts[1]) return { view: 'project', project: projectBy(parts[1]) || { key: parts[1], name: parts[1].split('/').pop(), on: [] } };
+  if (parts[0] === 'every') return { view: 'every' };
   if (parts[0] === 'storage') return { view: 'storage' };
   if (parts[0] === 'settings') return { view: 'settings' };
   return { view: 'library' };
 }
 const teamHash = (name, tab = 'skills', group) => `#/t/${enc(name)}/${tab}` + (group ? '/' + group.split('/').map(enc).join('/') : '');
-const folderHash = (m, agent, project) => `#/f/${enc(m.id)}/${agent}` + (project ? '/' + enc(project.key) : '');
+const computerHash = m => `#/c/${enc(m.id)}`;
+const projectHash = key => `#/p/${enc(key)}`;
 function go(hash) {
   if (location.hash === hash) render();
   else location.hash = hash;
@@ -2051,15 +2104,18 @@ const some = (names, max = 3) => names.slice(0, max).join(W.comma) + (names.leng
 
 const VIEWS = {
   team: r => teamView(r.team, r.tab, r.group),
-  folder: r => folderView(r.machine, r.agent, r.project),
+  every: () => everyView(),
+  project: r => projectView(r.project),
+  computer: r => computerView(r.machine),
   storage: () => storageView(),
   settings: () => settingsView(),
   library: () => libraryView(),
 };
 const TITLES = {
   team: r => say(W.titles.team, { place: r.group || (r.tab === 'settings' ? W.teamSettings : TAB_LABELS[r.tab]), team: r.team.name }),
-  folder: r => (r.project ? say(W.titles.projectFolder, { agent: AGENTS[r.agent].name, project: r.project.name, computer: r.machine.name })
-    : say(W.titles.folder, { agent: AGENTS[r.agent].name, computer: r.machine.name })),
+  every: () => W.titles.every,
+  project: r => r.project.name,
+  computer: r => r.machine.name,
   storage: () => W.storage.title,
   settings: () => W.settings.title,
   library: () => W.library.title,
@@ -2090,11 +2146,9 @@ function wherePath(r) {
     }
     return parts;
   }
-  if (r.view === 'folder') {
-    const head = [me, { label: W.where.computers }, { label: r.machine.name }, { label: AGENTS[r.agent].name }];
-    return r.project ? head.concat({ label: r.project.name, mono: true }, { label: AGENTS[r.agent].inProject, mono: true })
-      : head.concat({ label: AGENTS[r.agent].folder, mono: true });
-  }
+  if (r.view === 'computer') return [me, { label: W.where.computers }, { label: r.machine.name }];
+  if (r.view === 'project') return [me, { label: W.where.projects }, { label: r.project.name, mono: true }];
+  if (r.view === 'every') return [me, { label: W.where.every }];
   return [me, { label: { library: W.library.title, storage: W.whereItLives, settings: W.settings.title }[r.view] }];
 }
 
@@ -2152,9 +2206,7 @@ function renderSidebar(r) {
         link('#/library', r.view === 'library', icon('layers'), el('span', { class: 'label' }, W.library.title),
           updates ? el('span', { class: 'count upd', title: say(W.updatesWaiting, { n: updates }) }, el('span', { class: 'dot accent' }), String(updates))
             : el('span', { class: 'count' }, String(state.skills.length))),
-        el('div', { class: 'nav-heading' }, W.nav.computers,
-          btn(null, { class: 'btn ghost icon', fk: 'add-computer', title: W.addComputer.title, 'aria-label': W.addComputer.title, on: { click: addComputerDialog } }, 'plus')),
-        computerTree(r),
+        placesNav(r),
         el('div', { class: 'nav-foot' },
           link('#/storage', r.view === 'storage', icon('globe'), el('span', { class: 'label' }, W.whereItLives)),
           link('#/settings', r.view === 'settings', icon('settings'), el('span', { class: 'label' }, W.settings.title)))),
@@ -2198,9 +2250,7 @@ function renderSidebar(r) {
     btn(W.signOut, { class: 'btn ghost sm', fk: 'sign-out', on: { click: ev => signOut(ev.currentTarget) } }, 'logout'));
 }
 
-/* ---------- computers, as a folder tree ---------- */
-
-const folded = new Set(); // ids of computers folded shut in the sidebar
+/* ---------- the places a person thinks in: every project, each project, each computer (ADR-0037) ---------- */
 
 // Agents picked on a computer before any skill is there. Kept in this browser until a sync or a
 // skill makes the server know about it, at which point the server's list takes over.
@@ -2224,43 +2274,52 @@ function agentsShown(m, also) {
   return Object.keys(AGENTS).filter(a => picked.has(a));
 }
 
-function computerTree(r) {
-  return el('div', { class: 'tree' }, state.machines.map(m => {
-    const open = !folded.has(m.id);
-    const here = r.view === 'folder' && r.machine === m;
-    const shown = agentsShown(m, here ? r.agent : null);
-    const missing = Object.keys(AGENTS).filter(a => !shown.includes(a));
-    const kids = el('div', { class: 'tree-kids', hidden: !open },
-      shown.length ? null : el('div', { class: 'tree-agent' }, say(W.tree.notSynced, { sync: SYNC })),
-      shown.map(agent => {
-        const t = { m, agent }, n = placedOn(t).length;
-        const leaf = el('a', {
-          class: 'nav-item leaf', href: folderHash(m, agent), title: AGENTS[agent].folder,
-          'aria-current': here && r.agent === agent ? 'page' : null,
-          'aria-label': say(W.tree.globalLabel, { computer: m.name, agent: AGENTS[agent].name, skills: plural(n, 'skill') }),
-        }, icon('folder', 14), el('span', { class: 'label' }, W.tree.global), el('span', { class: 'count' }, String(n)));
-        const projectLeaves = projectsOf(m, agent).map(project => {
-          const pt = { m, agent, project }, count = placedOn(pt).length;
-          return el('a', {
-            class: 'nav-item leaf', href: folderHash(m, agent, project), title: AGENTS[agent].inProject,
-            'aria-current': here && r.agent === agent && r.project && r.project.key === project.key ? 'page' : null,
-            'aria-label': say(W.tree.projectLabel, { computer: m.name, agent: AGENTS[agent].name, project: project.name, skills: plural(count, 'skill') }),
-          }, icon('repo', 14), el('span', { class: 'label mono' }, project.name), el('span', { class: 'count' }, String(count)));
-        });
-        return [el('div', { class: 'tree-agent' }, icon('terminal', 14), AGENTS[agent].name), leaf, projectLeaves];
-      }),
-      missing.length ? el('button', { type: 'button', class: 'tree-add', fk: 'add-agent:' + m.id, on: { click: () => addAgentDialog(m, missing) } },
-        icon('plus', 14), W.tree.addAgent, el('span', { class: 'sr-only' }, say(W.tree.toComputer, { computer: m.name }))) : null,
-      // A project's folders are managed on a server for now (ADR-0026).
-      shown.length && state.server !== false ? el('button', { type: 'button', class: 'tree-add', fk: 'add-project:' + m.id, on: { click: () => addProjectDialog(m) } },
-        icon('plus', 14), W.tree.addProject, el('span', { class: 'sr-only' }, say(W.tree.toComputer, { computer: m.name }))) : null);
-    return el('div', null,
-      el('button', {
-        type: 'button', class: 'tree-comp', fk: 'cmp:' + m.id, 'aria-expanded': String(open),
-        on: { click: () => { if (open) folded.add(m.id); else folded.delete(m.id); render(); } },
-      }, el('span', { class: 'chev' }, icon('chev', 14)), icon(m.os === 'MACOS' ? 'laptop' : 'monitor', 15), el('span', { class: 'label', title: m.name }, m.name)),
-      kids);
-  }), (state.computer_codes || []).filter(c => ['pending', 'waiting', 'approved', 'connected'].includes(c.status)).map(codeRow));
+// A sidebar item with a + beside it that opens what can be added there.
+function navRow(a, label, items) {
+  const add = items.filter(Boolean);
+  if (!add.length) return a;
+  return el('div', { class: 'nav-row' + (a.getAttribute('aria-current') ? ' current' : '') }, a, plusMenu(label, add));
+}
+const plusMenu = (place, items, fk = 'plus:' + place) => menu(say(W.plus.label, { place }), fk, items,
+  { face: [icon('plus', 16)], cls: 'btn ghost icon plus', heading: say(W.plus.label, { place }) });
+
+function placesNav(r) {
+  const server = state.server !== false;
+  const link = (hash, current, ...kids) => el('a', { class: 'nav-item', href: hash, 'aria-current': current ? 'page' : null }, kids);
+  const skillsItem = (place, folders) => ({ label: W.plus.skills, icon: 'layers', run: () => addSkillsDialog(place, folders) });
+  const everyCount = new Set(everyFolders().flatMap(t => placedOn(t))).size;
+  return [
+    navRow(link('#/every', r.view === 'every', icon('globe'), el('span', { class: 'label' }, W.nav.every), el('span', { class: 'count' }, String(everyCount))),
+      W.where.every, [skillsItem(W.where.every, everyFolders())]),
+    el('div', { class: 'nav-heading' }, W.nav.projects,
+      server && plusMenu(W.nav.projects, [
+        { label: W.plus.folderHere, icon: 'terminal', run: folderHereDialog },
+        { label: W.plus.fromOther, icon: 'repo', run: () => addProjectDialog({}) },
+      ], 'plus:projects')),
+    projects().map(p => {
+      const team = teamOf(p);
+      return navRow(link(projectHash(p.key), r.view === 'project' && r.project.key === p.key, icon('repo', 15),
+        el('span', { class: 'label mono', title: p.key }, p.name),
+        team && el('span', { class: 'aside' }, team),
+        el('span', { class: 'count' }, String(new Set(projectFolders(p.key).flatMap(t => placedOn(t))).size))),
+      p.name, [skillsItem(p.name, projectFolders(p.key)), server && { label: W.plus.anotherComputer, icon: 'monitor', run: () => addProjectDialog({ key: p.key }) }]);
+    }),
+    el('div', { class: 'nav-heading' }, W.nav.computers,
+      btn(null, { class: 'btn ghost icon', fk: 'add-computer', title: W.addComputer.title, 'aria-label': W.addComputer.title, on: { click: addComputerDialog } }, 'plus')),
+    state.machines.map(m => {
+      const missing = Object.keys(AGENTS).filter(a => !agentsShown(m).includes(a));
+      return navRow(link(computerHash(m), r.view === 'computer' && r.machine === m, icon(osIcon(m), 15),
+        el('span', { class: 'label', title: m.name }, m.name),
+        m.id === state.this_computer && el('span', { class: 'aside' }, el('span', { class: 'dot ok', 'aria-hidden': 'true' }), W.nav.thisOne)),
+      m.name, [
+        missing.length && { label: W.plus.agent, icon: 'terminal', run: () => addAgentDialog(m, missing) },
+        // A project's folders are managed on a server for now (ADR-0026).
+        server && agentsShown(m).length && { label: W.plus.project, icon: 'repo', run: () => addProjectDialog({ m }) },
+        skillsItem(m.name, everyFolders(m)),
+      ]);
+    }),
+    (state.computer_codes || []).filter(c => ['pending', 'waiting', 'approved', 'connected'].includes(c.status)).map(codeRow),
+  ];
 }
 
 // A code in use sits under the computers, with its expiry and Cancel, until it connects one (ADR-0035).
@@ -2270,9 +2329,9 @@ function codeRow(c) {
     class: 'btn ghost sm', fk: 'cancel-code:' + c.id, 'aria-label': say(C.cancelFor, { name }),
     on: { click: ev => run(ev.currentTarget, async () => { await api('/api/computer-codes/' + c.id + '/cancel', {}); return C.cancelled; }) },
   });
-  return el('div', { class: 'tree-code' },
-    btn(name, { class: 'tree-add', fk: 'code:' + c.id, title: name, on: { click: () => computerCodeDialog(c) } }, 'monitor'),
-    el('div', { class: 'tree-code-line' }, el('span', null, sayWith(C.tree[c.status], { time: when(c.expires_on) })), cancel));
+  return el('div', { class: 'code-row' },
+    btn(name, { class: 'nav-btn', fk: 'code:' + c.id, title: name, on: { click: () => computerCodeDialog(c) } }, 'monitor'),
+    el('div', { class: 'code-line' }, el('span', null, sayWith(C.tree[c.status], { time: when(c.expires_on) })), cancel));
 }
 
 function addAgentDialog(m, missing) {
@@ -2290,8 +2349,7 @@ function addAgentDialog(m, missing) {
     onSubmit: async () => {
       const agent = document.querySelector(`input[name="${name}"]:checked`).value;
       pickAgent(m, agent);
-      folded.delete(m.id);
-      return () => go(folderHash(m, agent));
+      return () => go(computerHash(m));
     },
   });
 }
@@ -2415,11 +2473,12 @@ function addComputerDialog() {
 
 /* ---------- Library and computers ---------- */
 
-// The harnesses the server knows, by key (ADR-0018), and the coding agents that read each folder.
-// A computer lists the ones that have synced there, and any picked here before that.
+// The harnesses the server knows, by key (ADR-0018), named by the coding agent people know them
+// by: `agents` is never shown as a folder (ADR-0037). A computer lists the ones that have
+// synced there, and any picked here before that.
 const AGENTS = {
   claude_code: { name: 'Claude Code', folder: '~/.claude/skills', inProject: '.claude/skills', readers: 'Claude Code' },
-  agents: { name: W.agentsFolder.name, folder: '~/.agents/skills', inProject: '.agents/skills', readers: W.agentsFolder.readers },
+  agents: { name: W.codex.name, folder: '~/.agents/skills', inProject: '.agents/skills', readers: W.codex.readers, tip: W.codex.tip },
 };
 // A place a skill can be switched on: an agent's global folder on a computer, or its folder in
 // a project that computer manages (ADR-0026).
@@ -2432,7 +2491,29 @@ const targetName = t => say(W.targetName, { computer: t.m.name, agent: agentIn(t
 const keyOf = t => (t.project ? t.project.key : null);
 const isPlaced = (s, t) => s.placements.some(p => p.machine === t.m.id && p.harness === t.agent && (p.project || null) === keyOf(t));
 const placedOn = t => state.skills.filter(s => isPlaced(s, t));
-const sameTarget = (a, b) => a.m === b.m && a.agent === b.agent && keyOf(a) === keyOf(b);
+// A project is one place across computers: assembled here from each computer's own list.
+function projects() {
+  const by = new Map();
+  for (const m of state.machines) for (const p of m.projects || []) {
+    if (!by.has(p.key)) by.set(p.key, { key: p.key, name: p.name, on: [] });
+    by.get(p.key).on.push({ m, p });
+  }
+  return [...by.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.key < b.key ? -1 : 1));
+}
+const projectBy = key => projects().find(p => p.key === key);
+// A project lives under its owner on the host (github.com/<owner>/<name>); when one of the
+// person's teams has that name, the project is that team's.
+const teamOf = p => { const owner = p.key.split('/')[1]; return p.key.split('/').length > 2 && state.teams.some(t => t.name === owner) ? owner : null; };
+// The folders that make up a place: each agent's global folder on every computer, or a project's
+// folder on each computer that manages it.
+const everyFolders = only => state.machines.filter(m => !only || m === only).flatMap(m => agentsShown(m).map(agent => ({ m, agent, project: null })));
+const projectFolders = key => state.machines.flatMap(m => agentsShown(m).flatMap(agent => {
+  const project = projectFolder(m, agent, key);
+  return project ? [{ m, agent, project }] : [];
+}));
+// The table's columns: the coding agents found on the person's computers, in a fixed order.
+const columns = () => Object.keys(AGENTS).filter(a => state.machines.some(m => agentsShown(m).includes(a)));
+const agentName = agent => el('span', { title: AGENTS[agent].tip || null }, AGENTS[agent].name);
 const place = (s, t, on) => api(`/api/skills/${enc(s.name)}/machines/${enc(t.m.id)}`,
   t.project ? { enabled: on, harness: t.agent, project: t.project.key } : { enabled: on, harness: t.agent });
 const osIcon = m => (m.os === 'MACOS' ? 'laptop' : 'monitor');
@@ -2558,7 +2639,7 @@ function whereItIs(s) {
     el('div', { class: 'where-line' }, icon(osIcon(m), 14),
       el('span', { class: 'on' }, m.name),
       el('span', null, placed.filter(t => t.m === m).map((t, i) => [i ? W.comma : null,
-        el('a', { href: folderHash(m, t.agent, t.project), 'aria-label': targetName(t) }, agentIn(t))])))));
+        el('a', { href: t.project ? projectHash(t.project.key) : computerHash(m), 'aria-label': targetName(t) }, agentIn(t))])))));
 }
 
 function libraryRow(s) {
@@ -2696,126 +2777,224 @@ function historyDialog(s) {
     .catch(e => list.replaceChildren(el('p', { class: 'form-error', role: 'alert' }, e.message)));
 }
 
-function folderView(m, agent, project = null) {
-  const t = { m, agent, project };
-  const here = placedOn(t);
-  const where = say(W.folder.where, { agent: agentIn(t), computer: m.name });
-  const others = targets().filter(x => !sameTarget(x, t));
-  const folder = project && project.folders.find(f => f.harness === agent);
-  // Claude Code uses the global copy of a skill both folders hold; Codex lists both.
-  const twice = project ? here.filter(s => isPlaced(s, { m, agent, project: null })).map(s => s.name) : [];
+// A page's head: an icon, the title, one line under it, and its actions.
+function pageHead(ic, title, line, ...actions) {
+  return el('div', { class: 'band' }, el('div', { class: 'wrap page-head' },
+    el('div', { class: 'team-head', style: 'flex:1;min-width:260px' },
+      el('span', { class: 'avatar lg', 'aria-hidden': 'true' }, icon(ic, 20)),
+      el('div', { class: 'titles' }, title, line)),
+    el('div', { class: 'head-actions' }, actions)));
+}
+
+// One table of skills, a column per coding agent, a tick where that agent gets the skill
+// (ADR-0037). Each group is a heading row and its skills; rules join as groups above the
+// skills. `folders(agent)` are the folders one column stands for in that group, and a
+// `readOnly` group is changed on the page it belongs to.
+function tickTable(label, groups) {
+  const cols = columns();
+  const span = String(cols.length + 2);
+  return el('div', { class: 'tbl ticks', role: 'table', 'aria-label': label,
+    style: `grid-template-columns: minmax(220px, 1fr) repeat(${cols.length}, minmax(96px, auto)) auto` },
+    el('div', { class: 'tr th-row', role: 'row' }, th(W.col.skill), cols.map(a => th(agentName(a))), thActions()),
+    groups.map(g => [
+      el('div', { class: 'tr grp', role: 'row' }, el('div', { class: 'grp-cell', role: 'cell', 'aria-colspan': span },
+        icon(g.icon, 15), el('strong', null, g.title), g.note && el('span', { class: 't2' }, g.note))),
+      g.skills.length ? g.skills.map(s => tickRow(s, cols, g))
+        : el('div', { class: 'tr hint-row', role: 'row' }, el('div', { role: 'cell', 'aria-colspan': span }, g.empty)),
+    ]));
+}
+
+function tickRow(s, cols, g) {
+  const all = cols.flatMap(a => g.folders(a));
+  const computers = ts => [...new Set(ts.map(t => t.m))];
+  const on = computers(all.filter(t => isPlaced(s, t))), everywhere = computers(all);
+  // Something true on one computer only says so here, not by repeating the place per computer.
+  const only = on.length && on.length < everywhere.length ? say(W.tick.onlyOn, { computers: some(on.map(m => m.name)) }) : null;
+  const also = g.also && g.also(s);
+  return el('div', { class: 'tr', role: 'row' },
+    td('c-main',
+      el('button', { type: 'button', class: 'name-btn', fk: `name:${g.key}:${s.name}`, title: say(W.open, { name: s.name }), on: { click: () => skillSheet(s) } },
+        el('span', { class: 'name' }, s.name)),
+      s.description && el('span', { class: 't2' }, s.description),
+      only && el('span', { class: 't2 row-note' }, icon('info', 13), only),
+      also && el('span', { class: 't2 row-note' }, icon('info', 13), also)),
+    cols.map(a => tickCell(s, a, g)),
+    td('row end', btn(W.row.details, { class: 'btn ghost sm', fk: `details:${g.key}:${s.name}`, 'aria-label': say(W.row.detailsLabel, { skill: s.name }), on: { click: () => skillSheet(s) } })));
+}
+
+function tickCell(s, agent, g) {
+  const ts = g.folders(agent), on = ts.filter(t => isPlaced(s, t));
+  const name = AGENTS[agent].name;
+  const tag = el('span', { class: 'tick-name', 'aria-hidden': 'true' }, name);
+  if (!ts.length || g.readOnly) {
+    const words = !ts.length ? say(W.tick.noFolder, { agent: name }) : on.length ? say(W.tick.gets, { agent: name }) : say(W.tick.not, { agent: name });
+    return td('tick', el('span', { class: 'tick' + (on.length ? ' on' : ''), title: words },
+      on.length ? icon('check', 16) : el('span', { class: 'dash', 'aria-hidden': 'true' }, '–'), el('span', { class: 'sr-only' }, words), tag));
+  }
+  const turnOn = on.length < ts.length;
+  const box = el('input', { type: 'checkbox', checked: !turnOn, fk: `tick:${g.key}:${s.name}:${agent}`,
+    'aria-label': say(W.tick.label, { skill: s.name, agent: name }),
+    on: { change: ev => run(ev.currentTarget, async () => {
+      // Partly on is turned on everywhere; the skill's details choose one computer at a time.
+      const shared = await placeAll(ts.filter(t => isPlaced(s, t) !== turnOn).map(t => [s, t, turnOn]));
+      return say(W.placement.saved, { skill: s.name }) + arrives(shared, say(W.placement.eachPicksUp, { sync: SYNC }));
+    }, m => { toast(m, 'error'); render(); }) } });
+  box.indeterminate = on.length > 0 && turnOn;
+  return td('tick', el('label', { class: 'tick' }, box, tag));
+}
+
+const everySkills = () => state.skills.filter(s => everyFolders().some(t => isPlaced(s, t)));
+
+function everyView() {
+  const place = W.where.every;
   return [
-    el('div', { class: 'band' }, el('div', { class: 'wrap page-head' },
-      el('div', { class: 'team-head', style: 'flex:1;min-width:260px' },
-        el('span', { class: 'avatar lg', 'aria-hidden': 'true' }, icon(project ? 'repo' : 'terminal', 20)),
-        el('div', { class: 'titles' },
-          project
-            ? el('h1', null, sayWith(W.folder.projectHeading, { agent: AGENTS[agent].name, project: el('span', { class: 'mono' }, project.name), computer: m.name })
-                .map((p, i) => (i % 2 || !p ? p : el('span', { class: 'muted', style: 'font-weight:400' }, p))))
-            : el('h1', null, sayWith(W.folder.heading, { agent: AGENTS[agent].name, computer: m.name })
-                .map((p, i) => (i % 2 || !p ? p : el('span', { class: 'muted', style: 'font-weight:400' }, p)))),
-          project
-            ? el('div', { class: 'folder-path' }, el('span', { class: 't2' }, W.folder.projectFolder), el('code', null, AGENTS[agent].inProject),
-                folder.path ? el('code', { class: 't2', title: say(W.folder.lastSeen, { computer: m.name }) }, folder.path) : null,
-                el('span', { class: 't2' }, folder.last_synced_on ? sayWith(W.lastSyncedWhen, { when: when(folder.last_synced_on) }) : W.folder.notSyncedHere))
-            : el('div', { class: 'folder-path' }, el('span', { class: 't2' }, W.folder.globalFolder), el('code', null, AGENTS[agent].folder),
-                el('span', { class: 't2' }, say(W.folder.readBy, { readers: AGENTS[agent].readers })),
-                el('span', { class: 't2' }, lastSynced(m, agent))))),
-      el('div', { class: 'head-actions' },
-        // Picked in this browser and holding nothing: it can be taken off the list again (UI-20).
-        !project && !m.harnesses.includes(agent) && !here.length
-          ? btn(W.folder.unpick, { class: 'btn ghost', fk: 'unpick', on: { click: () => { unpickAgent(m, agent); go('#/library'); } } }, 'x') : null,
-        project
-          ? btn(say(W.folder.stopManaging, { project: project.name }), { class: 'btn', fk: 'stop:' + project.key, on: { click: () => stopManagingDialog(m, agent, project) } }, 'x')
-          : btn(W.folder.computerSettings, { fk: 'computer:' + m.id, on: { click: () => computerDialog(m) } }, 'monitor'),
-        others.some(o => placedOn(o).length) ? btn(W.folder.copyFrom, { fk: 'copy-from', on: { click: () => copyFromDialog(t, others) } }, 'copy') : null,
-        btn(W.folder.addSkills, { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(t) } }, 'plus')))),
-    el('div', { class: 'wrap body' },
-      project && !folder.last_synced_on && el('div', { class: 'card notice' }, el('div', { class: 'card-body' },
-        el('h2', { class: 'small' }, say(W.folder.notSyncedOn, { computer: m.name })),
-        el('p', null, sayWith(W.folder.firstSync, { computer: m.name, project: project.name, sync: el('code', null, SYNC) })))),
-      twice.length ? el('p', { class: 't2 hint' }, say(W.folder.twice, { n: twice.length, skills: some(twice) }),
-        agent === 'claude_code' ? W.folder.claudeUsesGlobal : W.folder.agentsListBoth) : null,
-      here.length ? el('div', { class: 'tbl folder', role: 'table', 'aria-label': say(W.skillsIn, { place: where }) },
-        el('div', { class: 'tr th-row', role: 'row' }, th(W.col.skill), th(W.col.linkedTeam), th(W.col.revision), thActions()),
-        here.map(s => el('div', { class: 'tr', role: 'row' },
-          td('c-main', el('span', { class: 'name' }, s.name), s.description && el('span', { class: 't2' }, s.description)),
-          sourceCell(s.source),
-          revisionHere(s, t),
-          td('row end', btn(W.remove, {
-            class: 'btn ghost sm', fk: `fr:${s.name}`, 'aria-label': say(W.folder.removeLabel, { skill: s.name, place: where }),
-            on: { click: ev => run(ev.currentTarget, async () => {
-              await place(s, t, false);
-              return say(W.folder.removed, { skill: s.name, place: where });
-            }) },
-          }, 'x')))))
-        : empty('folder', say(W.folder.emptyTitle, { place: where }), el('p', null, W.folder.empty),
-            btn(W.folder.addSkills, { on: { click: () => addSkillsDialog(t) } }, 'plus')),
-      project ? el('div', { class: 'tbl-foot' }, el('span', null, say(W.folder.everyCopy, { computer: m.name }))) : null),
+    pageHead('globe', el('h1', null, W.nav.every), el('p', { class: 'subtitle t2' }, W.every.lead),
+      columns().length ? btn(W.addSkills.button, { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(place, everyFolders()) } }, 'plus') : null),
+    el('div', { class: 'wrap body' }, columns().length
+      ? tickTable(W.every.table, [{ key: 'every', icon: 'layers', title: W.tabs.skills, skills: everySkills(),
+          folders: agent => everyFolders().filter(t => t.agent === agent), empty: W.every.none }])
+      : empty('terminal', W.every.noAgent, el('p', null, say(W.every.noAgentText, { sync: SYNC })))),
   ];
 }
 
-function stopManagingDialog(m, agent, project) {
+function projectView(p) {
+  const team = teamOf(p);
+  const folders = projectFolders(p.key);
+  const own = state.skills.filter(s => folders.some(t => isPlaced(s, t)));
+  const every = everySkills();
+  const chips = el('div', { class: 'chips head-chips' },
+    p.key.startsWith('local/') ? null : el('span', { class: 'badge mono' }, p.key),
+    team && el('a', { class: 'badge', href: teamHash(team) }, icon('users', 12), say(W.project.team, { team })));
+  return [
+    pageHead('repo', el('h1', { class: 'mono' }, p.name), chips,
+      folders.length ? btn(W.addSkills.button, { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(p.name, folders) } }, 'plus') : null),
+    el('div', { class: 'wrap body' },
+      p.on.length ? [
+        el('h2', { class: 'sec' }, W.project.computers),
+        el('div', { class: 'where-cards' }, p.on.map(({ m, p: here }) => projectCard(m, here))),
+        el('h2', { class: 'sec' }, say(W.project.table, { project: p.name })),
+        tickTable(say(W.project.table, { project: p.name }), [
+          { key: 'every', icon: 'globe', title: W.project.everyGroup, note: el('a', { class: 'link', href: '#/every' }, W.project.everyNote),
+            skills: every, readOnly: true, empty: W.every.none,
+            folders: agent => everyFolders().filter(t => t.agent === agent && p.on.some(x => x.m === t.m)) },
+          { key: 'own', icon: 'lock', title: say(W.project.ownGroup, { project: p.name }), note: W.project.ownNote,
+            skills: own, empty: W.project.noneOwn, folders: agent => folders.filter(t => t.agent === agent),
+            also: s => every.includes(s) && W.tick.alsoEvery },
+        ]),
+      ] : el('p', { class: 't2' }, W.project.gone)),
+  ];
+}
+
+// Where a project is on one computer: its folder, its agents, and when it last synced there.
+function projectCard(m, here) {
+  const paths = [...new Set(here.folders.map(f => f.path).filter(Boolean))];
+  const agents = here.folders.map(f => AGENTS[f.harness].name).join(W.comma);
+  const synced = here.folders.map(f => f.last_synced_on).filter(Boolean).sort().pop();
+  return el('section', { class: 'card where-card', 'aria-label': m.name }, el('div', { class: 'card-body' },
+    el('h3', null, icon(osIcon(m), 15), el('a', { href: computerHash(m) }, m.name),
+      m.id === state.this_computer && el('span', { class: 'aside' }, el('span', { class: 'dot ok', 'aria-hidden': 'true' }), W.nav.thisOne)),
+    paths.map(path => el('code', { class: 'path' }, path)),
+    el('p', { class: 't2' }, synced ? sayWith(W.project.synced, { agents, when: when(synced) }) : say(W.project.notSynced, { agents })),
+    !synced && el('p', { class: 't2' }, sayWith(W.project.firstSync, { computer: m.name, project: here.name, sync: el('code', null, SYNC) })),
+    state.server !== false && btn(W.project.stop, { class: 'btn ghost sm', fk: 'stop:' + m.id, 'aria-label': say(W.project.stopLabel, { project: here.name, computer: m.name }),
+      on: { click: () => stopManagingDialog(m, here) } }, 'x')));
+}
+
+function computerView(m) {
+  const server = state.server !== false;
+  const agents = agentsShown(m);
+  const C = W.computerPage;
+  return [
+    pageHead(osIcon(m), el('h1', null, m.name),
+      el('div', { class: 'chips head-chips' }, m.id === state.this_computer && el('span', { class: 'badge info' }, W.nav.thisOne)),
+      btn(C.settings, { fk: 'computer:' + m.id, on: { click: () => computerDialog(m) } }, 'settings')),
+    el('div', { class: 'wrap body' },
+      el('h2', { class: 'sec' }, C.agents),
+      agents.length ? el('div', { class: 'tbl plain', role: 'table', 'aria-label': C.agents },
+        el('div', { class: 'tr th-row', role: 'row' }, th(C.agent), th(C.folder), th(C.skills), th(C.synced), thActions()),
+        agents.map(agent => {
+          const n = placedOn({ m, agent, project: null }).length;
+          const picked = !m.harnesses.includes(agent);
+          return el('div', { class: 'tr', role: 'row' },
+            td('c-main', el('span', { class: 'person' }, agentName(agent))),
+            td('meta', el('code', { class: 'mono t2' }, AGENTS[agent].folder)),
+            td('meta', el('a', { class: 'link', href: '#/every' }, plural(n, 'skill'))),
+            td('meta', el('span', { class: 't2' }, (m.last_synced || {})[agent] ? when(m.last_synced[agent]) : W.computer.never)),
+            td('row end', picked && !n ? btn(C.unpick, { class: 'btn ghost sm', fk: 'unpick:' + agent, 'aria-label': say(C.unpickLabel, { agent: AGENTS[agent].name }),
+              on: { click: () => { unpickAgent(m, agent); render(); } } }, 'x') : null));
+        }))
+        : el('p', { class: 't2' }, say(W.notSynced, { sync: SYNC })),
+      el('h2', { class: 'sec' }, C.projects),
+      (m.projects || []).length ? el('div', { class: 'tbl plain', role: 'table', 'aria-label': C.projects },
+        el('div', { class: 'tr th-row', role: 'row' }, th(W.name), th(C.folder), th(C.agent), th(C.synced), thActions()),
+        m.projects.map(p => {
+          const synced = p.folders.map(f => f.last_synced_on).filter(Boolean).sort().pop();
+          return el('div', { class: 'tr', role: 'row' },
+            td('c-main', el('a', { class: 'name link', href: projectHash(p.key) }, p.name)),
+            td('meta', [...new Set(p.folders.map(f => f.path).filter(Boolean))].map(path => el('code', { class: 'mono t2' }, path))),
+            td('meta', el('span', { class: 't2' }, p.folders.map(f => AGENTS[f.harness].name).join(W.comma))),
+            td('meta', el('span', { class: 't2' }, synced ? when(synced) : W.computer.never)),
+            td('row end', server ? btn(W.project.stop, { class: 'btn ghost sm', fk: 'stop:' + p.key, 'aria-label': say(W.project.stopLabel, { project: p.name, computer: m.name }),
+              on: { click: () => stopManagingDialog(m, p) } }, 'x') : null));
+        }))
+        : el('p', { class: 't2' }, say(C.noProjects, { computer: m.name }))),
+  ];
+}
+
+function stopManagingDialog(m, project) {
   confirmDialog({
     title: say(W.stopManaging.title, { project: project.name, computer: m.name }),
     submitLabel: W.stopManaging.submit,
     lines: [
-      say(W.stopManaging.stops, { agent: agentIn({ agent, project }), computer: m.name }),
+      say(W.stopManaging.stops, { project: project.name, computer: m.name }),
       W.stopManaging.stay,
     ],
     onSubmit: async () => {
-      await api(`/api/machines/${enc(m.id)}/projects/remove`, { project: project.key, harness: agent });
-      return () => { go(folderHash(m, agent)); toast(say(W.stopManaging.done, { project: project.name, computer: m.name })); };
+      await api(`/api/machines/${enc(m.id)}/projects/remove`, { project: project.key });
+      return say(W.stopManaging.done, { project: project.name, computer: m.name });
     },
   });
 }
 
-// Two ways in: a project another computer already manages, added here at once, or a new one,
-// which starts in a session inside the repository.
-function addProjectDialog(m) {
-  const known = new Map();
-  state.machines.forEach(x => (x.projects || []).forEach(p => known.set(p.key, p)));
-  const agents = agentsShown(m);
-  const choices = [...known.values()].flatMap(p => agents
-    .filter(agent => !projectFolder(m, agent, p.key))
-    .map(agent => ({ p, agent })));
+// A project another computer already manages, added to a computer at once: from a computer's +
+// (`m`), from a project's + (`key`), or from the Projects heading (neither).
+function addProjectDialog({ m = null, key = null }) {
+  const known = projects().filter(p => !key || p.key === key);
+  const choices = state.machines.filter(x => !m || x === m).flatMap(x => known.flatMap(p => agentsShown(x)
+    .filter(agent => !projectFolder(x, agent, p.key))
+    .map(agent => ({ m: x, p, agent }))));
   const name = 'add-project';
+  const label = c => (m ? sayWith(W.addProject.forAgent, { project: el('span', { class: 'mono' }, c.p.name), agent: AGENTS[c.agent].name })
+    : key ? say(W.addProject.onComputer, { computer: c.m.name, agent: AGENTS[c.agent].name })
+    : sayWith(W.addProject.fromComputer, { project: el('span', { class: 'mono' }, c.p.name), computer: c.m.name, agent: AGENTS[c.agent].name }));
+  const picker = choices.length ? el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, W.addProject.legend),
+    el('div', { class: 'picker-list' }, choices.map((c, i) => el('label', { class: 'picker-opt' },
+      el('input', { type: 'radio', name, value: String(i), checked: i === 0 }), el('span', null, label(c))))))
+    : el('p', null, key ? W.addProject.noneMore : W.addProject.noneElsewhere);
   openDialog({
-    title: say(W.addProject.title, { computer: m.name }),
+    title: m ? say(W.addProject.title, { computer: m.name }) : key ? say(W.addProject.titleFor, { project: known[0].name }) : W.addProject.titleFrom,
     submitLabel: choices.length ? W.add : W.done,
     cancelLabel: choices.length ? W.cancel : null,
-    body: el('div', { class: 'choice-grid' },
-      el('div', { class: 'card choice-card' }, el('div', { class: 'card-body' },
-        el('h3', null, icon('repo', 16), W.addProject.fromOthers),
-        choices.length ? el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, W.addProject.legend),
-          el('div', { class: 'picker-list' }, choices.map((c, i) => el('label', { class: 'picker-opt' },
-            el('input', { type: 'radio', name, value: String(i), checked: i === 0 }),
-            el('span', null, sayWith(W.addProject.forAgent, { project: el('span', { class: 'mono' }, c.p.name), agent: AGENTS[c.agent].name }))))))
-          : el('p', null, W.addProject.noneElsewhere))),
+    // A computer's + also offers a repository AIStack has not seen, which starts inside it.
+    body: m ? el('div', { class: 'choice-grid' },
+      el('div', { class: 'card choice-card' }, el('div', { class: 'card-body' }, el('h3', null, icon('repo', 16), W.addProject.fromOthers), picker)),
       el('div', { class: 'card choice-card' }, el('div', { class: 'card-body' },
         el('h3', null, icon('terminal', 16), W.addProject.unseen),
         el('p', null, say(W.addProject.unseenLead, { computer: m.name })),
-        copyField(W.addProject.say, W.addProject.whatToSay)))),
+        copyField(W.addProject.say, W.addProject.whatToSay)))) : picker,
     onSubmit: choices.length ? async () => {
       const c = choices[Number(document.querySelector(`input[name="${name}"]:checked`).value)];
-      await api(`/api/machines/${enc(m.id)}/projects`, { project: c.p.key, harness: c.agent });
-      return () => { go(folderHash(m, c.agent, c.p)); toast(say(W.addProject.done, { project: c.p.name, agent: AGENTS[c.agent].name, computer: m.name })); };
+      await api(`/api/machines/${enc(c.m.id)}/projects`, { project: c.p.key, harness: c.agent });
+      return () => { go(projectHash(c.p.key)); toast(say(W.addProject.done, { project: c.p.name, agent: AGENTS[c.agent].name, computer: c.m.name })); };
     } : null,
   });
 }
 
-function lastSynced(m, agent) {
-  const at = (m.last_synced || {})[agent];
-  return at ? sayWith(W.lastSyncedWhen, { when: when(at) }) : say(W.notSyncedYet, { sync: SYNC });
-}
-
-// The revision this folder last installed, when it is behind the library's.
-function revisionHere(s, t) {
-  const p = s.placements.find(x => x.machine === t.m.id && x.harness === t.agent && (x.project || null) === keyOf(t));
-  const behind = p && p.revision != null && p.revision < s.revision;
-  return td('meta nowrap', behind
-    ? el('span', { class: 't1 mono', title: say(W.revisionArrives, { revision: s.revision }) }, say(W.revisionHere, { revision: p.revision }))
-    : el('span', { class: 't1 mono', title: say(W.revisionFiles, { revision: s.revision, files: plural(s.files, 'file') }) }, say(W.rev, { revision: s.revision })));
+function folderHereDialog() {
+  openDialog({
+    title: W.addProject.folderHere, submitLabel: W.done, cancelLabel: null,
+    body: [el('p', null, W.addProject.folderHereLead), copyField(W.addProject.say, W.addProject.whatToSay)],
+  });
 }
 
 function computerDialog(m) {
@@ -2857,50 +3036,36 @@ function removeComputerDialog(m) {
   });
 }
 
-function addSkillsDialog(t) {
-  const where = say(W.folder.where, { agent: agentIn(t), computer: t.m.name });
-  const rows = state.skills.filter(s => !isPlaced(s, t)).map(s => ({ s, box: el('input', { type: 'checkbox' }) }));
+// Skills into a place: one folder per computer and agent. Each agent is ticked to start with;
+// the place's table takes one off again.
+function addSkillsDialog(placeName, folders) {
+  const agents = Object.keys(AGENTS).filter(a => folders.some(t => t.agent === a));
+  const boxes = agents.map(agent => ({ agent, box: el('input', { type: 'checkbox', checked: true }) }));
+  const rows = state.skills.filter(s => !folders.every(t => isPlaced(s, t))).map(s => ({ s, box: el('input', { type: 'checkbox' }) }));
   const labels = rows.map(r => el('label', { class: 'picker-opt' }, r.box, el('span', { class: 'mono' }, r.s.name),
     el('span', { class: 't2', style: 'margin-left:auto' }, r.s.placements.length ? W.addSkills.elsewhere : W.addSkills.onlyInLibrary)));
   const filter = el('input', { class: 'input', type: 'search', placeholder: W.library.search, 'aria-label': W.library.search,
     on: { input: () => rows.forEach((r, i) => { labels[i].hidden = !r.s.name.includes(filter.value.trim().toLowerCase()); }) } });
   const none = !state.skills.length;
+  const ready = folders.length && rows.length;
   openDialog({
-    title: say(W.addSkills.title, { place: where }),
-    submitLabel: rows.length ? W.add : W.done,
-    cancelLabel: rows.length ? W.cancel : null,
-    body: rows.length ? [filter, el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, W.tabs.skills), el('div', { class: 'picker-list' }, labels))]
+    title: say(W.addSkills.title, { place: placeName }),
+    submitLabel: ready ? W.add : W.done,
+    cancelLabel: ready ? W.cancel : null,
+    body: !folders.length ? [el('p', null, say(W.addSkills.noAgent, { sync: SYNC }))]
+      : rows.length ? [
+        agents.length > 1 && el('fieldset', { class: 'picker inline' }, el('legend', null, W.addSkills.agents),
+          boxes.map(b => el('label', { class: 'choice' }, b.box, agentName(b.agent)))),
+        filter, el('fieldset', { class: 'picker' }, el('legend', { class: 'sr-only' }, W.tabs.skills), el('div', { class: 'picker-list' }, labels))]
       : [el('p', null, none
           ? say(state.server !== false ? W.addSkills.emptyWithTeams : W.addSkills.empty, { sync: SYNC })
           : W.addSkills.allHere)],
-    onSubmit: async () => {
+    onSubmit: ready ? async () => {
       const picked = rows.filter(r => r.box.checked);
-      const shared = await placeAll(picked.map(r => [r.s, t, true]));
-      return picked.length ? say(W.addSkills.added, { skills: plural(picked.length, 'skill'), place: where }) + arrives(shared, say(W.addSkills.arrive, { sync: SYNC })) : null;
-    },
-  });
-}
-
-function copyFromDialog(t, others) {
-  const where = say(W.folder.where, { agent: agentIn(t), computer: t.m.name });
-  const name = 'copy-from';
-  openDialog({
-    title: say(W.copyFrom.title, { place: where }),
-    submitLabel: W.copy,
-    body: [
-      el('p', null, W.copyFrom.lead),
-      el('fieldset', { class: 'picker' }, el('legend', null, W.copyFrom.legend), el('div', { class: 'picker-list' },
-        others.map((o, i) => el('label', { class: 'picker-opt' }, el('input', { type: 'radio', name, value: String(i), checked: i === 0 }),
-          el('span', { class: 'mono' }, targetName(o)), el('span', { class: 't2', style: 'margin-left:auto' }, plural(placedOn(o).length, 'skill')))))),
-    ],
-    onSubmit: async () => {
-      const from = others[Number(document.querySelector(`input[name="${name}"]:checked`).value)];
-      const missing = placedOn(from).filter(s => !isPlaced(s, t));
-      const shared = await placeAll(missing.map(s => [s, t, true]));
-      return missing.length ? say(W.copyFrom.added, { skills: plural(missing.length, 'skill'), from: targetName(from) })
-          + arrives(shared, say(W.copyFrom.arrive, { sync: SYNC, computer: t.m.name }))
-        : say(W.copyFrom.nothing, { place: where, from: targetName(from) });
-    },
+      const chosen = new Set(boxes.filter(b => b.box.checked).map(b => b.agent));
+      const shared = await placeAll(picked.flatMap(r => folders.filter(t => chosen.has(t.agent) && !isPlaced(r.s, t)).map(t => [r.s, t, true])));
+      return picked.length ? say(W.addSkills.added, { skills: plural(picked.length, 'skill'), place: placeName }) + arrives(shared, say(W.addSkills.arrive, { sync: SYNC })) : null;
+    } : null,
   });
 }
 
@@ -3292,7 +3457,7 @@ function groupsTab(team, admin) {
     admin && btn(W.groups.new, { class: 'btn primary', fk: 'new-group', on: { click: () => newGroupDialog(team) } }, 'plus'));
   if (!rows.length) {
     return [head, empty('folder', W.groups.emptyTitle,
-      el('p', null, admin ? sayWith(W.groups.emptyAdmin, { example: el('code', null, 'backend/aistack') }) : W.groups.empty),
+      el('p', null, admin ? sayWith(W.groups.emptyAdmin, { example: el('code', null, 'backend/api') }) : W.groups.empty),
       admin && btn(W.groups.new, { on: { click: () => newGroupDialog(team) } }, 'plus'))];
   }
   const cols = 'minmax(300px, 1.6fr) minmax(0, .8fr) minmax(0, 1fr) auto auto' + (admin ? ' auto' : '');
@@ -3339,7 +3504,7 @@ function groupsTab(team, admin) {
 }
 
 function newGroupDialog(team) {
-  const name = el('input', { class: 'input', type: 'text', autocomplete: 'off', spellcheck: false, maxLength: 64, placeholder: 'aistack' });
+  const name = el('input', { class: 'input', type: 'text', autocomplete: 'off', spellcheck: false, maxLength: 64, placeholder: 'frontend' });
   const parent = groupPicker(team, { name: 'parent', legend: W.groups.inside, noneLabel: say(W.groups.topLevel, { team: team.name }) });
   const priv = el('input', { type: 'checkbox' });
   openDialog({
@@ -3824,28 +3989,35 @@ const DB = (() => {
   const P = machine => ({ machine, harness: 'claude_code' });
   return {
     user: { username: 'dimitris', full_name: 'Dimitris Christopoulos' },
+    this_computer: MAC,
     machines: [
       { id: MAC, name: 'macbook', os: 'MACOS', harnesses: ['claude_code', 'agents'], added_on: ago(900), added_by: null, added_by_removed: false,
         last_synced: { claude_code: ago(2), agents: ago(26) },
-        projects: [{ key: 'github.com/dchristopoulos/aistack', name: 'aistack',
-                     folders: [{ harness: 'claude_code', path: '/Users/dimitris/code/aistack', last_synced_on: ago(3) }] }] },
+        projects: [
+          { key: 'github.com/demo-team/demo-api', name: 'demo-api',
+            folders: [{ harness: 'claude_code', path: '/Users/dimitris/code/demo-api', last_synced_on: ago(3) },
+                      { harness: 'agents', path: '/Users/dimitris/code/demo-api', last_synced_on: ago(26) }] },
+          { key: 'github.com/demo-team/demo-website', name: 'demo-website',
+            folders: [{ harness: 'claude_code', path: '/Users/dimitris/code/demo-website', last_synced_on: ago(50) }] }] },
       { id: DESK, name: 'desktop', os: 'LINUX', harnesses: ['claude_code'], added_on: ago(600), added_by: 'macbook', added_by_removed: false,
-        last_synced: { claude_code: null }, projects: [] },
+        last_synced: { claude_code: null },
+        projects: [{ key: 'github.com/demo-team/demo-api', name: 'demo-api',
+                     folders: [{ harness: 'claude_code', path: '/home/dimitris/code/demo-api', last_synced_on: null }] }] },
     ],
     skills: [
       { name: 'code-review', description: 'Reviews a diff against team standards and flags risky changes.', revision: 2, pushed_by: 'maria', updated_on: ago(30), files: 4, placements: [P(MAC)],
-        source: { team: 'aistack', group: 'developers', revision: 2, latest_revision: 3, latest_pushed_by: 'maria', update_available: true, own_changes: false } },
+        source: { team: 'demo-team', group: 'developers', revision: 2, latest_revision: 3, latest_pushed_by: 'maria', update_available: true, own_changes: false } },
       { name: 'commit-messages', description: 'Writes commit messages in the house style: imperative subject, why before what.', revision: 2, pushed_by: 'dimitris', updated_on: ago(96), files: 1, placements: [P(MAC), P(DESK), { machine: MAC, harness: 'agents' }],
-        source: { team: 'aistack', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'dimitris', update_available: false, own_changes: false } },
+        source: { team: 'demo-team', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'dimitris', update_available: false, own_changes: false } },
       { name: 'pr-description', description: 'Drafts a pull request description from the branch diff and linked issue.', revision: 1, pushed_by: 'eve', updated_on: ago(200), files: 2, placements: [P(MAC), P(DESK)],
         source: { team: 'friends', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'eve', update_available: false, own_changes: false } },
       { name: 'sqlalchemy-migrations', description: 'Plans and writes Alembic migrations that run identically on SQLite and Postgres.', revision: 4, pushed_by: 'maria', updated_on: ago(52), files: 6,
-        placements: [P(DESK), { machine: MAC, harness: 'claude_code', project: 'github.com/dchristopoulos/aistack' }],
-        source: { team: 'aistack', group: 'developers/backend', revision: 4, latest_revision: 4, latest_pushed_by: 'maria', update_available: false, own_changes: false } },
+        placements: [P(DESK), { machine: MAC, harness: 'claude_code', project: 'github.com/demo-team/demo-api' }, { machine: MAC, harness: 'agents', project: 'github.com/demo-team/demo-api' }],
+        source: { team: 'demo-team', group: 'developers/backend', revision: 4, latest_revision: 4, latest_pushed_by: 'maria', update_available: false, own_changes: false } },
       { name: 'wizard', description: 'Generates an interactive bash wizard for steps only a human can perform.', revision: 1, pushed_by: 'dimitris', updated_on: ago(5), files: 3, placements: [P(MAC)], source: null },
       { name: 'meeting-notes', description: 'Turns a rough transcript into decisions and actions.', revision: 1, pushed_by: 'dimitris', updated_on: ago(300), files: 1, placements: [], source: null },
       { name: 'release-notes', description: 'Builds release notes from merged pull requests since the last tag.', revision: 1, pushed_by: 'dimitris', updated_on: ago(300), files: 2, placements: [],
-        source: { team: 'aistack', group: null, revision: 1, latest_revision: 1, latest_pushed_by: 'dimitris', update_available: false, own_changes: false } },
+        source: { team: 'demo-team', group: null, revision: 1, latest_revision: 1, latest_pushed_by: 'dimitris', update_available: false, own_changes: false } },
     ],
     teams: [
       { name: 'friends', kind: 'SHARED', role: 'MEMBER', sees_all_groups: false,
@@ -3856,7 +4028,7 @@ const DB = (() => {
           { name: 'onboarding', description: 'Walks a new teammate through local setup, conventions and where things live.', group: null, revision: 1, pushed_by: 'maria', updated_on: ago(400), in_library: false },
           { name: 'incident-notes', description: 'Turns a chat log into a blameless incident summary with a timeline.', group: null, revision: 3, pushed_by: 'eve', updated_on: ago(70), in_library: false },
         ] },
-      { name: 'aistack', kind: 'SHARED', role: 'ADMIN', sees_all_groups: false,
+      { name: 'demo-team', kind: 'SHARED', role: 'ADMIN', sees_all_groups: false,
         members: [person('dimitris', 'ADMIN', ['developers', 'developers/backend', 'security']), person('maria', 'MEMBER', ['developers', 'developers/backend']), person('eve', 'MEMBER', ['security'])],
         groups: [
           { path: 'developers', private: false, member: true, subscribed: true, sees_skills: true },

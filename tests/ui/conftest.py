@@ -38,8 +38,8 @@ def _demo_seed():
 async def links_fixture(server_url, request) -> dict[str, str]:
     """A server filled by the demo script, and a sign-in link per person.
 
-    dimitris administers `aistack`; maria is in its `developers` group and has an update
-    waiting; alex is in `aistack` and in no group, so the private `security` group is hidden
+    dimitris administers `demo-team`; maria is in its `developers` group and has an update
+    waiting; alex is in `demo-team` and in no group, so the private `security` group is hidden
     from them. A test marked `long_names` also gets a fourth person whose names, computer,
     team and group path are all as long as the server allows.
     """
