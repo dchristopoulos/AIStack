@@ -254,3 +254,19 @@ def test_a_project_somebody_else_manages_answers_like_one_nobody_does(session_fa
     assert refusals[:3] == refusals[3:]
     with session_factory() as session:
         assert session.scalar(select(func.count()).select_from(MachineProject)) == 1
+
+
+def test_a_computer_finds_its_own_folders_of_a_project_and_no_one_elses(session_factory,
+                                                                        dimitris, desktop):
+    _register(session_factory, dimitris)
+    _register(session_factory, dimitris, Harness.AGENTS)
+    _register(session_factory, desktop, path="/home/dimitris/billing")
+
+    with session_factory() as session:
+        found = project_service.folder_paths(session, dimitris.user.user_id,
+                                             dimitris.machine.machine_id, KEY)
+        unknown = project_service.folder_paths(session, dimitris.user.user_id,
+                                               dimitris.machine.machine_id, "github.com/x/y")
+
+    assert found == [PATH]
+    assert unknown == []

@@ -93,6 +93,14 @@ Chat can also make a code with `add_machine(computer_code=true)`. Older callers 
 
 On a server connection, `aistack sync` does the file work through the existing MCP tools and signed downloads. Setup can install `aistack sync --hook` at session start using the installed command's full path. The hook is silent when nothing needs attention, and only manual sync repeats the plain-HTTP warning; questions about local edits, disabled skills and team offers still reach your agent for you to decide. Installs remain usable while the server is unavailable. A copied connection is refused when the operating system's computer id differs; add that computer separately. Older clients may omit the check, and a full clone may preserve that id ([ADR-0035](docs/adr/0035-the-program-does-the-mechanical-work.md)).
 
+To start a coding agent in a project with only some of its skills, for one session:
+
+```text
+aistack start --agent claude-code --skills code-review,tdd
+```
+
+It runs in the current folder's project, or the one `--project` names by folder or key, says what it will start and waits for Enter. Every other skill the agent would load there is turned off by name for that session only, with flags; your settings, login, rules and MCP servers are unchanged. `--agent codex` checks with `codex debug prompt-input` first that only the chosen skills remain. `--new-terminal` runs it in a new terminal window. It needs Claude Code 2.1.169 or Codex 0.163 or later. Claude Code's plugin skills stay on, and resuming the session later from a plain terminal brings every skill back ([ADR-0038](docs/adr/0038-the-page-asks-the-program-to-act-on-a-computer.md)).
+
 ### Try the dashboard without an agent
 
 Start a local server from a checkout and fill it with a small demo team:
