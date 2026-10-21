@@ -161,6 +161,13 @@ async def seed(base_url: str, invite_code: str, long_names: bool = False,
                         project=PROJECT_KEY)
     await dimitris.tool("sync", local={}, here=WEBSITE_HERE, project=WEBSITE_KEY)
 
+    # Rules (ADR-0036): one for every project that Claude Code and Codex both use, and one of
+    # dimitris's own for demo-api that only Claude Code uses.
+    await dimitris.page("/rules", name="house-style", agents=["claude_code", "codex"],
+                        text="# House style\n\n- Write for a reader who skims: the point first.\n")
+    await dimitris.page("/rules", name="payments", project=PROJECT_KEY, agents=["claude_code"],
+                        text="# Payments\n\n- Refunds go through `payments/refunds.py` only.\n")
+
     # A company team, with a group per discipline and a narrower one inside it.
     await dimitris.page("/teams", name="demo-team")
     for person in (maria, alex):
@@ -267,7 +274,7 @@ def main() -> None:
     with os.fdopen(descriptor, "w") as file:
         json.dump({"server": base_url, "tokens": tokens}, file)
     print("Seeded: 3 people, 4 computers, teams 'demo-team' and 'friends', 3 groups (one "
-          "nested, one private), and the projects demo-api and demo-website.")
+          "nested, one private), the projects demo-api and demo-website, and two rules.")
     print("Maria has an update to 'code-review' waiting. Alex is in 'demo-team' and in no group, "
           "so the private 'security' group is hidden from him.\n")
     print_links(links)

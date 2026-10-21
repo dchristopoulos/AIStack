@@ -149,7 +149,9 @@ cannot be said with what is there.
 | Copy field | `copyField(value, label)` | any sentence or command a person pastes elsewhere |
 | Menu | `menu(label, fk, items, opts)` | a labelled "Manage" button, never a bare "⋯", for secondary admin actions in a row; the + menu (`plusMenu`) |
 | + menu | `plusMenu(place, items)`, `navRow(link, place, items)` | a + labelled "Add to <place>" that opens what can be added there, with that label above its items |
-| Tick table | `tickTable(label, groups)` | a column per coding agent found on the person's computers; a group per heading row; ticks are checkboxes, or read-only marks in a group changed elsewhere |
+| Tick table | `tickTable(label, groups)` | a column per coding agent found on the person's computers; a group per heading row; ticks are checkboxes, or read-only marks in a group changed elsewhere; a group's `row` draws rows other than skills (`ruleTickRow`, `repoFileRow`) |
+| File panel | `filePanel({ title, lead, text, sections, actions })` | the side panel of one rule or repository file: its text as its agents read it, lines that look like a credential marked, then the caller's sections and actions |
+| Rule editor | `ruleEditor(rule)` | a plain text area with a Preview toggle; Save makes a revision, and a held save names the lines that look like a credential and turns into "Save anyway" (`credentialCheck`) |
 | Table | `.tbl` + `.tr` + `td()` | `library`, `plain` (a computer's agents and projects), `ticks`, `tree` (indent guides), member and group grids |
 | Empty state | `empty(icon, title, …body)` | says what to do next, with the button that does it |
 | Toast | `toast(text, kind)` | `ok`, `warn`, `error`; the sentence names what happened; outcomes stay until dismissed |
@@ -170,14 +172,19 @@ one entry per place the Library can live.
   tag.
 - **A project is one page** (ADR-0037): a card per computer that manages it (its folder, its
   agents, when it synced, "Stop managing here…"), then one tick table of what its agents read,
-  top to bottom: skills for every project (read-only, changed on Every project), then the
-  project's own skills. Rules join as groups above the skills. A skill in both gets one line
-  saying which copy Claude Code uses. Until a computer syncs inside the project, its card says
-  how skills arrive. Project folders are a server's for now: the localhost dashboard offers
-  no project to add.
+  top to bottom: your rules for every project (read-only ticks here), the repository's rules
+  (read-only, once `/api/state` lists its files), your rules for the project, skills for every
+  project (read-only, changed on Every project), then the project's own skills. A skill in
+  both gets one line saying which copy Claude Code uses. Until a computer syncs inside the
+  project, its card says how skills arrive. Project folders are a server's for now: the
+  localhost dashboard offers no project to add.
 - **Every project is one page**: the same tick table over each agent's global folder on every
-  computer.
-- **A computer's page is about the computer**: its coding agents with their folders, its
+  computer, with your rules for every project above the skills.
+- **A rule opens in the side panel**: its text, "Use this file for" per agent with each
+  agent's own file, Edit and Remove…. Ticks in the panel are saved before Edit or Remove
+  leave it. Rules are a server's for now: the localhost dashboard shows none.
+- **A computer's page is about the computer**: its coding agents with their folders and
+  their file for every project (with the rule in it), its
   projects with their folders, when each last synced, and Computer settings.
 - **The tick table says where once.** Its columns are the coding agents found on the person's
   computers, in a fixed order. The `agents` harness is the column "Codex", whose tooltip says
@@ -187,10 +194,10 @@ one entry per place the Library can live.
   macbook"), and its tick is partly on (a bar); clicking it turns it on everywhere. One
   computer at a time is chosen in the skill's panel. On a narrow page each tick carries its
   agent's name.
-- **Adding happens from a + on the thing you add to.** Every project: Skills. Projects (the
-  heading): A folder on this computer, A project from another computer. A project: Skills,
-  Another computer. A computer: A coding agent, A project, Skills. Each opens the existing
-  dialog. The + shows on hover, focus and the current item, always on a touch screen, and
+- **Adding happens from a + on the thing you add to.** Every project: Skills, A rule.
+  Projects (the heading): A folder on this computer, A project from another computer. A
+  project: Skills, A rule, Another computer. A computer: A coding agent, A project, Skills.
+  Each opens the existing dialog. The + shows on hover, focus and the current item, always on a touch screen, and
   always on headings; it stands where the item's count was. Computers keeps its own + that
   adds a computer.
 - **Adding an agent is local until it matters.** A picked agent shows on its computer at once
