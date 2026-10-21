@@ -1,6 +1,7 @@
 """`aistack sync` writes rules to a temporary home and repository, over real HTTP (ADR-0036)."""
 
 import json
+import shutil
 import subprocess
 
 import httpx
@@ -304,3 +305,56 @@ async def test_rule_tickets_open_only_their_own_route(server_url, home, session_
                                content=b"x")).status_code == 403
         assert (await http.put(download.replace("/rule-download/", "/rule-upload/"),
                                content=b"x")).status_code == 403
+
+
+async def test_a_manual_sync_covers_every_managed_project_and_the_hook_only_this_one(
+        server_url, home, repository, tmp_path, session_factory):
+    token = await join(server_url)
+    other = tmp_path / "other"
+    other.mkdir()
+    _git(other, "init", "-q")
+    key = await _manage(server_url, token, home, repository)
+    other_key = await _manage(server_url, token, home, other)
+    # A sync in each folder records it, as it would in any session there.
+    await _sync(server_url, token, home, repository)
+    await _sync(server_url, token, home, other)
+    for each, rule in ((key, "house-style"), (other_key, "review")):
+        _rules(session_factory, rule_service.create, rule, f"{rule} text\n", project=each,
+               agents=["claude_code"])
+    house = repository / ".claude/rules/aistack-house-style.md"
+    review = other / ".claude/rules/aistack-review.md"
+
+    # The session-start hook: the agents' folders and the project the session is in.
+    await server_sync.sync_computer(Connection(server_url, token), home, repository)
+    assert house.exists() and not review.exists()
+
+    # A manual sync from anywhere: every project, each under its own heading.
+    reports = await server_sync.sync_computer(Connection(server_url, token), home, home,
+                                              every_project=True)
+    output = server_sync.output(reports)
+    assert review.read_text() == "review text\n"
+    assert f"Project {other}:\nWrote rule review revision 1" in output
+    assert _git(other, "status", "--porcelain") == ""
+    assert not any(report["failures"] for report in reports)
+
+    # Edited on both sides: the question's key names its project, and the answer carries.
+    review.write_text("mine\n")
+    _rules(session_factory, rule_service.edit, "review", "theirs\n", project=other_key)
+    reports = await server_sync.sync_computer(Connection(server_url, token), home, home,
+                                              every_project=True)
+    question = next(report for report in reports if report.get("rule_questions"))[
+        "rule_questions"][0]
+    assert question["key"] == f"{other_key}:project:claude_code:review"
+    await server_sync.sync_computer(Connection(server_url, token), home, home,
+                                    {question["key"]: "restore"}, every_project=True)
+    assert review.read_text() == "theirs\n"
+
+    # A folder that is gone is reported once, and not as a failure.
+    shutil.rmtree(other)
+    reports = await server_sync.sync_computer(Connection(server_url, token), home, home,
+                                              every_project=True)
+    assert not any(report["failures"] for report in reports)
+    assert server_sync.output(reports).count(f"no longer at {other}") == 1
+    again = server_sync.output(await server_sync.sync_computer(
+        Connection(server_url, token), home, home, every_project=True))
+    assert "no longer at" not in again

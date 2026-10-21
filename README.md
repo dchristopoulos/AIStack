@@ -109,11 +109,12 @@ flowchart LR
 |---|---|
 | `aistack setup` | Prints the setup steps for a coding agent |
 | `aistack dashboard` | Opens the dashboard on this computer (local mode) |
-| `aistack sync` | Reconciles this computer's skills and rules with its server (in local mode, say "sync aistack") |
+| `aistack sync` | Reconciles this computer's skills and rules with its server, in every project it manages (at session start, only the project the session is in; in local mode, say "sync aistack") |
 | `aistack start --agent claude-code --skills code-review,tdd` | Starts Claude Code or Codex in this project with only those skills, for one session |
 | `aistack project add ~/code/shop` | Adds a project and lists its agent files and other Markdown |
 | `aistack join <server> <computer-code>` | Adds this computer to a server |
 | `aistack check` | Says whether this computer reaches its Library |
+| `aistack link` / `link remove` | Registers or removes the `aistack://` link the dashboard opens a terminal with |
 | `aistack move github` | Moves the Library, with its history (also `postgresql`, `here`) |
 | `aistack export` | Writes every skill in the Library to a folder |
 | `AISTACK_HOST=127.0.0.1 aistack serve` | Runs the server without the container, listening on this computer only |

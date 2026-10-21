@@ -126,13 +126,15 @@ def _ignore_install(top: Path, folder: Path, name: str) -> None:
 
 async def sync_computer(connection: Connection, home: Path, cwd: Path,
                         rule_choices: dict[str, str] | None = None,
-                        add_files: list[dict] | None = None) -> list[dict]:
+                        add_files: list[dict] | None = None,
+                        every_project: bool = False) -> list[dict]:
     """Return reports with automatic results and all unresolved decisions intact.
 
     `rule_choices` carries the person's answers to rule questions, by the key the question
     was reported under; only an option the server offers is carried out. `add_files` is
     `aistack project add`: this computer starts managing the project `cwd` is in, whose
-    Markdown files these are, and the server keeps the list (ADR-0036)."""
+    Markdown files these are, and the server keeps the list (ADR-0036). `every_project`
+    also syncs each other project this computer manages whose folder sync recorded."""
     async with asyncio.timeout(SYNC_TIMEOUT):
         async with client(connection) as mcp, httpx.AsyncClient(timeout=15, follow_redirects=False) as http:
             async def call(tool, **arguments):
@@ -209,11 +211,16 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path,
                                                     rule_choices or {}, done)
                 if done["completed"] or done["failures"] or done["rule_questions"] or done.get("edit_questions"):
                     reports.append(done)
+            if every_project and "here" in properties:
+                skip = {project[0]} if project else set()
+                reports.extend(await _other_projects(call, http, home, harnesses, binding, skip,
+                                                     rule_choices or {}, rules is not None))
             return reports
 
 
 async def _project_folders(call, http, harnesses: list[str], project: tuple[Path, dict], key: str,
-                           binding, listing: list[dict] | None = None) -> list[dict]:
+                           binding, listing: list[dict] | None = None,
+                           rules: "_Rules | None" = None) -> list[dict]:
     """Sync each harness's skills folder in a project this computer manages, which is also
     what starts managing it. A listing from `aistack project add` rides on the first."""
     top, reports = project[0], []
@@ -225,8 +232,82 @@ async def _project_folders(call, http, harnesses: list[str], project: tuple[Path
         arguments = {"harness": harness, "fingerprint": binding, "here": project[1], "project": key, "repository": sorted(blocked)}
         if listing is not None and not reports:
             arguments["project_files"] = listing
-        reports.append(await _folder(call, http, folder, arguments, top, blocked))
+        if rules is not None and not reports:
+            arguments["rules"] = rules.observation
+        report = await _folder(call, http, folder, arguments, top, blocked)
+        report["project_group"] = str(top)
+        if "rules" in arguments:
+            # The files for every project were synced in the first pass.
+            rules.entries = [entry for entry in report.pop("rules", [])
+                             if entry.get("place") == "project"]
+            rules.repository_files = report.pop("repository_files", [])
+            rules.ticked_files = report.pop("ticked_files", [])
+            rules.edits = report.pop("edits", [])
+            rules.top = top
+        reports.append(report)
     return reports
+
+
+async def _other_projects(call, http, home: Path, harnesses: list[str], binding,
+                          skip: set[Path], choices: dict[str, str], with_rules: bool) -> list[dict]:
+    """Sync each project recorded in `projects.json` but the one in `skip`, with the same
+    checks as the project sync runs in. A recorded folder that is gone, or no longer holds
+    that project, is reported and forgotten; a sync in its new folder records it again."""
+    reports = []
+    for key, recorded in sorted(_reported(home).items()):
+        if not isinstance(recorded, str) or not Path(recorded).is_absolute():
+            continue
+        found = current_project(Path(recorded), home) if Path(recorded).is_dir() else None
+        if found is not None and found[0] in skip:
+            continue
+        try:
+            if found is None or found[0] != Path(recorded).resolve():
+                raise LookupError
+            # Asked without `project` first: syncing the project's folder would start
+            # managing a project the person stopped managing here.
+            probe = await call("sync", local={}, harness=harnesses[0], fingerprint=binding,
+                               here=found[1])
+            named = probe.get("project") or {}
+            if named.get("key") != key:
+                raise LookupError
+            if named.get("managed") is not True:
+                remember_project(home, key, None)
+                continue
+            rules = _observed_rules(home, found[0]) if with_rules else None
+            reports.extend(await _project_folders(call, http, harnesses, found, key, binding,
+                                                  rules=rules))
+            if rules is None:
+                continue
+            answers = _choices_for(choices, key)
+            done = await _apply_rules(http, rules, answers)
+            await repository_work.carry_out(http, found[0], rules.ticked_files, rules.edits,
+                                            answers, done)
+            # A question's key names its project: the same rule name can be in two.
+            for question in (*done["rule_questions"], *done.get("edit_questions", ())):
+                question["key"] = f"{key}:{question['key']}"
+            if done["completed"] or done["failures"] or done["rule_questions"] or done.get(
+                    "edit_questions"):
+                reports.append(done | {"project_group": recorded})
+        except LookupError:
+            remember_project(home, key, None)
+            reports.append(_project_note(recorded, diagnostics=[
+                f"Project {key} is no longer at {recorded}, so AIStack stopped syncing it "
+                "there. Run aistack sync in its new folder to sync it again."]))
+        except AIStackError as error:
+            reports.append(_project_note(recorded, failures=[error.message]))
+    return reports
+
+
+def _project_note(folder: str, failures=(), diagnostics=()) -> dict:
+    return {"folder": folder, "harness": "project", "project_group": folder, "completed": [],
+            "failures": list(failures), "diagnostics": list(diagnostics)}
+
+
+def _choices_for(choices: dict[str, str], key: str) -> dict[str, str]:
+    """The answers to one other project's questions, given by the key sync reported."""
+    prefix = f"{key}:"
+    return {choice[len(prefix):]: answer for choice, answer in choices.items()
+            if choice.startswith(prefix)}
 
 
 class _Rules:
@@ -510,9 +591,11 @@ async def _folder(call, http, folder, arguments, top=None, blocked=()):
 
 
 def output(reports: list[dict], hook: bool = False) -> str:
-    lines = []
+    # Lines by project folder, None for the agents' own folders; each project under a heading.
+    groups: dict[str | None, list[str]] = {None: []}
     offers: dict[tuple, dict] = {}
     for report in reports:
+        lines = groups.setdefault(report.get("project_group"), [])
         if report.get("rules"):
             if not hook:
                 lines.extend(report["completed"])
@@ -542,6 +625,10 @@ def output(reports: list[dict], hook: bool = False) -> str:
         lines.extend(report["failures"])
         if not hook:
             lines.extend(report.get("diagnostics", []))
+    lines = groups.pop(None)
+    for folder, grouped in groups.items():
+        if grouped:
+            lines.extend((f"Project {folder}:", *grouped))
     if offers:
         lines.append("AIStack team updates: " + json.dumps(list(offers.values()), ensure_ascii=True))
         lines.append("Ask once per skill, even when several folders list it, naming pushed_by and any own_changes or different_skill warning. On yes: get_skill(name, team) once, with the harness and any project of its first folder, then run aistack sync again to install it in every folder listed.")

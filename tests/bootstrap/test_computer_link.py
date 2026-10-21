@@ -267,3 +267,70 @@ def test_a_failed_registration_says_so_and_does_not_stop_setup(home):
     # The conftest's run refuses, as a computer without xdg-mime would.
     assert "not registered" in computer_link.register(PROGRAM, home, "linux")
     assert not computer_link.registered(PROGRAM, home, "linux")
+
+
+# Removal -----------------------------------------------------------------------------------
+
+def test_macos_removal_unregisters_the_applet_and_deletes_only_it(home):
+    calls, run = _recording()
+    computer_link.register(PROGRAM, home, "darwin", run)
+    (home / "Applications" / "Other.app").mkdir()
+    app = home / "Applications" / "AIStack Link.app"
+    calls.clear()
+
+    assert computer_link.unregister(home, "darwin", run) == computer_link.UNREGISTERED
+    assert computer_link.unregister(home, "darwin", run) == computer_link.UNREGISTERED
+
+    assert calls == [[computer_link.LSREGISTER, "-u", str(app)]]
+    assert sorted(path.name for path in app.parent.iterdir()) == ["Other.app"]
+    assert not computer_link.registered(PROGRAM, home, "darwin", run)
+
+
+def test_windows_removal_deletes_the_keys_registration_made_deepest_first(home):
+    values, deleted = {}, []
+
+    def delete(key):
+        if not any(stored == key or stored.startswith(key + "\\") for stored, _ in values):
+            raise FileNotFoundError(key)
+        deleted.append(key)
+        for stored in [entry for entry in values if entry[0] == key]:
+            del values[stored]
+    registry = SimpleNamespace(set=lambda key, name, value: values.__setitem__((key, name), value),
+                               get=lambda key, name: values.get((key, name)), delete=delete)
+    program = PureWindowsPath(r"C:\Users\maria\.local\bin\aistack.exe")
+    computer_link.register(program, home, "win32", registry=registry)
+
+    assert computer_link.unregister(home, "win32", registry=registry) == \
+        computer_link.UNREGISTERED
+    assert computer_link.unregister(home, "win32", registry=registry) == \
+        computer_link.UNREGISTERED
+
+    assert values == {}
+    assert deleted == [r"Software\Classes\aistack\shell\open\command",
+                       r"Software\Classes\aistack"]
+    assert not computer_link.registered(program, home, "win32", registry=registry)
+
+
+def test_linux_removal_deletes_the_entry_and_only_its_default(home, monkeypatch):
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    calls, run = _recording(answer="aistack-link.desktop\n")
+    computer_link.register(PROGRAM, home, "linux", run)
+    mimeapps = home / ".config" / "mimeapps.list"
+    mimeapps.parent.mkdir()
+    mimeapps.write_text("[Default Applications]\nx-scheme-handler/aistack=aistack-link.desktop\n"
+                        "text/html=firefox.desktop\n")
+    calls.clear()
+
+    assert computer_link.unregister(home, "linux", run) == computer_link.UNREGISTERED
+    assert computer_link.unregister(home, "linux", run) == computer_link.UNREGISTERED
+
+    assert not (home / ".local/share/applications/aistack-link.desktop").exists()
+    assert mimeapps.read_text() == "[Default Applications]\ntext/html=firefox.desktop\n"
+    assert calls == []
+    assert not computer_link.registered(PROGRAM, home, "linux", run)
+
+
+def test_link_remove_prints_what_it_did(home, monkeypatch, capsys):
+    monkeypatch.setattr(computer_link, "unregister", lambda: computer_link.UNREGISTERED)
+    computer_link.run_link(["remove"])
+    assert capsys.readouterr().out.strip() == computer_link.UNREGISTERED

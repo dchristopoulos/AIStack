@@ -169,6 +169,73 @@ def register(program: Path, home: Path | None = None, system: str | None = None,
     return REGISTERED
 
 
+UNREGISTERED = (f"Removed the {SCHEME}:// link from this computer. The dashboard shows "
+                "commands to copy instead; aistack link registers it again.")
+
+
+def unregister(home: Path | None = None, system: str | None = None, run=None,
+               registry=None) -> str:
+    """Undo exactly what `register` wrote, and nothing else; doing it twice is harmless."""
+    home, system, run = home or Path.home(), system or sys.platform, run or _run
+    try:
+        if system == "darwin":
+            app = home / MACOS_APP
+            if app.exists():
+                run([LSREGISTER, "-u", str(app)], check=True, capture_output=True, timeout=60)
+            for leftover in (app, app.with_name(".aistack-link-staging.app")):
+                shutil.rmtree(leftover, ignore_errors=True)
+            app.with_name(".aistack-link.applescript").unlink(missing_ok=True)
+        elif system == "win32":
+            registry = registry or _Registry()
+            # Deepest first: DeleteKey refuses a key that still has subkeys, so one someone
+            # else added under it stays, and the refusal is reported.
+            for key in (rf"{WINDOWS_KEY}\shell\open\command", rf"{WINDOWS_KEY}\shell\open",
+                        rf"{WINDOWS_KEY}\shell", WINDOWS_KEY):
+                try:
+                    registry.delete(key)
+                except FileNotFoundError:
+                    pass
+        else:
+            _linux_entry_path(home).unlink(missing_ok=True)
+            # xdg-mime has no command to undo `default`: drop the line it wrote, only that.
+            config = os.environ.get("XDG_CONFIG_HOME", "")
+            mimeapps = (Path(config) if Path(config).is_absolute() else home / ".config") \
+                / "mimeapps.list"
+            if mimeapps.is_file():
+                text = mimeapps.read_text(encoding="utf-8")
+                ours = {f"x-scheme-handler/{SCHEME}={LINUX_ENTRY}",
+                        f"x-scheme-handler/{SCHEME}={LINUX_ENTRY};"}
+                kept = [line for line in text.splitlines(keepends=True)
+                        if line.strip() not in ours]
+                if len(kept) != len(text.splitlines()):
+                    mimeapps.write_text("".join(kept), encoding="utf-8")
+    except (OSError, subprocess.SubprocessError) as error:
+        return (f"The {SCHEME}:// link could not be removed ({loggable(str(error))}). Run "
+                "aistack link remove again.")
+    return UNREGISTERED
+
+
+def run_link(argv: list[str]) -> None:
+    """`aistack link` registers the link for the installed program; `aistack link remove`
+    removes it."""
+    parser = argparse.ArgumentParser(
+        prog="aistack link",
+        description=f"Register the {SCHEME}:// link, so the dashboard can open a terminal on "
+                    "this computer, or remove it.")
+    parser.add_argument("action", nargs="?", choices=["remove"])
+    arguments = parser.parse_args(argv)
+    if arguments.action == "remove":
+        message = unregister()
+        print(message)
+        if message != UNREGISTERED:
+            sys.exit(1)
+        return
+    message = register(agent_config.installed_program())
+    print(message)
+    if message != REGISTERED:
+        sys.exit(1)
+
+
 def registered(program: Path, home: Path | None = None, system: str | None = None,
                run=None, registry=None) -> bool:
     """Whether the link opens `program` on this computer."""
@@ -197,7 +264,7 @@ def status(program: Path) -> str:
     if registered(program):
         return f"The {SCHEME}:// link opens a terminal on this computer."
     return (f"The {SCHEME}:// link is not registered on this computer, so the dashboard shows "
-            "commands to copy. Run setup again to register it.")
+            "commands to copy. Run aistack link to register it.")
 
 
 def _checked_program(program: Path, system: str) -> None:
@@ -266,6 +333,11 @@ class _Registry:
 
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key) as handle:
             return winreg.QueryValueEx(handle, name)[0]
+
+    def delete(self, key: str) -> None:
+        import winreg
+
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key)
 
 
 def _linux_entry_path(home: Path) -> Path:
