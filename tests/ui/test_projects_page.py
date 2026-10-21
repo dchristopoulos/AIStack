@@ -162,8 +162,8 @@ async def test_a_computer_s_plus_offers_a_project_and_a_new_repository(sign_in):
 
     await expect(page.get_by_role("heading", name="demo-website", level=1)).to_be_visible()
     await _add_to(page, "Projects", "A folder on this computer…")
-    await expect(page.get_by_role("dialog", name="Add a folder on this computer").get_by_label(
-        "What to say inside the repository")).to_have_value("add this project to aistack")
+    await expect(page.get_by_role("dialog", name="Add a project").get_by_role(
+        "button", name="Look inside")).to_be_visible()
     assert dimitris.console_errors == []
 
 

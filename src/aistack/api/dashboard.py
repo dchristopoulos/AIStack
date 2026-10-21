@@ -13,6 +13,7 @@ import uuid
 from collections.abc import Callable
 from functools import wraps
 from html import escape
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -48,6 +49,7 @@ from aistack.services import (
     library_log,
     onboarding_service,
     project_file_service,
+    repository_work,
     rule_service,
     skill_service,
     team_service,
@@ -658,6 +660,21 @@ async def start_agent_here(request: Request) -> Response:
 
 
 LOCAL_ROUTES.append(Route(API_PATH + "/start-agent", start_agent_here, methods=["POST"]))
+
+
+@handle_route_errors
+async def look_inside(request: Request) -> Response:
+    """What `aistack project add` would list for a folder on this computer: its agent files
+    and other Markdown by path and size, and the skills its repository holds (ADR-0038).
+    Registered on the localhost dashboard only: a server never reads anybody's disk."""
+    _signed_in(request)
+    _require_request_header(request)
+    body = await _json_body(request)
+    return _json(await asyncio.to_thread(repository_work.look_inside, _text(body, "folder"),
+                                         Path.home()))
+
+
+LOCAL_ROUTES.append(Route(API_PATH + "/projects/look-inside", look_inside, methods=["POST"]))
 
 
 def _session_cookie(request: Request) -> str:

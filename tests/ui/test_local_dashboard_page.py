@@ -50,8 +50,13 @@ async def test_the_local_dashboard_shows_the_library_and_nothing_a_team_needs(br
         await expect(page.get_by_role("row").filter(has_text="wizard")).to_be_visible()
         await expect(page.get_by_role("button", name="Add a team")).to_have_count(0)
         await expect(page.get_by_role("navigation", name="Spaces")).to_be_hidden()
-        # A project's folders are a server's for now: nothing offers to add one here.
-        await expect(page.get_by_role("button", name="Add to Projects")).to_have_count(0)
+        # A folder on this computer is looked inside here; another computer's project is a
+        # server's.
+        await page.get_by_role("button", name="Add to Projects").click()
+        menu = page.get_by_role("menu", name="Add to Projects")
+        await expect(menu.get_by_role("menuitem")).to_have_count(1)
+        await expect(menu.get_by_role("menuitem", name="A folder on this computer…")).to_be_visible()
+        await page.keyboard.press("Escape")
         # A full name is for teammates, and local mode has none.
         await page.goto(f"{link.split('/app/')[0]}/app#/settings")
         await expect(page.get_by_role("heading", name="Settings", level=1)).to_be_visible()
@@ -96,7 +101,8 @@ async def test_open_a_terminal_starts_the_agent_on_this_computer(browser, tmp_pa
         with application_context.get_session_factory().begin() as session:
             project_service.register_folder(session, caller.user_id, caller.machine_id,
                                             "github.com/maria/notes", "notes",
-                                            Harness.CLAUDE_CODE, "/home/maria/notes")
+                                            Harness.CLAUDE_CODE, "/home/maria/notes"
+                                            ).folder.repository_skills = "wizard"
         context = await browser.new_context()
         page = await context.new_page()
         await page.goto(link)
@@ -105,7 +111,7 @@ async def test_open_a_terminal_starts_the_agent_on_this_computer(browser, tmp_pa
         await page.get_by_role("button", name="Start an agent…").click()
         dialog = page.get_by_role("dialog", name="Start an agent in notes")
         await expect(dialog.get_by_role("link", name="Open on this computer")).to_have_count(0)
-        await dialog.get_by_label("More skills, by name").fill("wizard")
+        await dialog.get_by_role("checkbox", name="wizard", exact=True).check()
         await dialog.get_by_role("button", name="Open a terminal").click()
 
         await expect(page.get_by_text("A terminal opened on")).to_be_visible()
@@ -113,6 +119,33 @@ async def test_open_a_terminal_starts_the_agent_on_this_computer(browser, tmp_pa
 
     assert started == [["start", "--new-terminal", "--agent=claude-code",
                         "--project=github.com/maria/notes", "--skills=wizard"]]
+
+
+async def test_look_inside_shows_a_folders_files_at_once(browser, tmp_path, sqlite_url):
+    """ADR-0038: the localhost dashboard reads the folder itself; nothing is sent anywhere."""
+    top = tmp_path / "shop"
+    top.mkdir()
+    for path, text in {"AGENTS.md": "rules\n", "README.md": "readme\n"}.items():
+        (top / path).write_text(text)
+    subprocess.run(["git", "-C", str(top), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(top), "add", "."], check=True)
+    async with local_dashboard(tmp_path, sqlite_url) as (_, link):
+        context = await browser.new_context()
+        page = await context.new_page()
+        await page.goto(link)
+        await page.get_by_role("button", name="Add to Projects").click()
+        await page.get_by_role("menu", name="Add to Projects").get_by_role(
+            "menuitem", name="A folder on this computer…").click()
+        dialog = page.get_by_role("dialog", name="Add a project")
+        await dialog.get_by_label(re.compile("^Folder on ")).fill(str(top))
+        await dialog.get_by_role("button", name="Look inside").click()
+
+        await expect(dialog.get_by_text("Found shop.")).to_be_visible()
+        await expect(dialog.get_by_role("checkbox", name="AGENTS.md")).to_be_checked()
+        await expect(dialog.get_by_role("checkbox", name="README.md")).not_to_be_checked()
+        await expect(dialog.get_by_label("What to say inside the repository")).to_have_value(
+            "add this project to aistack")
+        await context.close()
 
 
 async def test_the_page_says_where_the_library_lives(browser, tmp_path, sqlite_url):

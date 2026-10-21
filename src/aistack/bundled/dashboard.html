@@ -435,6 +435,11 @@ input[type="checkbox"]:indeterminate { border-color: var(--accent); background-i
 .switch[aria-checked="true"] .track::after { transform: translateX(12px); background: var(--on-accent); }
 .switch[aria-disabled="true"] { opacity: 1; pointer-events: auto; cursor: not-allowed; }
 .switch[aria-disabled="true"] > span { opacity: .5; }
+.pending { display: flex; align-items: center; gap: 6px; color: var(--accent); }
+.look-out { display: grid; gap: 12px; margin-top: 12px; }
+.look-out:empty { display: none; }
+.note-input { height: auto; min-height: 5em; padding: 8px 10px; resize: vertical; }
+h3.legend { font-size: inherit; font-weight: 500; margin: 0 0 6px; }
 .switch-wrap { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .switch-why { color: var(--faint); font-size: 12px; white-space: normal; }
 .switch .mono { font-size: 12.5px; }
@@ -1315,11 +1320,9 @@ const WORDS = {
     forProject: 'For {project}',
     forEvery: 'For every project',
     none: 'No skill of your Library is on {computer} for {agent} yet.',
-    more: 'More skills, by name',
-    moreHelp: 'The repository\'s own skills and any other skill already on {computer}, separated by commas.',
+    forRepository: 'In the repository',
     remember: 'Remember these for {project}',
     pickOne: 'Tick at least one skill.',
-    badName: '"{name}" is not a skill name. A skill name is lowercase letters and digits joined by single hyphens, like code-review.',
     stays: {
       claude_code: 'Plugin skills stay on unless the plugin is turned off, and resuming the session later from a plain terminal brings every skill back.',
       agents: 'Resuming the session later from a plain terminal brings every skill back.',
@@ -1378,6 +1381,28 @@ const WORDS = {
     useForHelp: 'Each agent gets the same text in its own file.',
     readBy: 'Read by',
     nobody: 'No coding agent',
+    justForYou: 'Just for you',
+    turnOff: 'Turn this file off for me',
+    turnOffHelp: 'Claude Code and Codex skip it for you only, at each computer\'s next {sync}. Everyone else still gets it.',
+    turnedOff: 'Turned {path} off for you. Each computer skips it from its next {sync}.',
+    turnedOn: 'Turned {path} on again for you.',
+    pendingWrite: 'Waiting for {computer} to write your edit at its next {sync}',
+    pending: 'Changed on {computer}, not committed yet',
+    pendingShare: '{computer} opens the pull request at its next {sync}',
+    shared: 'Shared as a pull request',
+    openPull: 'Open the pull request',
+    commit: 'Commit…',
+    writeOn: 'Write it on',
+    writeOnHelp: 'Its working copy of the repository. Nothing is committed until you press Commit….',
+    noComputer: 'No computer of yours has this project yet, so an edit has nowhere to go.',
+    editSaved: 'Saved. {computer} writes it into its working copy at its next {sync}.',
+    shareTitle: 'Share your change to {path}',
+    shareLead: 'Opens a pull request on {project} with only this file. Nothing else you changed goes with it.',
+    note: 'What is this change about?',
+    noteHelp: 'Your team reads this on the pull request. The first line is its title.',
+    needNote: 'Say what this change is about.',
+    openPullSubmit: 'Open a pull request',
+    shareSaved: '{computer} pushes a branch and opens the pull request at its next {sync}.',
     agentsSaved: 'Saved which agents use {name}. Each computer picks it up at its next {sync}.',
     edit: 'Edit',
     editTitle: 'Edit {name}',
@@ -1422,8 +1447,28 @@ const WORDS = {
     titleFor: 'Add {project} to a computer',
     titleFrom: 'Add a project from another computer',
     noneMore: 'Every computer already manages it for each of its agents.',
-    folderHere: 'Add a folder on this computer',
-    folderHereLead: 'Open your coding agent inside the repository and say this. It adds the project and syncs it.',
+    folderHere: 'Add a project',
+    folderOn: 'Folder on {computer}',
+    folderHelp: 'The full path of a folder in the repository, such as ~/code/shop.',
+    lookInside: 'Look inside',
+    needFolder: 'Type the folder to look inside.',
+    runThis: 'Run this on {computer}. It lists the files it will send, waits for Enter, and adds the project.',
+    runHere: 'Open a terminal here',
+    command: 'Command to run on {computer}',
+    waiting: 'Waiting for the list from {computer}…',
+    found: 'Found {project}.',
+    foundTeam: 'Found {project}, a project of team {team}.',
+    files: 'Show these files in AIStack',
+    filesHelp: 'Agent files are ticked. Only ticked files are read again, at each sync.',
+    noFiles: 'No Markdown file in the repository.',
+    readBy: '{agents}',
+    nobodyReads: 'No agent reads it',
+    skills: 'Skills in this project',
+    skillsNote: 'The repository holds these, so git shares them',
+    noSkills: 'The repository holds no skills.',
+    addIt: 'Add {project}',
+    added: 'Added {project}. Its ticked files show on its page.',
+    localLater: 'This is what your agents read in this repository. A Library on this computer keeps projects\' files in a later release; manage the project by saying this inside it:',
     noneElsewhere: 'None of your computers manages a project this one does not.',
     unseen: 'A repository AIStack has not seen',
     unseenLead: 'On {computer}, open your coding agent inside the repository and say this. It adds the project and syncs it.',
@@ -2398,10 +2443,10 @@ function placesNav(r) {
     navRow(link('#/every', r.view === 'every', icon('globe'), el('span', { class: 'label' }, W.nav.every), el('span', { class: 'count' }, String(everyCount))),
       W.where.every, [skillsItem(W.where.every, everyFolders()), server && ruleItem(null)]),
     el('div', { class: 'nav-heading' }, W.nav.projects,
-      server && plusMenu(W.nav.projects, [
-        { label: W.plus.folderHere, icon: 'terminal', run: folderHereDialog },
-        { label: W.plus.fromOther, icon: 'repo', run: () => addProjectDialog({}) },
-      ], 'plus:projects')),
+      plusMenu(W.nav.projects, [
+        { label: W.plus.folderHere, icon: 'folder', run: addFolderDialog },
+        server && { label: W.plus.fromOther, icon: 'repo', run: () => addProjectDialog({}) },
+      ].filter(Boolean), 'plus:projects')),
     projects().map(p => {
       const team = teamOf(p);
       return navRow(link(projectHash(p.key), r.view === 'project' && r.project.key === p.key, icon('repo', 15),
@@ -3116,7 +3161,6 @@ function startAgentDialog({ m, key = null, agent = null }) {
   const chosenAgent = () => agentPicker.querySelector('input:checked').value;
   const ticked = new Map();
   const list = el('div', { class: 'picker-list' });
-  const more = el('input', { class: 'input mono', type: 'text', spellcheck: false, autocomplete: 'off', on: { input: () => update() } });
   const keep = el('input', { type: 'checkbox', checked: true });
   const keepLabel = el('span');
   const stays = el('p', { class: 't2' });
@@ -3125,11 +3169,7 @@ function startAgentDialog({ m, key = null, agent = null }) {
 
   // The names to start with, checked by the rule `aistack start` applies.
   function picked() {
-    const names = [...list.querySelectorAll('input:checked')].map(b => b.value);
-    for (const name of more.value.split(',').map(n => n.trim()).filter(Boolean)) {
-      if (!SKILL_RE.test(name)) throw new Error(say(S.badName, { name }));
-      if (!names.includes(name)) names.push(name);
-    }
+    const names = [...new Set([...list.querySelectorAll('input:checked')].map(b => b.value))];
     if (!names.length) throw new Error(S.pickOne);
     return names;
   }
@@ -3143,6 +3183,9 @@ function startAgentDialog({ m, key = null, agent = null }) {
     const folder = projectFolder(m, a, projectKey());
     const own = folder ? placedOn({ m, agent: a, project: folder }) : [];
     const every = placedOn({ m, agent: a, project: null }).filter(s => !own.includes(s));
+    // The repository's own skills, as this computer's last sync of that folder listed them.
+    const listedHere = folder ? (folder.folders.find(f => f.harness === a) || {}).repository_skills || [] : [];
+    const repo = listedHere.filter(n => SKILL_RE.test(n)).map(name => ({ name, description: null }));
     const last = startedSkills()[projectKey()];
     const was = Array.isArray(last) ? new Set(last) : null;
     const opt = (s, byDefault) => el('label', { class: 'picker-opt' },
@@ -3150,14 +3193,11 @@ function startAgentDialog({ m, key = null, agent = null }) {
         on: { change: ev => { ticked.set(s.name, ev.currentTarget.checked); update(); } } }),
       el('span', { class: 'mono opt-name' }, s.name), s.description && el('span', { class: 't2 opt-note' }, s.description));
     const group = text => el('div', { class: 't2 picker-group' }, text);
-    list.replaceChildren(...(own.length || every.length ? [
+    list.replaceChildren(...(own.length || every.length || repo.length ? [
       own.length && group(say(S.forProject, { project: projectName() })), ...own.map(s => opt(s, true)),
+      repo.length && group(S.forRepository), ...repo.map(s => opt(s, true)),
       every.length && group(S.forEvery), ...every.map(s => opt(s, false)),
     ].filter(Boolean) : [el('p', { class: 't2 picker-group' }, say(S.none, { computer: m.name, agent: AGENTS[a].name }))]));
-    if (fresh) {
-      const listed = new Set([...own, ...every].map(s => s.name));
-      more.value = was ? [...was].filter(n => typeof n === 'string' && !listed.has(n)).join(', ') : '';
-    }
     keepLabel.replaceChildren(...sayWith(S.remember, { project: el('span', { class: 'mono' }, projectName()) }));
     stays.textContent = S.stays[a];
     update();
@@ -3201,7 +3241,6 @@ function startAgentDialog({ m, key = null, agent = null }) {
       projectPick && field(S.project, projectPick),
       agentPicker,
       el('fieldset', { class: 'picker' }, el('legend', null, S.skills), list),
-      field(S.more, more, say(S.moreHelp, { computer: m.name })),
       stays,
       el('label', { class: 'check' }, keep, keepLabel),
       !here && el('div', { class: 'field' }, el('div', { class: 'code-box' }, command, copy), said),
@@ -3271,11 +3310,112 @@ function addProjectDialog({ m = null, key = null }) {
   });
 }
 
-function folderHereDialog() {
-  openDialog({
-    title: W.addProject.folderHere, submitLabel: W.done, cancelLabel: null,
-    body: [el('p', null, W.addProject.folderHereLead), copyField(W.addProject.say, W.addProject.whatToSay)],
+// Add a project by its folder (ADR-0036, ADR-0038). Local mode looks inside at once, through
+// its localhost-only route; a server cannot read a disk, so it shows `aistack project add` to
+// run on this computer and the checklist once that command's list arrives in /api/state.
+function addFolderDialog() {
+  const A = W.addProject;
+  const m = state.machines.find(x => x.id === state.this_computer) || state.machines[0];
+  const local = state.server === false;
+  const folder = el('input', { class: 'input mono', type: 'text', spellcheck: false, autocomplete: 'off', placeholder: '~/code/shop' });
+  const look = btn(A.lookInside, { class: 'btn', on: { click: () => lookInside() } }, 'folder');
+  const out = el('div', { class: 'look-out', 'aria-live': 'polite' });
+  let found = null, timer = null;
+  const fileRow = f => el('label', { class: 'picker-opt' },
+    el('input', { type: 'checkbox', value: f.path, checked: f.ticked }),
+    el('span', { class: 'mono opt-name' }, f.path),
+    el('span', { class: 't2 opt-note' }, f.agents.length ? f.agents.map(a => AGENT_NAMES[a] || a).join(W.comma) : A.nobodyReads));
+  function checklist(project) {
+    const team = project.key && teamOf({ key: project.key });
+    return [
+      el('p', null, project.key ? say(team ? A.foundTeam : A.found, { project: project.key, team }) : say(A.found, { project: project.name })),
+      el('fieldset', { class: 'picker' }, el('legend', null, A.files),
+        el('div', { class: 'picker-list' }, project.files.length ? project.files.map(fileRow) : el('p', { class: 't2 picker-group' }, A.noFiles)),
+        el('span', { class: 'help' }, A.filesHelp)),
+      el('section', { class: 'picker', 'aria-label': A.skills }, el('h3', { class: 'legend' }, A.skills),
+        el('div', { class: 'picker-list' }, project.skills.length
+          ? project.skills.map(name => el('div', { class: 'picker-opt' }, el('span', { class: 'mono opt-name' }, name), el('span', { class: 't2 opt-note' }, A.skillsNote)))
+          : el('p', { class: 't2 picker-group' }, A.noSkills))),
+      local && el('p', null, A.localLater),
+      local && copyField(A.say, A.whatToSay),
+    ];
+  }
+  // A project the command has just listed: one whose files were not there when this opened,
+  // or whose folder on this computer synced since.
+  const opened = Date.now();
+  const before = new Set((state.project_files || []).map(f => f.project));
+  function arrived() {
+    const here = state.machines.find(x => x.id === m.id) || m;
+    const synced = new Set((here.projects || []).filter(p => p.folders.some(f => f.last_synced_on && new Date(f.last_synced_on) >= opened - 1000)).map(p => p.key));
+    const keys = [...new Set((state.project_files || []).map(f => f.project))];
+    const key = keys.find(k => !before.has(k)) || keys.find(k => synced.has(k));
+    if (!key) return null;
+    const p = projectBy(key) || { key, name: key.split('/').pop() };
+    const folders = (here.projects || []).find(x => x.key === key);
+    return { key, name: p.name, files: (state.project_files || []).filter(f => f.project === key),
+      skills: [...new Set(((folders && folders.folders) || []).flatMap(f => f.repository_skills || []))].sort() };
+  }
+  async function poll() {
+    if (!dlg.isConnected) return;
+    try { state = await api('/api/state'); } catch (_) { /* tried again below */ }
+    found = arrived();
+    if (found) {
+      out.replaceChildren(...checklist(found).filter(Boolean));
+      face(say(A.addIt, { project: found.name }));
+    } else timer = setTimeout(poll, 3000);
+  }
+  async function lookInside() {
+    const err = dlg.querySelector('.form-error');
+    err.hidden = true;
+    const typed = folder.value.trim();
+    if (!typed) { err.textContent = A.needFolder; err.hidden = false; return; }
+    if (local) {
+      try {
+        found = await api('/api/projects/look-inside', { folder: typed });
+        found.files = found.files.map(f => ({ ...f, ticked: f.agents.length > 0 }));
+        out.replaceChildren(...checklist(found).filter(Boolean));
+      } catch (e) { err.textContent = e.message; err.hidden = false; }
+      return;
+    }
+    const command = `aistack project add ${shellWord(typed)}`;
+    const here = m.id === state.this_computer;
+    const absolute = /^(\/|[A-Za-z]:[\\/])/.test(typed);
+    out.replaceChildren(
+      el('p', null, say(A.runThis, { computer: m.name })),
+      el('div', { class: 'field' }, el('div', { class: 'code-box' },
+        el('input', { class: 'input mono', type: 'text', value: command, readOnly: true, 'aria-label': say(A.command, { computer: m.name }) }),
+        btn(W.copy, { on: { click: async () => {
+          try { await navigator.clipboard.writeText(command); } catch (_) { /* the field can be copied by hand */ }
+          toast(say(W.startAgent.copied, { computer: m.name }));
+        } } }, 'copy'))),
+      here && absolute && el('a', { class: 'btn', href: `aistack://project-add?folder=${enc(typed)}` }, icon('terminal', 16), el('span', null, A.runHere)),
+      el('p', { class: 't2', role: 'status' }, say(A.waiting, { computer: m.name })));
+    clearTimeout(timer);
+    timer = setTimeout(poll, 3000);
+  }
+  folder.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); lookInside(); } });
+  const dlg = openDialog({
+    title: A.folderHere,
+    submitLabel: W.done,
+    body: [
+      el('div', { class: 'field' }, el('label', { htmlFor: (folder.id = 'f-' + (++dialogSeq)) }, say(A.folderOn, { computer: m.name })),
+        el('div', { class: 'code-box' }, folder, look), el('span', { class: 'help' }, A.folderHelp)),
+      out,
+    ],
+    onSubmit: async () => {
+      if (!found || local) return null;
+      const boxes = [...out.querySelectorAll('input[type=checkbox]')];
+      for (const box of boxes) {
+        const f = found.files.find(x => x.path === box.value);
+        if (f && f.ticked !== box.checked) await api('/api/projects/files/tick', { project: found.key, path: f.path, ticked: box.checked });
+      }
+      const key = found.key, name = found.name;
+      return () => { go(projectHash(key)); toast(say(A.added, { project: name })); };
+    },
   });
+  const face = text => { dlg.querySelector('button[type=submit] span').textContent = text; };
+  dlg.addEventListener('close', () => clearTimeout(timer));
+  return dlg;
 }
 
 function computerDialog(m) {
@@ -3497,7 +3637,18 @@ const latestRule = r => (state.rules || []).find(x => x.name === r.name && x.pro
 const ruleText = r => api(ruleUrl(r, 'text') + (r.project ? '?project=' + enc(r.project) : ''));
 const ruleItem = p => ({ label: W.rules.plus, icon: 'doc', run: () => newRuleDialog(p) });
 // A repository's files, once /api/state lists them: { project, path, agents, updated_on, text }.
-const repoFiles = key => (state.project_files || []).filter(f => f.project === key);
+const repoFiles = key => (state.project_files || []).filter(f => f.project === key && f.ticked);
+const machineName = id => ((state.machines || []).find(m => m.id === id) || { name: W.computer.sinceRemoved }).name;
+// Where a file's edit from the page stands, in words, or null when it has none waiting.
+function editStatus(f) {
+  const e = f.edit, R = W.rules;
+  if (!e) return null;
+  const computer = machineName(e.machine);
+  if (e.shared_on) return e.pull_request_url ? null : say(R.shared, {});
+  if (e.note) return say(R.pendingShare, { computer, sync: SYNC });
+  if (e.written_on) return say(R.pending, { computer });
+  return say(R.pendingWrite, { computer, sync: SYNC });
+}
 
 // The rule groups above the skills in a place's tick table, in the order agents read them:
 // the person's rules for every project, then in a project the repository's and the person's own.
@@ -3540,10 +3691,13 @@ function ruleTickRow(r, cols, g) {
 }
 
 function repoFileRow(f, cols, g) {
-  return fileRow(g, f.path, f.updated_on, () => repoFileSheet(f), cols.map(column => {
+  const status = editStatus(f);
+  const row = fileRow(g, f.path, f.updated_on, () => repoFileSheet(f), cols.map(column => {
     const name = AGENTS[column].name, on = (f.agents || []).includes(RULE_AGENT_OF[column]);
     return staticTick(on, say(on ? W.tick.gets : W.tick.not, { agent: name }), el('span', { class: 'tick-name', 'aria-hidden': 'true' }, name));
   }));
+  if (status) row.querySelector('.c-main').append(el('span', { class: 't2 pending' }, icon('up', 13), status));
+  return row;
 }
 
 async function setRuleAgents(r, agents) {
@@ -3594,14 +3748,83 @@ function ruleSheet(r) {
   });
 }
 
+const latestFile = f => (state.project_files || []).find(x => x.project === f.project && x.path === f.path) || f;
+const managing = key => (state.machines || []).filter(m => (m.projects || []).some(p => p.key === key));
+
+// A repository's file in the side panel (ADR-0036): its text, who reads it, turning it off for
+// this person, and an edit for one computer, then Commit… once that computer wrote it.
 function repoFileSheet(f) {
+  const R = W.rules;
   const readers = (f.agents || []).map(a => AGENT_NAMES[a] || a);
+  const status = editStatus(f), e = f.edit;
+  const server = state.server !== false;
+  const leave = then => ev => run(ev.currentTarget, async () => {
+    document.querySelector('dialog[open]').close();
+    return () => then(latestFile(f));
+  });
+  const off = sw(f.turned_off, R.turnOff, {
+    fk: 'turn-off:' + f.path, label: R.turnOff,
+    disabled: !server || !!f.turn_off_unavailable, why: f.turn_off_unavailable || null,
+    onToggle: (b, on) => run(b, async () => {
+      await api('/api/projects/files/turn-off', { project: f.project, path: f.path, turned_off: on });
+      return say(on ? R.turnedOff : R.turnedOn, { path: f.path, sync: SYNC });
+    }),
+  });
   filePanel({
     title: f.path,
-    lead: sayWith(W.rules.leadRepo, { project: projectName(f.project), when: f.updated_on ? when(f.updated_on) : W.computer.never }),
+    lead: sayWith(R.leadRepo, { project: projectName(f.project), when: f.updated_on ? when(f.updated_on) : W.computer.never }),
     text: { text: f.text == null ? null : f.text },
-    sections: el('section', { class: 'sheet-sec', 'aria-label': W.rules.readBy },
-      el('dl', { class: 'facts' }, el('dt', null, W.rules.readBy), el('dd', null, readers.length ? readers.join(W.comma) : W.rules.nobody))),
+    sections: [
+      status && el('p', { class: 'pending' }, icon('up', 13), status),
+      e && e.shared_on && e.pull_request_url && el('p', null, el('a', { href: e.pull_request_url, target: '_blank', rel: 'noopener noreferrer' }, R.openPull)),
+      el('section', { class: 'sheet-sec', 'aria-label': R.readBy },
+        el('dl', { class: 'facts' }, el('dt', null, R.readBy), el('dd', null, readers.length ? readers.join(W.comma) : R.nobody))),
+      f.agent && el('section', { class: 'sheet-sec', 'aria-label': R.justForYou }, el('h3', { class: 'legend' }, R.justForYou), off,
+        !f.turn_off_unavailable && el('p', { class: 't2' }, say(R.turnOffHelp, { sync: SYNC }))),
+    ],
+    actions: server ? [
+      e && e.written_on && !e.note && !e.shared_on && btn(R.commit, { on: { click: leave(commitDialog) } }, 'up'),
+      f.text != null && btn(R.edit, { class: 'btn primary', on: { click: leave(repoFileEditor) } }, 'edit'),
+    ].filter(Boolean) : [],
+  });
+}
+
+// An edit of a repository's file, kept for one computer to write into its working copy.
+function repoFileEditor(f) {
+  const R = W.rules;
+  const e = f.edit && !f.edit.shared_on && !f.edit.written_on ? f.edit : null;
+  const area = el('textarea', { class: 'input rule-input', spellcheck: false }, e ? e.text : f.text);
+  const computers = managing(f.project);
+  const where = el('select', { class: 'input' }, computers.map(m => el('option', { value: m.id, selected: e ? m.id === e.machine : m.id === state.this_computer }, m.name)));
+  let check;
+  const dlg = openDialog({
+    title: say(R.editTitle, { name: f.path }),
+    sheet: true,
+    submitLabel: W.save,
+    body: [computers.length ? field(R.writeOn, where, R.writeOnHelp) : el('p', { role: 'alert' }, R.noComputer), field(R.body, area)],
+    onSubmit: async () => {
+      const res = await api('/api/projects/files/edit', { project: f.project, path: f.path, text: area.value, base_hash: f.content_hash,
+        machine: where.value, confirmed: check.confirmed });
+      check.hold(res);
+      return say(res.unchanged ? R.unchanged : R.editSaved, { name: f.path, computer: machineName(where.value), sync: SYNC });
+    },
+  });
+  check = credentialCheck(dlg, area, W.save);
+}
+
+// Commit…: the note becomes the commit message on a branch holding only this file.
+function commitDialog(f) {
+  const R = W.rules;
+  const note = el('textarea', { class: 'input note-input', rows: 3 });
+  openDialog({
+    title: sayWith(R.shareTitle, { path: el('span', { class: 'mono' }, f.path) }),
+    submitLabel: R.openPullSubmit,
+    body: [el('p', { class: 'lead' }, say(R.shareLead, { project: f.project })), field(R.note, note, R.noteHelp)],
+    onSubmit: async () => {
+      if (!note.value.trim()) throw new Error(R.needNote);
+      await api('/api/projects/files/commit', { project: f.project, path: f.path, note: note.value });
+      return say(R.shareSaved, { computer: machineName(f.edit.machine), sync: SYNC });
+    },
   });
 }
 
@@ -4534,8 +4757,8 @@ const DB = (() => {
         last_synced: { claude_code: ago(2), agents: ago(26) },
         projects: [
           { key: 'github.com/demo-team/demo-api', name: 'demo-api',
-            folders: [{ harness: 'claude_code', path: '/Users/dimitris/code/demo-api', last_synced_on: ago(3) },
-                      { harness: 'agents', path: '/Users/dimitris/code/demo-api', last_synced_on: ago(26) }] },
+            folders: [{ harness: 'claude_code', path: '/Users/dimitris/code/demo-api', last_synced_on: ago(3), repository_skills: ['release-checklist'] },
+                      { harness: 'agents', path: '/Users/dimitris/code/demo-api', last_synced_on: ago(26), repository_skills: [] }] },
           { key: 'github.com/demo-team/demo-website', name: 'demo-website',
             folders: [{ harness: 'claude_code', path: '/Users/dimitris/code/demo-website', last_synced_on: ago(50) }] }] },
       { id: DESK, name: 'Work desktop', os: 'LINUX', harnesses: ['claude_code'], added_on: ago(600), added_by: 'MacBook Pro M4 Pro', added_by_removed: false,
@@ -4563,10 +4786,15 @@ const DB = (() => {
       { name: 'payments', project: 'github.com/demo-team/demo-api', agents: ['claude_code', 'codex'], revision: 1, pushed_by: 'dimitris', updated_on: ago(20) },
     ],
     project_files: [
-      { project: 'github.com/demo-team/demo-api', path: 'AGENTS.md', agents: ['codex', 'cursor', 'copilot_cli', 'opencode'], updated_on: ago(5),
-        text: "# demo-api\n\nThe demo team's order API. Python 3.13, PostgreSQL.\n\n## Rules\n- Endpoints follow the api-design skill.\n- Money is an integer number of cents, never a float.\n- A migration ships with its model change.\n" },
-      { project: 'github.com/demo-team/demo-api', path: 'CLAUDE.md', agents: ['claude_code', 'cursor', 'copilot_cli'], updated_on: ago(340),
+      { project: 'github.com/demo-team/demo-api', path: 'AGENTS.md', agent: 'codex', agents: ['codex', 'cursor', 'copilot_cli', 'opencode'], updated_on: ago(1),
+        ticked: true, turned_off: false, turn_off_unavailable: null, size: 260, content_hash: 'demo-agents',
+        text: "# demo-api\n\nThe demo team's order API. Python 3.13, PostgreSQL.\n\n## Rules\n- Endpoints follow the api-design skill.\n- Money is an integer number of cents, never a float.\n- A migration ships with its model change.\n- Refunds go through payments/refunds.py only.\n",
+        edit: { machine: MAC, text: '', content_hash: 'demo-agents', saved_on: ago(2), written_on: ago(1), note: null, shared_on: null, pull_request_url: null } },
+      { project: 'github.com/demo-team/demo-api', path: 'CLAUDE.md', agent: 'claude_code', agents: ['claude_code', 'cursor', 'copilot_cli'], updated_on: ago(340),
+        ticked: true, turned_off: false, turn_off_unavailable: null, size: 84, content_hash: 'demo-claude', edit: null,
         text: '# demo-api for Claude Code\n\nRead AGENTS.md first; it holds the rules for every agent.\n' },
+      { project: 'github.com/demo-team/demo-api', path: 'README.md', agent: null, agents: [], updated_on: null,
+        ticked: false, turned_off: false, turn_off_unavailable: 'No coding agent reads it.', size: 1200, content_hash: null, edit: null, text: null },
     ],
     teams: [
       { name: 'side-projects', kind: 'SHARED', role: 'MEMBER', sees_all_groups: false,
@@ -4636,7 +4864,27 @@ const dRuleAgents = (r, agents) => {
   r.agents = ['claude_code', 'codex'].filter(a => agents.includes(a));
 };
 
+const dFile = (project, path) => DB.project_files.find(f => f.project === project && f.path === path) || fail(`The project has no file ${path} listed.`);
+
 const DEMO_ROUTES = [
+  [/^\/api\/projects\/files\/tick$/, b => { const f = dFile(b.project, b.path); f.ticked = b.ticked; }],
+  [/^\/api\/projects\/files\/turn-off$/, b => {
+    const f = dFile(b.project, b.path);
+    if (f.turn_off_unavailable) fail(`${f.path} cannot be turned off for you. ${f.turn_off_unavailable}`);
+    f.turned_off = b.turned_off;
+  }],
+  [/^\/api\/projects\/files\/edit$/, b => {
+    const f = dFile(b.project, b.path), lines = dCredentials(b.text);
+    if (lines.length && !b.confirmed) return { name: f.path, saved: false, credential_lines: lines, revision: null, unchanged: false };
+    f.edit = { machine: b.machine, text: b.text, content_hash: 'demo-' + Date.now(), saved_on: dNow(), written_on: null, note: null, shared_on: null, pull_request_url: null };
+    return { name: f.path, saved: true, credential_lines: lines, revision: null, unchanged: false };
+  }],
+  [/^\/api\/projects\/files\/commit$/, b => {
+    const f = dFile(b.project, b.path);
+    if (!f.edit || !f.edit.written_on) fail(`No edit of ${f.path} has been written on a computer yet, so there is nothing to commit. Sync that computer first.`);
+    f.edit.note = b.note;
+    return { note: b.note };
+  }],
   [/^\/api\/rules$/, b => {
     if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(b.name || '')) fail(`A rule name is lowercase letters and digits in groups joined by single hyphens, like 'house-style'. Received: '${b.name}'.`);
     if (DB.rules.some(r => r.name === b.name && r.project === (b.project || null))) fail(`You already have a rule named '${b.name}' there. Edit it, or pick another name.`);

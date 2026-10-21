@@ -68,6 +68,15 @@ PROJECT_HERE = {"path": "/Users/dimitris/code/demo-api",
                 "remote": "git@github.com:demo-team/demo-api.git"}
 PROJECT_ON_DESKTOP = {"path": "/home/dimitris/code/demo-api",
                       "remote": "git@github.com:demo-team/demo-api.git"}
+# What `aistack project add` lists in demo-api, and the text a sync sends of each ticked file.
+PROJECT_FILES = {
+    "AGENTS.md": "# demo-api\n\nThe demo team's order API. Python 3.13, PostgreSQL.\n\n"
+                 "## Rules\n- Money is an integer number of cents, never a float.\n",
+    "CLAUDE.md": "# demo-api for Claude Code\n\nRead AGENTS.md first.\n",
+    "GEMINI.md": "# demo-api for Gemini CLI\n\nRead AGENTS.md first.\n",
+    "README.md": "# demo-api\n",
+    "docs/CONTRIBUTING.md": "# Contributing\n",
+}
 WEBSITE_KEY = "github.com/demo-team/demo-website"
 WEBSITE_HERE = {"path": "/Users/dimitris/code/demo-website",
                 "remote": "https://github.com/demo-team/demo-website.git"}
@@ -154,7 +163,18 @@ async def seed(base_url: str, invite_code: str, long_names: bool = False,
 
     # demo-api is a project on both computers: its Claude Code folder synced once on each, and
     # holds one skill of its own on the MacBook only (ADR-0026). demo-website is on the MacBook.
-    await dimitris.tool("sync", local={}, here=PROJECT_HERE, project=PROJECT_KEY)
+    # It was added by its folder: the repository holds a skill of its own, and lists its
+    # Markdown files, whose ticked ones the next sync sends (ADR-0036).
+    await dimitris.tool("sync", local={}, here=PROJECT_HERE, project=PROJECT_KEY,
+                        repository=["release-checklist"],
+                        project_files=[{"path": path, "size": len(text)}
+                                       for path, text in PROJECT_FILES.items()])
+    work = await dimitris.tool("sync", local={}, here=PROJECT_HERE, rules=[
+        {"agent": "claude_code", "place": "every_project", "name": None, "digest": None}])
+    async with httpx.AsyncClient() as http:
+        for file in work["ticked_files"]:
+            sent = await http.put(file["upload_url"], content=PROJECT_FILES[file["path"]])
+            assert sent.json().get("saved"), sent.text
     await dimitris.call(desktop_token, "sync", local={}, here=PROJECT_ON_DESKTOP,
                         project=PROJECT_KEY)
     await dimitris.page(f"/skills/demo-api-notes/machines/{macbook}", enabled=True,

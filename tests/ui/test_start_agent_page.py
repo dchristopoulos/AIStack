@@ -34,16 +34,15 @@ async def test_this_computer_opens_the_agent_by_its_link_with_the_skills_ticked(
     await expect(dialog.get_by_role("button", name="Open a terminal")).to_have_count(0)
     await expect(dialog.get_by_role("button", name="Copy the command")).to_be_visible()
 
-    await dialog.get_by_label("More skills, by name").fill("repo-own, Not A Name")
-    await dialog.get_by_role("link", name="Open on this computer").click()
-    await expect(dialog.get_by_text('"Not A Name" is not a skill name.')).to_be_visible()
-
-    await dialog.get_by_label("More skills, by name").fill("repo-own")
+    # The repository's own skill, as this computer's last sync listed it, starts ticked too.
+    await expect(dialog.get_by_text("In the repository", exact=True)).to_be_visible()
+    await expect(dialog.get_by_role("checkbox", name="release-checklist")).to_be_checked()
+    await expect(dialog.get_by_label("More skills, by name")).to_have_count(0)
     link = await dialog.get_by_role("link", name="Open on this computer").get_attribute("href")
     parts = urlsplit(link)
     assert (parts.scheme, parts.netloc) == ("aistack", "start")
     assert parse_qs(parts.query) == {"agent": ["claude-code"], "project": [KEY],
-                                     "skills": ["demo-api-notes,repo-own"]}
+                                     "skills": ["demo-api-notes,release-checklist"]}
     await dialog.get_by_role("link", name="Open on this computer").click()
     await expect(dialog).to_be_hidden()
 
@@ -51,9 +50,8 @@ async def test_this_computer_opens_the_agent_by_its_link_with_the_skills_ticked(
     await page.get_by_role("button", name="Start an agent…").click()
     dialog = page.get_by_role("dialog", name="Start an agent in demo-api")
     await expect(dialog.get_by_role("checkbox", name="demo-api-notes")).to_be_checked()
-    await expect(dialog.get_by_label("More skills, by name")).to_have_value("repo-own")
     await dialog.get_by_role("checkbox", name="demo-api-notes").uncheck()
-    await dialog.get_by_label("More skills, by name").fill("")
+    await dialog.get_by_role("checkbox", name="release-checklist").uncheck()
     await dialog.get_by_role("link", name="Open on this computer").click()
     await expect(dialog.get_by_text("Tick at least one skill.")).to_be_visible()
 
@@ -68,9 +66,10 @@ async def test_another_computer_shows_only_the_command(sign_in):
     await expect(dialog.get_by_text("Run this in a terminal on Work desktop")).to_be_visible()
     await expect(dialog.get_by_role("link", name="Open on this computer")).to_have_count(0)
     await expect(dialog.get_by_role("button", name="Open a terminal")).to_have_count(0)
-    await dialog.get_by_label("More skills, by name").fill("repo-own")
+    # The desktop's sync listed no skills of the repository's, so none are offered there.
+    await expect(dialog.get_by_text("In the repository", exact=True)).to_have_count(0)
     await expect(dialog.get_by_label("Command to run on Work desktop")).to_have_value(
-        f"aistack start --agent=claude-code --project={KEY} --skills=repo-own")
+        f"aistack start --agent=claude-code --project={KEY} --skills=")
 
 
 async def test_a_computer_s_page_starts_each_agent_in_one_of_its_projects(sign_in):
