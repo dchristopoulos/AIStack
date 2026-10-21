@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from aistack.bootstrap.context import application_context
-from aistack.services import library_log, skill_service
+from aistack.services import library_log, rule_service, skill_service
 from tests.local_dashboard import local_dashboard
 
 pytestmark = pytest.mark.anyio
@@ -114,3 +114,27 @@ async def test_a_project_folder_is_not_placed_into_from_the_local_dashboard_yet(
 
     assert refused.status_code == 400 and "on an AIStack server for now" in refused.json()["error"]
     assert added.status_code == 404
+
+
+async def test_rules_are_shown_and_read_but_not_changed(dashboard):
+    """Local mode replays rule changes and records none yet (ADR-0026)."""
+    base, link = dashboard
+    caller = application_context.get_local_principal()
+    with application_context.get_session_factory().begin() as session:
+        rule_service.create(session, caller.user_id, "house-style", "# Style\n",
+                            agents=["claude_code"])
+    async with _signed_in(base, link) as client:
+        state = (await client.get("/api/state")).json()
+        text = await client.get("/api/rules/house-style/text")
+        writes = [await client.post(path, json=body, headers=REQUEST_HEADER) for path, body in (
+            ("/api/rules", {"name": "other", "text": "a"}),
+            ("/api/rules/house-style/edit", {"text": "b"}),
+            ("/api/rules/house-style/rename", {"new_name": "style"}),
+            ("/api/rules/house-style/agents", {"agents": []}),
+            ("/api/rules/house-style/remove", {}),
+        )]
+
+    assert [(rule["name"], rule["agents"]) for rule in state["rules"]] == [
+        ("house-style", ["claude_code"])]
+    assert text.json()["text"] == "# Style\n"
+    assert [write.status_code for write in writes] == [404] * 5

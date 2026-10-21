@@ -3,7 +3,9 @@ import re
 import pytest
 from playwright.async_api import expect
 
+from aistack.bootstrap.context import application_context
 from aistack.bundled import RUN_COMMAND
+from aistack.services import rule_service
 from tests.local_dashboard import local_dashboard
 
 pytestmark = pytest.mark.anyio
@@ -62,6 +64,22 @@ async def test_the_local_dashboard_shows_the_library_and_nothing_a_team_needs(br
         await context.close()
 
     assert state["server"] is False
+
+
+async def test_rules_are_listed_with_a_line_that_editing_comes_later(browser, tmp_path,
+                                                                     sqlite_url):
+    async with local_dashboard(tmp_path, sqlite_url) as (_, link):
+        caller = application_context.get_local_principal()
+        with application_context.get_session_factory().begin() as session:
+            rule_service.create(session, caller.user_id, "house-style", "# Style\n")
+        context = await browser.new_context()
+        page = await context.new_page()
+        await page.goto(link)
+
+        await page.get_by_text("Your rules (1)").click()
+        await expect(page.get_by_text("house-style")).to_be_visible()
+        await expect(page.get_by_text("Editing them comes in a later release.")).to_be_visible()
+        await context.close()
 
 
 async def test_the_page_says_where_the_library_lives(browser, tmp_path, sqlite_url):

@@ -33,6 +33,7 @@ from aistack.services import (
     onboarding_service,
     project_service,
     projects,
+    rule_service,
     skill_service,
     sync_service,
     visibility,
@@ -65,9 +66,18 @@ _PROJECT_KINDS = {
 # Where `aistack move` says the Library went (AUTO-05), under the same rule. It names the place
 # and never a secret: the kind, and the repository, or the host and database.
 LIBRARY_MOVED = "library_moved"
-_REPLAY_ONLY = {*_PROJECT_KINDS, LIBRARY_MOVED}
+# Rules kept in the Library (ADR-0036), under the same rule. Each names the rule and, for a
+# project's rule, the project's key in `project` (None for a rule for every project). A
+# rule's text travels in the event, as a push's files do: `text` on a creation and an edit.
+RULE_CREATED = "rule_created"  # name, project, text, agents
+RULE_EDITED = "rule_edited"  # name, project, text
+RULE_RENAMED = "rule_renamed"  # name, project, new_name
+RULE_REMOVED = "rule_removed"  # name, project
+RULE_AGENTS_SET = "rule_agents_set"  # name, project, agents
+_RULE_KINDS = {RULE_CREATED, RULE_EDITED, RULE_RENAMED, RULE_REMOVED, RULE_AGENTS_SET}
+_REPLAY_ONLY = {*_PROJECT_KINDS, LIBRARY_MOVED, *_RULE_KINDS}
 _KINDS = {MACHINE_ADDED, SKILL_PUSHED, SKILL_PLACED, SKILL_REMOVED, FOLDER_SYNCED,
-          MACHINE_REMOVED, MACHINE_RENAMED, LIBRARY_MOVED, *_PROJECT_KINDS}
+          MACHINE_REMOVED, MACHINE_RENAMED, LIBRARY_MOVED, *_PROJECT_KINDS, *_RULE_KINDS}
 _AT_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 # Clocks disagree, but not by this much. A later time would sort every new event before it,
 # and each would rebuild the copy.
@@ -233,6 +243,8 @@ def apply(session: Session, event: Event,
                                data["name"])
     if event.kind in _PROJECT_KINDS:
         return _apply_to_project(session, machine, event, uploaded)
+    if event.kind in _RULE_KINDS:
+        return _apply_to_rule(session, machine.user_id, event)
     raise AssertionError(f"Unhandled event kind '{event.kind}'.")
 
 
@@ -514,6 +526,49 @@ def _apply_to_project(session: Session, machine: Machine, event: Event,
                               "a number. Remove what was added to the repository by hand.")
     return project_service.set_enabled(session, folder, skill.skill_id,
                                        enabled=bool(data["enabled"]), revision=revision)
+
+
+def _apply_to_rule(session: Session, user_id: uuid.UUID, event: Event) -> Any:
+    """A change to a rule, through the `rule_service` call the dashboard makes, which checks
+    every value as it does for a request: anyone who can write to the repository can forge one.
+
+    Two computers can change one rule offline, so a change that no longer fits leaves the
+    Library as it was instead of stopping replay: one to a rule renamed or removed meanwhile,
+    a rename to a name taken meanwhile, an agent another rule for every project took. Each
+    runs in a savepoint, so a refusal halfway leaves nothing behind."""
+    data = event.data
+    name, project = data["name"], data.get("project")
+
+    def attempt(change, **arguments) -> tuple[bool, Any]:
+        try:
+            with session.begin_nested():
+                return True, change(session, user_id, name, project=project, **arguments)
+        except (Conflict, NotFound) as refused:
+            # A project that is not the person's is a forged change, never a race: projects
+            # are never deleted.
+            if isinstance(refused, NotFound) and project is not None:
+                visibility.required_my_project(session, user_id, projects.validated_key(project))
+            return False, None
+
+    if event.kind == RULE_CREATED:
+        # The person confirmed a text that looked like a credential before it was recorded.
+        done, saved = attempt(rule_service.create, text=data["text"], agents=data["agents"],
+                              confirmed=True)
+        if not done:
+            # An agent another rule took meanwhile: the rule and its text are kept, unused.
+            done, saved = attempt(rule_service.create, text=data["text"], agents=[],
+                                  confirmed=True)
+        if not done:
+            # Two computers created one name offline: the later text is a new revision.
+            saved = attempt(rule_service.edit, text=data["text"], confirmed=True)[1]
+        return saved
+    if event.kind == RULE_EDITED:
+        return attempt(rule_service.edit, text=data["text"], confirmed=True)[1]
+    if event.kind == RULE_RENAMED:
+        return attempt(rule_service.rename, new_name=data["new_name"])[1]
+    if event.kind == RULE_REMOVED:
+        return attempt(rule_service.archive)[1]
+    return attempt(rule_service.set_agents, agents=data["agents"])[1]
 
 
 def _target(text: object) -> uuid.UUID:

@@ -256,7 +256,7 @@ async def team_update_changes(request: Request) -> Response:
 
 
 # A project's key has slashes in it, so it travels in the query, as `?project=<key>`.
-@_route(API_PATH + "/rules/{name}/text", methods=["GET"], local=False)
+@_route(API_PATH + "/rules/{name}/text", methods=["GET"])
 @handle_route_errors
 async def rule_text(request: Request) -> Response:
     holder = _signed_in(request)

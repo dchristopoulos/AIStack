@@ -1194,6 +1194,10 @@ const WORDS = {
     bringBackLabel: 'Bring back {skill}',
     back: '{skill} is back in your library, on no computer yet.',
   },
+  localRules: {
+    summary: 'Your rules ({n})',
+    readOnly: 'Rules are read-only here. Editing them comes in a later release.',
+  },
   onlyHere: {
     label: 'Your Library lives only on this computer',
     strong: 'Your Library lives only on this computer.',
@@ -2587,8 +2591,20 @@ function libraryView() {
         unplaced.length ? stat(W.library.notOnAny, unplaced.length, unplaced.map(s => s.name).join(W.comma)) : null,
         updating.length ? stat(W.library.updates, updating.length, updating.map(s => s.name).join(W.comma), el('span', { class: 'dot accent' })) : null) : null,
       list,
-      removedList()),
+      removedList(),
+      localRules()),
   ];
+}
+
+// Local mode replays rules but cannot record them yet (ADR-0026), so it lists them read-only.
+function localRules() {
+  if (state.server !== false || !(state.rules || []).length) return null;
+  return el('details', { class: 'removed' },
+    el('summary', null, say(W.localRules.summary, { n: state.rules.length })),
+    el('p', { class: 'help' }, W.localRules.readOnly),
+    el('ul', { class: 'revisions' }, state.rules.map(r => el('li', null,
+      el('span', { class: 'name grow' }, r.name),
+      r.project ? el('span', { class: 'mono' }, r.project) : null))));
 }
 
 // Skills removed from the Library, and the way back (PH-11).
