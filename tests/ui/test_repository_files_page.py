@@ -12,7 +12,7 @@ from aistack.bootstrap.context import application_context
 from aistack.db.models.harness import Harness
 from aistack.db.models.machine import Machine
 from aistack.db.models.project import Project
-from aistack.db.models.project_file import ProjectFileEdit
+from aistack.db.models.project_file import ProjectFile, ProjectFileEdit
 from aistack.db.models.timestamps import utc_now
 from aistack.services import project_file_service, project_service
 
@@ -119,15 +119,23 @@ async def test_an_edit_waits_for_its_computer_then_is_committed_with_a_note(sign
     table = page.get_by_role("table", name="What your agents read in demo-api")
     await expect(table.get_by_text(f"Waiting for {MACBOOK} to write your edit")).to_be_visible()
 
-    # The MacBook's next sync writes it into its working copy.
+    # The MacBook's next sync writes it into its working copy, then reads the file again.
     with application_context.get_session_factory().begin() as session:
-        session.scalar(select(ProjectFileEdit)).written_on = utc_now()
+        written = session.scalar(select(ProjectFileEdit))
+        written.written_on = utc_now()
+        row = session.get(ProjectFile, written.project_file_id)
+        row.text, row.content_hash = written.text, written.content_hash
     await page.reload()
     panel = await _open_file(page, "AGENTS.md")
     await expect(panel.get_by_text(f"Changed on {MACBOOK}, not committed yet")).to_be_visible()
+    added = "+- Refunds go through payments/refunds.py."
+    await expect(panel.get_by_role("region", name="What your edit changes").get_by_text(added)
+                 ).to_be_visible()
     await panel.get_by_role("button", name="Commit…").click()
 
     share = page.get_by_role("dialog", name="Share your change to AGENTS.md")
+    await expect(share.get_by_role("region", name="What your edit changes").get_by_text(added)
+                 ).to_be_visible()
     await expect(share.get_by_text(f"Opens a pull request on {KEY} with only this file."))\
         .to_be_visible()
     await share.get_by_role("button", name="Open a pull request").click()

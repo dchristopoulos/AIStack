@@ -9,6 +9,7 @@ it on a branch of its own as a pull request. Every lookup starts from a project
 `visibility.my_project` returned, or a ticket whose machine is checked again here.
 """
 
+import difflib
 import logging
 import uuid
 from dataclasses import dataclass
@@ -306,7 +307,8 @@ def save_edit(session: Session, user_id: uuid.UUID, key: str, path: str, text: s
                     .execution_options(synchronize_session=False))
     session.add(ProjectFileEdit(project_file_id=row.project_file_id,
                                 machine_id=machine.machine_id, text=text,
-                                content_hash=text_hash(text), base_hash=base_hash))
+                                content_hash=text_hash(text), base_hash=base_hash,
+                                base_text=row.text))
     logger.info(f"Project file edit saved. Machine: '{machine.machine_id}'. "
                 f"User: '{user_id}'.")
     return rule_service.Saved(path, saved=True, credential_lines=lines)
@@ -389,12 +391,26 @@ def all_files(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
             "edit": None if edit is None else {
                 "machine": None if edit.machine_id is None else str(edit.machine_id),
                 "text": edit.text, "content_hash": edit.content_hash,
+                "diff": _diff(edit.base_text, edit.text),
                 "saved_on": as_utc(edit.created_on).isoformat(),
                 "written_on": _when(edit.written_on), "note": edit.note,
                 "shared_on": _when(edit.shared_on), "pull_request_url": edit.pull_request_url,
             },
         })
     return shown
+
+
+def _diff(before: str | None, after: str) -> str | None:
+    """The lines an edit adds and removes, as a unified diff without its file headers, or
+    None when the text it started from was not kept."""
+    if before is None:
+        return None
+    def lines(text: str) -> list[str]:
+        # A last line without a newline would run into the diff's next line.
+        return [line if line.endswith("\n") else line + "\n" for line in text.splitlines(True)]
+
+    # Its first two lines are the --- and +++ file headers; the page names the file already.
+    return "".join(list(difflib.unified_diff(lines(before), lines(after)))[2:])
 
 
 def _when(at) -> str | None:

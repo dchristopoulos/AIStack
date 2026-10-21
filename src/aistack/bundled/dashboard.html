@@ -1388,6 +1388,7 @@ const WORDS = {
     turnedOn: 'Turned {path} on again for you.',
     pendingWrite: 'Waiting for {computer} to write your edit at its next {sync}',
     pending: 'Changed on {computer}, not committed yet',
+    editDiff: 'What your edit changes',
     pendingShare: '{computer} opens the pull request at its next {sync}',
     shared: 'Shared as a pull request',
     openPull: 'Open the pull request',
@@ -2915,12 +2916,15 @@ function changesDialog(s) {
     el('p', null, say(W.changes.against, { team: src.team, to: c.to_revision, who: c.pushed_by, from: c.from_revision })),
     c.files.length ? c.files.map(f => el('section', { class: 'field', 'aria-label': f.path },
       el('h3', { class: 'mono' }, say(W.changes.file, { path: f.path, change: W.changes.kinds[f.change] || f.change })),
-      el('pre', { class: 'diff' }, f.diff.replace(/\n$/, '').split('\n').map(line => el('span', {
-        class: /^\+(?!\+\+ )/.test(line) ? 'add' : /^-(?!-- )/.test(line) ? 'del' : null }, line + '\n')))))
+      diffView(f.diff)))
       : el('p', null, W.changes.same),
     c.truncated && el('p', { class: 'help' }, W.changes.truncated))))
     .catch(e => body.replaceChildren(el('p', { class: 'form-error', role: 'alert' }, e.message)));
 }
+
+// A unified diff as text, its added lines green and its removed lines red.
+const diffView = text => el('pre', { class: 'diff' }, text.replace(/\n$/, '').split('\n').map(line => el('span', {
+  class: /^\+(?!\+\+ )/.test(line) ? 'add' : /^-(?!-- )/.test(line) ? 'del' : null }, line + '\n')));
 
 // Every revision of one of your skills; restoring one stores it again as the newest (PH-08).
 function historyDialog(s) {
@@ -3776,6 +3780,7 @@ function repoFileSheet(f) {
     text: { text: f.text == null ? null : f.text },
     sections: [
       status && el('p', { class: 'pending' }, icon('up', 13), status),
+      e && !e.shared_on && editDiff(e),
       e && e.shared_on && e.pull_request_url && el('p', null, el('a', { href: e.pull_request_url, target: '_blank', rel: 'noopener noreferrer' }, R.openPull)),
       el('section', { class: 'sheet-sec', 'aria-label': R.readBy },
         el('dl', { class: 'facts' }, el('dt', null, R.readBy), el('dd', null, readers.length ? readers.join(W.comma) : R.nobody))),
@@ -3812,6 +3817,11 @@ function repoFileEditor(f) {
   check = credentialCheck(dlg, area, W.save);
 }
 
+// The lines an edit adds and removes, against the text it started from; null when an older
+// release saved it without that text.
+const editDiff = e => e.diff ? el('section', { class: 'field', 'aria-label': W.rules.editDiff },
+  el('h3', { class: 'legend' }, W.rules.editDiff), diffView(e.diff)) : null;
+
 // Commit…: the note becomes the commit message on a branch holding only this file.
 function commitDialog(f) {
   const R = W.rules;
@@ -3819,7 +3829,7 @@ function commitDialog(f) {
   openDialog({
     title: sayWith(R.shareTitle, { path: el('span', { class: 'mono' }, f.path) }),
     submitLabel: R.openPullSubmit,
-    body: [el('p', { class: 'lead' }, say(R.shareLead, { project: f.project })), field(R.note, note, R.noteHelp)],
+    body: [el('p', { class: 'lead' }, say(R.shareLead, { project: f.project })), editDiff(f.edit), field(R.note, note, R.noteHelp)],
     onSubmit: async () => {
       if (!note.value.trim()) throw new Error(R.needNote);
       await api('/api/projects/files/commit', { project: f.project, path: f.path, note: note.value });

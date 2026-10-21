@@ -96,6 +96,9 @@ class ProjectFileEdit(Base):
     content_hash: Mapped[str] = mapped_column(String(CONTENT_HASH_LENGTH), nullable=False)
     # The hash of the text the edit started from.
     base_hash: Mapped[str] = mapped_column(String(CONTENT_HASH_LENGTH), nullable=False)
+    # That text, for the page's diff: the file's snapshot moves on once the edit is written.
+    # None for an edit an older release saved.
+    base_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     # What the change is about: the commit message, given at Commit….
     note: Mapped[str | None] = mapped_column(String(SHARE_NOTE_MAX_LENGTH), nullable=True)
     pull_request_url: Mapped[str | None] = mapped_column(String(PULL_REQUEST_URL_MAX_LENGTH),
