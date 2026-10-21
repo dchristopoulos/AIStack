@@ -7,17 +7,35 @@ from fastmcp.server.dependencies import get_http_request
 
 from aistack.bootstrap.context.application_context import get_session_factory, get_ticket_signer
 from aistack.bundled import SYNC_SKILL_NAME
+from aistack.commons.exceptions import ValidationError
 from aistack.commons.text import loggable
 from aistack.mcp.auth.principal import current_machine
 from aistack.mcp.mcp import mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.mcp.routes.setup import SETUP_PATH
-from aistack.mcp.routes.transfer import RULE_DOWNLOAD_PATH, RULE_UPLOAD_PATH
+from aistack.mcp.routes.transfer import (
+    PROJECT_FILE_EDIT_PATH,
+    PROJECT_FILE_UPLOAD_PATH,
+    RULE_DOWNLOAD_PATH,
+    RULE_UPLOAD_PATH,
+)
 from aistack.mcp.server_url import server_base_url
-from aistack.services import computer_fingerprint, projects, rule_sync, sync_service, visibility
+from aistack.services import (
+    computer_fingerprint,
+    project_file_service,
+    projects,
+    rule_sync,
+    sync_service,
+    visibility,
+)
 from aistack.services.harnesses import HarnessKey
 from aistack.services.reconciliation import Choice, Step
-from aistack.services.transfer_ticket import RuleDownloadTicket, RuleUploadTicket
+from aistack.services.transfer_ticket import (
+    ProjectFileEditTicket,
+    ProjectFileUploadTicket,
+    RuleDownloadTicket,
+    RuleUploadTicket,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +127,32 @@ class RepositoryFileEntry(TypedDict):
     turned_off: bool
 
 
+class ListedFile(TypedDict):
+    path: str
+    size: int
+
+
+class TickedFileEntry(TypedDict):
+    path: str
+    content_hash: str | None
+    upload_url: str
+
+
+class EditEntry(TypedDict):
+    path: str
+    base_hash: str
+    content_hash: str
+    note: str | None
+    url: str
+
+
 class SyncResult(TypedDict):
     machine_id: NotRequired[str]
     # Only when the caller sent `rules`: older programs see nothing new.
     rules: NotRequired[list[RuleEntry]]
     repository_files: NotRequired[list[RepositoryFileEntry]]
+    ticked_files: NotRequired[list[TickedFileEntry]]
+    edits: NotRequired[list[EditEntry]]
     install: list[InstallEntry]
     update: list[UpdateEntry]
     ask: list[AskEntry]
@@ -166,7 +205,8 @@ def sync(local: dict[str, dict[str, str]],
          harness: HarnessKey = "claude_code", here: Here | None = None,
          project: str | None = None, repository: list[str] | None = None,
          fingerprint: str | None = None, identify: bool = False,
-         rules: list[RuleFile] | None = None) -> SyncResult:
+         rules: list[RuleFile] | None = None,
+         project_files: list[ListedFile] | None = None) -> SyncResult:
     started_at = perf_counter()
     caller = current_machine()
     fingerprint = computer_fingerprint.validated(fingerprint)
@@ -195,18 +235,28 @@ def sync(local: dict[str, dict[str, str]],
     where = None if here is None else projects.validated_here(here.get("path"),
                                                                here.get("remote"))
     observed = None if rules is None else rule_sync.validated_observation(rules)
-    rule_report = None
+    listing = None if project_files is None else project_file_service.validated_listing(
+        project_files)
+    if listing is not None and project is None:
+        raise ValidationError("project_files lists a project's files; send it with project.")
+    rule_report = work = None
 
     with get_session_factory().begin() as session:
         computer_fingerprint.bind(session, caller.machine_id, caller.user_id, fingerprint)
         report = sync_service.sync(session, caller.machine_id, caller.user_id, local, harness,
                                    here=where, project=project, repository=repository or ())
+        if listing is not None:
+            project_file_service.record_listing(
+                session, visibility.my_project(session, caller.user_id, report.project.key),
+                listing)
         if observed is not None:
             # Project rules only where this computer manages the project it syncs in.
             managed = None if report.project is None or not report.project.managed else (
                 visibility.my_project(session, caller.user_id, report.project.key))
             rule_report = rule_sync.reconcile(session, caller.machine_id, caller.user_id,
                                               observed, managed)
+            if managed is not None:
+                work = project_file_service.work(session, caller.machine_id, managed)
 
     sync_skill_url = None
     if report.refresh_sync_skill:
@@ -230,7 +280,32 @@ def sync(local: dict[str, dict[str, str]],
             RepositoryFileEntry(path=file.path, agent=file.agent.value,
                                 turned_off=file.turned_off)
             for file in rule_report.repository_files]
+        result["ticked_files"], result["edits"] = _project_work(caller, work)
     return result
+
+
+def _project_work(caller, work) -> tuple[list[TickedFileEntry], list[EditEntry]]:
+    """The managed project's ticked files and the edits waiting for this computer, each with
+    the transfer URL it needs. The URLs carry tickets, so they are returned and never logged."""
+    if work is None:
+        return [], []
+    base, signer = server_base_url(get_http_request()), get_ticket_signer()
+    files = [TickedFileEntry(
+        path=file.path, content_hash=file.content_hash,
+        upload_url=f"{base}{PROJECT_FILE_UPLOAD_PATH}/" + signer.sign_project_file_upload(
+            ProjectFileUploadTicket(machine_id=caller.machine_id,
+                                    token_prefix=caller.token_prefix,
+                                    project_file_id=file.project_file_id)))
+        for file in work.files]
+    edits = [EditEntry(
+        path=edit.path, base_hash=edit.base_hash, content_hash=edit.content_hash,
+        note=edit.note,
+        url=f"{base}{PROJECT_FILE_EDIT_PATH}/" + signer.sign_project_file_edit(
+            ProjectFileEditTicket(machine_id=caller.machine_id,
+                                  token_prefix=caller.token_prefix,
+                                  project_file_edit_id=edit.project_file_edit_id)))
+        for edit in work.edits]
+    return files, edits
 
 
 def _rule_entry(caller, action: rule_sync.RuleAction) -> RuleEntry:

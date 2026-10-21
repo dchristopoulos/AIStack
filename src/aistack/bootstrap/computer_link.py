@@ -62,8 +62,9 @@ def run(argv: list[str]) -> None:
     if command[0] == "start":
         start_agent.run(command[1:])
     elif command[0] == "project":
-        sys.exit("This release of AIStack cannot add a project from the page yet: "
-                 "`aistack project add` arrives in a later release (#221).")
+        from aistack.bootstrap import project_add
+
+        project_add.run(command[1:])
     else:
         try:
             input("AIStack will sync this computer's skills with your Library. Press Enter "

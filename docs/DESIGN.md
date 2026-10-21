@@ -285,6 +285,18 @@ Decisions come from `reconciliation.reconcile_rule`. A rule follows the person, 
 
 In a project the program writes only `.claude/rules/aistack-<name>.md` and Codex's `AGENTS.override.md`, adding each to `.git/info/exclude` first, and never a file git tracks or one reached through a link. The override is a first line saying AIStack made it, the repository's `AGENTS.md`, then each rule under `<!-- aistack:rule <name> -->`, sorted by name; sync reads those sections back as the observation and rewrites the file whenever any part changed. An `AGENTS.override.md` without that first line is someone else's and is left alone. A repository file turned off is listed by absolute path in `claudeMdExcludes` of the project's `.claude/settings.local.json` (excluded from git, other keys kept) and left out of the override; turned on again, its entry is taken back. Every write rechecks that the file still holds what was observed. A question prints its key, and `aistack sync --rule-choice <key>=<choice>` carries out an offered answer.
 
+### A project's own files (ADR-0036, ADR-0038)
+
+`aistack project add <folder>` is the explicit action that starts managing a project on a computer. It lists the agent files `services/agent_files.py` knows and every other `.md` git tracks, by path and size and never by text, prints the list, and waits for Enter. It then syncs as `aistack sync` does, first syncing each harness's skills folder in the project with `project` (which records the project, ADR-0026) and, on the first of those calls, `project_files`: a list of `{path, size}`. The server keeps the list in `project_file`, an agent's file ticked and any other unticked; a tick the person changed stays, and a file no longer listed goes with its edits. `aistack://project-add?folder=<folder>` runs the same command.
+
+Every call that sends `rules`, for a project the computer manages, also returns `ticked_files` (`path`, `content_hash` of the text the page holds, and an `upload_url`) and `edits` waiting for this computer (`path`, `base_hash`, `content_hash`, `note`, and a `url`). A caller that sends no `rules` gets neither. The program checks each path against what git tracks there and refuses one that leaves the top level or is a link, then:
+
+- An edit with no `note` is written into the working copy only while the file hashes to `base_hash`. Otherwise it is a question, keyed `repository:<path>`, and `aistack sync --rule-choice repository:<path>=write` writes it anyway, `=cancel` drops it. This is the one tracked file AIStack ever writes, because the person asked for it on the page.
+- An edit with a `note` was committed on the page. The program builds a commit holding only that file on a temporary index (`GIT_INDEX_FILE`), from the commit the current branch tracks upstream (or `HEAD` when it tracks none), with the note as message (its first line the subject), and pushes it as a new branch `aistack/<file>-<hash>` without force. No local ref moves, and the working tree and index are untouched, so nothing is committed to the person's branch and their other work never goes with it. With `gh` installed and signed in it opens the pull request against the upstream branch; otherwise it prints the address that opens one.
+- A ticked file whose hash differs from `content_hash` is uploaded, at most 64 KiB of UTF-8. Text that looks like it holds a credential is not kept.
+
+The `url` serves the edit's text on `GET` and takes what became of it on `POST` (`{"outcome": "written" | "shared" | "cancelled", "pull_request_url"}`); the upload goes to `/transfer/project-file-upload/<ticket>`. Both tickets have audiences of their own, and both recheck that the computer is still registered and manages the project. git and gh run without a shell, and their output is never shown: a push's error can carry a remote's credentials.
+
 ### Versions
 
 Every push creates a `skill_version` with a server-side auto-incrementing `revision` (always present, orders history) and the author's optional frontmatter `version` string (preserved, displayed when present, never invented). Sync compares content hashes, not version numbers.
@@ -406,6 +418,10 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/rules/{name}/rename` | `new_name`, optional `project` | `name`. Unique among the user's rules in the same place. Server only |
 | `POST /api/rules/{name}/agents` | `agents` (a list), optional `project` | `agents`: the agents the rule is now used for, replacing the choice before. Server only |
 | `POST /api/rules/{name}/remove` | optional `project` | `name`. Removes the rule from the Library; files on computers are left as they are. Server only |
+| `POST /api/projects/files/tick` | `project` (a key), `path`, `ticked` | Shows a listed file on the page and keeps its text current, or stops (forgetting what was read of it). Server only |
+| `POST /api/projects/files/turn-off` | `project`, `path`, `turned_off` | Turns a repository's agent file off for the user, or on again; each computer with the project does it in the agent's settings at its next sync. Refused for an agent AIStack cannot turn a file off for, with the reason. Server only |
+| `POST /api/projects/files/edit` | `project`, `path`, `text`, `base_hash` (the `content_hash` the page showed), `machine` (the computer to write it on), optional `confirmed` | Keeps a pending edit for that computer, replacing an earlier one not yet shared. `409` when the file changed since the page read it; the computer must manage the project. Answers as saving a rule does, credential check included. Server only |
+| `POST /api/projects/files/commit` | `project`, `path`, `note` | Asks the computer that wrote the latest edit to share it as a pull request, with `note` as the commit message. `409` before an edit has been written. Answers `note`. Server only |
 | `POST /api/machines/{machine_id}/remove` | `{}` | `removed`: the computer's name. Its token, sessions and transfer URLs end at once. The user's last computer is refused with `409`. Server only (ADR-0027) |
 | `POST /api/computer-codes` | Options (defaults above) | One-use code, command, id and expiry, shown once; server only |
 | `POST /api/computer-codes/{id}` | Options | Updates an unused code, without reviving expiry; server only |
@@ -519,7 +535,8 @@ A group's path contains slashes, so it always travels in the body and never in t
 | `machines[].added_on`, `added_by` | When the computer was registered, and the name of the computer whose `add_machine` registered it: null for a first computer. `added_by_removed` is true when that computer has since been removed (ADR-0027) |
 | `machines[].last_synced` | Each of its harnesses, with when it last synced (UTC), or null for one that never has |
 | `machines[].harnesses` | The harnesses on that computer, in the server's order: those that have synced there, those holding a decision about a skill, and those with a project folder. `[]` for a computer with none, which has never synced |
-| `machines[].projects` | The projects this computer manages (ADR-0026), by name: each with its `key` and `name`, and its `folders`, one per harness, with the top level last seen there (`path`, null until that folder syncs, and shown only) and `last_synced_on` |
+| `machines[].projects` | The projects this computer manages (ADR-0026), by name: each with its `key` and `name`, and its `folders`, one per harness, with the top level last seen there (`path`, null until that folder syncs, and shown only), `last_synced_on`, and `repository_skills`: the names of the skills folders the repository itself holds there, as that folder's last sync listed them, for Start an agent |
+| `project_files` | Every file listed in the user's projects (ADR-0036), by project and path: `project` (a key), `path`, `agent` (the agent it is shown under, or null for other Markdown), `agents` (every agent that reads it), `ticked`, `turned_off`, `turn_off_unavailable` (why it cannot be turned off for the user, or null), `size`, and for a ticked file the `text` a computer last sent, its `content_hash`, and `updated_on` (UTC). `edit` is the file's latest edit that is not cancelled, or null: `machine` (the computer it goes to), `text`, `content_hash`, `saved_on`, `written_on`, `note`, `shared_on` and `pull_request_url` |
 | `skills` | The Library, by name, without the ones removed from it. Each has its `name` and `description` |
 | `removed` | The names of the skills removed from the Library, which Bring back can return |
 | `rules` | The user's rules (ADR-0036), not the removed ones: those for every project first, then each project's, by name. Each has its `name`, `project` (a key, or null for every project), `agents` (`claude_code`, `codex`), and its latest revision: `revision`, `pushed_by`, `updated_on` (UTC). The text is read with `GET /api/rules/{name}/text` |
@@ -720,6 +737,7 @@ MACHINE_PROJECT                                -- a project folder: one harness'
   path              VARCHAR(1024) NULL         -- top level last seen, display only
   created_on        TIMESTAMPTZ  NOT NULL
   last_synced_on    TIMESTAMPTZ  NULL          -- null until its first sync
+  repository_skills TEXT NULL                  -- names the repository holds there, one per line
   UNIQUE (machine_id, project_id, harness)
   INDEX (project_id)
 

@@ -58,7 +58,7 @@ async def test_a_project_known_from_one_computer_is_added_to_another_until_it_sy
 
     assert added.status_code == 200
     assert _machine(state, "desktop")["projects"][0]["folders"] == [
-        {"harness": "agents", "path": None, "last_synced_on": None}]
+        {"harness": "agents", "path": None, "last_synced_on": None, "repository_skills": []}]
     assert "agents" in _machine(state, "desktop")["harnesses"]
 
 

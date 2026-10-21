@@ -103,6 +103,14 @@ It runs in the current folder's project, or the one `--project` names by folder 
 
 `--project` also takes the key of a project this computer manages; it then runs in the folder this computer last reported for it, and asks for the folder only when none is known.
 
+To add a project from its folder, with its agent files and other Markdown listed on the dashboard:
+
+```text
+aistack project add ~/code/shop
+```
+
+It prints the files it will list, by path and size, and waits for Enter; no file's text is sent then. Each later sync sends the text of the files ticked on the dashboard when it changed. An edit saved there for this computer is written into the working copy at the next `aistack sync`, only while the file still has the text the edit started from; Commit… on the dashboard then has the next sync push a branch holding only that file, with your note as the commit message, and open a pull request with `gh` when it is signed in. Your working tree, index and current branch stay as they are ([ADR-0036](docs/adr/0036-rules-are-the-second-resource.md)).
+
 Setup and `aistack join` register the `aistack://` computer link for the installed program, so a click on the dashboard opens a terminal here: an app bundle in `~/Applications` on macOS, a per-user `HKCU\Software\Classes\aistack` key on Windows, and a `.desktop` handler set with `xdg-mime` on Linux. `aistack check` says whether it is registered. The terminal runs `aistack open <link>`, which accepts only `aistack://start?agent=…&project=…&skills=…`, `aistack://project-add?folder=…` and `aistack://sync`, checks every value, and runs the matching command, which says what it will do and waits for Enter.
 
 ### Try the dashboard without an agent

@@ -144,7 +144,8 @@ async def test_a_project_added_to_another_computer_waits_for_its_first_sync(sign
     desktop = next(machine for machine in (await dimitris.state())["machines"]
                    if machine["name"] == "Work desktop")
     website = next(project for project in desktop["projects"] if project["key"] == WEBSITE)
-    assert website["folders"] == [{"harness": "claude_code", "path": None, "last_synced_on": None}]
+    assert website["folders"] == [{"harness": "claude_code", "path": None, "last_synced_on": None,
+                                   "repository_skills": []}]
     assert dimitris.console_errors == []
 
 

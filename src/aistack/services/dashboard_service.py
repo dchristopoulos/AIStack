@@ -32,6 +32,7 @@ from aistack.db.ordering import bytewise
 from aistack.services import (
     computer_codes,
     onboarding_service,
+    project_file_service,
     project_service,
     projects,
     revisions,
@@ -106,6 +107,8 @@ def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
             .where(Skill.archived.is_(True)).order_by(bytewise(Skill.name)))),
         # The user's rules for every project and for each of their projects (ADR-0036).
         "rules": rule_service.all_rules(session, user_id),
+        # The Markdown files listed in their projects, and edits waiting on a computer.
+        "project_files": project_file_service.all_files(session, user_id),
         "teams": teams,
     }
 
@@ -276,9 +279,10 @@ def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
     names = dict(session.execute(
         select(Machine.machine_id, Machine.name).where(Machine.user_id == user_id)).all())
     projects_of: dict[uuid.UUID, dict[str, dict[str, Any]]] = {}
-    for machine_id, key, name, harness, path, at in session.execute(
+    for machine_id, key, name, harness, path, at, repository_skills in session.execute(
             select(MachineProject.machine_id, Project.key, Project.name, MachineProject.harness,
-                   MachineProject.path, MachineProject.last_synced_on)
+                   MachineProject.path, MachineProject.last_synced_on,
+                   MachineProject.repository_skills)
             .join(Project, Project.project_id == MachineProject.project_id)
             .where(Project.user_id == user_id, known(MachineProject.harness))
             .order_by(bytewise(Project.name), bytewise(Project.key),
@@ -287,7 +291,9 @@ def _machines(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
             key, {"key": key, "name": name, "folders": []})
         shown_project["folders"].append({
             "harness": harness.value, "path": path,
-            "last_synced_on": None if at is None else as_utc(at).isoformat()})
+            "last_synced_on": None if at is None else as_utc(at).isoformat(),
+            # The skills the repository holds in this folder, for Start an agent.
+            "repository_skills": repository_skills.split("\n") if repository_skills else []})
     shown = []
     for machine_id, name, os, created_on, added_by in session.execute(
             select(Machine.machine_id, Machine.name, Machine.os, Machine.created_on,

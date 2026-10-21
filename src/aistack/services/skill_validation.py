@@ -86,6 +86,10 @@ class ValidatedSkill:
     content_hash: str
 
 
+def looks_like_skill_name(name: str) -> bool:
+    return len(name) <= SKILL_NAME_MAX_LENGTH and _SKILL_NAME.fullmatch(name) is not None
+
+
 def validated_skill_name(name: str) -> str:
     if not isinstance(name, str):
         raise ValidationError(f"name must be text, but a {type(name).__name__} arrived.")

@@ -31,6 +31,9 @@ _DOWNLOAD_AUDIENCE = "aistack:download"
 # A rule's text (ADR-0036): neither skill route accepts one, nor these a skill's.
 _RULE_UPLOAD_AUDIENCE = "aistack:rule-upload"
 _RULE_DOWNLOAD_AUDIENCE = "aistack:rule-download"
+# A repository file's text from a computer, and one pending edit to one (ADR-0036).
+_PROJECT_FILE_UPLOAD_AUDIENCE = "aistack:project-file-upload"
+_PROJECT_FILE_EDIT_AUDIENCE = "aistack:project-file-edit"
 # A link cannot be replayed as a session cookie, nor a cookie as a link.
 _DASHBOARD_LINK_AUDIENCE = "aistack:dashboard-link"
 _DASHBOARD_SESSION_AUDIENCE = "aistack:dashboard-session"
@@ -95,6 +98,25 @@ class RuleDownloadTicket:
     token_prefix: str
     rule_revision_id: uuid.UUID
     agent: CodingAgent
+
+
+@dataclass(frozen=True)
+class ProjectFileUploadTicket:
+    """Permission for one machine to keep the text of one ticked file of one project."""
+
+    machine_id: uuid.UUID
+    token_prefix: str
+    project_file_id: uuid.UUID
+
+
+@dataclass(frozen=True)
+class ProjectFileEditTicket:
+    """Permission for one machine to read one edit made on the page, and to say what became
+    of it: written into its working copy, shared as a pull request, or cancelled."""
+
+    machine_id: uuid.UUID
+    token_prefix: str
+    project_file_edit_id: uuid.UUID
 
 
 @dataclass(frozen=True)
@@ -230,6 +252,40 @@ class TicketSigner:
                 token_prefix=_text(claims["tkh"]),
                 rule_revision_id=uuid.UUID(claims["rule_revision_id"]),
                 agent=CodingAgent(claims["agent"]),
+            )
+        except (KeyError, ValueError, TypeError) as error:
+            raise _not_valid("aistack sync") from error
+
+    def sign_project_file_upload(self, ticket: ProjectFileUploadTicket) -> str:
+        return self._signed(_PROJECT_FILE_UPLOAD_AUDIENCE, ticket.machine_id, {
+            "tkh": ticket.token_prefix,
+            "project_file_id": str(ticket.project_file_id),
+        })
+
+    def sign_project_file_edit(self, ticket: ProjectFileEditTicket) -> str:
+        return self._signed(_PROJECT_FILE_EDIT_AUDIENCE, ticket.machine_id, {
+            "tkh": ticket.token_prefix,
+            "project_file_edit_id": str(ticket.project_file_edit_id),
+        })
+
+    def verified_project_file_upload(self, token: str) -> ProjectFileUploadTicket:
+        claims = self._verified(token, _PROJECT_FILE_UPLOAD_AUDIENCE, retry_with="aistack sync")
+        try:
+            return ProjectFileUploadTicket(
+                machine_id=uuid.UUID(claims["sub"]),
+                token_prefix=_text(claims["tkh"]),
+                project_file_id=uuid.UUID(claims["project_file_id"]),
+            )
+        except (KeyError, ValueError, TypeError) as error:
+            raise _not_valid("aistack sync") from error
+
+    def verified_project_file_edit(self, token: str) -> ProjectFileEditTicket:
+        claims = self._verified(token, _PROJECT_FILE_EDIT_AUDIENCE, retry_with="aistack sync")
+        try:
+            return ProjectFileEditTicket(
+                machine_id=uuid.UUID(claims["sub"]),
+                token_prefix=_text(claims["tkh"]),
+                project_file_edit_id=uuid.UUID(claims["project_file_edit_id"]),
             )
         except (KeyError, ValueError, TypeError) as error:
             raise _not_valid("aistack sync") from error

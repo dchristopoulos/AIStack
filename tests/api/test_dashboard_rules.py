@@ -1,7 +1,11 @@
 """Rules on the dashboard (ADR-0036): the routes and what /api/state shows of them."""
 
 import pytest
+from sqlalchemy import select
 
+from aistack.bootstrap.context import application_context
+from aistack.db.models.project_file import ProjectFile
+from aistack.services.content_hash import text_hash
 from tests.api.test_dashboard_over_http import _browser, _call, _join, _post, _state
 
 pytestmark = pytest.mark.anyio
@@ -114,3 +118,43 @@ async def test_a_change_without_the_dashboards_header_is_refused(server_url):
 
     assert refused.status_code == 400
     assert state["rules"] == []
+
+
+async def test_a_projects_files_are_ticked_turned_off_and_edited_for_one_computer(server_url):
+    laptop = await _join(server_url, "dimitris")
+    await _call(server_url, laptop, "sync", local={}, here=HERE)
+    await _call(server_url, laptop, "sync", local={}, here=HERE, project=KEY,
+                repository=["release"],
+                project_files=[{"path": "AGENTS.md", "size": 6},
+                               {"path": "README.md", "size": 3}])
+    with application_context.get_session_factory().begin() as session:
+        row = session.scalar(select(ProjectFile).where(ProjectFile.path == "AGENTS.md"))
+        row.text, row.content_hash = "Rules\n", text_hash("Rules\n")
+    async with _browser(server_url, laptop) as browser:
+        state = await _state(browser)
+        machine = state["this_computer"]
+        ticked = await _post(browser, "/projects/files/tick", project=KEY, path="README.md",
+                             ticked=True)
+        off = await _post(browser, "/projects/files/turn-off", project=KEY, path="AGENTS.md",
+                          turned_off=True)
+        stale = await _post(browser, "/projects/files/edit", project=KEY, path="AGENTS.md",
+                            text="New\n", base_hash=text_hash("Old\n"), machine=machine)
+        edited = await _post(browser, "/projects/files/edit", project=KEY, path="AGENTS.md",
+                             text="New\n", base_hash=text_hash("Rules\n"), machine=machine)
+        early = await _post(browser, "/projects/files/commit", project=KEY, path="AGENTS.md",
+                            note="Why")
+        after = await _state(browser)
+
+    assert [(f["path"], f["ticked"], f["agents"]) for f in state["project_files"]] == [
+        # Claude Code reads AGENTS.md while the repository has no CLAUDE.md.
+        ("AGENTS.md", True, ["claude_code", "codex", "cursor", "copilot_cli", "opencode"]),
+        ("README.md", False, [])]
+    assert state["machines"][0]["projects"][0]["folders"][0]["repository_skills"] == ["release"]
+    assert (ticked.status_code, off.status_code, edited.status_code) == (200, 200, 200)
+    assert stale.status_code == 409 and "changed since you opened it" in stale.json()["error"]
+    assert early.status_code == 409
+    files = {f["path"]: f for f in after["project_files"]}
+    assert files["README.md"]["ticked"] and files["AGENTS.md"]["turned_off"]
+    assert files["AGENTS.md"]["text"] == "Rules\n"
+    assert (files["AGENTS.md"]["edit"]["text"], files["AGENTS.md"]["edit"]["machine"],
+            files["AGENTS.md"]["edit"]["written_on"]) == ("New\n", machine, None)

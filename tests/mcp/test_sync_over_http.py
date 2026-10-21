@@ -104,7 +104,7 @@ async def test_sync_takes_digests_and_optional_identity_check(server_url):
 
     assert set(sync.inputSchema["properties"]) == {"local", "harness", "here", "project",
                                                    "repository", "fingerprint", "identify",
-                                                   "rules"}
+                                                   "rules", "project_files"}
     assert sync.inputSchema["required"] == ["local"]
     # The agent sees which folders there are, and what omitting one means.
     assert sync.inputSchema["properties"]["harness"]["enum"] == ["claude_code", "agents"]

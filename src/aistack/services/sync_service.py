@@ -25,7 +25,11 @@ from aistack.services.content_hash import canonical_content_hash, normalized_pat
 from aistack.services.harnesses import validated_harness
 from aistack.services.reconciliation import Desired, Observed, Option, Step, reconcile
 from aistack.services.skill_archive import in_git_folder, is_filesystem_noise
-from aistack.services.skill_validation import CLAUDE_CODE_FOLDER, refusal_from_listing
+from aistack.services.skill_validation import (
+    CLAUDE_CODE_FOLDER,
+    looks_like_skill_name,
+    refusal_from_listing,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +190,10 @@ def sync(session: Session, machine_id: uuid.UUID, user_id: uuid.UUID,
                                   "here names. Sync with here first, and send its key.")
         registered = project_service.register_folder(session, user_id, machine_id, where.key,
                                                       where.name, harness, here.path)
+        # Shown in the page's Start an agent dialog beside the Library's skills (ADR-0038).
+        shown = "\n".join(sorted(name for name in blocked if looks_like_skill_name(name))) or None
+        if registered.folder.repository_skills != shown:
+            registered.folder.repository_skills = shown
         where = ProjectHere(where.key, where.name, managed=True)
         decisions = project_service.decisions(session, registered.folder)
     else:

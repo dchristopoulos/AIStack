@@ -6,6 +6,7 @@ minutes.
 """
 
 import asyncio
+import json
 import logging
 from dataclasses import asdict
 from time import perf_counter
@@ -14,15 +15,15 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from aistack.bootstrap.context.application_context import get_session_factory, get_ticket_signer
+from aistack.commons.exceptions import ValidationError
+from aistack.db.models.rule import RULE_TEXT_MAX_BYTES
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.request_body import bounded_body
 from aistack.mcp.routes.route_error_handler import handle_route_errors
-from aistack.commons.exceptions import ValidationError
-from aistack.db.models.rule import RULE_TEXT_MAX_BYTES
-from aistack.services import project_service, rule_sync, skill_service
+from aistack.services import project_file_service, project_service, rule_sync, skill_service
+from aistack.services.rule_validation import validated_rule_text
 from aistack.services.skill_archive import MAX_ARCHIVE_BYTES, read_archive
 from aistack.services.skill_validation import validated_skill
-from aistack.services.rule_validation import validated_rule_text
 from aistack.services.transfer_ticket import (
     DownloadTicket,
     RuleDownloadTicket,
@@ -36,6 +37,8 @@ UPLOAD_PATH = "/transfer/upload"
 DOWNLOAD_PATH = "/transfer/download"
 RULE_UPLOAD_PATH = "/transfer/rule-upload"
 RULE_DOWNLOAD_PATH = "/transfer/rule-download"
+PROJECT_FILE_UPLOAD_PATH = "/transfer/project-file-upload"
+PROJECT_FILE_EDIT_PATH = "/transfer/project-file-edit"
 
 UPLOAD_READ_TIMEOUT_SECONDS = 30
 
@@ -160,3 +163,57 @@ async def download_rule(request: Request) -> Response:
 def _load_rule(ticket: RuleDownloadTicket) -> tuple[str, str]:
     with get_session_factory().begin() as session:
         return rule_sync.text_of(session, ticket)
+
+
+@mcp.custom_route(PROJECT_FILE_UPLOAD_PATH + "/{ticket}", methods=["PUT"])
+@handle_route_errors
+async def upload_project_file(request: Request) -> Response:
+    """The text of a ticked repository file as a computer read it, for the page to show. The
+    text is never logged."""
+    ticket = get_ticket_signer().verified_project_file_upload(request.path_params["ticket"])
+    text = await _rule_sized_text(request)
+    stored = await asyncio.to_thread(_in_transaction, project_file_service.store_snapshot,
+                                     ticket, text)
+    logger.info(f"Project file uploaded. Saved: '{stored.saved}'. "
+                f"Machine: '{ticket.machine_id}'.")
+    return JSONResponse(asdict(stored))
+
+
+@mcp.custom_route(PROJECT_FILE_EDIT_PATH + "/{ticket}", methods=["GET", "POST"])
+@handle_route_errors
+async def project_file_edit(request: Request) -> Response:
+    """GET: the text of an edit made on the page, for the computer it was made for. POST:
+    what became of it there, as JSON `{"outcome": ..., "pull_request_url": ...}`."""
+    ticket = get_ticket_signer().verified_project_file_edit(request.path_params["ticket"])
+    if request.method == "GET":
+        _, text = await asyncio.to_thread(_in_transaction, project_file_service.edit_text,
+                                          ticket)
+        return Response(text.encode("utf-8"), media_type="text/markdown; charset=utf-8")
+    body = await bounded_body(request, _OUTCOME_MAX_BYTES, "The report is too large.",
+                              UPLOAD_READ_TIMEOUT_SECONDS)
+    try:
+        outcome = json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        raise ValidationError("The report is not JSON.") from None
+    kind = await asyncio.to_thread(_in_transaction, project_file_service.record_outcome,
+                                   ticket, outcome)
+    return JSONResponse({"outcome": kind})
+
+
+_OUTCOME_MAX_BYTES = 4096
+
+
+async def _rule_sized_text(request: Request) -> str:
+    body = await bounded_body(
+        request, RULE_TEXT_MAX_BYTES,
+        f"The file is larger than the {RULE_TEXT_MAX_BYTES} byte limit (64 KiB) AIStack shows.",
+        UPLOAD_READ_TIMEOUT_SECONDS)
+    try:
+        return validated_rule_text(body.decode("utf-8"))
+    except UnicodeDecodeError:
+        raise ValidationError("The file is not UTF-8 text, so it was not stored.") from None
+
+
+def _in_transaction(function, *arguments):
+    with get_session_factory().begin() as session:
+        return function(session, *arguments)

@@ -509,6 +509,12 @@ def run() -> None:
         configure_logging("WARNING")
         start_agent.run(sys.argv[2:])
         return
+    if sys.argv[1:2] == ["project"]:
+        from aistack.bootstrap import project_add
+
+        configure_logging("WARNING")
+        project_add.run(sys.argv[2:])
+        return
     if sys.argv[1:2] == ["open"]:
         from aistack.bootstrap import computer_link
 
@@ -529,7 +535,8 @@ def run() -> None:
                     "'backup' and 'restore' copy its database, and 'admin' manages its "
                     "users, computers and teams; 'join <server> <code>' adds this computer "
                     "with a computer code, and 'sync' reconciles its skills; 'start' starts "
-                    "Claude Code or Codex in a project with only the chosen skills; 'open' acts on "
+                    "Claude Code or Codex in a project with only the chosen skills; 'project add "
+                    "<folder>' adds a project and lists its Markdown files; 'open' acts on "
                     "an aistack:// link from the dashboard.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
                                                        "sync-skill", "check", "export",

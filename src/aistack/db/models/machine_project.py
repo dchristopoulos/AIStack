@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint, Uuid
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from aistack.db.models.base import Base
@@ -36,6 +36,10 @@ class MachineProject(Base):
     # The top level last seen on this computer, for display only: the server never places it
     # in a command. Null when the folder was added on the dashboard and has not synced yet.
     path: Mapped[str | None] = mapped_column(String(PROJECT_PATH_MAX_LENGTH), nullable=True)
+    # The skills folders the repository itself holds here, one name per line, as the last
+    # sync of this folder listed them: what the page's Start an agent dialog offers besides
+    # the Library's. Null until a release that records them syncs it.
+    repository_skills: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_on: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                  default=utc_now)
     # Null until the folder's first sync, which is what makes it the first.

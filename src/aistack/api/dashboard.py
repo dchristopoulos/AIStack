@@ -47,6 +47,7 @@ from aistack.services import (
     dashboard_service,
     library_log,
     onboarding_service,
+    project_file_service,
     rule_service,
     skill_service,
     team_service,
@@ -505,6 +506,34 @@ def set_rule_agents(session, user_id, path, body):
 def remove_rule(session, user_id, path, body):
     return {"name": rule_service.archive(session, user_id, path["name"],
                                          _text(body, "project", required=False))}
+
+
+# A project's own files (ADR-0036): which the page shows, turning one off for this person, and
+# an edit for one computer to write and share. Server only, as rules are.
+@_action("/projects/files/tick", local=False)
+def tick_project_file(session, user_id, path, body):
+    project_file_service.set_ticked(session, user_id, _text(body, "project"),
+                                    _text(body, "path"), _flag(body, "ticked"))
+
+
+@_action("/projects/files/turn-off", local=False)
+def turn_off_project_file(session, user_id, path, body):
+    project_file_service.set_turned_off(session, user_id, _text(body, "project"),
+                                        _text(body, "path"), _flag(body, "turned_off"))
+
+
+@_action("/projects/files/edit", local=False, body_limit=_RULE_BODY_BYTES)
+def edit_project_file(session, user_id, path, body):
+    return _saved(project_file_service.save_edit(
+        session, user_id, _text(body, "project"), _text(body, "path"), _text(body, "text"),
+        _text(body, "base_hash"), _text(body, "machine"),
+        bool(_flag(body, "confirmed", required=False))))
+
+
+@_action("/projects/files/commit", local=False)
+def commit_project_file(session, user_id, path, body):
+    return {"note": project_file_service.commit(session, user_id, _text(body, "project"),
+                                                _text(body, "path"), _text(body, "note"))}
 
 
 def _saved(saved: rule_service.Saved) -> dict[str, Any]:
