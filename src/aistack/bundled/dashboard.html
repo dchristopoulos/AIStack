@@ -733,6 +733,15 @@ dialog.dlg.sheet[open] { animation: slide .2s var(--ease); }
 .sheet-sec legend { color: var(--text); font-size: 13px; font-weight: 600; margin-bottom: 10px; }
 .sheet-sec .facts { margin: 0; }
 .sheet-sec.actions { flex-direction: row; flex-wrap: wrap; }
+/* A rule's text as its agents read it, the editor's text area, and its preview. */
+.rule-text { margin: 0; padding: 12px 14px; max-height: 55vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--head); font: 12.5px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rule-text .warn { display: block; background: var(--danger-soft); color: var(--danger); }
+textarea.rule-input { height: auto; min-height: 40vh; padding: 10px 12px; resize: vertical; font: 13px/1.6 var(--mono); }
+.md-preview { padding: 4px 2px; display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; }
+.md-preview h1, .md-preview h2, .md-preview h3 { font-size: 15px; font-weight: 600; }
+.md-preview ul { padding-left: 20px; }
+.md-preview code, .md-preview pre { font: 12.5px/1.5 var(--mono); background: var(--head); border-radius: var(--r-sm); }
+.md-preview pre { margin: 0; padding: 8px 10px; white-space: pre-wrap; }
 
 /* ---------- where it lives, settings ---------- */
 .wrap.body.narrow { max-width: 880px; margin-left: 0; }
@@ -1263,7 +1272,7 @@ const WORDS = {
   },
   every: {
     lead: 'Skills your agents get in every project, on every computer.',
-    table: 'Skills for every project',
+    table: 'What your agents read in every project',
     noAgent: 'No coding agent has synced yet',
     noAgentText: 'Say "{sync}" on one of your computers, and its coding agents show here.',
     none: 'No skill reaches every project yet.',
@@ -1303,6 +1312,59 @@ const WORDS = {
     noFolder: '{agent} is not used here',
     onlyOn: 'Only on {computers}',
     alsoEvery: 'Also for every project; Claude Code uses that copy.',
+  },
+  // Rules (ADR-0036): the person's own, for every project or for one, and a repository's.
+  rules: {
+    plus: 'A rule…',
+    everyGroup: 'Your rules for every project',
+    everyNote: 'The same on every computer',
+    repoGroup: "Team {team}'s rules, in the repository",
+    repoGroupOwn: 'Rules in the repository',
+    repoNote: 'Everyone who clones it gets these',
+    ownGroup: 'Your rules for {project}',
+    ownNote: 'Only you, on every computer that has it, never committed',
+    noneEvery: 'No rule of yours for every project yet.',
+    noneOwn: 'No rule of yours for this project yet.',
+    noneRepo: 'No file from the repository is shown here.',
+    changed: 'Changed {when}',
+    open: 'Open',
+    openLabel: 'Open {name}',
+    leadEvery: 'Your rule for every project, on every computer. Changed {when}.',
+    leadProject: 'Your rule for {project}: only you, never committed. Changed {when}.',
+    leadRepo: 'In the repository of {project}. Changed {when}.',
+    text: 'Text of {name}',
+    loading: 'Loading the text…',
+    notRead: 'AIStack has not read this file yet.',
+    useFor: 'Use this file for',
+    useForHelp: 'Each agent gets the same text in its own file.',
+    readBy: 'Read by',
+    nobody: 'No coding agent',
+    agentsSaved: 'Saved which agents use {name}. Each computer picks it up at its next {sync}.',
+    edit: 'Edit',
+    editTitle: 'Edit {name}',
+    preview: 'Preview',
+    previewEmpty: 'Nothing to preview yet.',
+    saved: 'Saved {name} as r{revision}. Each computer writes it at its next {sync}.',
+    unchanged: '{name} already has this text; nothing changed.',
+    credentials: {
+      one: 'Line {lines} looks like it holds a credential, such as a token or a key. Rules reach every computer you have. Save anyway?',
+      other: 'Lines {lines} look like they hold a credential, such as a token or a key. Rules reach every computer you have. Save anyway?',
+    },
+    saveAnyway: 'Save anyway',
+    remove: 'Remove…',
+    removeTitle: 'Remove {name}?',
+    removeLeaves: '{name} leaves your Library and stops reaching your computers.',
+    removeStays: 'The files already on your computers stay as they are.',
+    removed: 'Removed {name} from your Library.',
+    newEvery: 'A rule for every project',
+    newProject: 'A rule for {project}',
+    name: 'Name',
+    nameHelp: 'Lowercase letters and digits joined by single hyphens, like house-style.',
+    body: 'Text',
+    add: 'Add rule',
+    added: 'Added {name}. Each computer writes it at its next {sync}.',
+    onComputer: '{rule} in {file}',
+    noRule: 'No rule in {file}',
   },
   stopManaging: {
     title: 'Stop managing {project} on {computer}?',
@@ -1751,6 +1813,7 @@ const ICONS = {
   move: 'M5 12h14M12 5l7 7-7 7',
   repo: 'M6 3h11a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM4 17a2 2 0 0 1 2-2h13M9 7h6',
   edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z',
+  doc: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h8',
   laptop: 'M4 5h16v10H4zM2 19h20',
   monitor: 'M3 4h18v12H3zM8 20h8M12 16v4',
   terminal: 'M4 17l6-5-6-5M12 19h8',
@@ -2291,10 +2354,10 @@ function placesNav(r) {
   const server = state.server !== false;
   const link = (hash, current, ...kids) => el('a', { class: 'nav-item', href: hash, 'aria-current': current ? 'page' : null }, kids);
   const skillsItem = (place, folders) => ({ label: W.plus.skills, icon: 'layers', run: () => addSkillsDialog(place, folders) });
-  const everyCount = new Set(everyFolders().flatMap(t => placedOn(t))).size;
+  const everyCount = new Set(everyFolders().flatMap(t => placedOn(t))).size + rulesFor(null).length;
   return [
     navRow(link('#/every', r.view === 'every', icon('globe'), el('span', { class: 'label' }, W.nav.every), el('span', { class: 'count' }, String(everyCount))),
-      W.where.every, [skillsItem(W.where.every, everyFolders())]),
+      W.where.every, [skillsItem(W.where.every, everyFolders()), server && ruleItem(null)]),
     el('div', { class: 'nav-heading' }, W.nav.projects,
       server && plusMenu(W.nav.projects, [
         { label: W.plus.folderHere, icon: 'terminal', run: folderHereDialog },
@@ -2305,8 +2368,8 @@ function placesNav(r) {
       return navRow(link(projectHash(p.key), r.view === 'project' && r.project.key === p.key, icon('repo', 15),
         el('span', { class: 'label mono', title: p.key }, p.name),
         team && el('span', { class: 'aside' }, team),
-        el('span', { class: 'count' }, String(new Set(projectFolders(p.key).flatMap(t => placedOn(t))).size))),
-      p.name, [skillsItem(p.name, projectFolders(p.key)), server && { label: W.plus.anotherComputer, icon: 'monitor', run: () => addProjectDialog({ key: p.key }) }]);
+        el('span', { class: 'count' }, String(new Set(projectFolders(p.key).flatMap(t => placedOn(t))).size + rulesFor(p.key).length))),
+      p.name, [skillsItem(p.name, projectFolders(p.key)), server && ruleItem(p), server && { label: W.plus.anotherComputer, icon: 'monitor', run: () => addProjectDialog({ key: p.key }) }]);
     }),
     el('div', { class: 'nav-heading' }, W.nav.computers,
       btn(null, { class: 'btn ghost icon', fk: 'add-computer', title: W.addComputer.title, 'aria-label': W.addComputer.title, on: { click: addComputerDialog } }, 'plus')),
@@ -2811,11 +2874,11 @@ function tickTable(label, groups) {
   const span = String(cols.length + 2);
   return el('div', { class: 'tbl ticks', role: 'table', 'aria-label': label,
     style: `grid-template-columns: minmax(220px, 1fr) repeat(${cols.length}, minmax(96px, auto)) auto` },
-    el('div', { class: 'tr th-row', role: 'row' }, th(W.col.skill), cols.map(a => th(agentName(a))), thActions()),
+    el('div', { class: 'tr th-row', role: 'row' }, th(el('span', { class: 'sr-only' }, W.name)), cols.map(a => th(agentName(a))), thActions()),
     groups.map(g => [
       el('div', { class: 'tr grp', role: 'row' }, el('div', { class: 'grp-cell', role: 'cell', 'aria-colspan': span },
         icon(g.icon, 15), el('strong', null, g.title), g.note && el('span', { class: 't2' }, g.note))),
-      g.skills.length ? g.skills.map(s => tickRow(s, cols, g))
+      g.skills.length ? g.skills.map(s => (g.row || tickRow)(s, cols, g))
         : el('div', { class: 'tr hint-row', role: 'row' }, el('div', { role: 'cell', 'aria-colspan': span }, g.empty)),
     ]));
 }
@@ -2844,8 +2907,7 @@ function tickCell(s, agent, g) {
   const tag = el('span', { class: 'tick-name', 'aria-hidden': 'true' }, name);
   if (!ts.length || g.readOnly) {
     const words = !ts.length ? say(W.tick.noFolder, { agent: name }) : on.length ? say(W.tick.gets, { agent: name }) : say(W.tick.not, { agent: name });
-    return td('tick', el('span', { class: 'tick' + (on.length ? ' on' : ''), title: words },
-      on.length ? icon('check', 16) : el('span', { class: 'dash', 'aria-hidden': 'true' }, '–'), el('span', { class: 'sr-only' }, words), tag));
+    return staticTick(on.length > 0, words, tag);
   }
   const turnOn = on.length < ts.length;
   const box = el('input', { type: 'checkbox', checked: !turnOn, fk: `tick:${g.key}:${s.name}:${agent}`,
@@ -2859,6 +2921,10 @@ function tickCell(s, agent, g) {
   return td('tick', el('label', { class: 'tick' }, box, tag));
 }
 
+// A tick in a group that is changed elsewhere: a mark, with what it means in words.
+const staticTick = (on, words, tag) => td('tick', el('span', { class: 'tick' + (on ? ' on' : ''), title: words },
+  on ? icon('check', 16) : el('span', { class: 'dash', 'aria-hidden': 'true' }, '–'), el('span', { class: 'sr-only' }, words), tag));
+
 const everySkills = () => state.skills.filter(s => everyFolders().some(t => isPlaced(s, t)));
 
 function everyView() {
@@ -2867,7 +2933,7 @@ function everyView() {
     pageHead('globe', el('h1', null, W.nav.every), el('p', { class: 'subtitle t2' }, W.every.lead),
       columns().length ? btn(W.addSkills.button, { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(place, everyFolders()) } }, 'plus') : null),
     el('div', { class: 'wrap body' }, columns().length
-      ? tickTable(W.every.table, [{ key: 'every', icon: 'layers', title: W.tabs.skills, skills: everySkills(),
+      ? tickTable(W.every.table, [...ruleGroups(null), { key: 'every', icon: 'layers', title: W.tabs.skills, skills: everySkills(),
           folders: agent => everyFolders().filter(t => t.agent === agent), empty: W.every.none }])
       : empty('terminal', W.every.noAgent, el('p', null, say(W.every.noAgentText, { sync: SYNC })))),
   ];
@@ -2890,6 +2956,7 @@ function projectView(p) {
         el('div', { class: 'where-cards' }, p.on.map(({ m, p: here }) => projectCard(m, here))),
         el('h2', { class: 'sec' }, say(W.project.table, { project: p.name })),
         tickTable(say(W.project.table, { project: p.name }), [
+          ...ruleGroups(p),
           { key: 'every', icon: 'globe', title: W.project.everyGroup, note: el('a', { class: 'link', href: '#/every' }, W.project.everyNote),
             skills: every, readOnly: true, empty: W.every.none,
             folders: agent => everyFolders().filter(t => t.agent === agent && p.on.some(x => x.m === t.m)) },
@@ -2934,7 +3001,7 @@ function computerView(m) {
           return el('div', { class: 'tr', role: 'row' },
             td('c-main', el('span', { class: 'person' }, agentName(agent))),
             td('meta', el('code', { class: 'mono t2' }, AGENTS[agent].folder)),
-            td('meta', el('a', { class: 'link', href: '#/every' }, plural(n, 'skill'))),
+            td('meta', el('a', { class: 'link', href: '#/every' }, plural(n, 'skill')), ruleOnComputer(agent)),
             td('meta', el('span', { class: 't2' }, (m.last_synced || {})[agent] ? when(m.last_synced[agent]) : W.computer.never)),
             td('row end', picked && !n ? btn(C.unpick, { class: 'btn ghost sm', fk: 'unpick:' + agent, 'aria-label': say(C.unpickLabel, { agent: AGENTS[agent].name }),
               on: { click: () => { unpickAgent(m, agent); render(); } } }, 'x') : null));
@@ -3208,6 +3275,264 @@ function removeMineDialog(s) {
       return say(W.removeMine.done, { skill: s.name });
     },
   });
+}
+
+/* ---------- rules (ADR-0036) ---------- */
+
+// The agents AIStack writes rules for, with each one's file for every project and for a
+// project (services/agent_files.py). A tick table's column is a skills harness: `agents`
+// (~/.agents/skills) is Codex's column, so the rules in it are Codex's.
+const RULE_AGENTS = {
+  claude_code: { name: 'Claude Code', every: '~/.claude/CLAUDE.md', project: name => `.claude/rules/aistack-${name}.md` },
+  codex: { name: W.codex.name, every: '~/.codex/AGENTS.md', project: () => 'AGENTS.override.md' },
+};
+const RULE_AGENT_OF = { claude_code: 'claude_code', agents: 'codex' };
+// Every agent whose files AIStack shows, for a repository file's "Read by".
+const AGENT_NAMES = { claude_code: 'Claude Code', codex: W.codex.name, gemini_cli: 'Gemini CLI', cursor: 'Cursor', copilot_cli: 'GitHub Copilot CLI', opencode: 'opencode' };
+// Rules are kept on a server for now: the localhost dashboard shows none.
+const rulesShown = () => state.server !== false && Array.isArray(state.rules);
+const rulesFor = key => (rulesShown() ? state.rules.filter(r => (r.project || null) === key) : []);
+const ruleUrl = (r, action) => `/api/rules/${enc(r.name)}/${action}`;
+const ruleQuery = r => (r.project ? { project: r.project } : {});
+const ruleFile = (r, agent) => (r.project ? RULE_AGENTS[agent].project(r.name) : RULE_AGENTS[agent].every);
+const latestRule = r => (state.rules || []).find(x => x.name === r.name && x.project === r.project) || r;
+const ruleText = r => api(ruleUrl(r, 'text') + (r.project ? '?project=' + enc(r.project) : ''));
+const ruleItem = p => ({ label: W.rules.plus, icon: 'doc', run: () => newRuleDialog(p) });
+// A repository's files, once /api/state lists them: { project, path, agents, updated_on, text }.
+const repoFiles = key => (state.project_files || []).filter(f => f.project === key);
+
+// The rule groups above the skills in a place's tick table, in the order agents read them:
+// the person's rules for every project, then in a project the repository's and the person's own.
+function ruleGroups(p) {
+  if (!rulesShown()) return [];
+  const R = W.rules;
+  const every = { key: 'rules-every', icon: 'globe', title: R.everyGroup, note: R.everyNote, skills: rulesFor(null),
+    row: ruleTickRow, readOnly: !!p, empty: R.noneEvery };
+  if (!p) return [every];
+  const team = teamOf(p);
+  return [
+    every,
+    'project_files' in state && { key: 'rules-repo', icon: team ? 'users' : 'repo', title: team ? say(R.repoGroup, { team }) : R.repoGroupOwn,
+      note: R.repoNote, skills: repoFiles(p.key), row: repoFileRow, readOnly: true, empty: R.noneRepo },
+    { key: 'rules-own', icon: 'lock', title: say(R.ownGroup, { project: p.name }), note: R.ownNote, skills: rulesFor(p.key),
+      row: ruleTickRow, empty: R.noneOwn },
+  ].filter(Boolean);
+}
+
+function fileRow(g, name, updated, open, cells) {
+  return el('div', { class: 'tr', role: 'row' },
+    td('c-main',
+      el('button', { type: 'button', class: 'name-btn', fk: `name:${g.key}:${name}`, on: { click: open } }, el('span', { class: 'name' }, name)),
+      updated && el('span', { class: 't2' }, sayWith(W.rules.changed, { when: when(updated) }))),
+    cells,
+    td('row end', btn(W.rules.open, { class: 'btn ghost sm', fk: `open-rule:${g.key}:${name}`, 'aria-label': say(W.rules.openLabel, { name }), on: { click: open } }, 'doc')));
+}
+
+function ruleTickRow(r, cols, g) {
+  return fileRow(g, r.name, r.updated_on, () => ruleSheet(r), cols.map(column => {
+    const agent = RULE_AGENT_OF[column], name = AGENTS[column].name, on = r.agents.includes(agent);
+    const tag = el('span', { class: 'tick-name', 'aria-hidden': 'true' }, name);
+    if (g.readOnly) return staticTick(on, say(on ? W.tick.gets : W.tick.not, { agent: name }), tag);
+    const box = el('input', { type: 'checkbox', checked: on, fk: `tick:${g.key}:${r.name}:${column}`,
+      'aria-label': say(W.tick.label, { skill: r.name, agent: name }),
+      on: { change: ev => run(ev.currentTarget, () => setRuleAgents(r, on ? r.agents.filter(a => a !== agent) : [...r.agents, agent]),
+        m => { toast(m, 'error'); render(); }) } });
+    return td('tick', el('label', { class: 'tick' }, box, tag));
+  }));
+}
+
+function repoFileRow(f, cols, g) {
+  return fileRow(g, f.path, f.updated_on, () => repoFileSheet(f), cols.map(column => {
+    const name = AGENTS[column].name, on = (f.agents || []).includes(RULE_AGENT_OF[column]);
+    return staticTick(on, say(on ? W.tick.gets : W.tick.not, { agent: name }), el('span', { class: 'tick-name', 'aria-hidden': 'true' }, name));
+  }));
+}
+
+async function setRuleAgents(r, agents) {
+  await api(ruleUrl(r, 'agents'), { agents, ...ruleQuery(r) });
+  return say(W.rules.agentsSaved, { name: r.name, sync: SYNC });
+}
+
+// One file in the side panel: its text as its agents read it, the lines that look like a
+// credential marked, then what the caller adds. A repository file's actions join here too.
+function filePanel({ title, lead, text, sections = [], actions = [], onSubmit, submitLabel = W.done, returnFk }) {
+  const box = el('pre', { class: 'rule-text', tabIndex: 0, 'aria-label': say(W.rules.text, { name: title }) }, W.rules.loading);
+  Promise.resolve(text).then(t => box.replaceChildren(...(t.text == null ? [W.rules.notRead]
+    : t.text.split('\n').map((line, i) => el('span', { class: (t.credential_lines || []).includes(i + 1) ? 'warn' : null }, line + '\n')))))
+    .catch(e => box.replaceChildren(el('span', { role: 'alert' }, e.message)));
+  return openDialog({ title, sheet: true, submitLabel, cancelLabel: onSubmit ? W.cancel : null, returnFk, onSubmit,
+    body: [el('p', { class: 'lead' }, lead), box, sections,
+      actions.length ? el('section', { class: 'sheet-sec actions', 'aria-label': W.sheet.more }, actions) : null] });
+}
+
+const projectName = key => (projectBy(key) || { name: key.split('/').pop() }).name;
+
+function ruleSheet(r) {
+  const R = W.rules;
+  const boxes = Object.keys(RULE_AGENTS).map(agent => el('input', { type: 'checkbox', value: agent, checked: r.agents.includes(agent) }));
+  const save = async () => {
+    const chosen = boxes.filter(b => b.checked).map(b => b.value);
+    return chosen.join() === r.agents.join() ? null : setRuleAgents(r, chosen);
+  };
+  // Ticks made in the panel are saved before its other buttons leave it, as in a skill's.
+  const after = then => ev => run(ev.currentTarget, async () => {
+    const said = await save();
+    document.querySelector('dialog[open]').close();
+    return () => { if (said) toast(said); then(latestRule(r)); };
+  });
+  filePanel({
+    title: r.name,
+    lead: r.project ? sayWith(R.leadProject, { project: projectName(r.project), when: when(r.updated_on) }) : sayWith(R.leadEvery, { when: when(r.updated_on) }),
+    text: ruleText(r),
+    returnFk: `open-rule:${r.project ? 'rules-own' : 'rules-every'}:${r.name}`,
+    submitLabel: W.save,
+    onSubmit: save,
+    sections: el('fieldset', { class: 'sheet-sec' }, el('legend', null, R.useFor),
+      boxes.map(b => el('label', { class: 'check' }, b, el('span', null, RULE_AGENTS[b.value].name, el('small', { class: 'mono' }, ruleFile(r, b.value)))))),
+    actions: [
+      btn(R.edit, { on: { click: after(ruleEditor) } }, 'edit'),
+      btn(R.remove, { class: 'btn danger', on: { click: after(removeRuleDialog) } }, 'trash'),
+    ],
+  });
+}
+
+function repoFileSheet(f) {
+  const readers = (f.agents || []).map(a => AGENT_NAMES[a] || a);
+  filePanel({
+    title: f.path,
+    lead: sayWith(W.rules.leadRepo, { project: projectName(f.project), when: f.updated_on ? when(f.updated_on) : W.computer.never }),
+    text: { text: f.text == null ? null : f.text },
+    sections: el('section', { class: 'sheet-sec', 'aria-label': W.rules.readBy },
+      el('dl', { class: 'facts' }, el('dt', null, W.rules.readBy), el('dd', null, readers.length ? readers.join(W.comma) : W.rules.nobody))),
+  });
+}
+
+// A save the server held back because lines look like a credential: say which, and save on
+// the next press unless the text changes first.
+function credentialCheck(dlg, area, label) {
+  let confirmed = false;
+  const face = text => { dlg.querySelector('button[type=submit] span').textContent = text; };
+  area.addEventListener('input', () => { if (confirmed) { confirmed = false; face(label); } });
+  return {
+    get confirmed() { return confirmed; },
+    hold(res) {
+      if (res.saved) return;
+      confirmed = true;
+      face(W.rules.saveAnyway);
+      throw new Error(say(W.rules.credentials, { n: res.credential_lines.length, lines: res.credential_lines.join(W.comma) }));
+    },
+  };
+}
+
+// The editor: the text as a plain text area, a preview of it, and Save, which makes a revision.
+function ruleEditor(r) {
+  const R = W.rules;
+  const area = el('textarea', { class: 'input rule-input', spellcheck: false, disabled: true });
+  const preview = el('div', { class: 'md-preview', hidden: true });
+  const toggle = el('button', { type: 'button', class: 'btn sm', 'aria-pressed': 'false', on: { click: () => {
+    const on = preview.hidden;
+    preview.hidden = !on;
+    area.hidden = on;
+    toggle.setAttribute('aria-pressed', String(on));
+    if (on) preview.replaceChildren(...markdown(area.value));
+  } } }, icon('doc'), el('span', null, R.preview));
+  let check;
+  const dlg = openDialog({
+    title: say(R.editTitle, { name: r.name }),
+    sheet: true,
+    submitLabel: W.save,
+    body: [el('div', { class: 'head-actions' }, toggle), field(R.body, area), preview],
+    onSubmit: async () => {
+      const res = await api(ruleUrl(r, 'edit'), { text: area.value, ...ruleQuery(r), confirmed: check.confirmed });
+      check.hold(res);
+      return say(res.unchanged ? R.unchanged : R.saved, { name: r.name, revision: res.revision, sync: SYNC });
+    },
+  });
+  check = credentialCheck(dlg, area, W.save);
+  ruleText(r).then(t => { area.value = t.text; area.disabled = false; area.focus(); })
+    .catch(e => toast(e.message, 'error'));
+}
+
+function removeRuleDialog(r) {
+  const R = W.rules;
+  confirmDialog({
+    title: say(R.removeTitle, { name: r.name }),
+    submitLabel: W.remove,
+    lines: [say(R.removeLeaves, { name: r.name }), R.removeStays],
+    onSubmit: async () => {
+      await api(ruleUrl(r, 'remove'), ruleQuery(r));
+      return say(R.removed, { name: r.name });
+    },
+  });
+}
+
+// "A rule…" from the + of Every project (`p` null) or of a project.
+function newRuleDialog(p) {
+  const R = W.rules;
+  // A rule for every project is its agents' whole file, so each agent takes one.
+  const taken = new Set(p ? [] : rulesFor(null).flatMap(r => r.agents));
+  const name = el('input', { class: 'input mono', autocomplete: 'off', spellcheck: false });
+  const boxes = Object.keys(RULE_AGENTS).map(agent => el('input', { type: 'checkbox', value: agent, checked: !taken.has(agent) }));
+  const area = el('textarea', { class: 'input rule-input', spellcheck: false });
+  let check;
+  const dlg = openDialog({
+    title: p ? say(R.newProject, { project: p.name }) : R.newEvery,
+    sheet: true,
+    submitLabel: R.add,
+    body: [
+      field(R.name, name, R.nameHelp),
+      el('fieldset', { class: 'picker inline' }, el('legend', null, R.useFor),
+        boxes.map(b => el('label', { class: 'choice' }, b, RULE_AGENTS[b.value].name))),
+      field(R.body, area),
+    ],
+    onSubmit: async () => {
+      const res = await api('/api/rules', { name: name.value.trim(), text: area.value, agents: boxes.filter(b => b.checked).map(b => b.value),
+        ...(p ? { project: p.key } : {}), confirmed: check.confirmed });
+      check.hold(res);
+      return say(R.added, { name: res.name, sync: SYNC });
+    },
+  });
+  check = credentialCheck(dlg, area, R.add);
+}
+
+// A computer's file for every project for one agent, and the rule in it.
+function ruleOnComputer(column) {
+  const agent = RULE_AGENT_OF[column];
+  if (!agent || !rulesShown()) return null;
+  const file = el('code', { class: 'mono' }, RULE_AGENTS[agent].every);
+  const r = rulesFor(null).find(x => x.agents.includes(agent));
+  return el('span', { class: 't2' }, r
+    ? sayWith(W.rules.onComputer, { file, rule: el('button', { type: 'button', class: 'name-btn', fk: 'computer-rule:' + column,
+      'aria-label': say(W.rules.openLabel, { name: r.name }), on: { click: () => ruleSheet(r) } }, el('span', { class: 'name' }, r.name)) })
+    : sayWith(W.rules.noRule, { file }));
+}
+
+// A plain reading of Markdown for the editor's preview: headings, lists, fenced code and
+// paragraphs, with `code` and **bold** inline. Built from text nodes, never from markup.
+function markdown(text) {
+  const out = [], lines = text.split('\n');
+  const inline = s => s.split(/(`[^`]+`|\*\*[^*]+\*\*)/).map((part, i) => (i % 2 === 0 ? part
+    : part[0] === '`' ? el('code', null, part.slice(1, -1)) : el('strong', null, part.slice(2, -2))));
+  let open = null; // the paragraph or list the next line continues
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      const code = [];
+      while (++i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i]);
+      out.push(el('pre', null, code.join('\n')));
+      open = null;
+      continue;
+    }
+    const heading = /^#{1,6}\s+(.*)$/.exec(line), item = /^\s*(?:[-*+]|\d+\.)\s+(.*)$/.exec(line);
+    if (!line.trim()) open = null;
+    else if (heading) { out.push(el('h3', null, inline(heading[1]))); open = null; }
+    else if (item) {
+      if (!open || open.tagName !== 'UL') out.push(open = el('ul'));
+      open.append(el('li', null, inline(item[1])));
+    } else if (open && open.tagName === 'P') open.append(' ', ...inline(line));
+    else out.push(open = el('p', null, inline(line)));
+  }
+  return out.length ? out : [el('p', { class: 't2' }, W.rules.previewEmpty)];
 }
 
 /* ---------- team ---------- */
@@ -4035,6 +4360,16 @@ const DB = (() => {
       { name: 'release-notes', description: 'Builds release notes from merged pull requests since the last tag.', revision: 1, pushed_by: 'dimitris', updated_on: ago(300), files: 2, placements: [],
         source: { team: 'demo-team', group: null, revision: 1, latest_revision: 1, latest_pushed_by: 'dimitris', update_available: false, own_changes: false } },
     ],
+    rules: [
+      { name: 'house-style', project: null, agents: ['claude_code', 'codex'], revision: 3, pushed_by: 'dimitris', updated_on: ago(72) },
+      { name: 'payments', project: 'github.com/demo-team/demo-api', agents: ['claude_code', 'codex'], revision: 1, pushed_by: 'dimitris', updated_on: ago(20) },
+    ],
+    project_files: [
+      { project: 'github.com/demo-team/demo-api', path: 'AGENTS.md', agents: ['codex', 'cursor', 'copilot_cli', 'opencode'], updated_on: ago(5),
+        text: "# demo-api\n\nThe demo team's order API. Python 3.13, PostgreSQL.\n\n## Rules\n- Endpoints follow the api-design skill.\n- Money is an integer number of cents, never a float.\n- A migration ships with its model change.\n" },
+      { project: 'github.com/demo-team/demo-api', path: 'CLAUDE.md', agents: ['claude_code', 'cursor', 'copilot_cli'], updated_on: ago(340),
+        text: '# demo-api for Claude Code\n\nRead AGENTS.md first; it holds the rules for every agent.\n' },
+    ],
     teams: [
       { name: 'friends', kind: 'SHARED', role: 'MEMBER', sees_all_groups: false,
         members: [person('dimitris', 'MEMBER', []), person('maria', 'ADMIN', []), person('eve', 'MEMBER', [])],
@@ -4081,7 +4416,47 @@ const dProject = (id, key, harness) => {
 const dGroup = (t, path) => t.groups.find(g => g.path === path) || fail(`${t.name} has no group ${path}.`);
 const dAdmin = t => { if (t.role !== 'ADMIN') fail(`Only an admin of ${t.name} can do that.`); };
 
+// The text of each rule, apart from the state as the server keeps it apart.
+const DEMO_RULE_TEXT = {
+  '\nhouse-style': '# House style\n\n- Write for a reader who skims: the point first, then the detail.\n- Name things in product terms, never internal ones.\n- Run the tests before saying something works.\n',
+  'github.com/demo-team/demo-api\npayments': '# Payments\n\n- Refunds go through `payments/refunds.py` only.\n- Ask before changing anything under payments/.\n',
+};
+const dRule = (name, project) => DB.rules.find(r => r.name === name && r.project === (project || null))
+  || fail(`You have no rule named '${name}' ${project ? `for project '${project}'` : 'for every project'}.`);
+const dCredentials = text => text.split('\n').flatMap((line, i) => (/\baist_[A-Za-z0-9_-]{20,}|\bgh[pousr]_[A-Za-z0-9]{36,}|\bsk-[A-Za-z0-9_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(line) ? [i + 1] : []));
+const dSaveRule = (r, b) => {
+  const lines = dCredentials(b.text);
+  if (lines.length && !b.confirmed) return { name: r.name, saved: false, credential_lines: lines, revision: null, unchanged: false };
+  const key = (r.project || '') + '\n' + r.name, unchanged = DEMO_RULE_TEXT[key] === b.text;
+  if (!unchanged) Object.assign(r, { revision: r.revision + 1, pushed_by: dMe(), updated_on: dNow() });
+  DEMO_RULE_TEXT[key] = b.text;
+  return { name: r.name, saved: true, credential_lines: lines, revision: r.revision, unchanged };
+};
+const dRuleAgents = (r, agents) => {
+  const other = !r.project && DB.rules.find(x => x !== r && !x.project && x.agents.some(a => agents.includes(a)));
+  if (other) fail(`Your rule '${other.name}' is already the file for every project of one of these agents. Take that agent off '${other.name}' first, or make this a rule for a project.`);
+  r.agents = ['claude_code', 'codex'].filter(a => agents.includes(a));
+};
+
 const DEMO_ROUTES = [
+  [/^\/api\/rules$/, b => {
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(b.name || '')) fail(`A rule name is lowercase letters and digits in groups joined by single hyphens, like 'house-style'. Received: '${b.name}'.`);
+    if (DB.rules.some(r => r.name === b.name && r.project === (b.project || null))) fail(`You already have a rule named '${b.name}' there. Edit it, or pick another name.`);
+    const r = { name: b.name, project: b.project || null, agents: [], revision: 0, pushed_by: dMe(), updated_on: dNow() };
+    const said = dSaveRule(r, b);
+    if (!said.saved) return said;
+    dRuleAgents(r, b.agents || []);
+    DB.rules.push(r);
+    DB.rules.sort((a, c) => ((a.project || '') + '\n' + a.name).localeCompare((c.project || '') + '\n' + c.name));
+    return said;
+  }],
+  [/^\/api\/rules\/([^/]+)\/edit$/, (b, name) => dSaveRule(dRule(name, b.project), b)],
+  [/^\/api\/rules\/([^/]+)\/agents$/, (b, name) => { const r = dRule(name, b.project); dRuleAgents(r, b.agents || []); return { agents: r.agents }; }],
+  [/^\/api\/rules\/([^/]+)\/remove$/, (b, name) => { const r = dRule(name, b.project); DB.rules = DB.rules.filter(x => x !== r); return { name }; }],
+  [/^\/api\/rules\/([^/?]+)\/text(?:\?project=(.+))?$/, (b, name, project) => {
+    const r = dRule(name, project), text = DEMO_RULE_TEXT[(r.project || '') + '\n' + r.name] || '';
+    return { name, project: r.project, revision: r.revision, text, credential_lines: dCredentials(text) };
+  }],
   [/^\/api\/skills\/([^/]+)\/machines\/([^/]+)$/, (b, name, id) => {
     const s = dMine(name);
     const harness = b.harness || 'claude_code', project = b.project || null;
@@ -4294,7 +4669,7 @@ async function demoApi(path, body) {
   if (path === '/api/state') return JSON.parse(JSON.stringify(DB));
   for (const [re, handler] of DEMO_ROUTES) {
     const m = re.exec(path);
-    if (m) return handler(body || {}, ...m.slice(1).map(decodeURIComponent)) || {};
+    if (m) return handler(body || {}, ...m.slice(1).map(x => x && decodeURIComponent(x))) || {};
   }
   fail(`The demo does not know ${path}.`);
 }

@@ -262,7 +262,7 @@ async def test_a_skill_on_one_computer_says_so_and_a_tick_puts_it_on_every_one(s
     dimitris = await sign_in("dimitris")
     page = dimitris.page
     await _open_every_project(dimitris)
-    table = page.get_by_role("table", name="Skills for every project")
+    table = page.get_by_role("table", name="What your agents read in every project")
     row = table.get_by_role("row").filter(has_text="sql-style")
     await expect(row.get_by_text("Only on macbook")).to_be_visible()
     tick = row.get_by_role("checkbox", name="sql-style for Claude Code")
@@ -307,7 +307,7 @@ async def test_codex_is_a_column_that_names_the_other_agents_reading_the_same_fo
     dimitris = await sign_in("dimitris")
     page = dimitris.page
     await _open_every_project(dimitris)
-    table = page.get_by_role("table", name="Skills for every project")
+    table = page.get_by_role("table", name="What your agents read in every project")
     codex = table.get_by_role("columnheader", name="Codex")
     await expect(codex.locator("[title*='Gemini CLI']")).to_have_count(1)
     await expect(table.get_by_role("checkbox", name="meeting-notes for Codex")).to_be_checked()
@@ -407,7 +407,7 @@ async def test_an_agent_is_added_to_a_computer_and_given_a_skill(sign_in):
     await dialog.get_by_role("radio", name="Codex").check()
     await dialog.get_by_role("button", name="Add", exact=True).click()
     await expect(page.get_by_role("heading", name="desktop", level=1)).to_be_visible()
-    await expect(page.get_by_role("table", name="Coding agents").get_by_text("Codex")).to_be_visible()
+    await expect(page.get_by_role("table", name="Coding agents").get_by_text("Codex", exact=True)).to_be_visible()
 
     await _add_to(page, "desktop", "Skills…")
     dialog = page.get_by_role("dialog", name="Add skills to desktop")
@@ -913,7 +913,7 @@ async def test_a_computer_that_never_synced_shows_no_agent_until_it_does(browser
     await expect(page.get_by_text('Not synced yet: say "sync aistack" there.')).to_be_visible()
     await navigation.get_by_role("link", name="Every project").click()
     # The columns are the agents found on the person's computers, and nothing else.
-    table = page.get_by_role("table", name="Skills for every project")
+    table = page.get_by_role("table", name="What your agents read in every project")
     await expect(table.get_by_role("columnheader", name="Codex")).to_be_visible()
     await expect(table.get_by_role("columnheader", name="Claude Code")).to_have_count(0)
     await context.close()
