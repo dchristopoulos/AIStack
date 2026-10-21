@@ -1,0 +1,1401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>AIStack</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232259d6'/%3E%3Cpath d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5' transform='translate(5 5) scale(.92)' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#f4f4f6">
+<script>
+// Appearance is chosen in Settings and kept in this browser only. It is applied before the
+// page paints, so a dark choice never flashes light first.
+window.appearance = (() => {
+  const KEY = 'aistack.appearance.v1';
+  const ACCENTS = ['blue', 'teal', 'green', 'amber', 'rose', 'graphite'];
+  const THEMES = ['system', 'light', 'dark'];
+  const system = matchMedia('(prefers-color-scheme: dark)');
+  let chosen = {};
+  try { chosen = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) { /* private mode or bad JSON: defaults */ }
+  const get = () => ({
+    theme: THEMES.includes(chosen.theme) ? chosen.theme : 'system',
+    accent: ACCENTS.includes(chosen.accent) ? chosen.accent : 'blue',
+  });
+  function apply() {
+    const { theme, accent } = get(), root = document.documentElement;
+    root.dataset.theme = theme === 'system' ? (system.matches ? 'dark' : 'light') : theme;
+    root.dataset.accent = accent;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = root.dataset.theme === 'dark' ? '#161719' : '#f4f4f6';
+  }
+  function set(change) {
+    chosen = { ...get(), ...change };
+    try { localStorage.setItem(KEY, JSON.stringify(chosen)); } catch (_) { /* kept for this visit only */ }
+    apply();
+  }
+  system.addEventListener('change', apply);
+  apply();
+  return { get, set, ACCENTS, THEMES };
+})();
+</script>
+<style>
+/* Tokens: docs/design-system.md. Light is the base; [data-theme="dark"] swaps the neutrals and
+   [data-accent] swaps the one colour that marks what you can act on and where you are. */
+:root {
+  color-scheme: light;
+  --bg: #f4f4f6;
+  --band: #fafafb;
+  --surface: #ffffff;
+  --surface-2: #efeff2;
+  --head: #f8f8fa;
+  --active: #e7e7eb;
+  --border: #e2e2e7;
+  --border-strong: #cdcdd4;
+  --track: #8b8c95; /* 3.3:1 on white: an off switch must still be seen */
+  --text: #18181b;
+  --ink-hover: #3a3a41;
+  --inverse: #ffffff;
+  --muted: #585962;
+  --faint: #696a73;
+  --purple: #7422b8;
+  --purple-soft: #f6effd;
+  --amber-dot: #e09512;
+  --danger: #c4242b;
+  --danger-soft: #fdf0f0;
+  --ok: #1f8a3d;
+  --scrim: rgba(24, 24, 27, .42);
+  --shadow-menu: 0 0 0 1px rgba(24, 24, 27, .04), 0 2px 4px rgba(24, 24, 27, .04), 0 12px 28px -6px rgba(24, 24, 27, .16);
+  --shadow-lg: 0 0 0 1px rgba(24, 24, 27, .04), 0 16px 32px -8px rgba(24, 24, 27, .14), 0 40px 80px -16px rgba(24, 24, 27, .22);
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23585962' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+
+  /* Accent, per theme: the fill (-l/-d) and the text that sits on it (on-…-l/-d). Blue unless chosen. */
+  --a-l: #2259d6; --a-d: #7aa7ff; --on-a-l: #ffffff; --on-a-d: #0c1a36;
+  --accent: var(--a-l);
+  --on-accent: var(--on-a-l);
+  --accent-text: color-mix(in srgb, var(--accent) 88%, var(--text));
+  --accent-soft: color-mix(in srgb, var(--accent) 11%, var(--surface));
+  --accent-hover: color-mix(in srgb, var(--accent) 85%, var(--text));
+
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  --top: 56px;
+  --side: 264px;
+  --gutter: 32px;
+  --step: 22px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #161719;
+  --band: #1a1b1e;
+  --surface: #1e1f23;
+  --surface-2: #26272c;
+  --head: #212226;
+  --active: #2c2d33;
+  --border: #2e2f35;
+  --border-strong: #41434a;
+  --track: #71737c;
+  --text: #ececef;
+  --ink-hover: #cfd0d5;
+  --inverse: #161719;
+  --muted: #a6a8b0;
+  --faint: #8f919a;
+  --purple: #c9a2f5;
+  --purple-soft: #2a2236;
+  --amber-dot: #f2b13a;
+  --danger: #ff7a7f;
+  --danger-soft: #3a1d20;
+  --ok: #6bcb7f;
+  --scrim: rgba(8, 8, 10, .62);
+  --shadow-menu: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 28px -6px rgba(0, 0, 0, .55);
+  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, .06), 0 24px 64px -8px rgba(0, 0, 0, .65);
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a6a8b0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23161719' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+  --accent: var(--a-d);
+  --on-accent: var(--on-a-d);
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  --accent-hover: color-mix(in srgb, var(--accent) 85%, var(--text));
+}
+[data-accent="blue"] { --a-l: #2259d6; --a-d: #7aa7ff; --on-a-l: #ffffff; --on-a-d: #0c1a36; }
+[data-accent="teal"] { --a-l: #0e7369; --a-d: #4fd1c0; --on-a-l: #ffffff; --on-a-d: #042b28; }
+[data-accent="green"] { --a-l: #1b7a3c; --a-d: #6ad38a; --on-a-l: #ffffff; --on-a-d: #062712; }
+[data-accent="amber"] { --a-l: #a85208; --a-d: #f5b942; --on-a-l: #ffffff; --on-a-d: #2e1d02; }
+[data-accent="rose"] { --a-l: #c0264b; --a-d: #ff8aa0; --on-a-l: #ffffff; --on-a-d: #3a0714; }
+[data-accent="graphite"] { --a-l: #18181b; --a-d: #ececef; --on-a-l: #ffffff; --on-a-d: #161719; }
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 var(--font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+h1, h2, h3, p, ul, ol, fieldset { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+fieldset { border: 0; min-width: 0; }
+button, input, select { font: inherit; color: inherit; }
+a { color: inherit; text-decoration: none; }
+svg.ico { flex: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+/* The first stop for a keyboard: unseen until focused. */
+.skip-link { position: fixed; left: 12px; top: -48px; z-index: 200; padding: 8px 14px; border-radius: var(--r-sm); background: var(--text); color: var(--inverse); font-weight: 500; }
+.skip-link:focus-visible { top: 10px; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: -.01em; }
+code, kbd { font-family: var(--mono); font-size: 12px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
+.dot { flex: none; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+.dot.accent { background: var(--accent); }
+.dot.amber { background: var(--amber-dot); }
+
+/* ---------- shell ---------- */
+#app {
+  display: grid; min-height: 100vh;
+  grid-template-columns: calc(72px + var(--side)) minmax(0, 1fr);
+  grid-template-rows: var(--top) 1fr;
+  grid-template-areas: "top top" "nav main";
+}
+.topbar {
+  grid-area: top; position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: 12px;
+  height: var(--top); padding: 0 20px;
+  background: var(--band); border-bottom: 1px solid var(--border);
+}
+.topbar .drawer-btn { display: none; }
+/* Where you are, written like a path: each part above the last one opens that place. */
+.home { flex: none; display: inline-flex; align-items: center; gap: 10px; height: 32px; padding-right: 4px; font-weight: 650; font-size: 15px; letter-spacing: -.02em; }
+.where { flex: 1; min-width: 0; display: flex; }
+.where ol {
+  display: flex; align-items: center; min-width: 0; max-width: 100%; height: 34px; padding: 0 6px 0 10px;
+  border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface);
+}
+.where ol > svg { flex: none; color: var(--faint); margin-right: 4px; }
+.where li { display: flex; align-items: center; min-width: 0; }
+.where li:not(:last-child) { flex: 0 1 auto; }
+/* Where you are never gives way: the parts above it take the ellipsis first. */
+.where li:last-child { flex: none; max-width: 60%; }
+.where .sep { flex: none; padding: 0 2px; color: var(--border-strong); }
+.where a, .where span.seg {
+  display: block; min-width: 0; padding: 3px 6px; border-radius: 6px;
+  color: var(--muted); font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.where a:hover { background: var(--surface-2); color: var(--text); }
+.where [aria-current="page"] { color: var(--text); font-weight: 550; }
+.where .seg.mono, .where a.mono { font-size: 13px; }
+.place-pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12.5px; white-space: nowrap;
+}
+a.place-pill:hover { color: var(--text); border-color: var(--border-strong); }
+.dot.ok { background: var(--ok); }
+.logo { flex: none; width: 26px; height: 26px; border-radius: 8px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; }
+.top-right { display: flex; align-items: center; gap: 8px; }
+
+/* The rail, the space's list, and the account bar under both: one sticky column. */
+.nav-shell {
+  grid-area: nav; position: sticky; top: var(--top); height: calc(100vh - var(--top));
+  display: grid; grid-template-columns: 72px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas: "rail side" "account account";
+  border-right: 1px solid var(--border);
+}
+.rail {
+  grid-area: rail; min-height: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 14px 0; background: var(--surface-2); border-right: 1px solid var(--border); overflow-y: auto;
+}
+.rail-sep { width: 32px; height: 1px; background: var(--border-strong); margin: 2px 0; flex: none; }
+.rail-btn {
+  position: relative; flex: none; width: 44px; height: 44px; display: grid; place-items: center;
+  border: 1px solid var(--border-strong); border-radius: 50%; background: var(--surface); color: var(--text);
+  font: 600 16px var(--font); text-transform: uppercase; cursor: pointer;
+  transition: border-radius .15s, background .15s, color .15s;
+}
+.rail-btn:hover { border-radius: 14px; }
+.rail-btn[aria-current="page"] { border-radius: 14px; background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.rail-btn::before {
+  content: ""; position: absolute; left: -14px; top: 50%; width: 4px; height: 0; border-radius: 0 4px 4px 0;
+  background: var(--accent); transform: translateY(-50%); transition: height .15s;
+}
+.rail-btn:hover::before { height: 18px; }
+.rail-btn[aria-current="page"]::before { height: 34px; }
+.rail-btn.ghost { border-style: dashed; color: var(--muted); }
+.rail-item { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; text-decoration: none; }
+.rail-item .rail-name { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 11.5px var(--font); color: var(--muted); }
+.rail-item[aria-current="page"] .rail-name { color: var(--text); }
+.rail-item:hover .rail-btn { border-radius: 14px; }
+.rail-item:hover .rail-btn::before { height: 18px; }
+.rail-item[aria-current="page"] .rail-btn { border-radius: 14px; background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.rail-item[aria-current="page"] .rail-btn::before { height: 34px; }
+/* Where a skill is: one line per computer, its agents as links. Information, not controls. */
+.where-list { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.where-line { min-width: 0; overflow-wrap: anywhere; }
+/* A line of text, not a row of boxes: a long computer name wraps, and its agents follow it. */
+.where-line svg { display: inline-block; margin-right: 6px; vertical-align: -2px; color: var(--faint); }
+.where-line .on { margin-right: 6px; color: var(--muted); }
+.where-line a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+.where-line a:hover { text-decoration-color: var(--accent); color: var(--accent-text); }
+.not-placed { color: var(--faint); font-size: 13px; }
+.folder-path { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; }
+.target-group { border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 4px; }
+.target-group + .target-group { margin-top: 8px; }
+.target-group .head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 4px; font-weight: 500; font-size: 13px; }
+.rail-btn .pip { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface-2); }
+.space-head { padding: 2px 8px 12px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
+h1.mono { font-size: 28px; letter-spacing: -.03em; }
+h1 .mono { font-size: inherit; letter-spacing: -.03em; }
+.space-head h2.mono { font-size: 15px; overflow-wrap: anywhere; }
+.space-head h2 { font-size: 15px; font-weight: 600; letter-spacing: -.02em; }
+.space-head p { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+/* Computers as a folder tree: computer, then each coding agent, then its folders. */
+.tree { display: flex; flex-direction: column; gap: 1px; }
+.tree-comp { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px 0 4px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text); font-weight: 500; cursor: pointer; text-align: left; }
+.tree-comp:hover { background: var(--active); }
+.tree-comp .chev { flex: none; display: grid; place-items: center; width: 16px; color: var(--faint); transition: transform .15s var(--ease); }
+.tree-comp[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.tree-comp svg.ico { color: var(--muted); }
+.tree-comp .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-kids { margin: 0 0 6px 15px; padding-left: 8px; border-left: 1px solid var(--border); }
+.tree-agent { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; color: var(--muted); font-size: 13px; }
+.tree-agent svg { color: var(--faint); }
+.nav-item.leaf { height: 30px; padding-left: 30px; font-size: 13px; }
+.nav-item.leaf .path { color: var(--faint); font: 11.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-add { display: flex; align-items: center; gap: 8px; height: 28px; width: 100%; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--faint); font-size: 13px; cursor: pointer; text-align: left; }
+.tree-add:hover { background: var(--active); color: var(--text); }
+.tree-code .tree-add span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-code-line { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px 0 30px; color: var(--faint); font-size: 12px; }
+.tree-code-line > span { flex: 1; min-width: 0; }
+.sidebar {
+  grid-area: side; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  padding: 16px 12px 12px;
+  overflow-y: auto;
+}
+.side-brand { display: none; }
+.side-brand .grow { flex: 1; }
+.nav { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.nav-item, .nav-btn {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  height: 32px; padding: 0 8px; border: 0; border-radius: var(--r-sm);
+  background: none; color: var(--muted); min-width: 0; cursor: pointer; text-align: left;
+}
+.nav-item svg, .nav-btn svg { color: var(--faint); }
+.nav-item:hover, .nav-btn:hover { background: var(--active); color: var(--text); }
+.nav-item[aria-current="page"] { background: var(--accent-soft); color: var(--text); font-weight: 550; box-shadow: inset 2px 0 0 var(--accent); }
+.nav-item[aria-current="page"] svg { color: var(--accent-text) !important; }
+.nav-item[aria-current="page"] svg, .nav-item:hover svg, .nav-btn:hover svg { color: var(--text); }
+.nav-item .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.nav-item .label.mono { font-size: 13px; }
+.nav-item .count { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.nav-item .count.upd { color: var(--accent-text); }
+/* A team's groups sit under its name, a step in for each level. */
+.nav-item.sub { --d: 0; width: auto; height: auto; min-height: 28px; margin-right: 26px; padding-top: 4px; padding-bottom: 4px; padding-left: calc(34px + var(--d) * 14px); font-size: 13px; }
+.nav-item.sub .label { min-width: 0; white-space: normal; overflow-wrap: break-word; }
+.nav-item.sub .label.mono { font-size: 12.5px; }
+.nav-heading { display: flex; align-items: center; height: 32px; margin-top: 16px; padding: 0 8px; font-size: 12px; font-weight: 500; color: var(--faint); }
+.nav-foot { margin-top: auto; padding-top: 16px; }
+/* Local mode has no teams, so no column of spaces. */
+#app.no-rail { grid-template-columns: var(--side) minmax(0, 1fr); }
+#app.no-rail .nav-shell { grid-template-columns: 0 minmax(0, 1fr); }
+#app.no-rail .rail { display: none; }
+.account {
+  grid-area: account; display: flex; align-items: center; gap: 10px;
+  height: 56px; padding: 0 12px 0 20px;
+  background: var(--surface-2); border-top: 1px solid var(--border);
+}
+.account .avatar { width: 32px; height: 32px; font-size: 13px; }
+.account .who { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.account .who b { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account .who span { font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-heading .btn.icon { width: 24px; height: 24px; margin-left: auto; margin-right: -4px; }
+.avatar {
+  flex: none; width: 24px; height: 24px; border-radius: 6px;
+  display: grid; place-items: center;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border-strong);
+  font: 600 12px var(--font); text-transform: uppercase;
+}
+.avatar.round { border-radius: 50%; }
+.avatar.lg { width: 44px; height: 44px; border-radius: var(--r); font-size: 18px; background: var(--accent-soft); color: var(--accent-text); border-color: transparent; }
+.scrim { display: none; }
+
+main { grid-area: main; min-width: 0; }
+main:focus { outline: none; }
+.band { background: var(--band); border-bottom: 1px solid var(--border); }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 var(--gutter); }
+.band > .wrap { padding-top: 32px; padding-bottom: 32px; }
+.band.has-tabs > .wrap { padding-bottom: 0; }
+.wrap.body { padding-top: 24px; padding-bottom: 96px; container: body / inline-size; }
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 24px; }
+.page-head .titles { flex: 1 1 260px; min-width: 0; }
+h1 { font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -.04em; overflow-wrap: anywhere; }
+.subtitle { color: var(--muted); margin-top: 6px; }
+.team-head { display: flex; align-items: center; gap: 16px; }
+.team-head .titles { min-width: 0; }
+.team-head .line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.team-head .subtitle { margin-top: 2px; font-size: 13px; }
+.note { display: flex; gap: 8px; align-items: flex-start; margin-top: 16px; color: var(--muted); font-size: 13px; }
+.only-here { margin-bottom: 16px; }
+.only-here .card-body p { margin: 0; }
+.note svg { margin-top: 3px; color: var(--faint); }
+
+/* ---------- controls ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 32px; padding: 0 12px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text);
+  font-size: 13.5px; font-weight: 500; white-space: nowrap; cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.btn:hover { background: var(--surface-2); border-color: var(--faint); }
+.btn svg { color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary svg { color: inherit; }
+.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.danger { color: var(--danger); }
+.btn.danger svg { color: inherit; }
+.btn.danger:hover { background: var(--danger-soft); border-color: var(--danger); }
+.btn.danger.solid { background: var(--danger); border-color: var(--danger); color: var(--inverse); }
+.btn.danger.solid:hover { filter: brightness(.92); }
+.btn.ghost { border-color: transparent; background: none; color: var(--muted); }
+.btn.ghost:hover { background: var(--active); border-color: transparent; color: var(--text); }
+.btn.ghost:hover svg { color: var(--text); }
+.btn.icon { width: 32px; padding: 0; }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 13px; }
+[aria-disabled="true"] { opacity: .55; pointer-events: none; }
+[aria-busy="true"] { cursor: progress; }
+:disabled { opacity: .5; cursor: not-allowed; }
+
+.input {
+  width: 100%; height: 32px; padding: 0 12px;
+  border: 1px solid var(--track); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text);
+  transition: border-color .12s, box-shadow .12s;
+}
+.input::placeholder { color: var(--faint); opacity: 1; }
+.input:hover { border-color: var(--faint); }
+.input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.input[type="search"]::-webkit-search-cancel-button { display: none; }
+select.input {
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+  padding-right: 32px; text-overflow: ellipsis;
+  background-image: var(--chevron); background-repeat: no-repeat;
+  background-position: right 10px center; background-size: 12px;
+}
+select.input.compact { width: auto; height: 28px; padding-left: 8px; padding-right: 26px; background-position: right 8px center; font-size: 13px; }
+input[type="radio"], input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: none;
+  width: 16px; height: 16px; margin: 0;
+  border: 1px solid var(--track); background: var(--surface) center / 12px no-repeat;
+  cursor: pointer; transition: border-color .12s, background-color .12s;
+}
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"] { border-radius: 4px; }
+input[type="radio"]:hover, input[type="checkbox"]:hover { border-color: var(--accent); }
+input[type="radio"]:checked { border-color: var(--accent); background-image: radial-gradient(circle, var(--accent) 0 3.5px, transparent 4px); }
+input[type="checkbox"]:checked { border-color: var(--accent); background-color: var(--accent); background-image: var(--tick); }
+.search { position: relative; flex: 0 1 300px; min-width: 180px; }
+.search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--faint); pointer-events: none; }
+.search .input { padding-left: 32px; padding-right: 36px; }
+.search kbd { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); line-height: 16px; color: var(--muted); pointer-events: none; }
+.search:focus-within kbd { display: none; }
+
+.switch {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 28px; padding: 2px 4px;
+  border: 0; border-radius: var(--r-sm); background: none;
+  color: var(--muted); font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.switch:hover { color: var(--text); }
+.switch .track { flex: none; position: relative; width: 28px; height: 16px; border-radius: 8px; background: var(--track); transition: background .15s; }
+.switch .track::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
+  border-radius: 50%; background: #fff; transition: transform .15s, background .15s;
+}
+.switch[aria-checked="true"] { color: var(--text); }
+.switch[aria-checked="true"] .track { background: var(--accent); }
+.switch[aria-checked="true"] .track::after { transform: translateX(12px); background: var(--on-accent); }
+.switch[aria-disabled="true"] { opacity: 1; pointer-events: auto; cursor: not-allowed; }
+.switch[aria-disabled="true"] > span { opacity: .5; }
+.switch-wrap { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.switch-why { color: var(--faint); font-size: 12px; white-space: normal; }
+.switch .mono { font-size: 12.5px; }
+[data-tip]:hover::after, [data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20;
+  width: max-content; max-width: 260px; padding: 6px 10px;
+  border-radius: var(--r-sm); background: var(--text); color: var(--inverse);
+  font: 400 12px/1.4 var(--font); white-space: normal; text-align: left;
+  box-shadow: var(--shadow-menu);
+}
+/* Escape hides a tooltip until the pointer or focus moves on (WCAG 1.4.13). */
+.tip-hidden[data-tip]::after { display: none; }
+/* Near the bottom of the window there is no room below, and the bars are far away. */
+[data-tip].tip-up::after { top: auto; bottom: calc(100% + 6px); }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 22px; padding: 0 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; max-width: 100%;
+}
+.badge.mono { font: 500 11.5px/1 var(--mono); }
+/* A badge that holds a name or a path wraps rather than spill over the next column. */
+.chips .badge { height: auto; min-height: 22px; padding-top: 4px; padding-bottom: 4px; line-height: 1.2; white-space: normal; overflow-wrap: anywhere; }
+.badge.solid { background: var(--text); border-color: var(--text); color: var(--inverse); }
+.badge.info { background: var(--accent-soft); border-color: transparent; color: var(--accent-text); }
+.badge.private { background: var(--purple-soft); border-color: transparent; color: var(--purple); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+
+/* ---------- stats ---------- */
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
+.stat { padding: 16px 20px 14px; min-width: 0; }
+.stat + .stat { border-left: 1px solid var(--border); }
+.stat .k { font-size: 13px; color: var(--muted); }
+.stat .v { display: flex; align-items: center; gap: 10px; font-size: 28px; line-height: 1.25; font-weight: 600; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.stat .s { font-size: 12.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+
+/* ---------- tables ---------- */
+.tbl { display: grid; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
+.tbl.library { grid-template-columns: minmax(240px, 1fr) fit-content(180px) minmax(0, 1.1fr) auto; }
+.tbl.folder { grid-template-columns: minmax(240px, 1fr) fit-content(180px) auto auto; }
+.tbl.tree { grid-template-columns: minmax(240px, 1fr) auto fit-content(180px) auto; }
+.tbl.groups { --gx: 8px; }
+.tr {
+  --d: 0;
+  display: grid; grid-template-columns: subgrid; grid-column: 1 / -1;
+  border-top: 1px solid var(--border);
+  transition: background-color .1s;
+}
+.tr:last-child { border-radius: 0 0 calc(var(--r) - 1px) calc(var(--r) - 1px); }
+.tr:not(.th-row):not(.grp):not(.hint-row):hover { background-color: var(--head); }
+.th-row {
+  position: sticky; top: var(--top); z-index: 5;
+  border-top: 0; border-radius: calc(var(--r) - 1px) calc(var(--r) - 1px) 0 0;
+  background: var(--head); box-shadow: 0 1px 0 var(--border);
+}
+.th { display: flex; align-items: center; height: 36px; padding: 0 16px; font-size: 12px; font-weight: 500; color: var(--faint); white-space: nowrap; }
+.th-sort { display: inline-flex; align-items: center; gap: 4px; height: 24px; margin: 0 -6px; padding: 0 6px; border: 0; border-radius: 4px; background: none; color: inherit; font-weight: inherit; cursor: pointer; }
+.th-sort:hover { color: var(--text); background: var(--active); }
+.th-sort .arrow { display: inline-flex; opacity: 0; transition: transform .15s; }
+.th-sort:hover .arrow, .th-sort:focus-visible .arrow { opacity: .5; }
+.th-sort .arrow.on { opacity: 1; color: var(--text); }
+.th-sort .arrow.desc { transform: rotate(180deg); }
+[aria-sort="ascending"] .th-sort, [aria-sort="descending"] .th-sort { color: var(--text); }
+.td { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 12px; }
+.th { padding: 0 12px; }
+.td:first-child, .th:first-child { padding-left: 16px; }
+.td:last-child, .th:last-child { padding-right: 16px; }
+.td.row { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 4px 8px; }
+.td.end { justify-content: flex-end; flex-wrap: nowrap; }
+.td.nowrap { white-space: nowrap; }
+.tr > .c-main { padding-left: calc(16px + var(--d) * var(--step)); }
+/* Indent guides: one hairline per ancestor, drawn under the parent's chevron. */
+.tr.grp, .tr.hint-row, .tr > .c-main {
+  background-image: repeating-linear-gradient(90deg, var(--border-strong) 0 1px, transparent 1px var(--step));
+  background-repeat: no-repeat;
+  background-size: max(0px, calc(var(--d) * var(--step) - var(--step) + 1px)) 100%;
+  background-position: calc(16px + var(--gx, var(--step) / 2)) 0;
+}
+.name { font: 600 13.5px/1.5 var(--mono); letter-spacing: -.01em; overflow-wrap: anywhere; }
+/* A person's name is not something to type, so it is never in monospace. */
+.person { font-weight: 600; overflow-wrap: anywhere; }
+.name-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.t1 { color: var(--text); overflow-wrap: anywhere; }
+.t1.rev { display: inline-flex; align-items: center; gap: 8px; }
+.t1.rev .mono { color: var(--muted); }
+.t2 { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+a.link { text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+a.link:hover { text-decoration-color: var(--text); }
+.machines { display: flex; flex-wrap: wrap; gap: 0 12px; }
+.tr.update-row { border-top: 0; }
+.td.update-cell { grid-column: 1 / -1; padding: 0 16px 12px; }
+/* A skill's row and its update notice are one thing to the pointer. */
+.tr:has(+ .update-row:hover), .tr:hover + .update-row { background-color: var(--head); }
+.update {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  padding: 6px 6px 6px 12px; border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--head); font-size: 13px;
+}
+.update strong { font-weight: 500; }
+.update .grow { flex: 1 1 auto; color: var(--muted); }
+.in-mine { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 4px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.tbl-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 24px; margin-top: 12px; padding: 0 2px; color: var(--muted); font-size: 13px; }
+.tbl-foot .count { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+/* group header rows inside the skills tree */
+.tr.grp, .tr.hint-row { display: flex; align-items: center; }
+.tr.grp { min-height: 44px; padding: 0 12px 0 calc(16px + var(--d) * var(--step)); background-color: var(--head); }
+.grp-cell { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.group-toggle {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  min-height: 44px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left;
+}
+.group-toggle .chev { flex: none; width: var(--step); display: grid; place-items: center; color: var(--faint); transition: transform .15s; }
+.group-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.group-toggle:hover .chev, .group-toggle:hover .gicon { color: var(--text); }
+.group-toggle .gname { min-width: 0; font: 600 13px var(--mono); overflow-wrap: anywhere; }
+.group-toggle .gname.plain { font: 600 13.5px var(--font); }
+.group-toggle .gicon { display: inline-flex; color: var(--muted); margin-left: -4px; }
+.group-toggle .count { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.tr.hint-row { padding: 12px 16px 12px calc(16px + var(--d) * var(--step)); color: var(--muted); font-size: 13px; }
+.tree-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.tree-name .gicon { display: inline-flex; color: var(--muted); }
+.tree-name .path { font: 600 13px var(--mono); overflow-wrap: anywhere; }
+.tree-name .parent { color: var(--faint); font-weight: 400; }
+
+.empty {
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px;
+  padding: 64px 24px;
+  background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--r);
+}
+.empty .glyph { width: 40px; height: 40px; border-radius: 8px; display: grid; place-items: center; border: 1px solid var(--border); background: var(--head); color: var(--muted); margin-bottom: 8px; }
+.empty h2 { font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
+.empty p { color: var(--muted); max-width: 440px; }
+.empty .btn { margin-top: 8px; }
+
+/* ---------- tabs ---------- */
+.tabs { display: flex; gap: 4px; margin: 24px -12px -1px; padding: 0 0 0 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 44px; padding: 0 12px;
+  border: 0; background: none;
+  color: var(--muted); white-space: nowrap; cursor: pointer;
+}
+.tab::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; background: transparent; }
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); font-weight: 500; }
+.tab[aria-selected="true"]::after { background: var(--accent); }
+.tab:focus-visible { outline-offset: -4px; }
+.tab .count { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; margin-bottom: 16px; }
+.panel-head p { flex: 1 1 320px; }
+.panel-head a.btn { height: auto; min-height: 36px; padding-top: 6px; padding-bottom: 6px; white-space: normal; overflow-wrap: anywhere; }
+
+/* ---------- menu ---------- */
+.menu-wrap { position: relative; }
+.menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+  min-width: 200px; padding: 4px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+  box-shadow: var(--shadow-menu);
+}
+.menu.up { top: auto; bottom: calc(100% + 4px); }
+.menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  height: 32px; padding: 0 8px; border: 0; border-radius: 5px;
+  background: none; font-size: 13.5px; cursor: pointer; text-align: left; white-space: nowrap;
+}
+.menu-item svg { color: var(--muted); }
+.menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); outline: none; }
+.menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.menu-item.danger, .menu-item.danger svg { color: var(--danger); }
+.menu-item.danger:hover, .menu-item.danger:focus-visible { background: var(--danger-soft); }
+
+/* ---------- cards (settings) ---------- */
+.settings { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (min-width: 1180px) { .settings { grid-template-columns: minmax(0, 1fr) 320px; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
+.card + .card { margin-top: 24px; }
+.card-body { padding: 24px; }
+.card h2 { font-size: 18px; font-weight: 600; letter-spacing: -.02em; }
+.card h2.small { font-size: 14px; letter-spacing: -.01em; }
+.choices { margin: 12px 0; padding-left: 18px; }
+.choices li { margin: 0 0 10px; }
+.choices p { margin: 2px 0 0; color: var(--muted); }
+/* A unified diff, as text: what an update would change, line by line. */
+.diff { margin: 0; padding: 10px 12px; max-height: 50vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--head); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff .add { color: var(--ok); }
+.diff .del { color: var(--danger); }
+.revisions { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.revisions li { display: flex; align-items: center; gap: 10px; }
+.revisions .grow { flex: 1; }
+.removed { margin-top: 16px; font-size: 13px; }
+.removed summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
+.facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 16px; margin: 16px 0 0; font-size: 13px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.card-body p { color: var(--muted); margin-top: 8px; max-width: 600px; }
+.card-foot {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px;
+  padding: 12px 24px; border-top: 1px solid var(--border); background: var(--head); border-radius: 0 0 calc(var(--r) - 1px) calc(var(--r) - 1px);
+  color: var(--muted); font-size: 13px;
+}
+.card.danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.card.danger .card-foot { border-top-color: color-mix(in srgb, var(--danger) 25%, var(--border)); background: var(--danger-soft); }
+
+/* ---------- dialog ---------- */
+dialog.dlg {
+  width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
+  padding: 0; border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg);
+}
+dialog.dlg[open] { animation: pop .16s ease-out; }
+dialog.dlg::backdrop { background: var(--scrim); }
+@keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.985); } }
+.dlg form { display: flex; flex-direction: column; max-height: calc(100vh - 34px); }
+.dlg-head { display: flex; align-items: flex-start; gap: 12px; padding: 20px 16px 0 24px; }
+.dlg-head h2 { flex: 1; font-size: 18px; line-height: 1.3; font-weight: 600; letter-spacing: -.025em; padding-top: 4px; overflow-wrap: anywhere; }
+.dlg-body { padding: 8px 24px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+.dlg-body p { color: var(--muted); overflow-wrap: anywhere; }
+.dlg-foot { display: flex; justify-content: space-between; gap: 8px; padding: 12px 24px; border-top: 1px solid var(--border); background: var(--head); border-radius: 0 0 calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px); }
+.dlg-foot .btn:only-child { margin-left: auto; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label, .picker legend { font-weight: 500; font-size: 13px; color: var(--muted); }
+.field .help { color: var(--muted); font-size: 12.5px; }
+.form-error { color: var(--danger) !important; background: var(--danger-soft); border-radius: var(--r-sm); padding: 8px 12px; font-size: 13px; font-weight: 500; }
+.picker legend { margin-bottom: 6px; padding: 0; }
+.picker-list { border: 1px solid var(--border-strong); border-radius: var(--r-sm); max-height: 220px; overflow-y: auto; padding: 4px; }
+.picker-opt {
+  --d: 0;
+  display: flex; align-items: center; gap: 8px; min-height: 32px; min-width: 0;
+  padding: 4px 8px 4px calc(8px + var(--d) * 20px); border-radius: 4px; cursor: pointer;
+  background-image: repeating-linear-gradient(90deg, var(--border-strong) 0 1px, transparent 1px 20px);
+  background-repeat: no-repeat;
+  background-size: max(0px, calc(var(--d) * 20px - 19px)) 100%;
+  background-position: 15px 0;
+}
+.picker-opt:hover, .picker-opt:has(input:checked) { background-color: var(--surface-2); }
+.picker-opt span { overflow-wrap: anywhere; min-width: 0; }
+.picker-opt svg { color: var(--muted); }
+.check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.check input { margin-top: 2px; }
+.check small { display: block; color: var(--muted); font-size: 12.5px; }
+.picker-opt.choice { align-items: flex-start; padding: 10px 12px; }
+.picker-opt.choice input { margin-top: 2px; }
+.picker-opt.choice strong { display: block; font-weight: 500; }
+.picker-opt.choice small { display: block; color: var(--muted); font-size: 12.5px; }
+.steps { list-style: decimal; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); }
+.code-box { display: flex; gap: 8px; }
+.code-box .input, .input.mono { font-family: var(--mono); font-size: 13px; }
+
+
+/* ---------- library rows and the skill panel ---------- */
+.name-btn { align-self: flex-start; max-width: 100%; padding: 0; border: 0; background: none; color: var(--text); cursor: pointer; text-align: left; }
+.name-btn:hover .name { color: var(--accent-text); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; }
+.head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+dialog.dlg.sheet {
+  width: min(520px, 100vw); height: 100vh; max-height: none; margin: 0 0 0 auto;
+  border-width: 0 0 0 1px; border-radius: var(--r-lg) 0 0 var(--r-lg);
+}
+dialog.dlg.sheet[open] { animation: slide .2s var(--ease); }
+@keyframes slide { from { opacity: .4; transform: translateX(24px); } }
+.dlg.sheet form { height: 100%; max-height: none; }
+.dlg.sheet .dlg-body { flex: 1; gap: 20px; }
+.dlg.sheet .dlg-head h2 { font: 650 18px/1.3 var(--mono); letter-spacing: -.02em; }
+.dlg.sheet .dlg-foot { border-radius: 0; }
+.dlg-body p.lead { color: var(--text); }
+.sheet-sec { display: flex; flex-direction: column; gap: 10px; }
+.sheet-sec + .sheet-sec { padding-top: 20px; border-top: 1px solid var(--border); }
+.sheet-sec legend { color: var(--text); font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.sheet-sec .facts { margin: 0; }
+.sheet-sec.actions { flex-direction: row; flex-wrap: wrap; }
+
+/* ---------- where it lives, settings ---------- */
+.wrap.body.narrow { max-width: 880px; margin-left: 0; }
+.place-title { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+.place-title h2 { font-size: 18px; }
+.status { display: flex; align-items: center; gap: 8px; margin: 2px 0 0 !important; color: var(--muted); font-size: 13px; }
+.section-title { margin: 32px 0 12px; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.choice-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.card.choice-card { display: flex; flex-direction: column; margin: 0; }
+.card.notice { margin-bottom: 16px; }
+.hint { margin-bottom: 12px; }
+.choice-card .card-body { flex: 1; padding: 20px; }
+.choice-card h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.choice-card h3 svg { color: var(--muted); }
+.choice-card .card-foot { justify-content: flex-end; padding: 10px 16px; }
+.card-body.stack { display: flex; flex-direction: column; gap: 20px; }
+.name-field { margin-top: 16px; max-width: 520px; }
+.seg-choice, .swatches { display: flex; flex-wrap: wrap; gap: 12px; }
+.seg-choice legend, .swatches legend { width: 100%; margin-bottom: 10px; padding: 0; font-size: 13px; font-weight: 500; color: var(--muted); }
+.theme-opt { position: relative; display: flex; flex-direction: column; gap: 8px; width: 156px; padding: 8px; border: 1px solid var(--border-strong); border-radius: var(--r); cursor: pointer; }
+.theme-opt:hover { border-color: var(--faint); }
+.theme-opt:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.theme-opt:has(input:focus-visible), .swatch:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The radio covers its whole card, unseen, so the card is the control. */
+.seg-choice input, .swatches input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; border: 0; border-radius: inherit; opacity: 0; cursor: pointer; }
+.opt-label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.opt-label svg { color: var(--muted); }
+/* A tiny page in each theme: a sidebar, a header bar, a row. */
+.preview { display: grid; grid-template-columns: 30% 1fr; grid-template-rows: 14px 1fr; gap: 4px; height: 64px; padding: 6px; border-radius: 8px; border: 1px solid var(--border); }
+.preview i { border-radius: 3px; }
+.preview i:first-child { grid-row: 1 / 3; }
+.preview.light { background: #f4f4f6; } .preview.light i { background: #ffffff; } .preview.light i:nth-child(2) { background: var(--a-l); }
+.preview.dark { background: #161719; } .preview.dark i { background: #26272c; } .preview.dark i:nth-child(2) { background: var(--a-d); }
+.preview.system { background: linear-gradient(105deg, #f4f4f6 50%, #161719 50%); }
+.preview.system i { background: rgba(127, 127, 127, .3); } .preview.system i:nth-child(2) { background: var(--accent); }
+.swatch { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 64px; padding: 8px 4px; border-radius: var(--r); cursor: pointer; --accent: var(--a-l); }
+:root[data-theme="dark"] .swatch { --accent: var(--a-d); }
+.swatch:hover { background: var(--surface-2); }
+.swatch .chip { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); box-shadow: inset 0 0 0 1px rgba(127, 127, 127, .25); }
+.swatch:has(input:checked) .chip { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.swatch:has(input:checked) .opt-label { color: var(--text); font-weight: 550; }
+.swatch .opt-label { color: var(--muted); font-size: 12.5px; }
+
+/* ---------- toasts ---------- */
+#toasts { position: fixed; right: 16px; bottom: 16px; z-index: 100; display: flex; flex-direction: column; gap: 8px; width: min(400px, calc(100vw - 32px)); max-height: 50dvh; overflow-y: auto; pointer-events: none; }
+.toast {
+  pointer-events: auto; flex-shrink: 0;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 8px 12px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+  box-shadow: var(--shadow-menu); font-size: 13.5px;
+  animation: rise .18s ease-out;
+}
+.toast .dot { margin-top: 8px; background: var(--ok); }
+.toast.error .dot { background: var(--danger); }
+.toast.warn .dot { background: var(--amber-dot); }
+.toast p { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.toast .btn { height: 24px; width: 24px; margin-top: -2px; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+/* ---------- skeleton / full-page ---------- */
+.skel { border-radius: 4px; background: var(--active); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .45; } }
+.fullpage { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.fullpage .box { max-width: 440px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.fullpage h1 { font-size: 24px; }
+.fullpage p { color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ---------- narrow ---------- */
+@media (max-width: 820px) {
+  :root { --top: 52px; --gutter: 16px; --step: 16px; }
+  #app { display: block; }
+  .topbar { padding: 0 12px 0 8px; gap: 4px; }
+  .topbar .drawer-btn { display: inline-flex; }
+  .home-text { display: none; }
+  .place-pill .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  /* Only the logo and where you are fit: the sidebar shows the rest. */
+  .where li:not(:nth-last-child(-n+2)) { display: none; }
+  .nav-shell {
+    position: fixed; z-index: 60; top: 0; left: 0; bottom: 0; height: auto;
+    width: min(364px, 92vw); grid-template-columns: 64px minmax(0, 1fr);
+    transform: translateX(-100%); visibility: hidden;
+    transition: transform .2s ease, visibility .2s;
+    box-shadow: var(--shadow-lg);
+  }
+  .side-brand { display: flex; align-items: center; gap: 10px; height: 32px; margin-bottom: 12px; padding: 0 8px; font-weight: 600; font-size: 15px; letter-spacing: -.02em; }
+  /* No visibility transition on the way in: the drawer must be focusable at once. */
+  .drawer-open .nav-shell { transform: none; visibility: visible; transition: transform .2s ease; }
+  .drawer-open .scrim { display: block; position: fixed; inset: 0; z-index: 50; background: var(--scrim); }
+  .band > .wrap { padding-top: 24px; padding-bottom: 24px; }
+  .wrap.body { padding-top: 16px; }
+  h1 { font-size: 24px; }
+  .search { flex: 1 1 100%; }
+  .search kbd { display: none; }
+  .input, select.input.compact { font-size: 16px; }
+  .btn, .input { height: 36px; }
+  .btn.sm { height: 32px; }
+  select.input.compact { height: 36px; }
+  .btn.icon { width: 36px; }
+  .switch { min-height: 36px; }
+  .nav-item, .nav-btn { height: 40px; }
+  .nav-item.sub { min-height: 36px; margin-right: 34px; }
+  .avatar.lg { width: 40px; height: 40px; }
+
+  .tabs { margin-top: 20px; }
+  .card-body { padding: 16px; }
+  .card-foot { padding: 12px 16px; }
+  .dlg-head { padding-left: 16px; }
+  .dlg-body { padding: 8px 16px 16px; }
+  .dlg-foot { padding: 12px 16px; }
+  #toasts { left: 16px; right: 16px; width: auto; }
+  [data-tip]:hover::after, [data-tip]:focus-visible::after { max-width: 220px; }
+}
+
+/* ---------- narrow content ----------
+   Tables become stacked cards when the room beside the sidebar runs out, whatever the window's
+   width: a tablet in portrait keeps the sidebar and has less room than a phone in landscape. */
+@container body (max-width: 760px) {
+  .stats { margin-bottom: 16px; }
+  .stat { padding: 12px 12px 10px; }
+  .stat .v { font-size: 22px; }
+  .stat .k { font-size: 12px; }
+  .stat .s { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; white-space: normal; overflow-wrap: anywhere; }
+
+  .tbl { display: block; --step: 16px; }
+  .tbl > .th-row { display: none; }
+  .tr:not(.grp):not(.hint-row):not(.th-row) {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px;
+    padding: 12px 16px 10px calc(16px + var(--d) * var(--step));
+    background-image: repeating-linear-gradient(90deg, var(--border-strong) 0 1px, transparent 1px var(--step));
+    background-repeat: no-repeat;
+    background-size: max(0px, calc(var(--d) * var(--step) - var(--step) + 1px)) 100%;
+    background-position: calc(16px + var(--gx, var(--step) / 2)) 0;
+  }
+  .tr:first-child, .th-row + .tr { border-top: 0; border-radius: calc(var(--r) - 1px) calc(var(--r) - 1px) 0 0; }
+  .tr > .td { flex: 0 1 auto; padding: 0; }
+  .tr > .c-main { background: none; }
+  .tr > .c-main, .td.wide { flex: 1 1 100%; }
+  .tr > .c-main { margin-bottom: 2px; }
+  /* What a wide table has room for and a card does not. */
+  .extra { display: none !important; }
+  /* Controls in a row are a size down, and a row's last line is shared: switches, then actions. */
+  .tr .btn, .tr select.input.compact { height: 32px; }
+  .tr .btn.icon, .tr .btn.collapse { width: 32px; }
+  .tr .switch { min-height: 32px; }
+  .tr > .td.grow { flex: 1 1 calc(100% - 100px); } /* a line of its own, less the two buttons beside it */
+  .btn.collapse { padding: 0; }
+  .btn.collapse span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .td.meta { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 6px; font-size: 13px; }
+  .td.src .t2::before { content: "/"; color: var(--faint); margin-right: 6px; }
+  .tr > .td.end { flex: 1 1 auto; flex-wrap: wrap; min-width: min-content; justify-content: flex-start; }
+  .tr > .td.acts { flex: 0 0 auto; margin-left: auto; }
+  .tbl.groups .td.acts { order: 1; }
+  .tbl.groups .td.row:not(.acts) { order: 2; }
+  .tr > .td.wide { flex: 1 1 100%; }
+  .td.end .menu-wrap, .td.end .push { margin-left: auto; }
+  .tr > .td.update-cell { flex: 1 1 100%; }
+  .tr.update-row:not(.grp):not(.hint-row):not(.th-row) { padding-top: 0; }
+  .tr:has(+ .update-row) { padding-bottom: 6px; }
+  .tr.grp { padding-right: 8px; }
+  .group-toggle .gicon { margin-left: 0; }
+  .tbl-foot { flex-direction: column; }
+}
+</style>
+<style>
+/* PROTOTYPE ONLY: three layouts of the personal space for one medium setup. Not the product. */
+.row-plus { position: relative; }
+.row-plus > .plus { position: absolute; right: 4px; top: 50%; translate: 0 -50%; width: 24px; height: 24px; opacity: 0; }
+.row-plus:hover > .plus, .row-plus:focus-within > .plus, .row-plus.current > .plus, .row-plus > .plus[aria-expanded="true"] { opacity: 1; }
+.row-plus:hover .count, .row-plus.current .count, .row-plus:focus-within .count { visibility: hidden; }
+.row-plus > .menu { right: 0; top: calc(100% + 2px); }
+.menu .menu-title { padding: 6px 8px 4px; font-size: 12px; color: var(--faint); white-space: normal; }
+.nav-item .here { flex: none; font-size: 11.5px; color: var(--ok); }
+.nav-item .dot { flex: none; }
+.tbl.matrix { grid-template-columns: minmax(220px, 1.6fr) repeat(var(--n), minmax(76px, auto)) auto; }
+.tbl.matrix .th.c, .tbl.matrix .td.c { justify-content: center; align-items: center; text-align: center; }
+.tick { color: var(--accent-text); display: inline-flex; align-items: center; gap: 4px; }
+.nope { color: var(--faint); }
+.tick .lbl { display: none; color: var(--muted); font-size: 13px; }
+.folder-path .badge { white-space: normal; height: auto; min-height: 22px; }
+.row-plus:has(.plus[aria-expanded="true"]) .here, .row-plus:hover .here, .row-plus.current .here, .row-plus:focus-within .here { visibility: hidden; }
+@container body (max-width: 760px) {
+  .tbl.matrix .th-row, .tbl.matrix .td.c:has(.nope) { display: none; }
+  .tbl.matrix .tick .lbl { display: inline; }
+  .tbl.matrix .tick .sr-only { display: none; }
+  .sec-title { flex-wrap: wrap; }
+}
+.grp-cell .t2 { margin-left: 6px; }
+.order { font-size: 12.5px; color: var(--muted); margin: 0 0 12px; }
+.sec-title { display: flex; align-items: baseline; gap: 12px; margin: 28px 0 10px; }
+.sec-title h2 { font-size: 15px; font-weight: 600; }
+.sec-title .grow { flex: 1; }
+.places { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.place { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); display: grid; gap: 4px; font-size: 13px; }
+.place b { font-weight: 500; display: flex; align-items: center; gap: 8px; }
+.pending { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--accent-text); }
+.explorer { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.xlist { padding: 6px; }
+.xlist h3 { font-size: 12px; font-weight: 500; color: var(--faint); padding: 10px 8px 4px; }
+.xitem { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 6px 8px; border: 0; border-radius: var(--r-sm); background: none; text-align: left; cursor: pointer; color: var(--text); }
+.xitem:hover { background: var(--surface-2); }
+.xitem[aria-current="true"] { background: var(--accent-soft); }
+.xitem .t2 { display: block; font-size: 12px; }
+.xitem svg { color: var(--muted); flex: none; }
+.preview-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.preview-head h2 { font-size: 15px; font-weight: 600; flex: 1; }
+.md { margin: 0; padding: 16px; font: 13px/1.6 var(--mono); white-space: pre-wrap; color: var(--text); }
+.md .add { background: color-mix(in srgb, var(--ok) 14%, transparent); display: block; }
+.agents-line { display: flex; flex-wrap: wrap; gap: 6px; }
+.same { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--head); font-size: 13px; border-radius: 0 0 var(--r) var(--r); }
+.same label { display: inline-flex; gap: 6px; align-items: center; }
+.launch-skills { max-height: 280px; overflow: auto; }
+.proto-bar { position: fixed; z-index: 100; left: 50%; bottom: 16px; translate: -50% 0; display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px;
+  background: #0b0b0c; color: #fafafa; box-shadow: 0 6px 24px rgba(0,0,0,.35); font: 500 13px var(--font); }
+:root[data-theme="dark"] .proto-bar { background: #fafafa; color: #0b0b0c; }
+.proto-bar button { border: 0; background: none; color: inherit; width: 30px; height: 30px; border-radius: 999px; cursor: pointer; font-size: 15px; }
+.proto-bar button:hover { background: rgba(127,127,127,.25); }
+.proto-bar span { padding: 0 8px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div id="app">
+  <header class="topbar">
+    <a class="home" href="#"><span class="logo"><svg class="ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></span><span class="home-text">AIStack</span></a>
+    <nav class="where" id="where"></nav>
+    <div class="top-right"></div>
+  </header>
+  <aside class="nav-shell" id="nav-shell">
+    <nav class="rail" id="rail"></nav>
+    <div class="sidebar" id="sidebar"></div>
+    <div class="account" id="account"></div>
+  </aside>
+  <main id="main" tabindex="-1"></main>
+</div>
+<div class="proto-bar" id="proto-bar" aria-label="Prototype layout switcher"></div>
+<script>
+// PROTOTYPE ONLY. One medium setup drawn three ways; ?variant=A|B|C, arrow keys switch.
+const P = new URLSearchParams(location.search);
+if (P.get('theme')) document.documentElement.dataset.theme = P.get('theme');
+
+function el(tag, props, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') n.className = v;
+    else if (k === 'on') for (const [e, f] of Object.entries(v)) n.addEventListener(e, f);
+    else if (k in n && !k.includes('-')) n[k] = v;
+    else n.setAttribute(k, String(v));
+  }
+  n.append(...kids.flat(Infinity).filter(k => k != null && k !== false && k !== ''));
+  return n;
+}
+const ICONS = {
+  plus: 'M12 5v14M5 12h14', chev: 'M9 18l6-6-6-6', check: 'M20 6L9 17l-5-5', x: 'M18 6L6 18M6 6l12 12',
+  folder: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z',
+  layers: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
+  repo: 'M6 3h11a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM4 17a2 2 0 0 1 2-2h13M9 7h6',
+  edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z', laptop: 'M4 5h16v10H4zM2 19h20', monitor: 'M3 4h18v12H3zM8 20h8M12 16v4',
+  terminal: 'M4 17l6-5-6-5M12 19h8', globe: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z',
+  doc: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5',
+  play: 'M7 4l13 8-13 8z', users: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
+  lock: 'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 10 0v4',
+  up: 'M12 19V5M5 12l7-7 7 7', settings: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
+  logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9', copy: 'M11 9h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1',
+};
+function icon(name, size = 16) {
+  const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
+  for (const [k, v] of Object.entries({ class: 'ico', viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) svg.setAttribute(k, v);
+  const p = document.createElementNS(NS, 'path'); p.setAttribute('d', ICONS[name]); svg.append(p);
+  return svg;
+}
+const btn = (label, props = {}, ic) => el('button', { type: 'button', class: 'btn', ...props }, ic && icon(ic), label && el('span', null, label));
+
+/* ---------- one medium setup ---------- */
+
+const AG = { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini CLI', cursor: 'Cursor' };
+const COMPUTERS = [
+  { id: 'mac', name: 'MacBook Pro M4 Pro', ic: 'laptop', here: true, synced: '2 minutes ago', agents: ['claude', 'codex', 'gemini'] },
+  { id: 'work', name: 'Work desktop', ic: 'monitor', synced: 'yesterday', agents: ['claude', 'cursor'] },
+];
+const PROJECTS = [
+  { key: 'aistack', repo: 'github.com/dchristopoulos/aistack', team: null, on: { mac: '~/dev/aistack' } },
+  { key: 'demo-api', repo: 'github.com/demo-team/demo-api', team: 'demo-team', on: { mac: '~/work/demo-api', work: '~/code/demo-api' } },
+  { key: 'demo-website', repo: 'github.com/demo-team/demo-website', team: 'demo-team', on: { work: '~/code/demo-website' } },
+];
+const ALL = ['claude', 'codex', 'gemini', 'cursor'];
+const SKILLS = [
+  { name: 'commit-messages', desc: 'Writes commit messages in the house style.', place: 'everywhere', agents: ALL },
+  { name: 'code-review', desc: 'Reviews a diff against the team standards.', place: 'everywhere', agents: ALL, team: 'demo-team' },
+  { name: 'tdd', desc: 'Test first: red, green, refactor.', place: 'everywhere', agents: ['claude'] },
+  { name: 'diagnosing-bugs', desc: 'A loop for hard bugs and slow code.', place: 'everywhere', agents: ['claude', 'codex', 'gemini'] },
+  { name: 'writing-for-agents', desc: 'How to write skills and AGENTS.md.', place: 'everywhere', agents: ['claude'] },
+  { name: 'ship-a-change', desc: 'Commit, open the PR, land it.', place: 'aistack', agents: ['claude', 'codex', 'gemini'] },
+  { name: 'alembic-migrations', desc: 'A migration both databases accept.', place: 'aistack', agents: ['claude'] },
+  { name: 'api-conventions', desc: 'The team’s REST naming, errors and paging.', place: 'demo-api', agents: ALL, team: 'demo-team' },
+  { name: 'release-checklist', desc: 'Steps before tagging a release.', place: 'demo-api', agents: ['claude', 'cursor'] },
+  { name: 'postgres-tuning', desc: 'Reads query plans and suggests indexes.', place: 'demo-api', agents: ['claude'], only: 'mac' },
+  { name: 'design-tokens', desc: 'Keeps colours and spacing in sync with the token file.', place: 'demo-website', agents: ['claude', 'cursor'], team: 'demo-team' },
+  { name: 'meeting-notes', desc: 'Turns a transcript into decisions.', place: null, agents: [] },
+];
+const BODY = {
+  'my-rules': `# How I work\n- Short answers. Say what changed and why.\n- Ask before deleting anything outside the repository.\n- Run the tests before saying something works.`,
+  'writing-style': `# Writing style\n- Plain words, short sentences.\n- No "leverage", no "robust".`,
+  'shop-agents': `# demo-api\n\nThe demo team's order API. Python 3.13, PostgreSQL.\n\n## Rules\n- Endpoints follow the api-conventions skill.\n- Money is an integer number of cents, never a float.\n- A migration ships with its model change.\n\x01- Refunds go through payments/refunds.py only.\x02\n## Ask first\n- Anything under payments/.`,
+  'shop-claude': `@AGENTS.md\n\n- Use the postgres MCP server for read-only queries.`,
+  'shop-cursor': `---\ndescription: API style\nglobs: app/api/**\n---\n- Handlers stay under 40 lines.`,
+  'shop-mine': `# My notes for demo-api\n- I work on payments; start there when a path is unclear.\n- My sandbox: https://sandbox.example.test\n- Explain query plans in plain words.`,
+};
+const RULES = [
+  { id: 'my-rules', place: 'everywhere', name: 'My rules', who: 'me', same: true, files: { claude: '~/.claude/CLAUDE.md', codex: '~/.codex/AGENTS.md', gemini: '~/.gemini/GEMINI.md' }, changed: '3 days ago' },
+  { id: 'writing-style', place: 'everywhere', name: 'writing-style.md', who: 'me', files: { claude: '~/.claude/rules/writing-style.md' }, changed: 'last week' },
+  { id: 'aistack-agents', place: 'aistack', name: 'AGENTS.md', who: 'repo', files: { claude: 'through CLAUDE.md', codex: 'AGENTS.md', gemini: 'AGENTS.md', cursor: 'AGENTS.md' }, changed: 'today' },
+  { id: 'aistack-claude', place: 'aistack', name: 'CLAUDE.md', who: 'repo', files: { claude: 'CLAUDE.md' }, changed: 'in May' },
+  { id: 'aistack-mine', place: 'aistack', name: 'My notes for aistack', who: 'me', files: { claude: '.claude/rules/aistack-mine.md', codex: 'combined', gemini: 'combined' }, changed: 'yesterday' },
+  { id: 'shop-agents', place: 'demo-api', name: 'AGENTS.md', who: 'repo', files: { claude: 'through CLAUDE.md', codex: 'AGENTS.md', gemini: 'AGENTS.md', cursor: 'AGENTS.md' }, changed: 'today', pending: 'mac' },
+  { id: 'shop-claude', place: 'demo-api', name: 'CLAUDE.md', who: 'repo', files: { claude: 'CLAUDE.md' }, changed: '2 weeks ago' },
+  { id: 'shop-cursor', place: 'demo-api', name: '.cursor/rules/api-style.mdc', who: 'repo', files: { cursor: '.cursor/rules/api-style.mdc' }, changed: 'last month' },
+  { id: 'shop-mine', place: 'demo-api', name: 'My notes for demo-api', who: 'me', files: { claude: '.claude/rules/aistack-mine.md', codex: 'combined', gemini: 'combined', cursor: '.cursor/rules/aistack-mine.mdc' }, changed: 'yesterday' },
+  { id: 'web-agents', place: 'demo-website', name: 'AGENTS.md', who: 'repo', files: { claude: 'through CLAUDE.md', cursor: 'AGENTS.md' }, changed: 'last week' },
+];
+const project = key => PROJECTS.find(p => p.key === key);
+const computer = id => COMPUTERS.find(c => c.id === id);
+const agentsIn = p => ALL.filter(a => Object.keys(p.on).some(c => computer(c).agents.includes(a)));
+const agentsEverywhere = () => ALL.filter(a => COMPUTERS.some(c => c.agents.includes(a)));
+const whoLabel = (r, p) => r.who === 'me' ? 'Only you' : (p && p.team ? `Team ${p.team}, in the repository` : 'In the repository');
+const countAt = place => SKILLS.filter(s => s.place === place).length + RULES.filter(r => r.place === place).length;
+
+/* ---------- shared pieces ---------- */
+
+let openMenu = P.get('menu');
+let dialogOpen = P.get('dialog');
+function plusMenu(key, title, items) {
+  const open = openMenu === key;
+  return [
+    btn(null, { class: 'btn ghost icon plus', 'aria-label': title, title, 'aria-expanded': String(open),
+      on: { click: e => { e.preventDefault(); e.stopPropagation(); openMenu = open ? null : key; render(); } } }, 'plus'),
+    open ? el('div', { class: 'menu', role: 'menu', 'aria-label': title },
+      el('div', { class: 'menu-title' }, title),
+      items.map(([ic, label, dlg]) => el('button', { type: 'button', class: 'menu-item', role: 'menuitem', on: { click: () => { openMenu = null; if (dlg) dialogOpen = dlg; render(); } } }, icon(ic), label))) : null,
+  ];
+}
+const computerAdds = c => plusMenu('c:' + c.id, `Add to ${c.name}`, [['terminal', 'A coding agent…'], ['repo', 'A project…'], ['layers', 'Skills…'], ['doc', 'A rule…']]);
+const projectAdds = p => plusMenu('p:' + p.key, `Add to ${p.key}`, [['layers', 'Skills…'], ['doc', 'A rule…'], ['laptop', 'Another computer…']]);
+const everywhereAdds = () => plusMenu('everywhere', 'Add for every project', [['layers', 'Skills…'], ['doc', 'A rule…']]);
+function heading(label, adds) {
+  return el('div', { class: 'nav-heading row-plus', style: 'position:relative' }, label, adds);
+}
+function navLink(href, current, ic, label, count, extra, adds) {
+  const a = el('a', { class: 'nav-item', href, 'aria-current': current ? 'page' : null }, icon(ic), el('span', { class: 'label' + (ic === 'repo' ? ' mono' : '') }, label), extra, count != null ? el('span', { class: 'count' }, String(count)) : null);
+  return adds ? el('div', { class: 'row-plus' + (current ? ' current' : '') }, a, adds) : a;
+}
+function where(parts) {
+  $('where').replaceChildren(el('ol', null, icon('folder', 14), parts.map((p, i) => el('li', null, i < parts.length - 1 ? [el('a', { href: '#' }, p), el('span', { class: 'sep', 'aria-hidden': 'true' }, '/')] : el('span', { class: 'seg', 'aria-current': 'page' }, p)))));
+}
+function rail() {
+  $('rail').replaceChildren(
+    el('a', { class: 'rail-item', href: '#', 'aria-current': 'page' }, el('span', { class: 'rail-btn', 'aria-hidden': 'true' }, 'd'), el('span', { class: 'rail-name' }, 'Personal')),
+    el('span', { class: 'rail-sep', 'aria-hidden': 'true' }),
+    el('a', { class: 'rail-item', href: '#' }, el('span', { class: 'rail-btn', 'aria-hidden': 'true' }, 'd'), el('span', { class: 'rail-name' }, 'demo-team')),
+    btn(null, { class: 'rail-btn ghost', 'aria-label': 'Add a team', title: 'Add a team' }, 'plus'));
+  $('account').replaceChildren(el('span', { class: 'avatar round', 'aria-hidden': 'true' }, 'd'),
+    el('span', { class: 'who' }, el('b', null, 'Dimitris'), el('span', null, 'dimitris')), btn('Sign out', { class: 'btn ghost sm' }, 'logout'));
+}
+const spaceHead = () => el('div', { class: 'space-head' }, el('h2', null, 'Personal'), el('p', null, 'Only you see this'));
+const foot = () => el('div', { class: 'nav-foot' }, el('a', { class: 'nav-item', href: '#' }, icon('settings'), el('span', { class: 'label' }, 'Settings')));
+const tick = (on, name) => on ? el('span', { class: 'tick', title: name + ' reads it' }, icon('check', 16), el('span', { class: 'sr-only' }, 'Yes'), el('span', { class: 'lbl' }, name)) : el('span', { class: 'nope', 'aria-label': 'No' }, '–');
+const pageHead = (ic, title, lines, actions) => el('div', { class: 'band' }, el('div', { class: 'wrap page-head' },
+  el('div', { class: 'team-head', style: 'flex:1;min-width:260px' }, el('span', { class: 'avatar lg', 'aria-hidden': 'true' }, icon(ic, 20)),
+    el('div', { class: 'titles' }, el('h1', null, title), el('div', { class: 'folder-path' }, lines))),
+  el('div', { class: 'head-actions' }, actions)));
+
+/* ---------- variant A: today's tree, filled in ---------- */
+
+function sidebarA(r) {
+  return [spaceHead(), navLink('#/library', r.view === 'library', 'layers', 'Library', SKILLS.length),
+    heading('Computers', plusMenu('computers', 'Connect a computer', [['laptop', 'Connect a computer…']])),
+    el('div', { class: 'tree' }, COMPUTERS.map(c => el('div', null,
+      el('div', { class: 'row-plus' + (r.c === c.id ? ' current' : '') },
+        el('button', { type: 'button', class: 'tree-comp', 'aria-expanded': 'true' }, el('span', { class: 'chev' }, icon('chev', 14)), icon(c.ic, 15), el('span', { class: 'label' }, c.name)),
+        computerAdds(c)),
+      el('div', { class: 'tree-kids' }, c.agents.map(a => [
+        el('div', { class: 'tree-agent' }, icon('terminal', 14), AG[a]),
+        navLink(`#/f/${c.id}/${a}/everywhere`, r.c === c.id && r.a === a && r.place === 'everywhere', 'folder', 'Global', countFor(c.id, a, 'everywhere')),
+        PROJECTS.filter(p => p.on[c.id]).map(p => navLink(`#/f/${c.id}/${a}/${p.key}`, r.c === c.id && r.a === a && r.place === p.key, 'repo', p.key, countFor(c.id, a, p.key))),
+      ]).map(g => { g.slice(1).flat().forEach(n => n.classList && n.classList.contains('nav-item') && n.classList.add('leaf')); return g; }))))),
+    foot()];
+}
+function countFor(cid, a, place) {
+  return SKILLS.filter(s => s.place === place && s.agents.includes(a) && (!s.only || s.only === cid)).length + RULES.filter(r => r.place === place && r.files[a]).length;
+}
+function pageA(r) {
+  const c = computer(r.c), p = r.place === 'everywhere' ? null : project(r.place), a = r.a;
+  where(['dimitris', 'computers', c.name, AG[a], p ? p.key : 'Global']);
+  const rules = RULES.filter(x => x.place === r.place && x.files[a]);
+  const skills = SKILLS.filter(s => s.place === r.place && s.agents.includes(a) && (!s.only || s.only === c.id));
+  return [
+    pageHead(p ? 'repo' : 'terminal', [AG[a], el('span', { class: 'muted', style: 'font-weight:400' }, ' in '), p ? el('span', { class: 'mono' }, p.key) : 'Global', el('span', { class: 'muted', style: 'font-weight:400' }, ' on '), c.name],
+      [el('span', { class: 't2' }, p ? 'Project folder' : 'Global folder'), el('code', null, p ? p.on[c.id] : '~/.claude'), el('span', { class: 't2' }, 'Last synced ' + c.synced)],
+      [btn('Add skills', { class: 'btn primary' }, 'plus')]),
+    el('div', { class: 'wrap body' },
+      el('div', { class: 'sec-title' }, el('h2', null, 'Rules'), el('span', { class: 't2' }, `What ${AG[a]} reads in this folder`)),
+      table(['Rule', 'Whose', 'File', ''], rules.map(x => [
+        el('div', { class: 'td c-main' }, el('span', { class: 'name', style: 'font-family:var(--font)' }, x.name)),
+        el('div', { class: 'td' }, el('span', { class: 't2' }, whoLabel(x, p))),
+        el('div', { class: 'td' }, el('code', { class: 't2' }, x.files[a])),
+        el('div', { class: 'td end' }, btn('Edit', { class: 'btn ghost sm' }, 'edit'))]), 'minmax(220px,1fr) auto auto auto'),
+      p ? el('p', { class: 't2', style: 'margin-top:8px' }, 'Plus the Global rules of ', AG[a], ' on this computer, which are on another page.') : null,
+      el('div', { class: 'sec-title' }, el('h2', null, 'Skills'), el('span', { class: 't2' }, `${skills.length} in this folder`)),
+      table(['Skill', 'Linked team', ''], skills.map(s => [
+        el('div', { class: 'td c-main' }, el('span', { class: 'name' }, s.name), el('span', { class: 't2' }, s.desc)),
+        el('div', { class: 'td' }, s.team ? el('span', { class: 'mono t2' }, s.team) : el('span', { class: 't2' }, 'None')),
+        el('div', { class: 'td end' }, btn('Remove', { class: 'btn ghost sm' }, 'x'))]), 'minmax(240px,1fr) auto auto')),
+  ];
+}
+function table(heads, rows, cols) {
+  return el('div', { class: 'tbl', role: 'table', style: 'grid-template-columns:' + cols },
+    el('div', { class: 'tr th-row', role: 'row' }, heads.map(h => el('div', { class: 'th', role: 'columnheader' }, h))),
+    rows.map(cells => el('div', { class: 'tr', role: 'row' }, cells)));
+}
+
+/* ---------- variant B: projects first, agents as columns ---------- */
+
+function sidebarB(r, explorer) {
+  return [spaceHead(),
+    navLink('#/library', r.view === 'library', 'layers', 'Library', SKILLS.length),
+    navLink('#/everywhere', r.view === 'everywhere', 'globe', 'Every project', countAt('everywhere'), null, everywhereAdds()),
+    heading('Projects', plusMenu('projects', 'Add a project', [['folder', 'A folder on this computer…', 'add-project'], ['repo', 'A project from another computer…']])),
+    PROJECTS.map(p => navLink('#/p/' + p.key, r.view === 'project' && r.key === p.key, 'repo', p.key, countAt(p.key),
+      p.team ? el('span', { class: 't2', style: 'flex:none;font-size:12px' }, p.team) : null, projectAdds(p))),
+    heading('Computers', plusMenu('computers', 'Connect a computer', [['laptop', 'Connect a computer…']])),
+    COMPUTERS.map(c => navLink('#/c/' + c.id, r.view === 'computer' && r.id === c.id, c.ic, c.name, null,
+      c.here ? el('span', { class: 'here', title: 'The computer this page is open on' }, 'This one') : el('span', { class: 'dot', style: 'background:var(--faint)', title: 'Last synced ' + c.synced }),
+      computerAdds(c))),
+    foot()];
+}
+function matrix(agents, groups) {
+  return el('div', { class: 'tbl matrix', role: 'table', style: '--n:' + agents.length },
+    el('div', { class: 'tr th-row', role: 'row' }, el('div', { class: 'th' }, ''), agents.map(a => el('div', { class: 'th c' }, AG[a])), el('div', { class: 'th' }, '')),
+    groups.filter(g => g.rows.length).map(g => [
+      el('div', { class: 'tr grp', role: 'row' }, el('div', { class: 'grp-cell', role: 'cell', 'aria-colspan': agents.length + 2 }, icon(g.ic, 15), el('b', { style: 'font-weight:500' }, g.title), g.hint && el('span', { class: 't2' }, g.hint))),
+      g.rows.map(row => el('div', { class: 'tr', role: 'row' },
+        el('div', { class: 'td c-main' }, el('span', { class: 'name', style: row.mono ? null : 'font-family:var(--font)' }, row.name), row.sub && el('span', { class: 't2' }, row.sub)),
+        agents.map(a => el('div', { class: 'td c' }, tick(row.on(a), AG[a]))),
+        el('div', { class: 'td row end' }, row.actions))),
+    ]));
+}
+function ruleRow(x, p) {
+  return { name: x.name, mono: false, on: a => !!x.files[a],
+    sub: x.pending ? el('span', { class: 'pending' }, icon('up', 13), 'Changed on MacBook Pro M4 Pro, not committed yet') : (x.same ? 'One file for three agents, changed ' + x.changed : 'Changed ' + x.changed),
+    actions: [x.pending ? btn('Commit…', { class: 'btn sm', on: { click: () => { dialogOpen = 'commit:' + x.id; render(); } } }, 'up') : null,
+      btn('Open', { class: 'btn ghost sm', 'aria-label': 'Open ' + x.name, on: { click: () => { dialogOpen = 'rule:' + x.id; render(); } } }, 'doc')] };
+}
+function skillRow(s) {
+  return { name: s.name, mono: true, on: a => s.agents.includes(a), sub: s.only ? 'Only on MacBook Pro M4 Pro' : s.desc,
+    actions: btn('Details', { class: 'btn ghost sm' }) };
+}
+function pageProject(r) {
+  const p = project(r.key), agents = agentsIn(p);
+  where(['dimitris', 'projects', p.key]);
+  const here = Object.keys(p.on).map(computer), mine = here.find(c => c.here);
+  return [
+    pageHead('repo', el('span', { class: 'mono' }, p.key),
+      [el('code', null, p.repo), p.team ? el('span', { class: 'badge' }, icon('users', 13), 'Team project of ' + p.team) : el('span', { class: 'badge' }, icon('lock', 13), 'Your project')],
+      [mine ? btn('Start an agent…', { class: 'btn primary', on: { click: () => { dialogOpen = 'launch'; render(); } } }, 'play') : null]),
+    el('div', { class: 'wrap body' },
+      el('div', { class: 'places' }, here.map(c => el('div', { class: 'place' },
+        el('b', null, icon(c.ic, 15), c.name, c.here ? el('span', { class: 'here t2', style: 'color:var(--ok)' }, 'This one') : null),
+        el('code', { class: 't2' }, p.on[c.id]),
+        el('span', { class: 't2' }, c.agents.map(a => AG[a]).join(', ') + '. Synced ' + c.synced)))),
+      el('div', { class: 'sec-title' }, el('h2', null, 'What your agents read here'), el('span', { class: 'grow' }),
+        el('span', { class: 't2' }, 'Top to bottom. What is lower comes later and wins a disagreement.')),
+      matrix(agents, [
+        { ic: 'globe', title: 'Your rules for every project', hint: 'The same on every computer', rows: RULES.filter(x => x.place === 'everywhere').map(x => ruleRow(x, p)) },
+        { ic: p.team ? 'users' : 'repo', title: p.team ? `Team ${p.team}'s rules, in the repository` : 'Rules in the repository', hint: 'Everyone who clones it gets these', rows: RULES.filter(x => x.place === p.key && x.who === 'repo').map(x => ruleRow(x, p)) },
+        { ic: 'lock', title: `Your rules for ${p.key}`, hint: 'Only you, on every computer that has it, never committed', rows: RULES.filter(x => x.place === p.key && x.who === 'me').map(x => ruleRow(x, p)) },
+        { ic: 'layers', title: 'Skills', hint: `${SKILLS.filter(s => s.place === p.key).length} for this project, ${SKILLS.filter(s => s.place === 'everywhere').length} for every project`, rows: SKILLS.filter(s => s.place === p.key || s.place === 'everywhere').map(skillRow) },
+      ])),
+    launchDialog(p),
+  ];
+}
+function pageEverywhere() {
+  where(['dimitris', 'every project']);
+  const agents = agentsEverywhere();
+  return [
+    pageHead('globe', 'Every project', [el('span', { class: 't2' }, 'Rules and skills your agents get in every project, on every computer.')], []),
+    el('div', { class: 'wrap body' },
+      matrix(agents, [
+        { ic: 'doc', title: 'Your rules', hint: 'Cursor keeps its own in its settings', rows: RULES.filter(x => x.place === 'everywhere').map(x => ruleRow(x)) },
+        { ic: 'layers', title: 'Skills', rows: SKILLS.filter(s => s.place === 'everywhere').map(skillRow) },
+      ])),
+  ];
+}
+function pageComputer(r) {
+  const c = computer(r.id);
+  where(['dimitris', 'computers', c.name]);
+  return [
+    pageHead(c.ic, c.name, [el('span', { class: 't2' }, c.here ? 'The computer this page is open on.' : 'Last synced ' + c.synced)], [btn('Computer settings', {}, 'settings')]),
+    el('div', { class: 'wrap body' },
+      el('div', { class: 'sec-title' }, el('h2', null, 'Coding agents')),
+      table(['Agent', 'Its rules for every project', 'Skills', ''], c.agents.map(a => [
+        el('div', { class: 'td c-main' }, el('span', { class: 'name', style: 'font-family:var(--font)' }, AG[a])),
+        el('div', { class: 'td' }, RULES.filter(x => x.place === 'everywhere' && x.files[a]).map(x => el('code', { class: 't2' }, x.files[a]))),
+        el('div', { class: 'td' }, el('span', { class: 't2' }, SKILLS.filter(s => s.place === 'everywhere' && s.agents.includes(a)).length + ' for every project')),
+        el('div', { class: 'td end' }, btn('Start…', { class: 'btn ghost sm' }, 'play'))]), 'minmax(160px,auto) 1fr auto auto'),
+      el('div', { class: 'sec-title' }, el('h2', null, 'Projects on this computer')),
+      table(['Project', 'Folder', ''], PROJECTS.filter(p => p.on[c.id]).map(p => [
+        el('div', { class: 'td c-main' }, el('a', { class: 'name link', href: '#/p/' + p.key }, p.key)),
+        el('div', { class: 'td' }, el('code', { class: 't2' }, p.on[c.id])),
+        el('div', { class: 'td end' }, btn('Start an agent…', { class: 'btn ghost sm' }, 'play'))]), 'minmax(160px,auto) 1fr auto')),
+  ];
+}
+function pageLibrary() {
+  where(['dimitris', 'Library']);
+  return [pageHead('layers', 'Library', [el('span', { class: 't2' }, 'Every skill you keep.')], []),
+    el('div', { class: 'wrap body' }, table(['Skill', 'Where', ''], SKILLS.map(s => [
+      el('div', { class: 'td c-main' }, el('span', { class: 'name' }, s.name), el('span', { class: 't2' }, s.desc)),
+      el('div', { class: 'td' }, el('span', { class: 't2' }, s.place === 'everywhere' ? 'Every project' : s.place ? s.place : 'Only in your library')),
+      el('div', { class: 'td end' }, btn('Details', { class: 'btn ghost sm' }))]), 'minmax(240px,1fr) auto auto'))];
+}
+function launchDialog(p) {
+  if (dialogOpen !== 'launch') return null;
+  // v1 starts the two agents it can test: Claude Code and Codex.
+  const c = COMPUTERS.find(x => x.here), agents = c.agents.filter(a => agentsIn(p).includes(a) && ['claude', 'codex'].includes(a));
+  const opt = (s, checked) => el('label', { class: 'picker-opt' }, el('input', { type: 'checkbox', checked }), el('span', { class: 'mono' }, s.name), el('span', { class: 't2', style: 'margin-left:auto' }, s.desc));
+  const d = el('dialog', { class: 'dlg', 'aria-labelledby': 'launch-title', style: 'width:min(560px,calc(100vw - 32px))' },
+    el('form', { method: 'dialog' },
+      el('div', { class: 'dlg-head' }, el('h2', { id: 'launch-title' }, 'Start an agent in ', el('span', { class: 'mono' }, p.key)),
+        btn(null, { class: 'btn ghost icon', 'aria-label': 'Close', on: { click: () => { dialogOpen = null; render(); } } }, 'x')),
+      el('div', { class: 'dlg-body' },
+        el('p', { class: 'lead' }, `Opens a terminal on ${c.name} with only the skills you tick. Your rules and the team's load as usual.`),
+        el('fieldset', { class: 'picker' }, el('legend', null, 'Agent'),
+          el('div', { class: 'picker-list', style: 'display:flex;gap:16px;flex-wrap:wrap' }, agents.map((a, i) => el('label', { class: 'check' }, el('input', { type: 'radio', name: 'agent', checked: i === 0 }), AG[a])))),
+        el('fieldset', { class: 'picker', style: 'margin-top:16px' }, el('legend', null, 'Skills'),
+          el('div', { class: 'picker-list launch-skills' },
+            el('div', { class: 't2', style: 'padding:6px 8px 2px' }, 'For ' + p.key),
+            SKILLS.filter(s => s.place === p.key && (!s.only || s.only === c.id)).map(s => opt(s, true)),
+            el('div', { class: 't2', style: 'padding:10px 8px 2px' }, 'For every project'),
+            SKILLS.filter(s => s.place === 'everywhere').map(s => opt(s, s.name === 'commit-messages')))),
+        el('label', { class: 'check', style: 'margin-top:12px' }, el('input', { type: 'checkbox', checked: true }), el('span', null, 'Remember these for ', el('span', { class: 'mono' }, p.key)))),
+      el('div', { class: 'dlg-foot' },
+        btn('Copy the command', { class: 'btn ghost' }, 'copy'),
+        el('span', { style: 'flex:1' }),
+        btn('Cancel', { on: { click: () => { dialogOpen = null; render(); } } }),
+        btn('Open a terminal', { class: 'btn primary' }, 'play'))));
+  queueMicrotask(() => { if (!d.open) d.showModal(); });
+  d.addEventListener('close', () => { if (dialogOpen) { dialogOpen = null; render(); } });
+  return d;
+}
+
+/* ---------- dialogs: a rule's panel, Commit…, Add a project ---------- */
+
+const closeDlg = () => { dialogOpen = null; render(); };
+const closeBtn = () => btn(null, { class: 'btn ghost icon', 'aria-label': 'Close', on: { click: closeDlg } }, 'x');
+function modal(content, sheet) {
+  const d = el('dialog', { class: 'dlg' + (sheet ? ' sheet' : ''), style: sheet ? null : 'width:min(560px,calc(100vw - 32px))' }, content);
+  queueMicrotask(() => { if (!d.open) d.showModal(); });
+  d.addEventListener('close', () => { if (dialogOpen) closeDlg(); });
+  return d;
+}
+const mdBody = x => (BODY[x.id] || `# ${x.name}\n…`).split(/\x01|\x02/).map((part, i) => i % 2 ? el('span', { class: 'add' }, part) : part);
+function ruleSheet(x) {
+  const p = x.place === 'everywhere' ? null : project(x.place), agents = p ? agentsIn(p) : agentsEverywhere();
+  return modal(el('form', { method: 'dialog' },
+    el('div', { class: 'dlg-head' }, el('h2', null, x.name), closeBtn()),
+    el('div', { class: 'dlg-body' },
+      el('p', { class: 'lead' }, `${whoLabel(x, p)}, ${p ? p.key : 'every project'}. Changed ${x.changed}.`),
+      x.pending ? el('p', { class: 'pending' }, icon('up', 13), 'Changed on MacBook Pro M4 Pro, not committed yet') : null,
+      el('pre', { class: 'md card', style: 'margin:12px 0' }, mdBody(x)),
+      el('fieldset', { class: 'sheet-sec' }, el('legend', null, 'Use this file for'),
+        el('div', { style: 'display:flex;flex-wrap:wrap;gap:8px 16px' }, agents.map(a => el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: !!x.files[a] }), AG[a])))),
+      x.who === 'repo' ? el('fieldset', { class: 'sheet-sec' }, el('legend', null, 'Just for you'),
+        el('button', { type: 'button', class: 'switch', role: 'switch', 'aria-checked': 'false' }, el('span', { class: 'track' }), el('span', null, 'Turn this file off for me')),
+        el('p', { class: 't2', style: 'margin-top:6px' }, 'Claude Code and Codex skip it for you only. Your team still gets it.')) : null),
+    el('div', { class: 'dlg-foot' },
+      x.pending ? btn('Commit…', { on: { click: () => { dialogOpen = 'commit:' + x.id; render(); } } }, 'up') : null,
+      el('span', { style: 'flex:1' }), btn('Edit', { class: 'btn primary' }, 'edit'))), true);
+}
+function commitDialog(x) {
+  const p = project(x.place);
+  return modal(el('form', { method: 'dialog' },
+    el('div', { class: 'dlg-head' }, el('h2', null, 'Share your change to ', el('span', { class: 'mono' }, x.name)), closeBtn()),
+    el('div', { class: 'dlg-body' },
+      el('p', { class: 'lead' }, `Opens a pull request on ${p.repo} with only this file. Nothing else you changed goes with it.`),
+      el('pre', { class: 'md card', style: 'margin:12px 0' }, el('span', { class: 'add' }, '+ - Refunds go through payments/refunds.py only.')),
+      el('div', { class: 'field' }, el('label', { for: 'note' }, 'What is this change about?'),
+        el('textarea', { id: 'note', class: 'input', rows: 3, style: 'height:auto;padding:8px 10px;resize:vertical' }, 'Refunds must go through one module, so agents stop writing refund queries by hand.'),
+        el('p', { class: 'help t2' }, 'Your team reads this on the pull request.'))),
+    el('div', { class: 'dlg-foot' }, btn('Cancel', { on: { click: closeDlg } }), btn('Open a pull request', { class: 'btn primary' }, 'up'))));
+}
+function addProjectDialog() {
+  const file = (path, readers, checked) => el('label', { class: 'picker-opt' }, el('input', { type: 'checkbox', checked }), el('span', { class: 'mono' }, path), el('span', { class: 't2', style: 'margin-left:auto' }, readers));
+  return modal(el('form', { method: 'dialog' },
+    el('div', { class: 'dlg-head' }, el('h2', null, 'Add a project'), closeBtn()),
+    el('div', { class: 'dlg-body' },
+      el('div', { class: 'field' }, el('label', { for: 'path' }, 'Folder on MacBook Pro M4 Pro'),
+        el('div', { style: 'display:flex;gap:8px' }, el('input', { id: 'path', class: 'input mono', value: '~/work/demo-api', style: 'flex:1' }), btn('Look inside', {}, 'folder'))),
+      el('p', { class: 't2', style: 'margin:10px 0 14px' }, 'Found github.com/demo-team/demo-api, a project of team demo-team.'),
+      el('fieldset', { class: 'picker' }, el('legend', null, 'Show these files in AIStack'),
+        el('div', { class: 'picker-list' },
+          file('AGENTS.md', 'Codex, Gemini CLI, Cursor', true), file('CLAUDE.md', 'Claude Code', true),
+          file('.cursor/rules/api-style.mdc', 'Cursor', true), file('README.md', 'No agent reads it', false), file('docs/CONTRIBUTING.md', 'No agent reads it', false),
+          el('div', { class: 't2', style: 'padding:6px 8px' }, '9 more Markdown files'))),
+      el('fieldset', { class: 'picker', style: 'margin-top:14px' }, el('legend', null, 'Skills in this project'),
+        el('div', { class: 'picker-list' }, el('label', { class: 'picker-opt' }, el('input', { type: 'checkbox', checked: true }), el('span', { class: 'mono' }, 'release-checklist'), el('span', { class: 't2', style: 'margin-left:auto' }, 'Keep a copy in your Library'))))),
+    el('div', { class: 'dlg-foot' }, btn('Cancel', { on: { click: closeDlg } }), btn('Add demo-api', { class: 'btn primary' }, 'plus'))));
+}
+function otherDialog() {
+  if (!dialogOpen || dialogOpen === 'launch') return null;
+  if (dialogOpen === 'add-project') return addProjectDialog();
+  const [kind, id] = dialogOpen.split(':'), x = RULES.find(r => r.id === id);
+  return !x ? null : kind === 'commit' ? commitDialog(x) : ruleSheet(x);
+}
+
+/* ---------- variant C: explorer with the file open beside the list ---------- */
+
+function pageExplorer(r) {
+  const placeKey = r.view === 'everywhere' ? 'everywhere' : r.key, p = placeKey === 'everywhere' ? null : project(placeKey);
+  where(['dimitris', p ? 'projects' : 'every project', p ? p.key : ''].filter(Boolean));
+  const rules = RULES.filter(x => x.place === placeKey || (p && x.place === 'everywhere'));
+  const sel = RULES.find(x => x.id === (P.get('file') || 'shop-agents') && rules.includes(x)) || rules.find(x => x.place === placeKey) || rules[0];
+  const item = (x, ic, label, sub) => el('button', { type: 'button', class: 'xitem', 'aria-current': String(x === sel), on: { click: () => { P.set('file', x.id); history.replaceState(null, '', '?' + P + location.hash); render(); } } },
+    icon(ic, 16), el('span', null, el('span', null, label), el('span', { class: 't2' }, sub)));
+  const agents = p ? agentsIn(p) : agentsEverywhere();
+  const body = BODY[sel.id] || `# ${sel.name}\n…`;
+  return [
+    pageHead(p ? 'repo' : 'globe', p ? el('span', { class: 'mono' }, p.key) : 'Every project',
+      p ? [el('code', null, p.repo), p.team ? el('span', { class: 'badge' }, icon('users', 13), 'Team project of ' + p.team) : null] : [],
+      [p && p.on.mac ? btn('Start an agent…', { class: 'btn primary', on: { click: () => { dialogOpen = 'launch'; render(); } } }, 'play') : null]),
+    el('div', { class: 'wrap body' }, el('div', { class: 'explorer' },
+      el('div', { class: 'card xlist' },
+        p ? [el('h3', null, 'Every project'), rules.filter(x => x.place === 'everywhere').map(x => item(x, 'globe', x.name, 'Yours'))] : null,
+        el('h3', null, p ? 'In the repository' : 'Your rules'), rules.filter(x => x.place === placeKey && (x.who === 'repo' || !p)).map(x => item(x, 'doc', x.name, x.pending ? 'Changed, not committed' : whoLabel(x, p))),
+        p ? [el('h3', null, 'Only you'), rules.filter(x => x.place === placeKey && x.who === 'me').map(x => item(x, 'lock', x.name, 'Never committed'))] : null,
+        el('h3', null, 'Skills'), SKILLS.filter(s => s.place === placeKey).map(s => el('button', { type: 'button', class: 'xitem' }, icon('layers', 16), el('span', null, el('span', { class: 'mono' }, s.name), el('span', { class: 't2' }, s.desc))))),
+      el('div', { class: 'card' },
+        el('div', { class: 'preview-head' }, el('h2', null, sel.name),
+          sel.pending ? el('span', { class: 'pending' }, icon('up', 13), 'Changed on MacBook Pro M4 Pro') : el('span', { class: 't2' }, 'Changed ' + sel.changed),
+          sel.pending ? btn('Commit…', { class: 'btn sm' }, 'up') : null, btn('Edit', { class: 'btn sm primary' }, 'edit')),
+        el('div', { class: 'preview-head', style: 'padding:10px 16px' }, el('span', { class: 't2' }, 'Read by'),
+          el('span', { class: 'agents-line' }, agents.filter(a => sel.files[a]).map(a => el('span', { class: 'badge', title: sel.files[a] }, AG[a])))),
+        el('pre', { class: 'md' }, body.split(/\x01|\x02/).map((part, i) => i % 2 ? el('span', { class: 'add' }, part) : part)),
+        el('div', { class: 'same' }, el('span', { class: 't2' }, 'Use this file for'),
+          agents.map(a => el('label', null, el('input', { type: 'checkbox', checked: !!sel.files[a] }), AG[a])))))),
+    p ? launchDialog(p) : null,
+  ];
+}
+
+/* ---------- routing and the switcher ---------- */
+
+const VARIANTS = { A: 'Today’s tree, filled in', B: 'Projects first', C: 'Projects first, file open beside the list' };
+const DEFAULT = { A: '#/f/mac/claude/demo-api', B: '#/p/demo-api', C: '#/p/demo-api' };
+let variant = VARIANTS[P.get('variant')] ? P.get('variant') : 'B';
+const $ = id => document.getElementById(id);
+function route() {
+  const h = location.hash || DEFAULT[variant], s = h.slice(2).split('/');
+  if (s[0] === 'f') return { view: 'folder', c: s[1], a: s[2], place: s[3] };
+  if (s[0] === 'p') return { view: 'project', key: s[1] };
+  if (s[0] === 'c') return { view: 'computer', id: s[1] };
+  if (s[0] === 'everywhere') return { view: 'everywhere' };
+  if (s[0] === 'library') return { view: 'library' };
+  return route.call(null, (location.hash = DEFAULT[variant]));
+}
+function render() {
+  let r = route();
+  if (variant === 'A' && !['folder', 'library'].includes(r.view)) { location.hash = DEFAULT.A; return; }
+  if (variant !== 'A' && r.view === 'folder') { location.hash = DEFAULT[variant]; return; }
+  rail();
+  $('sidebar').replaceChildren(...(variant === 'A' ? sidebarA(r) : sidebarB(r)).flat());
+  const page = r.view === 'library' ? pageLibrary()
+    : variant === 'A' ? pageA(r)
+    : r.view === 'computer' ? pageComputer(r)
+    : variant === 'C' && (r.view === 'project' || r.view === 'everywhere') ? pageExplorer(r)
+    : r.view === 'everywhere' ? pageEverywhere() : pageProject(r);
+  $('main').replaceChildren(el('div', { class: 'page' }, page), otherDialog());
+  const go = d => { const k = Object.keys(VARIANTS), i = (k.indexOf(variant) + d + k.length) % k.length; variant = k[i]; P.set('variant', variant); history.replaceState(null, '', '?' + P + DEFAULT[variant]); render(); };
+  $('proto-bar').replaceChildren(btn(null, { 'aria-label': 'Previous layout', on: { click: () => go(-1) } }), el('span', null, `${variant}: ${VARIANTS[variant]}`), btn(null, { 'aria-label': 'Next layout', on: { click: () => go(1) } }));
+  $('proto-bar').firstChild.textContent = '‹'; $('proto-bar').lastChild.textContent = '›';
+  document.title = `${variant}: ${VARIANTS[variant]}, prototype`;
+}
+addEventListener('hashchange', render);
+addEventListener('click', e => { if (openMenu && !e.target.closest('.menu')) { openMenu = null; render(); } });
+addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable]') || document.querySelector('dialog[open]')) return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') $('proto-bar').querySelectorAll('button')[e.key === 'ArrowLeft' ? 0 : 1].click();
+});
+render();
+</script>
+</body>
+</html>
