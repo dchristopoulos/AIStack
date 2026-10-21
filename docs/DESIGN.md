@@ -408,7 +408,7 @@ The page is the only client these were written for, and they are documented so t
 | `POST /api/teams/{team}/members/{username}` | Any of `role` (`ADMIN` or `MEMBER`), `sees_all_groups` (true or false), `can_invite` (true or false) | Admin only |
 | `POST /api/teams/{team}/members/{username}/remove` | `{}` | Admin only |
 | `POST /api/teams/{team}/groups` | `name`, optional `parent` (a path), optional `private` | `path`. Admin only |
-| `POST /api/teams/{team}/group` | `path`, and `private` (admin only) and/or `subscribed` (anyone who sees the group) | |
+| `POST /api/teams/{team}/group` | `path`, and `private` (admin only) and/or `subscribed` (anyone who sees the group's skills) | |
 | `POST /api/teams/{team}/group/members` | `path`, `username`, `member` (true or false) | Admin only |
 | `POST /api/teams/{team}/group/rename` | `path`, `name` | Admin only. The groups under it follow; answers the new `path` |
 | `POST /api/teams/{team}/group/delete` | `path` | Admin only, and only a group with no skills and no groups inside it |
@@ -459,7 +459,8 @@ A group's path contains slashes, so it always travels in the body and never in t
          "can_invite": true, "groups": ["backend"]}
       ],
       "groups": [
-        {"path": "backend/aistack", "private": false, "member": true, "subscribed": true}
+        {"path": "backend/aistack", "private": false, "member": true, "subscribed": true,
+         "sees_skills": true}
       ],
       "skills": [
         {
@@ -509,7 +510,7 @@ A group's path contains slashes, so it always travels in the body and never in t
 | `teams` | The teams the user is in, by `name`. The Library is not among them. `kind` is `SHARED`: every team is one somebody created (ADR-0019) |
 | `teams[].role`, `sees_all_groups`, `can_invite` | The user's own role in that team, `ADMIN` or `MEMBER`, whether they were given sight of every group, and whether an admin let them make invite links |
 | `teams[].members` | Everyone in the team: `username`, `full_name`, `role`, `sees_all_groups`, `can_invite`, and `groups`. A member's private groups are listed only for an admin and for people in those groups |
-| `teams[].groups` | The groups the user may see, by `path`; an admin sees all of them. `private` is whether it is private, `member` whether the user is in it, `subscribed` whether they are offered its updates |
+| `teams[].groups` | The groups the user may see, by `path`; an admin is shown all of them. `private` is whether it is private, `member` whether the user is in it, `subscribed` whether they are offered its updates, `sees_skills` whether its skills are sent to them and they may subscribe to it: false only for an admin outside a private group, or under one, who is shown it to manage it |
 | `teams[].skills` | The team's skills the user may see, each with its `name`, `description`, `team`, and latest revision (`revision`, `pushed_by`, `updated_on`). `group` is a path, or null at team level. `in_library` is true when one of the user's own skills was taken from it or shared to it |
 | `teams[].invites` | The team's invites made in the last 30 days, newest first: every one for an admin, their own for a member who can invite, none for anyone else. Each has its `id` (what the cancel route takes), `created_by` (a username), `created_on`, `expires_on`, `status` (`PENDING`, `ACCEPTED`, `CANCELLED`, or `EXPIRED`), and `used_by` (the username that accepted it, or null). Never the code |
 

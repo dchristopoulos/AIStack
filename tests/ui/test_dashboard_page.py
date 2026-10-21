@@ -585,6 +585,43 @@ async def test_a_member_is_shown_no_private_group_and_no_admin_control(sign_in):
     assert alex.console_errors == []
 
 
+async def test_an_admin_outside_a_private_group_is_shown_it_as_private_not_empty(sign_in):
+    dimitris = await sign_in("dimitris")
+    made_admin = await dimitris.page.request.post(
+        f"{dimitris.base_url}/api/teams/aistack/members/alex", data={"role": "ADMIN"},
+        headers={"X-AIStack-Request": "1"})
+    assert made_admin.ok
+    alex = await sign_in("alex")
+    page = alex.page
+    await _open_team(alex, "aistack")
+
+    await expect(page.get_by_text("Private: only the people added to it see its skills.")
+                 ).to_be_visible()
+    await expect(page.get_by_text("No skills in this group yet.")).to_have_count(0)
+    await expect(page.get_by_text("pentest-checklist")).to_have_count(0)
+    await expect(page.get_by_role("switch", name="Subscribed to developers", exact=True)
+                 ).to_be_visible()
+    await expect(page.get_by_role("switch", name="Subscribed to security")).to_have_count(0)
+
+    await page.get_by_role("tab", name="Groups").click()
+    security = page.get_by_role("table", name="Groups").get_by_role("row").filter(
+        has_text="security")
+    await expect(security.get_by_text("Hidden from you")).to_be_visible()
+    await expect(security.get_by_role("switch", name="Subscribed to security")).to_have_count(0)
+    await expect(security.get_by_role("switch", name="security is private")).to_be_visible()
+
+    await page.get_by_role("tab", name="Settings").click()
+    await expect(page.get_by_text("You see a private group's skills only when you are in it.")
+                 ).to_be_visible()
+    await expect(page.get_by_text("As an admin you see every group")).to_have_count(0)
+
+    aistack = _team(await alex.state(), "aistack")
+    assert aistack["role"] == "ADMIN"
+    assert {group["path"]: group["sees_skills"] for group in aistack["groups"]} == {
+        "developers": True, "developers/backend": True, "security": False}
+    assert [skill["name"] for skill in aistack["skills"] if skill["group"] == "security"] == []
+
+
 async def test_a_team_is_created_and_joined_with_its_invite_code(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page

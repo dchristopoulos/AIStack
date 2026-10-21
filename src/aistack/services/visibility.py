@@ -96,7 +96,7 @@ def required_my_project(session: Session, user_id: uuid.UUID, key: str) -> Proje
 class GroupAccess:
     """What one user may do with the groups of the teams they are in."""
 
-    # Groups whose skills they may see.
+    # Groups whose skills they may see, and so may subscribe to.
     visible: frozenset[uuid.UUID]
     # Groups they may share a skill into: visible, and they belong to it or to one above it.
     writable: frozenset[uuid.UUID]
@@ -155,6 +155,16 @@ def may_share_over(access: GroupAccess, skill: Skill) -> bool:
     group takes: seeing a group is reading and taking it, not writing to it.
     """
     return skill.group_id is None or skill.group_id in access.writable
+
+
+def lists_group(access: GroupAccess, viewer: TeamMember, group_id: uuid.UUID) -> bool:
+    """Whether the team's list of groups shows the viewer this one.
+
+    Anyone is shown a group whose skills they may see. An admin is shown every group, to
+    manage it, and still sees the skills of only those in `access.visible`: being shown a
+    private group they are not in is not seeing what is in it.
+    """
+    return viewer.role is TeamRole.ADMIN or group_id in access.visible
 
 
 def shows_membership(access: GroupAccess, viewer: TeamMember, group_id: uuid.UUID,

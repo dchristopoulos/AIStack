@@ -74,7 +74,7 @@ def state(session: Session, user_id: uuid.UUID) -> dict[str, Any]:
             ],
             "groups": [
                 {"path": group.path, "private": group.private, "member": group.member,
-                 "subscribed": group.subscribed}
+                 "subscribed": group.subscribed, "sees_skills": group.sees_skills}
                 for group in team.groups
             ],
             "skills": [

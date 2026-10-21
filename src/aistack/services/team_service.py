@@ -103,6 +103,9 @@ class GroupSummary:
     member: bool
     # Hears about changes to its skills. Unsubscribing from a group covers those under it.
     subscribed: bool
+    # Its skills are listed to the caller, who may subscribe to it. False only for an admin
+    # outside a private group, or under one, who is shown it to manage it.
+    sees_skills: bool
 
 
 def create_team(session: Session, user_id: uuid.UUID, name: str) -> str:
@@ -405,7 +408,8 @@ def _members_of(session: Session, access: visibility.GroupAccess,
 
 
 def groups(session: Session, user_id: uuid.UUID, team: str) -> list[GroupSummary]:
-    """The team's groups the caller may see. An admin sees them all, to manage them.
+    """The team's groups the caller may see. An admin is shown them all, to manage them, and
+    each says whether its skills reach the caller (`visibility.lists_group`).
 
     A private group is not listed for someone outside it: its name alone can say too much.
     """
@@ -427,9 +431,10 @@ def _groups_in(access: visibility.GroupAccess, places: dict[uuid.UUID, TeamMembe
                ) -> dict[uuid.UUID, list[GroupSummary]]:
     result: dict[uuid.UUID, list[GroupSummary]] = {team_id: [] for team_id in places}
     for team_id, group_id, path, private in rows:
-        if places[team_id].role is TeamRole.ADMIN or group_id in access.visible:
+        if visibility.lists_group(access, places[team_id], group_id):
             result[team_id].append(GroupSummary(path, private, group_id in access.member,
-                                                group_id not in access.unsubscribed))
+                                                group_id not in access.unsubscribed,
+                                                group_id in access.visible))
     return result
 
 
@@ -437,8 +442,8 @@ def set_subscribed(session: Session, user_id: uuid.UUID, team: str, group: str,
                    subscribed: bool) -> None:
     """Start or stop hearing about changes in a group and the groups under it.
 
-    Anyone who can see the group may. It hides nothing; it only decides whether sync offers
-    the group's updates.
+    Anyone who sees the group's skills may. It hides nothing; it only decides whether sync
+    offers the group's updates.
     """
     found, _ = visibility.membership(session, user_id, team)
     # Looked up among the groups the caller sees, so a hidden one costs what a missing one does.

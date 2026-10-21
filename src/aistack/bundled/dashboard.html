@@ -1366,6 +1366,8 @@ const WORDS = {
     withoutGroup: 'Skills shared without a group',
     noTopLevel: 'No skills at team level. Skills shared without a group appear here.',
     emptyGroup: 'No skills in this group yet.',
+    hiddenPrivate: 'Private: only the people added to it see its skills.',
+    hiddenUnder: 'Only the people who see {group} see its skills.',
   },
   teamRow: {
     replace: 'Replace yours…',
@@ -1437,6 +1439,7 @@ const WORDS = {
     openUnder: 'Open to everyone who sees {group}',
     openToTeam: 'Open to everyone in {team}',
     youAreIn: 'You are in it',
+    skillsHidden: 'Hidden from you',
     isPrivate: '{group} is private',
     privateTip: 'Only people added to this group see it. Switch off to open it to the whole team.',
     openTip: 'Everyone in the team sees this group. Switch on to limit it to the people added to it.',
@@ -1552,6 +1555,7 @@ const WORDS = {
     joining: 'Joining',
     withCode: 'With an invite code',
     adminSees: 'As an admin you see every group, private ones included.',
+    adminManages: 'As an admin you manage every group. You see a private group\'s skills only when you are in it.',
     invite: 'Invite people',
     inviteText: 'Each invite link lets one person into this team, and makes them an account on this server if they have none. It lasts seven days.',
     inviteHint: 'Make one per person. Cancel any you no longer need.',
@@ -2166,7 +2170,8 @@ function renderSidebar(r) {
             icon(node.g.private ? 'lock' : 'folder', 14),
             el('span', { class: 'label mono', title: node.path }, node.host ? node.path.slice(node.host.path.length + 1) : node.path),
             node.g.private && el('span', { class: 'sr-only' }, W.privateAfter),
-            waiting(node.path) ? el('span', { class: 'count upd', title: W.nav.updateWaiting }, el('span', { class: 'dot accent' }), String(countSkills(node)))
+            !node.g.sees_skills ? null
+              : waiting(node.path) ? el('span', { class: 'count upd', title: W.nav.updateWaiting }, el('span', { class: 'dot accent' }), String(countSkills(node)))
               : el('span', { class: 'count' }, String(countSkills(node))));
           a.classList.add('sub');
           a.style.setProperty('--d', Math.min(depth, 6));
@@ -2965,7 +2970,7 @@ function shareDialog(s) {
     holder.replaceChildren(groupPicker(team, {
       name: 'share-group', legend: W.share.groupLegend, noneLabel: W.teamLevelNoGroup,
       value: s.source && s.source.team === team.name ? s.source.group || '' : '',
-      allow: g => mayShareInto(team, g.path),
+      allow: g => g.sees_skills && mayShareInto(team, g.path),
     }));
     const text = risk();
     warning.textContent = text || '';
@@ -3088,7 +3093,7 @@ function foldRow(key, depth, { title, ic, label, plain, badge, count, side }) {
         el('span', { class: 'gicon' }, icon(ic, 15)),
         el('span', { class: 'gname' + (plain ? ' plain' : '') }, label),
         badge,
-        el('span', { class: 'count' }, plural(count, 'skill'))),
+        count != null && el('span', { class: 'count' }, plural(count, 'skill'))),
       side));
 }
 
@@ -3128,15 +3133,18 @@ function skillsTab(team, admin, group) {
 function groupRows(team, node, admin, depth, out) {
   const key = team.name + '\n' + node.path;
   const priv = node.g && node.g.private;
+  // Shown to an admin to manage, without its skills: no count, nothing to subscribe to.
+  const hidden = node.g && !node.g.sees_skills;
   out.push(foldRow(key, Math.min(depth, 6), {
     title: node.path, ic: priv ? 'lock' : 'folder',
     label: node.host ? node.path.slice(node.host.path.length + 1) : node.path,
-    badge: priv && privateBadge(), count: countSkills(node),
-    side: node.g && subscribeSwitch(team, node.g),
+    badge: priv && privateBadge(), count: hidden ? null : countSkills(node),
+    side: node.g && !hidden && subscribeSwitch(team, node.g),
   }));
   if (collapsed.has(key)) return;
   const inner = Math.min(depth + 1, 7);
-  if (node.skills.length) node.skills.forEach(s => out.push(teamSkillRow(team, s, admin, inner)));
+  if (hidden) out.push(hintRow(inner, priv ? W.skillsTab.hiddenPrivate : say(W.skillsTab.hiddenUnder, { group: node.path.slice(0, node.path.lastIndexOf('/')) })));
+  else if (node.skills.length) node.skills.forEach(s => out.push(teamSkillRow(team, s, admin, inner)));
   else if (!node.children.length) out.push(hintRow(inner, W.skillsTab.emptyGroup));
   node.children.forEach(c => groupRows(team, c, admin, depth + 1, out));
 }
@@ -3301,10 +3309,11 @@ function groupsTab(team, admin) {
         td('meta',
           el('span', { class: 't2' }, people(inIt.length)),
           inIt.length ? el('span', { class: 't2 mono extra', title: inIt.join(', ') }, some(inIt)) : null),
-        td('meta',
-          el('span', { class: 't2' }, plural(holds.length, 'skill')),
-          holds.length ? el('span', { class: 't2 mono extra', title: holds.join(', ') }, some(holds)) : null),
-        td('row', subscribeSwitch(team, g)),
+        td('meta', g.sees_skills
+          ? [el('span', { class: 't2' }, plural(holds.length, 'skill')),
+            holds.length ? el('span', { class: 't2 mono extra', title: holds.join(', ') }, some(holds)) : null]
+          : el('span', { class: 't2' }, W.groups.skillsHidden)),
+        td('row', g.sees_skills && subscribeSwitch(team, g)),
         td('row', admin
           ? sw(g.private, W.private, {
               fk: `priv:${g.path}`, label: say(W.groups.isPrivate, { group: g.path }),
@@ -3551,7 +3560,7 @@ function settingsTab(team, admin) {
         fact(say(W.teamSettingsTab.admins, { n: admins.length }), el('span', { class: 'person', title: admins.join(W.comma) }, some(admins))),
         fact(W.teamSettingsTab.privateGroups, closed ? String(closed) : W.none),
         fact(W.teamSettingsTab.joining, W.teamSettingsTab.withCode))),
-    admin && el('div', { class: 'card-foot' }, el('span', null, W.teamSettingsTab.adminSees)));
+    admin && el('div', { class: 'card-foot' }, el('span', null, team.sees_all_groups ? W.teamSettingsTab.adminSees : W.teamSettingsTab.adminManages)));
   return el('div', { class: 'settings' }, el('div', null,
     (admin || team.can_invite) && card('', W.teamSettingsTab.invite, W.teamSettingsTab.inviteText, W.teamSettingsTab.inviteHint,
       btn(W.teamSettingsTab.createInvite, { fk: 'invite', on: { click: ev => run(ev.currentTarget, async () => {
@@ -3841,12 +3850,12 @@ const DB = (() => {
           { name: 'incident-notes', description: 'Turns a chat log into a blameless incident summary with a timeline.', group: null, revision: 3, pushed_by: 'eve', updated_on: ago(70), in_library: false },
         ] },
       { name: 'aistack', kind: 'SHARED', role: 'ADMIN', sees_all_groups: false,
-        members: [person('dimitris', 'ADMIN', ['developers', 'developers/backend']), person('maria', 'MEMBER', ['developers', 'developers/backend']), person('eve', 'MEMBER', ['security'])],
+        members: [person('dimitris', 'ADMIN', ['developers', 'developers/backend', 'security']), person('maria', 'MEMBER', ['developers', 'developers/backend']), person('eve', 'MEMBER', ['security'])],
         groups: [
-          { path: 'developers', private: false, member: true, subscribed: true },
-          { path: 'developers/backend', private: false, member: true, subscribed: true },
-          { path: 'developers/frontend', private: false, member: false, subscribed: true },
-          { path: 'security', private: true, member: false, subscribed: true },
+          { path: 'developers', private: false, member: true, subscribed: true, sees_skills: true },
+          { path: 'developers/backend', private: false, member: true, subscribed: true, sees_skills: true },
+          { path: 'developers/frontend', private: false, member: false, subscribed: true, sees_skills: true },
+          { path: 'security', private: true, member: true, subscribed: true, sees_skills: true },
         ],
         skills: [
           { name: 'commit-messages', description: 'Writes commit messages in the house style: imperative subject, why before what.', group: null, revision: 2, pushed_by: 'dimitris', updated_on: ago(96), in_library: true },
@@ -3933,7 +3942,7 @@ const DEMO_ROUTES = [
     if (DB.teams.some(t => t.name === 'design')) fail('You are already in design.');
     DB.teams.push({ name: 'design', kind: 'SHARED', role: 'MEMBER', sees_all_groups: false,
       members: [{ username: 'eve', role: 'ADMIN', sees_all_groups: false, groups: ['tokens'] }, { username: dMe(), role: 'MEMBER', sees_all_groups: false, groups: [] }],
-      groups: [{ path: 'tokens', private: false, member: false, subscribed: true }],
+      groups: [{ path: 'tokens', private: false, member: false, subscribed: true, sees_skills: true }],
       skills: [{ name: 'design-tokens', description: 'Keeps colours, spacing and type in sync with the token file.', group: 'tokens', revision: 2, pushed_by: 'eve', updated_on: dNow(), in_library: false }] });
     return { team: 'design' };
   }],
@@ -4001,7 +4010,7 @@ const DEMO_ROUTES = [
     if (b.parent) dGroup(t, b.parent);
     const path = b.parent ? `${b.parent}/${b.name}` : b.name;
     if (t.groups.some(g => g.path === path)) fail(`${t.name} already has a group ${path}.`);
-    t.groups.push({ path, private: !!b.private, member: true, subscribed: true });
+    t.groups.push({ path, private: !!b.private, member: true, subscribed: true, sees_skills: true });
     dMember(t, dMe()).groups.push(path);
     return { path };
   }],

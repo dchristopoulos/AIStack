@@ -1004,6 +1004,31 @@ def test_a_member_given_sight_of_every_group_reads_them_all_and_writes_to_none(
         _share(session_factory, eve, groups, "eves-own", "security")
 
 
+def test_an_admin_is_shown_every_group_and_which_keep_their_skills_hidden(
+        session_factory, dimitris, maria, eve, groups):
+    """Being shown a group to manage it is not seeing its skills, nor subscribing to it."""
+    admin = dimitris.user.user_id
+    _do(session_factory, team_service.create_group, admin, groups, "tools", "security")
+    _do(session_factory, team_service.set_member, admin, groups, "maria", "ADMIN")
+
+    def shown(person):
+        return {group.path: group.sees_skills for group in _do(
+            session_factory, team_service.groups, person.user.user_id, groups)}
+
+    # In backend/aistack, outside security: it and the open group under it are hers to manage.
+    assert shown(maria) == {"backend": True, "backend/aistack": True, "security": False,
+                            "security/tools": False}
+    assert ("security", "pentest") not in _team_view(session_factory, maria)
+    with pytest.raises(NotFound, match="has no group 'security'"):
+        _do(session_factory, team_service.set_subscribed, maria.user.user_id, groups,
+            "security", False)
+    # A member is shown only the groups whose skills they see.
+    assert shown(eve) == {"backend": True}
+
+    _do(session_factory, team_service.set_member, admin, groups, "maria", sees_all_groups=True)
+    assert set(shown(maria).values()) == {True}
+
+
 def test_sharing_into_a_group_takes_belonging_to_it_or_to_one_above_it(session_factory,
                                                                       dimitris, maria, eve,
                                                                       groups):

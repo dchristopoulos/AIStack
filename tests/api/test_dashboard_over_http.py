@@ -401,6 +401,41 @@ async def test_a_team_from_creation_to_an_update_taken_entirely_on_the_dashboard
     assert [entry["name"] for entry in report["install"]] == ["code-review"]
 
 
+async def test_an_admin_outside_a_private_group_is_sent_it_without_its_skills(server_url):
+    dimitris_token = await _join(server_url, "dimitris")
+    maria_token = await _join(server_url, "maria")
+    eve_token = await _join(server_url, "eve")
+    await _push(server_url, dimitris_token, "pentest")
+
+    async with _browser(server_url, dimitris_token) as dimitris, \
+            _browser(server_url, maria_token) as maria, \
+            _browser(server_url, eve_token) as eve:
+        await _post(dimitris, "/teams", name="acme")
+        for person in (maria, eve):
+            code = (await _post(dimitris, "/teams/acme/invite")).json()["code"]
+            await _post(person, "/teams/join", code=code)
+        await _post(dimitris, "/teams/acme/groups", name="backend")
+        await _post(dimitris, "/teams/acme/groups", name="vault", private=True)
+        await _post(dimitris, "/teams/acme/group/members", path="vault", username="eve",
+                    member=True)
+        await _post(dimitris, "/skills/pentest/share", team="acme", group="vault")
+        await _post(dimitris, "/teams/acme/members/maria", role="ADMIN")
+
+        async def seen(browser) -> tuple[list[tuple[str, bool]], list[str]]:
+            acme = next(team for team in (await _state(browser))["teams"]
+                        if team["name"] == "acme")
+            return ([(group["path"], group["sees_skills"]) for group in acme["groups"]],
+                    [skill["name"] for skill in acme["skills"]])
+
+        # Maria is an admin outside vault: shown it to manage, and sent none of its skills.
+        assert await seen(maria) == ([("backend", True), ("vault", False)], [])
+        refused = await _post(maria, "/teams/acme/group", path="vault", subscribed=False)
+        assert refused.status_code == 404
+        # Eve is a member inside it, and Dimitris an admin inside it.
+        for inside in (eve, dimitris):
+            assert await seen(inside) == ([("backend", True), ("vault", True)], ["pentest"])
+
+
 async def test_taking_over_a_namesake_of_your_own_waits_for_replace(server_url):
     dimitris_token = await _join(server_url, "dimitris")
     maria_token = await _join(server_url, "maria")

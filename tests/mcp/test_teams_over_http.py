@@ -68,9 +68,10 @@ UNTEAMED_CALLS = {
 }
 
 # What a member who is inside the team but not inside a group may do with that group's skill.
-# The rows are the three ways to be in that position (ADR-0015, ADR-0029):
+# The rows are the four ways to be in that position (ADR-0015, ADR-0029):
 #   open      - the group is open and they are not in it
 #   private   - the group is private and they are not in it
+#   admin     - the group is private and they are not in it, as one of the team's admins
 #   sees-all  - the group is private, and an admin let them see every group
 # and the outcomes:
 #   listed / unlisted       - list_skills shows the skill, or leaves it out
@@ -83,6 +84,8 @@ INSIDER_VIEW = {
              "share_into": "missing"},
     "private": {"list": "unlisted", "take": "missing", "share_over": "hidden-name",
                 "share_into": "missing"},
+    "admin": {"list": "unlisted", "take": "missing", "share_over": "hidden-name",
+              "share_into": "missing"},
     "sees-all": {"list": "listed", "take": "taken", "share_over": "read-only",
                  "share_into": "missing"},
 }
@@ -415,6 +418,8 @@ async def insider_fixture(server_url, session_factory, request):
                                   private=position != "open")
         if position == "sees-all":
             team_service.set_member(session, admin, "acme", "eve", sees_all_groups=True)
+        if position == "admin":
+            team_service.set_member(session, admin, "acme", "eve", role="ADMIN")
     await push(server_url, dimitris, "grouped")
     await call(server_url, dimitris, "share_skill", name="grouped", team="acme", group="squad")
     await push(server_url, eve, "grouped", files={"notes.md": "eve's own"})
