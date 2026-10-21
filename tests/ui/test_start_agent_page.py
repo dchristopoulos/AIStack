@@ -24,7 +24,7 @@ async def test_this_computer_opens_the_agent_by_its_link_with_the_skills_ticked(
 
     await page.get_by_role("button", name="Start an agent…").click()
     dialog = page.get_by_role("dialog", name="Start an agent in demo-api")
-    await expect(dialog.get_by_text("Opens a terminal on macbook")).to_be_visible()
+    await expect(dialog.get_by_text("Opens a terminal on MacBook Pro M4 Pro")).to_be_visible()
     await expect(dialog.get_by_role("radio", name="Claude Code")).to_be_checked()
     await expect(dialog.get_by_role("radio", name="Codex")).to_be_visible()
     # The project's own skills start ticked, the ones for every project do not.
@@ -62,23 +62,23 @@ async def test_another_computer_shows_only_the_command(sign_in):
     page = (await sign_in("dimitris")).page
     await _open_project(page)
 
-    await page.get_by_role("region", name="desktop").get_by_role(
-        "button", name="Start an agent in demo-api on desktop…").click()
+    await page.get_by_role("region", name="Work desktop").get_by_role(
+        "button", name="Start an agent in demo-api on Work desktop…").click()
     dialog = page.get_by_role("dialog", name="Start an agent in demo-api")
-    await expect(dialog.get_by_text("Run this in a terminal on desktop")).to_be_visible()
+    await expect(dialog.get_by_text("Run this in a terminal on Work desktop")).to_be_visible()
     await expect(dialog.get_by_role("link", name="Open on this computer")).to_have_count(0)
     await expect(dialog.get_by_role("button", name="Open a terminal")).to_have_count(0)
     await dialog.get_by_label("More skills, by name").fill("repo-own")
-    await expect(dialog.get_by_label("Command to run on desktop")).to_have_value(
+    await expect(dialog.get_by_label("Command to run on Work desktop")).to_have_value(
         f"aistack start --agent=claude-code --project={KEY} --skills=repo-own")
 
 
 async def test_a_computer_s_page_starts_each_agent_in_one_of_its_projects(sign_in):
     page = (await sign_in("dimitris")).page
-    await page.get_by_role("navigation", name="Main").get_by_role("link", name="macbook").click()
+    await page.get_by_role("navigation", name="Main").get_by_role("link", name="MacBook Pro M4 Pro").click()
 
-    await page.get_by_role("button", name="Start Codex in a project on macbook…").click()
-    dialog = page.get_by_role("dialog", name="Start Codex on macbook")
+    await page.get_by_role("button", name="Start Codex in a project on MacBook Pro M4 Pro…").click()
+    dialog = page.get_by_role("dialog", name="Start Codex on MacBook Pro M4 Pro")
     await expect(dialog.get_by_role("radio", name="Codex")).to_be_checked()
     await dialog.get_by_label("Project").select_option(label="demo-api")
     await expect(dialog.get_by_text("For every project", exact=True)).to_be_visible()

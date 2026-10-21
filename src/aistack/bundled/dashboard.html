@@ -4524,13 +4524,13 @@ document.addEventListener('keydown', ev => {
 const DB = (() => {
   const ago = h => new Date(Date.now() - h * 3600e3).toISOString();
   const MAC = '0b1f6c1e-52a7-4c0e-9d0b-6f2f3c1a9e10', DESK = '7c9e2a44-1d3b-4f6a-8a55-0e4d2b7f6c21';
-  const person = (username, role, groups) => ({ username, role, sees_all_groups: false, can_invite: false, groups });
+  const person = (username, full_name, role, groups) => ({ username, full_name, role, sees_all_groups: false, can_invite: false, groups });
   const P = machine => ({ machine, harness: 'claude_code' });
   return {
     user: { username: 'dimitris', full_name: 'Dimitris Christopoulos' },
     this_computer: MAC,
     machines: [
-      { id: MAC, name: 'macbook', os: 'MACOS', harnesses: ['claude_code', 'agents'], added_on: ago(900), added_by: null, added_by_removed: false,
+      { id: MAC, name: 'MacBook Pro M4 Pro', os: 'MACOS', harnesses: ['claude_code', 'agents'], added_on: ago(900), added_by: null, added_by_removed: false,
         last_synced: { claude_code: ago(2), agents: ago(26) },
         projects: [
           { key: 'github.com/demo-team/demo-api', name: 'demo-api',
@@ -4538,7 +4538,7 @@ const DB = (() => {
                       { harness: 'agents', path: '/Users/dimitris/code/demo-api', last_synced_on: ago(26) }] },
           { key: 'github.com/demo-team/demo-website', name: 'demo-website',
             folders: [{ harness: 'claude_code', path: '/Users/dimitris/code/demo-website', last_synced_on: ago(50) }] }] },
-      { id: DESK, name: 'desktop', os: 'LINUX', harnesses: ['claude_code'], added_on: ago(600), added_by: 'macbook', added_by_removed: false,
+      { id: DESK, name: 'Work desktop', os: 'LINUX', harnesses: ['claude_code'], added_on: ago(600), added_by: 'MacBook Pro M4 Pro', added_by_removed: false,
         last_synced: { claude_code: null },
         projects: [{ key: 'github.com/demo-team/demo-api', name: 'demo-api',
                      folders: [{ harness: 'claude_code', path: '/home/dimitris/code/demo-api', last_synced_on: null }] }] },
@@ -4549,7 +4549,7 @@ const DB = (() => {
       { name: 'commit-messages', description: 'Writes commit messages in the house style: imperative subject, why before what.', revision: 2, pushed_by: 'dimitris', updated_on: ago(96), files: 1, placements: [P(MAC), P(DESK), { machine: MAC, harness: 'agents' }],
         source: { team: 'demo-team', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'dimitris', update_available: false, own_changes: false } },
       { name: 'pr-description', description: 'Drafts a pull request description from the branch diff and linked issue.', revision: 1, pushed_by: 'eve', updated_on: ago(200), files: 2, placements: [P(MAC), P(DESK)],
-        source: { team: 'friends', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'eve', update_available: false, own_changes: false } },
+        source: { team: 'side-projects', group: null, revision: 2, latest_revision: 2, latest_pushed_by: 'eve', update_available: false, own_changes: false } },
       { name: 'sqlalchemy-migrations', description: 'Plans and writes Alembic migrations that run identically on SQLite and Postgres.', revision: 4, pushed_by: 'maria', updated_on: ago(52), files: 6,
         placements: [P(DESK), { machine: MAC, harness: 'claude_code', project: 'github.com/demo-team/demo-api' }, { machine: MAC, harness: 'agents', project: 'github.com/demo-team/demo-api' }],
         source: { team: 'demo-team', group: 'developers/backend', revision: 4, latest_revision: 4, latest_pushed_by: 'maria', update_available: false, own_changes: false } },
@@ -4569,8 +4569,8 @@ const DB = (() => {
         text: '# demo-api for Claude Code\n\nRead AGENTS.md first; it holds the rules for every agent.\n' },
     ],
     teams: [
-      { name: 'friends', kind: 'SHARED', role: 'MEMBER', sees_all_groups: false,
-        members: [person('dimitris', 'MEMBER', []), person('maria', 'ADMIN', []), person('eve', 'MEMBER', [])],
+      { name: 'side-projects', kind: 'SHARED', role: 'MEMBER', sees_all_groups: false,
+        members: [person('dimitris', 'Dimitris Christopoulos', 'MEMBER', []), person('maria', 'Maria Papadopoulou', 'ADMIN', []), person('eve', 'Eve Laurent', 'MEMBER', [])],
         groups: [],
         skills: [
           { name: 'pr-description', description: 'Drafts a pull request description from the branch diff and linked issue.', group: null, revision: 2, pushed_by: 'eve', updated_on: ago(200), in_library: true },
@@ -4578,7 +4578,7 @@ const DB = (() => {
           { name: 'incident-notes', description: 'Turns a chat log into a blameless incident summary with a timeline.', group: null, revision: 3, pushed_by: 'eve', updated_on: ago(70), in_library: false },
         ] },
       { name: 'demo-team', kind: 'SHARED', role: 'ADMIN', sees_all_groups: false,
-        members: [person('dimitris', 'ADMIN', ['developers', 'developers/backend', 'security']), person('maria', 'MEMBER', ['developers', 'developers/backend']), person('eve', 'MEMBER', ['security'])],
+        members: [person('dimitris', 'Dimitris Christopoulos', 'ADMIN', ['developers', 'developers/backend', 'security']), person('maria', 'Maria Papadopoulou', 'MEMBER', ['developers', 'developers/backend']), person('eve', 'Eve Laurent', 'MEMBER', ['security'])],
         groups: [
           { path: 'developers', private: false, member: true, subscribed: true, sees_skills: true },
           { path: 'developers/backend', private: false, member: true, subscribed: true, sees_skills: true },

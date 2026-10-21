@@ -64,7 +64,7 @@ async def test_every_project_lists_rules_and_a_computer_names_each_agents_file(s
     await expect(page.get_by_text("Saved which agents use house-style.")).to_be_visible()
     assert _rule(await dimitris.state(), "house-style")["agents"] == ["claude_code"]
 
-    await _open(page, "macbook")
+    await _open(page, "MacBook Pro M4 Pro")
     agents = page.get_by_role("table", name="Coding agents")
     await expect(agents.get_by_role("row").filter(has_text="Claude Code").get_by_text(
         "~/.claude/CLAUDE.md")).to_be_visible()

@@ -62,7 +62,7 @@ SKILLS = {
 
 
 # The team's repositories, as the sync skill reports them: demo-api on both of Dimitris's
-# computers, demo-website on the macbook only.
+# computers, demo-website on the MacBook only.
 PROJECT_KEY = "github.com/demo-team/demo-api"
 PROJECT_HERE = {"path": "/Users/dimitris/code/demo-api",
                 "remote": "git@github.com:demo-team/demo-api.git"}
@@ -129,13 +129,13 @@ async def seed(base_url: str, invite_code: str, long_names: bool = False,
     `tokens`, when given, receives each person's machine token.
     """
     dimitris, maria, alex = (Person(base_url, name) for name in ("dimitris", "maria", "alex"))
-    await dimitris.join(invite_code, "macbook", "MACOS")
-    added = await dimitris.tool("add_machine", name="desktop", os="LINUX")
-    # The desktop ran the command it was given and synced once, so it shows Claude Code.
+    await dimitris.join(invite_code, "MacBook Pro M4 Pro", "MACOS")
+    added = await dimitris.tool("add_machine", name="Work desktop", os="LINUX")
+    # The work desktop ran the command it was given and synced once, so it shows Claude Code.
     desktop_token = added["command"].split("Bearer ")[1].rstrip('"')
     await dimitris.call(desktop_token, "sync", local={})
-    await maria.join(invite_code, "work-laptop", "LINUX")
-    await alex.join(invite_code, "thinkpad", "WINDOWS")
+    await maria.join(invite_code, "Work laptop", "LINUX")
+    await alex.join(invite_code, "ThinkPad X1 Carbon", "WINDOWS")
 
     for name in ("code-review", "release-notes", "sql-style", "demo-api-notes",
                  "pentest-checklist", "meeting-notes", "commit-messages"):
@@ -146,14 +146,14 @@ async def seed(base_url: str, invite_code: str, long_names: bool = False,
     await dimitris.page("/account", full_name="Dimitris Christopoulos")
     await maria.page("/account", full_name="Maria Papadopoulou")
 
-    # The macbook's shared agents folder, which Codex reads, has synced once and holds two skills.
+    # The MacBook's shared agents folder, which Codex reads, has synced once and holds two skills.
     macbook = (await dimitris.browser.get("/api/state")).json()["machines"][0]["id"]
     await dimitris.tool("sync", local={}, harness="agents")
     for name in ("commit-messages", "meeting-notes"):
         await dimitris.page(f"/skills/{name}/machines/{macbook}", enabled=True, harness="agents")
 
     # demo-api is a project on both computers: its Claude Code folder synced once on each, and
-    # holds one skill of its own on the macbook only (ADR-0026). demo-website is on the macbook.
+    # holds one skill of its own on the MacBook only (ADR-0026). demo-website is on the MacBook.
     await dimitris.tool("sync", local={}, here=PROJECT_HERE, project=PROJECT_KEY)
     await dimitris.call(desktop_token, "sync", local={}, here=PROJECT_ON_DESKTOP,
                         project=PROJECT_KEY)
@@ -197,10 +197,10 @@ async def seed(base_url: str, invite_code: str, long_names: bool = False,
     # Alex wrote a release-notes of his own, unrelated to the one the team has.
     await alex.push("release-notes", extra="Alex's own checklist for a release.\n")
 
-    # A friends team that has nothing to do with the company.
+    # A team for side projects, which has nothing to do with the company.
     await maria.push("meeting-notes")
-    await maria.page("/teams", name="friends")
-    await maria.page("/skills/meeting-notes/share", team="friends")
+    await maria.page("/teams", name="side-projects")
+    await maria.page("/skills/meeting-notes/share", team="side-projects")
 
     people = [dimitris, maria, alex]
     if long_names:
@@ -273,7 +273,7 @@ def main() -> None:
     descriptor = os.open(TOKENS_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w") as file:
         json.dump({"server": base_url, "tokens": tokens}, file)
-    print("Seeded: 3 people, 4 computers, teams 'demo-team' and 'friends', 3 groups (one "
+    print("Seeded: 3 people, 4 computers, teams 'demo-team' and 'side-projects', 3 groups (one "
           "nested, one private), the projects demo-api and demo-website, and two rules.")
     print("Maria has an update to 'code-review' waiting. Alex is in 'demo-team' and in no group, "
           "so the private 'security' group is hidden from him.\n")
