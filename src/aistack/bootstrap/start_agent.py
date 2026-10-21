@@ -118,7 +118,8 @@ def start_from_page(agent: str, project: str, skills: list[str]) -> None:
     chosen = chosen_skills(",".join(skills))
     key = projects.validated_key(project)
     # A key, never a folder: `--project` also takes a path, and the page names projects.
-    if key.startswith(("~", ".")) or Path(key).is_absolute() or PureWindowsPath(key).drive:
+    # `/x` on any system: Windows reads it as a folder on the current drive.
+    if key.startswith(("~", ".")) or PureWindowsPath(key).anchor:
         raise ValidationError("project is not a project key AIStack made. Send the key sync "
                               "reported under project.")
     command = [sys.executable, "-m", "aistack.bootstrap", "start", "--new-terminal",

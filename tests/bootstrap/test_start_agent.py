@@ -63,14 +63,22 @@ def _fake_claude(version="2.1.241 (Claude Code)"):
 
 
 def _settings(command: list[str]) -> dict:
-    value = command[1].removeprefix("--settings=")
-    return json.loads(Path(value).read_text() if os.name == "nt" else value)
+    return json.loads(command[1].removeprefix("--settings="))
 
 
 def _started(recipe, folder, chosen, run):
-    started = []
-    start_agent.start(recipe, folder, chosen, confirm=False, run=run,
-                      execute=lambda command, where: started.append((command, where)))
+    started, files = [], []
+
+    def execute(command, where):
+        # On Windows the settings are a file removed when the agent exits: read it while the
+        # agent runs, and check after that it is gone.
+        if os.name == "nt" and command[1].startswith("--settings="):
+            files.append(Path(command[1].removeprefix("--settings=")))
+            command = [command[0], "--settings=" + files[0].read_text(encoding="utf-8")]
+        started.append((command, where))
+
+    start_agent.start(recipe, folder, chosen, confirm=False, run=run, execute=execute)
+    assert not any(file.exists() for file in files)
     return started[0]
 
 

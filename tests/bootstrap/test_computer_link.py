@@ -1,6 +1,6 @@
 import plistlib
 import subprocess
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import SimpleNamespace
 
 import pytest
@@ -18,6 +18,7 @@ def home(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("AISTACK_HOME", str(tmp_path / "no-library"))
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     return home
@@ -125,7 +126,7 @@ def test_the_handler_opens_a_terminal_with_the_link_after_a_double_dash(home, mo
 
     computer_link.run(["--new-terminal", "--", "aistack://sync"])
 
-    assert opened == [(home, ["/opt/aistack", "open", "--", "aistack://sync"])]
+    assert opened == [(home, [str(Path("/opt/aistack")), "open", "--", "aistack://sync"])]
     with pytest.raises(SystemExit, match="did not act"):
         computer_link.run(["--new-terminal", "--", "--help"])
 
@@ -180,7 +181,8 @@ def test_with_no_known_folder_start_asks_for_one(home, tmp_path):
 
 # Registration ------------------------------------------------------------------------------
 
-PROGRAM = Path("/Users/maria/.local/bin/aistack")
+# The macOS and Linux handlers, tested on any system: a POSIX path wherever the test runs.
+PROGRAM = PurePosixPath("/Users/maria/.local/bin/aistack")
 
 
 def _recording(answer=""):
@@ -217,7 +219,7 @@ def test_macos_registers_an_applet_with_the_url_type_with_launch_services(home):
     assert calls[3] == [computer_link.LSREGISTER, "-f", str(app)]
     assert sorted(path.name for path in app.parent.iterdir()) == ["AIStack Link.app"]
     assert computer_link.registered(PROGRAM, home, "darwin", run)
-    assert not computer_link.registered(Path("/elsewhere/aistack"), home, "darwin", run)
+    assert not computer_link.registered(PurePosixPath("/elsewhere/aistack"), home, "darwin", run)
 
 
 def test_windows_registers_the_current_users_class_with_the_link_after_a_double_dash(home):
@@ -257,7 +259,7 @@ def test_linux_writes_a_desktop_handler_and_makes_it_the_default(home):
 def test_a_program_path_a_handler_would_misread_is_not_registered(program, system, home):
     calls, run = _recording()
 
-    assert "not registered" in computer_link.register(Path(program), home, system, run)
+    assert "not registered" in computer_link.register(PurePosixPath(program), home, system, run)
     assert calls == []
 
 
