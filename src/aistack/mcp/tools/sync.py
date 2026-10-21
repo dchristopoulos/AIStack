@@ -5,16 +5,19 @@ from typing import NotRequired, TypedDict
 
 from fastmcp.server.dependencies import get_http_request
 
-from aistack.bootstrap.context.application_context import get_session_factory
+from aistack.bootstrap.context.application_context import get_session_factory, get_ticket_signer
 from aistack.bundled import SYNC_SKILL_NAME
 from aistack.commons.text import loggable
 from aistack.mcp.auth.principal import current_machine
 from aistack.mcp.mcp import mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.mcp.routes.setup import SETUP_PATH
+from aistack.mcp.routes.transfer import RULE_DOWNLOAD_PATH, RULE_UPLOAD_PATH
 from aistack.mcp.server_url import server_base_url
-from aistack.services import computer_fingerprint, projects, sync_service
+from aistack.services import computer_fingerprint, projects, rule_sync, sync_service, visibility
 from aistack.services.harnesses import HarnessKey
+from aistack.services.reconciliation import Choice, Step
+from aistack.services.transfer_ticket import RuleDownloadTicket, RuleUploadTicket
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +79,41 @@ class Here(TypedDict):
     remote: str | None
 
 
+class RuleFile(TypedDict):
+    agent: str
+    place: str
+    name: str | None
+    digest: str | None
+
+
+class RuleEntry(TypedDict):
+    agent: str
+    place: str
+    name: str
+    action: str
+    desired: str | None
+    local: str
+    revision: int | None
+    local_revision: int | None
+    edited_from: int | None
+    pushed_by: str | None
+    options: list[OptionEntry]
+    removed_from_library: bool
+    download_url: str | None
+    upload_url: str | None
+
+
+class RepositoryFileEntry(TypedDict):
+    path: str
+    agent: str
+    turned_off: bool
+
+
 class SyncResult(TypedDict):
     machine_id: NotRequired[str]
+    # Only when the caller sent `rules`: older programs see nothing new.
+    rules: NotRequired[list[RuleEntry]]
+    repository_files: NotRequired[list[RepositoryFileEntry]]
     install: list[InstallEntry]
     update: list[UpdateEntry]
     ask: list[AskEntry]
@@ -129,7 +165,8 @@ class SyncResult(TypedDict):
 def sync(local: dict[str, dict[str, str]],
          harness: HarnessKey = "claude_code", here: Here | None = None,
          project: str | None = None, repository: list[str] | None = None,
-         fingerprint: str | None = None, identify: bool = False) -> SyncResult:
+         fingerprint: str | None = None, identify: bool = False,
+         rules: list[RuleFile] | None = None) -> SyncResult:
     started_at = perf_counter()
     caller = current_machine()
     fingerprint = computer_fingerprint.validated(fingerprint)
@@ -157,11 +194,19 @@ def sync(local: dict[str, dict[str, str]],
     # only the key made from it is kept.
     where = None if here is None else projects.validated_here(here.get("path"),
                                                                here.get("remote"))
+    observed = None if rules is None else rule_sync.validated_observation(rules)
+    rule_report = None
 
     with get_session_factory().begin() as session:
         computer_fingerprint.bind(session, caller.machine_id, caller.user_id, fingerprint)
         report = sync_service.sync(session, caller.machine_id, caller.user_id, local, harness,
                                    here=where, project=project, repository=repository or ())
+        if observed is not None:
+            # Project rules only where this computer manages the project it syncs in.
+            managed = None if report.project is None or not report.project.managed else (
+                visibility.my_project(session, caller.user_id, report.project.key))
+            rule_report = rule_sync.reconcile(session, caller.machine_id, caller.user_id,
+                                              observed, managed)
 
     sync_skill_url = None
     if report.refresh_sync_skill:
@@ -179,7 +224,52 @@ def sync(local: dict[str, dict[str, str]],
     )
     result = sync_result(report, sync_skill_url)
     result["machine_id"] = str(caller.machine_id)
+    if rule_report is not None:
+        result["rules"] = [_rule_entry(caller, action) for action in rule_report.actions]
+        result["repository_files"] = [
+            RepositoryFileEntry(path=file.path, agent=file.agent.value,
+                                turned_off=file.turned_off)
+            for file in rule_report.repository_files]
     return result
+
+
+def _rule_entry(caller, action: rule_sync.RuleAction) -> RuleEntry:
+    """One rule file's action, with the transfer URLs it may need: a download where the
+    Library's text may be written, an upload where the file's text may be kept. The URLs
+    carry tickets, so they are returned and never logged."""
+    choices = {option.choice for option in action.options}
+    base = server_base_url(get_http_request())
+    download = upload = None
+    if action.step in (Step.INSTALL, Step.UPDATE) or Choice.RESTORE in choices:
+        ticket = get_ticket_signer().sign_rule_download(RuleDownloadTicket(
+            machine_id=caller.machine_id, token_prefix=caller.token_prefix,
+            rule_revision_id=action.rule_revision_id, agent=action.agent))
+        download = f"{base}{RULE_DOWNLOAD_PATH}/{ticket}"
+    if action.step is Step.BACKUP or Choice.PUSH in choices:
+        ticket = get_ticket_signer().sign_rule_upload(RuleUploadTicket(
+            machine_id=caller.machine_id, user_id=caller.user_id,
+            token_prefix=caller.token_prefix, rule_name=action.name, agent=action.agent,
+            project_id=action.project_id, backup=action.step is Step.BACKUP))
+        upload = f"{base}{RULE_UPLOAD_PATH}/{ticket}"
+    return RuleEntry(
+        agent=action.agent.value,
+        place=action.place,
+        name=action.name,
+        action=action.step.value,
+        desired=None if action.desired is None else action.desired.value,
+        local=action.local.value,
+        revision=action.revision,
+        local_revision=action.local_revision,
+        edited_from=action.edited_from,
+        pushed_by=action.pushed_by,
+        options=[OptionEntry(choice=option.choice.value,
+                             overwrites_local=option.overwrites_local,
+                             loses_local_edits=option.loses_local_edits)
+                 for option in action.options],
+        removed_from_library=action.removed_from_library,
+        download_url=download,
+        upload_url=upload,
+    )
 
 
 def sync_result(report: sync_service.SyncReport, sync_skill_url: str | None) -> SyncResult:

@@ -1,7 +1,8 @@
-"""The two HTTP routes that carry skill archives (ADR-0010).
+"""The HTTP routes that carry skill archives and rule text (ADR-0010, ADR-0036).
 
 They sit outside FastMCP's bearer check on purpose: the ticket in the URL is the credential,
-minted by an authorized tool call and good for one skill, one direction, and five minutes.
+minted by an authorized tool call and good for one skill or rule, one direction, and five
+minutes.
 """
 
 import asyncio
@@ -16,15 +17,25 @@ from aistack.bootstrap.context.application_context import get_session_factory, g
 from aistack.mcp.mcp import mcp
 from aistack.mcp.routes.request_body import bounded_body
 from aistack.mcp.routes.route_error_handler import handle_route_errors
-from aistack.services import project_service, skill_service
+from aistack.commons.exceptions import ValidationError
+from aistack.db.models.rule import RULE_TEXT_MAX_BYTES
+from aistack.services import project_service, rule_sync, skill_service
 from aistack.services.skill_archive import MAX_ARCHIVE_BYTES, read_archive
 from aistack.services.skill_validation import validated_skill
-from aistack.services.transfer_ticket import DownloadTicket, UploadTicket
+from aistack.services.rule_validation import validated_rule_text
+from aistack.services.transfer_ticket import (
+    DownloadTicket,
+    RuleDownloadTicket,
+    RuleUploadTicket,
+    UploadTicket,
+)
 
 logger = logging.getLogger(__name__)
 
 UPLOAD_PATH = "/transfer/upload"
 DOWNLOAD_PATH = "/transfer/download"
+RULE_UPLOAD_PATH = "/transfer/rule-upload"
+RULE_DOWNLOAD_PATH = "/transfer/rule-download"
 
 UPLOAD_READ_TIMEOUT_SECONDS = 30
 
@@ -107,3 +118,45 @@ async def _bounded_body(request: Request) -> bytes:
         f"The upload is larger than the {MAX_ARCHIVE_BYTES} byte limit for one skill. If a "
         ".git or node_modules folder is inside the skill, leave it out.",
         UPLOAD_READ_TIMEOUT_SECONDS)
+
+
+@mcp.custom_route(RULE_UPLOAD_PATH + "/{ticket}", methods=["PUT"])
+@handle_route_errors
+async def upload_rule(request: Request) -> Response:
+    """A file's text from a computer, as the rule the ticket names. The text is never
+    logged."""
+    ticket = get_ticket_signer().verified_rule_upload(request.path_params["ticket"])
+    body = await bounded_body(
+        request, RULE_TEXT_MAX_BYTES,
+        f"The file is larger than the {RULE_TEXT_MAX_BYTES} byte limit for one rule (64 KiB). "
+        "Shorten it, or split it into two rules.", UPLOAD_READ_TIMEOUT_SECONDS)
+    try:
+        text = validated_rule_text(body.decode("utf-8"))
+    except UnicodeDecodeError:
+        raise ValidationError("The file is not UTF-8 text, so it was not stored. Save it as "
+                              "UTF-8 and sync again.") from None
+    saved = await asyncio.to_thread(_store_rule, ticket, text)
+    logger.info(f"Rule uploaded. Rule: '{saved.name}'. Saved: '{saved.saved}'. "
+                f"Revision: '{saved.revision}'. Agent: '{ticket.agent.value}'. "
+                f"Machine: '{ticket.machine_id}'.")
+    return JSONResponse(asdict(saved))
+
+
+def _store_rule(ticket: RuleUploadTicket, text: str):
+    with get_session_factory().begin() as session:
+        return rule_sync.store(session, ticket, text)
+
+
+@mcp.custom_route(RULE_DOWNLOAD_PATH + "/{ticket}", methods=["GET"])
+@handle_route_errors
+async def download_rule(request: Request) -> Response:
+    ticket = get_ticket_signer().verified_rule_download(request.path_params["ticket"])
+    name, text = await asyncio.to_thread(_load_rule, ticket)
+    logger.info(f"Rule downloaded. Rule: '{name}'. Agent: '{ticket.agent.value}'. "
+                f"Machine: '{ticket.machine_id}'.")
+    return Response(text.encode("utf-8"), media_type="text/markdown; charset=utf-8")
+
+
+def _load_rule(ticket: RuleDownloadTicket) -> tuple[str, str]:
+    with get_session_factory().begin() as session:
+        return rule_sync.text_of(session, ticket)
