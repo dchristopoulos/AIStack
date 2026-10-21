@@ -6,8 +6,6 @@ Nothing is decided here about who may see or change what; the services decide.
 """
 
 import asyncio
-import base64
-import hashlib
 import json
 import logging
 import re
@@ -35,7 +33,7 @@ from aistack.bootstrap.context.application_context import (
     library_description,
     refuse_when_moved,
 )
-from aistack.bundled import dashboard_page, plain_page
+from aistack.bundled import PLAIN_PAGE_SCRIPT, dashboard_page, plain_page, script_source
 from aistack.commons.exceptions import InvalidTicket, NotFound, SignedOut, ValidationError
 from aistack.commons.release import release
 from aistack.mcp.auth.failure_limiter import client_address, note_failure
@@ -73,9 +71,7 @@ def _page_headers(*scripts: str) -> dict[str, str]:
     and scripts are inline because it is one file; the scripts run only as these exact texts,
     by their hashes, so markup someone slipped into a skill's description runs nothing
     (STD-13). The styles stay inline-allowed for the page's style attributes."""
-    sources = " ".join(
-        f"'sha256-{base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()}'"
-        for script in scripts) or "'none'"
+    sources = " ".join(script_source(script) for script in scripts) or "'none'"
     return {
         "Content-Security-Policy": (
             f"default-src 'none'; style-src 'unsafe-inline'; script-src {sources}; "
@@ -88,6 +84,7 @@ def _page_headers(*scripts: str) -> dict[str, str]:
 
 
 _PAGE_HEADERS = _page_headers(*re.findall(r"<script>(.*?)</script>", dashboard_page(), re.S))
+_PLAIN_HEADERS = _page_headers(PLAIN_PAGE_SCRIPT)
 _API_HEADERS = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 
 # The routes `aistack dashboard` serves on 127.0.0.1 (ADR-0020): the person's own Library and
@@ -202,7 +199,7 @@ def _switch_page(holder: DashboardHolder, joining: str, current: str) -> Respons
         f"<p><button id=switch>Sign in as {escape(joining)}</button> "
         f"<a href=\"{APP_PATH}\">Stay signed in as {escape(current)}</a></p>"
         f"<script>{script}</script>"),
-        headers=_page_headers(script),
+        headers=_page_headers(script, PLAIN_PAGE_SCRIPT),
     )
 
 
@@ -644,14 +641,20 @@ def _json(payload: dict[str, Any]) -> JSONResponse:
 
 
 def _signed_out_page(request: Request) -> Response:
+    """The first page someone who has never seen AIStack meets: what it is, then the two ways
+    in. Static text and the server's own address only, because anyone can open it."""
     return HTMLResponse(plain_page(
-        "Signed out, AIStack",
-        "<h1>You are not signed in</h1>"
-        "<p>Ask your coding agent to <strong>open my aistack dashboard</strong>. It will "
-        "give you a link that signs you in. A link works once, within five minutes.</p>"
+        "Sign in, AIStack",
+        "<h1>Sign in to AIStack</h1>"
+        "<p class=lede>AIStack keeps one private Library of the skills your coding agents use, "
+        "on each of your computers and shared with your teams.</p>"
+        "<section><h2>I have AIStack on this computer</h2>"
+        "<p>Ask your coding agent to open your dashboard. It answers with a link that signs "
+        "this browser in; a link works once, within five minutes.</p>"
+        "<pre>open my aistack dashboard</pre></section>"
         + _not_connected_yet(request)),
         status_code=401,
-        headers=_PAGE_HEADERS,
+        headers=_PLAIN_HEADERS,
     )
 
 
@@ -661,11 +664,13 @@ def _link_spent_page() -> Response:
     return HTMLResponse(plain_page(
         "Sign-in link used, AIStack",
         "<h1>This sign-in link has been used</h1>"
-        "<p>A link works once, within five minutes, and this one has already been used or has "
-        "expired. Ask your coding agent to <strong>open my aistack dashboard</strong> for a "
-        "new one.</p>"),
+        "<p class=lede>A link works once, within five minutes, and this one has already been "
+        "used or has expired.</p>"
+        "<section><h2>Get a new link</h2>"
+        "<p>Ask your coding agent for one:</p>"
+        "<pre>open my aistack dashboard</pre></section>"),
         status_code=401,
-        headers=_PAGE_HEADERS,
+        headers=_PLAIN_HEADERS,
     )
 
 
@@ -683,9 +688,11 @@ def _not_connected_yet(request: Request) -> str:
     sentence = (f"Set up AIStack: fetch {server}/setup and follow it.\n"
                 "Invite code: <the invite code>. My username is <a short handle like maria>, "
                 "and my name is <your name>.")
-    return ("<p>Not connected yet? Paste this into Claude Code or Codex, with the invite code "
-            "you were given, a short username and your name filled in:</p>"
-            f"<pre>{escape(sentence)}</pre>")
+    return ("<section><h2>I'm new here</h2>"
+            "<p>Paste this into Claude Code or Codex, with the invite code you were given, a "
+            "short username and your name filled in. It creates your account and connects "
+            "this computer.</p>"
+            f"<pre>{escape(sentence)}</pre></section>")
 
 
 def _served_over_https(request: Request) -> bool:
