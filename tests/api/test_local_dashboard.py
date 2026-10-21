@@ -235,7 +235,7 @@ async def test_look_inside_lists_a_folder_here_and_the_server_has_no_such_route(
     (top / ".claude" / "skills" / "shop-release").mkdir(parents=True)
     (top / ".claude" / "skills" / "shop-release" / "SKILL.md").write_text("x\n")
     for path, text in {"AGENTS.md": "rules\n", "README.md": "readme\n", "app.py": "x\n"}.items():
-        (top / path).write_text(text)
+        (top / path).write_bytes(text.encode())  # no CRLF on Windows: sizes are exact
     subprocess.run(["git", "-C", str(top), "init", "-q"], check=True)
     subprocess.run(["git", "-C", str(top), "add", "."], check=True)
     base, link = dashboard

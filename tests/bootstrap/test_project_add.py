@@ -14,7 +14,7 @@ def shop(tmp_path):
     top = tmp_path / "shop"
     (top / "docs").mkdir(parents=True)
     for path, text in {"AGENTS.md": "rules\n", "docs/a.md": "a\n", "app.py": "x\n"}.items():
-        (top / path).write_text(text)
+        (top / path).write_bytes(text.encode())  # no CRLF on Windows: sizes are exact
     subprocess.run(["git", "-C", str(top), "init", "-q"], check=True)
     subprocess.run(["git", "-C", str(top), "add", "."], check=True)
     return top
