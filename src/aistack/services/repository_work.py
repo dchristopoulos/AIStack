@@ -28,6 +28,7 @@ from aistack.services import agent_files, projects, rule_files
 from aistack.services.project_file_service import validated_path
 
 EDIT_CHOICES = ("write", "cancel")
+_SKILLS_FOLDERS = (".claude/skills/", ".agents/skills/")
 _REGULAR_FILE_MODES = ("100644", "100755")
 _GIT_TIMEOUT = 30
 _NETWORK_TIMEOUT = 120
@@ -102,7 +103,9 @@ def markdown_files(top: Path) -> list[dict]:
     agents = agent_files.all_readers(tracked)
     listed = []
     for relative in tracked:
-        if relative not in agents and not relative.endswith(".md"):
+        # A skill's files belong to the skill, which is listed on its own.
+        if (relative not in agents and not relative.endswith(".md")) or relative.startswith(
+                _SKILLS_FOLDERS):
             continue
         try:
             validated_path(relative)
@@ -113,6 +116,34 @@ def markdown_files(top: Path) -> list[dict]:
             continue
         listed.append({"path": relative, "size": target.stat().st_size})
     return listed
+
+
+def look_inside(folder: str, home: Path) -> dict:
+    """What `aistack project add` would list for `folder`, for the localhost dashboard: the
+    project's key and name, its files with the agents that read them, and the skills its
+    repository holds. Reads git's listing and file sizes only, never a file's text."""
+    from aistack.services import server_sync
+    from aistack.services.skill_validation import looks_like_skill_name
+
+    path = Path(folder).expanduser() if isinstance(folder, str) and folder.strip() else None
+    if path is None or not path.is_absolute() or not path.is_dir():
+        raise ValidationError(f"{folder!s:.200} is not a folder on this computer. Give its "
+                              "full path, such as ~/code/shop.")
+    found = server_sync.current_project(path, home)
+    if found is None:
+        raise ValidationError(f"{path} is not inside a git repository, or is your home "
+                              "folder, so it is not a project.")
+    top, here = found
+    key = projects.project_key(here["remote"]) if here["remote"] else None
+    files = markdown_files(top)
+    agents = agent_files.all_readers([file["path"] for file in files])
+    skills = set()
+    for relative in _SKILLS_FOLDERS:
+        skills |= server_sync._repository(top, relative.rstrip("/"))
+    return {"key": key, "name": projects.project_name(key or str(top)), "top": str(top),
+            "files": [file | {"agents": [agent.value for agent in agents.get(file["path"], ())]}
+                      for file in files],
+            "skills": sorted(name for name in skills if looks_like_skill_name(name))}
 
 
 def _tracked(top: Path) -> set[str]:

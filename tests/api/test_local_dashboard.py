@@ -226,3 +226,32 @@ async def test_a_refusal_says_the_commands_own_sentence(dashboard, monkeypatch):
 
     assert response.status_code == 400
     assert response.json()["error"] == "Codex was not started. No folder."
+
+
+async def test_look_inside_lists_a_folder_here_and_the_server_has_no_such_route(dashboard,
+                                                                                 tmp_path):
+    """ADR-0038: local mode looks inside a folder at once; a server never reads a disk."""
+    top = tmp_path / "shop"
+    (top / ".claude" / "skills" / "shop-release").mkdir(parents=True)
+    (top / ".claude" / "skills" / "shop-release" / "SKILL.md").write_text("x\n")
+    for path, text in {"AGENTS.md": "rules\n", "README.md": "readme\n", "app.py": "x\n"}.items():
+        (top / path).write_text(text)
+    subprocess.run(["git", "-C", str(top), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(top), "add", "."], check=True)
+    base, link = dashboard
+    async with _signed_in(base, link) as client:
+        found = await client.post("/api/projects/look-inside", headers=REQUEST_HEADER,
+                                  json={"folder": str(top)})
+        refused = await client.post("/api/projects/look-inside", headers=REQUEST_HEADER,
+                                    json={"folder": "relative/path"})
+        no_header = await client.post("/api/projects/look-inside", json={"folder": str(top)})
+
+    assert found.status_code == 200, found.text
+    shown = found.json()
+    assert [(f["path"], f["size"]) for f in shown["files"]] == [("AGENTS.md", 6),
+                                                                ("README.md", 7)]
+    assert shown["files"][1]["agents"] == [] and "codex" in shown["files"][0]["agents"]
+    assert shown["skills"] == ["shop-release"]
+    assert refused.status_code == 400 and no_header.status_code == 400
+    assert "/api/projects/look-inside" not in {
+        route.path for route in mcp._additional_http_routes}
