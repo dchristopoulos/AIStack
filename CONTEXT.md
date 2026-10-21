@@ -20,6 +20,22 @@ _Avoid_: Project skills directory, local folder, repo folder
 A skill folder inside a project folder that git tracks, or would commit because it is untracked and not ignored. It belongs to the repository: AIStack never reads, writes, backs up or replaces it, and installs no Library skill of that name there.
 _Avoid_: Repo skill, checkout skill, committed skill, team skill (that is a skill shared into a team)
 
+**Rule**:
+A Markdown file a coding agent reads as instructions (ADR-0036). It is in one of three places: the person's rules for every project (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`), the repository's rules (committed `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/*.mdc`), or the person's rules for one project (git-ignored). The first and last are kept in the Library with revisions and reach every computer that has the agent or the project; the repository's rules belong to git.
+_Avoid_: Memory (Claude Code's word for something else), prompt, instructions file (in prose: "rule"), CLAUDE.md as the general name
+
+**Repository's rule**:
+A rule file git tracks in a project. AIStack shows it and can write an edit into a working copy, then shares the edit as a pull request with only that file; it never commits to the branch the person is on, and never moves or deletes the file. It can be turned off for one person through the agent's own settings.
+_Avoid_: Team rule (a team shares through a Library), committed rule
+
+**Start an agent**:
+Opening a terminal on a computer that runs a coding agent in a project with only the skills the person ticked, for that one session (ADR-0038). Nothing on disk changes.
+_Avoid_: Launch (in the page), profile, workspace
+
+**Computer link**:
+An `aistack://` link the program registers on a computer, which opens a terminal running an `aistack` command after the person confirms there (ADR-0038).
+_Avoid_: Deep link (in the page), URL scheme (in the page)
+
 **Resource**:
 The umbrella term for anything AIStack manages: a skill, rule, agent, hook, or MCP server definition.
 _Avoid_: Config item, asset

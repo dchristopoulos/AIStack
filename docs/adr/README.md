@@ -37,3 +37,6 @@ Each file records one decision, why it was made, and what follows from it. A dec
 - [ADR-0033](0033-a-removed-computer-comes-back-when-it-changes-something.md): A removed computer comes back when it changes something
 - [ADR-0034](0034-a-forgotten-persons-revisions-stay-under-a-pseudonym.md): A forgotten person's revisions stay, under a pseudonym
 - [ADR-0035](0035-the-program-does-the-mechanical-work.md): The program does the mechanical work, accepted
+- [ADR-0036](0036-rules-are-the-second-resource.md): Rules are the second resource
+- [ADR-0037](0037-the-page-is-organised-by-project.md): The page is organised by project
+- [ADR-0038](0038-the-page-asks-the-program-to-act-on-a-computer.md): The page asks the program to act on a computer
