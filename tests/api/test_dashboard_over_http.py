@@ -90,6 +90,29 @@ async def test_a_link_from_chat_signs_the_browser_in_and_leaves_the_address_bar(
     assert [machine["name"] for machine in state["machines"]] == ["laptop"]
 
 
+async def test_over_https_the_session_cookie_is_one_only_this_host_can_set(server_url):
+    """A browser takes a `__Host-` cookie only from this exact host, Secure, at Path=/ and
+    with no Domain, so a sibling subdomain cannot plant a session of its own."""
+    token = await _join(server_url, "dimitris")
+    link = (await _call(server_url, token, "open_dashboard"))["url"]
+    # What a TLS proxy in front of the server says; uvicorn trusts it from 127.0.0.1.
+    behind_tls = {"X-Forwarded-Proto": "https"}
+
+    async with httpx.AsyncClient(base_url=_base(server_url), headers=behind_tls) as browser:
+        signed_in = await browser.get(link)
+        cookie, *attributes = signed_in.headers["set-cookie"].split(";")
+        name, value = cookie.split("=", 1)
+        state = await browser.get("/api/state", headers={"Cookie": cookie})
+        unprefixed = await browser.get("/api/state",
+                                       headers={"Cookie": f"{SESSION_COOKIE}={value}"})
+
+    attributes = [attribute.strip().lower() for attribute in attributes]
+    assert name == f"__Host-{SESSION_COOKIE}"
+    assert "secure" in attributes and "path=/" in attributes
+    assert not any(attribute.startswith("domain") for attribute in attributes)
+    assert state.status_code == 200 and unprefixed.status_code == 401
+
+
 async def test_the_page_may_load_nothing_from_anywhere_else(server_url):
     async with _browser(server_url, await _join(server_url, "dimitris")) as browser:
         page = await browser.get("/app")

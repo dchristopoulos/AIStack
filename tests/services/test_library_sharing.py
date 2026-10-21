@@ -168,6 +168,37 @@ def test_a_change_recorded_during_a_rebuild_is_not_lost(tmp_path, monkeypatch):
         assert len(session.scalars(select(SkillVersion)).all()) == PUSHES
 
 
+def test_a_copy_that_keeps_changing_is_rebuilt_in_place_with_nothing_lost(tmp_path,
+                                                                         monkeypatch):
+    log = _log(tmp_path)
+    engine, session_factory = _needing_a_rebuild(tmp_path, log)
+    stored = skill_service.store
+    stores, recorded = [], []
+
+    def store_and_record(*arguments, **keywords):
+        stores.append(1)
+        # Each rebuild beside: this computer records a change meanwhile, so none swaps in.
+        if len(recorded) < 3 and len(stores) % PUSHES == 1:
+            with session_factory.begin() as session:
+                event = library_log.new_event(session, log[0].machine_id,
+                                              library_log.FOLDER_SYNCED, harness="agents")
+                library_log.record(session, event)
+                recorded.append(event.event_id)
+        return stored(*arguments, **keywords)
+
+    monkeypatch.setattr(skill_service, "store", store_and_record)
+    LibrarySharing(Clone(log), engine, session_factory).replay_clone()
+
+    # Three rebuilds beside, then one in place.
+    assert len(stores) == 4 * PUSHES
+    with session_factory.begin() as session:
+        assert len(session.scalars(select(SkillVersion)).all()) == PUSHES
+        assert library_log.known_ids(session) >= {event.event_id for event in log}
+        waiting = [event.event_id for event in library_log.unpublished(session)]
+        assert len(waiting) == 4 and set(recorded) <= set(waiting)
+    assert not [path for path in tmp_path.iterdir() if ".rebuild-" in path.name]
+
+
 def test_a_copy_rebuilt_beside_matches_one_rebuilt_in_place(tmp_path):
     log = _log(tmp_path)
     engine, session_factory = _needing_a_rebuild(tmp_path, log)

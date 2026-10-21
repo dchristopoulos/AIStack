@@ -144,11 +144,20 @@ async def test_a_skill_removed_from_the_library_can_be_brought_back(sign_in):
     """PH-11: once removed, a skill could not be found anywhere on the page."""
     dimitris = await sign_in("dimitris")
     page = dimitris.page
+    before = await dimitris.state()
+    names = {machine["id"]: machine["name"] for machine in before["machines"]}
+    assert {names[placement["machine"]] for placement in
+            _skill(before, "meeting-notes")["placements"]} == {"macbook"}
     await page.get_by_role("button", name="Details of meeting-notes").click()
     await page.get_by_role("dialog", name="meeting-notes").get_by_role(
         "button", name="Remove from library…").click()
-    await page.get_by_role("dialog", name="Remove meeting-notes from your library?").get_by_role(
-        "button", name="Remove").click()
+    confirm = page.get_by_role("dialog", name="Remove meeting-notes from your library?")
+    # Only the computer that has it is asked; the desktop never had it.
+    await expect(confirm.get_by_text(
+        "macbook asks at the next sync whether to delete its folder. Nothing is deleted from "
+        "a computer until you answer there.")).to_be_visible()
+    await expect(confirm.get_by_text("desktop")).to_have_count(0)
+    await confirm.get_by_role("button", name="Remove").click()
     removed = page.get_by_text("Removed from your library (1)")
     await expect(removed).to_be_visible()
     assert (await dimitris.state())["removed"] == ["meeting-notes"]
@@ -246,6 +255,10 @@ async def test_a_computer_page_lists_what_it_has_and_removes_one(sign_in):
     await page.get_by_role("button", name="Remove sql-style from Claude Code on macbook").click()
 
     await expect(table.get_by_text("sql-style", exact=True)).to_have_count(0)
+    # Sync asks there before it deletes anything, and the Library keeps it.
+    await expect(page.get_by_role("status").get_by_text(
+        "Removed sql-style from Claude Code on macbook. Its next sync asks whether to delete "
+        "the folder; it stays in your library.")).to_be_visible()
     state = await dimitris.state()
     assert _on(state, "sql-style") == []
     assert "sql-style" in [skill["name"] for skill in state["skills"]]
@@ -546,6 +559,43 @@ async def test_an_admin_moves_a_team_skill_into_a_group(sign_in):
     await expect(page.get_by_text("Moved release-notes to")).to_be_visible()
     moved = _skill(_team(await dimitris.state(), "aistack"), "release-notes")
     assert moved["group"] == "developers"
+
+
+async def test_removing_a_team_skill_says_its_history_there_goes_with_it(sign_in):
+    """The team's revisions are deleted for good, so the dialog says so before it happens."""
+    dimitris = await sign_in("dimitris")
+    await _open_team(dimitris, "aistack")
+    page = dimitris.page
+
+    await page.get_by_role("button", name="Manage commit-messages").click()
+    await page.get_by_role("menuitem", name="Remove from team").click()
+    confirm = page.get_by_role("dialog", name="Remove commit-messages from aistack?")
+    await expect(confirm.get_by_text("Its history in the team is deleted and cannot be "
+                                     "restored.")).to_be_visible()
+    await expect(confirm.get_by_text("People who already added it to their library keep "
+                                     "their copy.")).to_be_visible()
+    await confirm.get_by_role("button", name="Remove from team").click()
+
+    await expect(page.get_by_role("status").get_by_text(
+        "Removed commit-messages from aistack.")).to_be_visible()
+    state = await dimitris.state()
+    assert "commit-messages" not in [skill["name"] for skill in _team(state, "aistack")["skills"]]
+    assert _skill(state, "commit-messages")["source"] is None
+
+
+async def test_a_skill_you_shared_shows_the_team_it_is_linked_to_not_as_from_it(sign_in):
+    """Sharing links a skill to a team as taking does, and the page names the relation, not
+    where the skill came from: nothing counts it among skills 'from a team'."""
+    dimitris = await sign_in("dimitris")
+    page = dimitris.page
+    sql_style = _skill(await dimitris.state(), "sql-style")
+    assert (sql_style["pushed_by"], sql_style["source"]["team"]) == ("dimitris", "aistack")
+
+    await expect(page.get_by_role("columnheader", name="Linked team")).to_be_visible()
+    await expect(page.get_by_role("row").filter(has_text="sql-style").get_by_role(
+        "link", name="aistack", exact=True)).to_be_visible()
+    await expect(page.get_by_text("from a team")).to_have_count(0)
+    assert dimitris.console_errors == []
 
 
 async def test_an_admin_makes_an_existing_group_private_and_open_again(sign_in):

@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import tarfile
+from contextlib import asynccontextmanager
 from datetime import timedelta
 
 import httpx
@@ -11,6 +12,7 @@ import pytest
 from fastmcp.exceptions import ToolError
 from sqlalchemy import delete, select
 
+from aistack.api.dashboard import REQUEST_HEADER
 from aistack.bootstrap.context import application_context
 from aistack.db.models.invite import Invite
 from aistack.db.models.machine import Machine
@@ -79,15 +81,27 @@ UNTEAMED_CALLS = {
 #   missing                 - the same sentence as for a skill or group that does not exist
 #   read-only               - sharing over it is refused, naming the group they can read
 #   hidden-name             - sharing over it is refused without naming where it is
+#   shown / absent          - the dashboard's state lists the group, its skills, and who is
+#                             in it, or names none of them anywhere
+#   managed                 - the dashboard's state lists the group, to manage it, with
+#                             its skills marked hidden and none of them listed
+#   diffed                  - the dashboard shows what taking its latest would change
+#   unsubscribed            - the dashboard switches its updates off for them
+#   offered / silent        - sync lists a newer revision of a skill they took before it
+#                             went into the group under `team_updates`, or lists nothing
 INSIDER_VIEW = {
     "open": {"list": "listed", "take": "taken", "share_over": "read-only",
-             "share_into": "missing"},
+             "share_into": "missing", "state": "shown", "changes": "diffed",
+             "subscribe": "unsubscribed", "sync": "offered"},
     "private": {"list": "unlisted", "take": "missing", "share_over": "hidden-name",
-                "share_into": "missing"},
+                "share_into": "missing", "state": "absent", "changes": "missing",
+                "subscribe": "missing", "sync": "silent"},
     "admin": {"list": "unlisted", "take": "missing", "share_over": "hidden-name",
-              "share_into": "missing"},
+              "share_into": "missing", "state": "managed", "changes": "missing",
+              "subscribe": "missing", "sync": "silent"},
     "sees-all": {"list": "listed", "take": "taken", "share_over": "read-only",
-                 "share_into": "missing"},
+                 "share_into": "missing", "state": "shown", "changes": "diffed",
+                 "subscribe": "unsubscribed", "sync": "offered"},
 }
 
 
@@ -407,7 +421,8 @@ async def test_a_tool_that_names_no_team_says_nothing_of_one_you_are_not_in(serv
 
 @pytest.fixture(name="insider")
 async def insider_fixture(server_url, session_factory, request):
-    """eve, in team acme, outside the group holding dimitris's 'grouped' skill."""
+    """eve, in team acme, outside the group holding dimitris's 'grouped' skill, and 'moved',
+    which she took at team level before it changed and went into the group."""
     position = request.param
     dimitris = await join(server_url, "dimitris", "macbook")
     eve = await join(server_url, "eve", "laptop")
@@ -416,18 +431,79 @@ async def insider_fixture(server_url, session_factory, request):
         admin = session.scalar(select(User.user_id).where(User.username == "dimitris"))
         team_service.create_group(session, admin, "acme", "squad",
                                   private=position != "open")
+        # Open, under it, with dimitris in it: its path must not name a private 'squad'.
+        team_service.create_group(session, admin, "acme", "inner", parent="squad")
         if position == "sees-all":
             team_service.set_member(session, admin, "acme", "eve", sees_all_groups=True)
         if position == "admin":
             team_service.set_member(session, admin, "acme", "eve", role="ADMIN")
     await push(server_url, dimitris, "grouped")
     await call(server_url, dimitris, "share_skill", name="grouped", team="acme", group="squad")
+    await push(server_url, dimitris, "moved")
+    await call(server_url, dimitris, "share_skill", name="moved", team="acme")
+    await call(server_url, eve, "get_skill", name="moved", team="acme")
+    await push(server_url, dimitris, "moved", files={"notes.md": "two\n"})
+    await call(server_url, dimitris, "share_skill", name="moved", team="acme")
+    with session_factory.begin() as session:
+        team_service.move_skill(session, admin, "acme", "moved", "squad")
     await push(server_url, eve, "grouped", files={"notes.md": "eve's own"})
     await push(server_url, eve, "fresh")
     return position, eve
 
 
+@asynccontextmanager
+async def _dashboard(server_url, token):
+    """A browser signed in with the link `open_dashboard` returned."""
+    link = (await call(server_url, token, "open_dashboard"))["url"]
+    async with httpx.AsyncClient(base_url=server_url.removesuffix("/mcp")) as browser:
+        assert (await browser.get(link)).status_code == 303
+        yield browser
+
+
+async def _on_dashboard(browser, action, target) -> httpx.Response:
+    if action == "changes":
+        return await browser.get(f"/api/teams/acme/skills/{target}/changes")
+    return await browser.post("/api/teams/acme/group", headers={REQUEST_HEADER: "1"},
+                              json={"path": target, "subscribed": False})
+
+
 async def _insider_outcome(server_url, eve, action) -> str:
+    if action == "state":
+        async with _dashboard(server_url, eve) as browser:
+            shown = (await browser.get("/api/state")).json()
+        acme, = [team for team in shown["teams"] if team["name"] == "acme"]
+        if "squad" not in json.dumps(shown) and acme["skills"] == []:
+            return "absent"
+        in_groups = [path for member in acme["members"] for path in member["groups"]]
+        if ("squad" in [group["path"] for group in acme["groups"]]
+                and {skill["name"] for skill in acme["skills"]} == {"grouped", "moved"}
+                and any(path.split("/")[0] == "squad" for path in in_groups)):
+            return "shown"
+        squad = next((group for group in acme["groups"] if group["path"] == "squad"), None)
+        if (squad is not None and squad["sees_skills"] is False
+                and not {"grouped", "moved"} & {skill["name"] for skill in acme["skills"]}):
+            return "managed"
+        return f"unexpected: {acme}"
+    if action == "sync":
+        offered = (await call(server_url, eve, "sync",
+                              local={"moved": local_digests("moved")}))["team_updates"]
+        if not offered:
+            return "silent"
+        return "offered" if [update["name"] for update in offered] == ["moved"] else (
+            f"unexpected: {offered}")
+    if action in ("changes", "subscribe"):
+        real, ghost = ("grouped", "ghost-skill") if action == "changes" else (
+            "squad", "ghost-group")
+        async with _dashboard(server_url, eve) as browser:
+            answer = await _on_dashboard(browser, action, real)
+            if answer.status_code == 200:
+                return "diffed" if action == "changes" else "unsubscribed"
+            other = await _on_dashboard(browser, action, ghost)
+        if (answer.status_code == other.status_code == 404
+                and answer.json()["error"].replace(real, "X")
+                == other.json()["error"].replace(ghost, "X")):
+            return "missing"
+        return f"unexpected: {answer.text}"
     if action == "list":
         listed = (await call(server_url, eve, "list_skills"))["skills"]
         return "listed" if any(s["team"] == "acme" and s["name"] == "grouped"
@@ -461,7 +537,7 @@ async def _insider_outcome(server_url, eve, action) -> str:
 
 
 @pytest.mark.parametrize("insider", sorted(INSIDER_VIEW), indirect=True)
-@pytest.mark.parametrize("action", ["list", "take", "share_over", "share_into"])
+@pytest.mark.parametrize("action", list(INSIDER_VIEW["open"]))
 async def test_a_member_outside_a_group_reads_writes_and_is_refused_as_the_matrix_says(
         server_url, insider, action):
     position, eve = insider

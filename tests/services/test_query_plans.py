@@ -7,6 +7,7 @@ the dashboard may not issue more statements because a team has more members or g
 
 import json
 import re
+import uuid
 
 import pytest
 from sqlalchemy import event
@@ -82,8 +83,9 @@ def focus_fixture(session_factory):
     return focus
 
 
-def _statements(session_factory, call) -> list[tuple[str, object]]:
+def _statements(session_factory, call, writes=False) -> list[tuple[str, object]]:
     engine = session_factory.kw["bind"]
+    kinds = ("SELECT", "WITH", "UPDATE", "DELETE") if writes else ("SELECT", "WITH")
     seen = []
 
     def record(conn, cursor, statement, parameters, context, executemany):
@@ -96,7 +98,7 @@ def _statements(session_factory, call) -> list[tuple[str, object]]:
     finally:
         event.remove(engine, "before_cursor_execute", record)
     return [(statement, parameters) for statement, parameters in seen
-            if statement.lstrip().upper().startswith(("SELECT", "WITH"))]
+            if statement.lstrip().upper().startswith(kinds)]
 
 
 def _full_scans(session_factory, statements) -> list[str]:
@@ -132,6 +134,33 @@ def _unindexed(node):
         yield from _unindexed(child)
 
 
+def _indexes_searched(session_factory, statements) -> set[str]:
+    """Every index these statements' plans look rows up in, rather than read end to end."""
+    engine = session_factory.kw["bind"]
+    found = set()
+    with engine.connect() as connection:
+        if engine.dialect.name == "postgresql":
+            connection.exec_driver_sql("SET enable_seqscan = off")
+        for statement, parameters in statements:
+            if engine.dialect.name == "sqlite":
+                plan = " ".join(row[-1] for row in connection.exec_driver_sql(
+                    "EXPLAIN QUERY PLAN " + statement, parameters))
+                found.update(re.findall(r"SEARCH \w+ USING (?:COVERING )?INDEX (\w+)", plan))
+            else:
+                plan = connection.exec_driver_sql(
+                    "EXPLAIN (FORMAT JSON) " + statement, parameters).scalar()
+                plan = plan if isinstance(plan, list) else json.loads(plan)
+                found.update(_index_conditions(plan[0]["Plan"]))
+    return found
+
+
+def _index_conditions(node):
+    if "Index Name" in node and "Index Cond" in node:
+        yield node["Index Name"]
+    for child in node.get("Plans", []):
+        yield from _index_conditions(child)
+
+
 @pytest.mark.parametrize("read", ["state", "list_skills", "sync", "export"])
 def test_one_persons_reads_walk_only_their_own_revisions(session_factory, focus, read):
     user_id, machine_id = focus.user.user_id, focus.machine.machine_id
@@ -145,6 +174,44 @@ def test_one_persons_reads_walk_only_their_own_revisions(session_factory, focus,
     }[read]
 
     assert _full_scans(session_factory, _statements(session_factory, call)) == []
+
+
+# Migration 0012's indexes, each with something the services do that finds rows by it. Without
+# its index each reads the whole of a table that grows with everyone on the server.
+_LOOKUPS = {
+    "ix_team_member_user_id": "state",
+    "ix_group_member_user_id": "state",
+    "ix_group_unsubscribed_user_id": "state",
+    "ix_invite_team_id_created_on": "state",
+    "ux_team_personal_owner": "state",
+    "ix_machine_skill_skill_id": "remove_skill",
+    "ix_skill_group_id": "delete_group",
+    # Removing a team's skill unlinks every copy taken from it, by foreign key.
+    "ix_skill_source_skill_id": "remove_team_skill",
+}
+
+
+@pytest.mark.parametrize("index", sorted(_LOOKUPS))
+def test_each_lookup_index_is_the_one_its_lookup_searches(session_factory, focus, index):
+    user_id = focus.user.user_id
+    call = {
+        "state": lambda session: dashboard_service.state(session, user_id),
+        "remove_skill": lambda session: skill_service.remove_from_my_skills(
+            session, user_id, "alpha"),
+        "delete_group": lambda session: team_service.delete_group(
+            session, user_id, "smallteam1", "open"),
+        "remove_team_skill": lambda session: team_service.remove_skill(
+            session, user_id, "smallteam0", "smallteam0-skill"),
+    }[_LOOKUPS[index]]
+    statements = _statements(session_factory, call, writes=True)
+    if (index == "ix_skill_source_skill_id"
+            and session_factory.kw["bind"].dialect.name == "postgresql"):
+        # PostgreSQL runs a foreign key's action as a statement of its own, which the plan of
+        # the DELETE leaves out. This is the statement it runs.
+        statements = [("UPDATE skill SET source_skill_id = NULL "
+                       "WHERE source_skill_id = %(skill_id)s", {"skill_id": uuid.uuid4()})]
+
+    assert index in _indexes_searched(session_factory, statements)
 
 
 def test_an_export_reads_the_library_in_two_statements_however_many_skills(session_factory,
