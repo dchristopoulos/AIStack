@@ -2,45 +2,36 @@
 
 [![Tests](https://github.com/dchristopoulos/AIStack/actions/workflows/tests.yaml/badge.svg)](https://github.com/dchristopoulos/AIStack/actions/workflows/tests.yaml)
 [![PyPI](https://img.shields.io/pypi/v/aistack-mcp)](https://pypi.org/project/aistack-mcp/)
-[![Python](https://img.shields.io/badge/python-3.13-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**A self-hosted control plane for your AI coding agents' skills: back them up, keep every computer in sync, and share them with your team.**
+**Your coding agents' skills and rules in one private Library, on every computer and every agent, shared with your team when you choose.**
 
-AIStack keeps one private Library of the skills your coding agents use (Claude Code, Codex, and every agent that reads `~/.agents/skills`). It backs up what is on each computer, installs what each one should have, and lets you share skills with a team without a teammate's edit ever landing on your machine unannounced. You manage it from a web dashboard, and your agent reaches the same account over MCP, so everyday actions are one sentence in chat.
+AIStack is a self-hosted, open-source dashboard for what Claude Code, Codex and other coding agents read: skills, and the rules in `CLAUDE.md`, `AGENTS.md` and their kin. It backs up what is on each computer, installs what each one should have, and shows each project the way your agents see it. Your agent reaches the same account over MCP, so everyday actions are one sentence in chat. No hosted service, no telemetry.
 
-Open source, with no hosted service and no telemetry.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/project-dark.png">
+  <img alt="A project's page: where it is on each computer, and every rule and skill its agents read, with Claude Code and Codex as columns" src="docs/images/project-light.png">
+</picture>
 
-![The Library: every skill you keep, where it came from, and which computers have it](docs/images/dashboard-library.png)
+## What it does
 
-## Why
-
-A team writes a good code-review skill. It gets copied onto five laptops, and a month later there are five versions. A developer with a laptop and a desktop maintains the same setup twice. Nobody knows what their teammates' agents are running, and nobody wants a colleague's change to an agent's instructions to arrive without asking.
-
-## Features
-
-- **One private Library per person.** Skills on your computers are backed up automatically and installed on the others; each computer and agent can have its own selection.
-- **Sync that never loses work.** Sync acts on its own only when nothing can be lost. A locally edited skill, a removed one, or a teammate's update is a question, never an overwrite.
-- **Teams and nested groups.** Share a skill with a team or a group such as `backend/payments`. Groups can be open or private.
-- **Updates are offers.** A teammate's new revision is offered with who pushed it; it reaches your computers only when you take it.
-- **Web dashboard and MCP.** The dashboard covers everything; thirteen MCP tools cover what is worth saying in chat. Sign-in is a link your agent hands you, with no passwords.
+- **One private Library.** Skills and rules on your computers are backed up on their own and installed on the others. Sync never deletes, and never overwrites an edit it has not seen: it asks.
+- **Organised by project.** Each project has one page: the computers it is on, and everything your agents read there, in the order they read it, with each agent as a column.
+- **Rules, not just skills.** Your rules for every project, your private rules for one project, and the repository's own `AGENTS.md` or `CLAUDE.md`. Edit a repository's file on the page and AIStack shares it as a pull request on its own branch.
+- **Start an agent with only the skills you pick.** Claude Code or Codex, in one project, for one session, with nothing changed on disk.
+- **Teams and groups.** Share a skill with a team or a group such as `backend/payments`. A teammate's change is an offer you take, never something that lands on your computer unasked.
 - **Runs where you choose.** On one computer, across your computers through a private GitHub repository or a PostgreSQL database, or as a server for a team.
 
-## Installation
+| | |
+|---|---|
+| ![Every project: the rules and skills every agent reads everywhere](docs/images/every-project.png) | ![A repository's AGENTS.md in the side panel, with Edit and Commit](docs/images/rule-panel.png) |
+| **Every project**: what reaches every project, on every computer | **A rule**: its text, who reads it, Edit and Commit… |
+| ![The Start an agent dialog with skills ticked for one session](docs/images/start-an-agent.png) | |
+| **Start an agent**: only the skills you tick, for one session | |
 
-AIStack needs Python 3.13. The recommended installer is [uv](https://docs.astral.sh/uv/getting-started/installation/):
+## Quick start
 
-```bash
-uv tool install aistack-mcp
-```
-
-`pipx install aistack-mcp` works too. The package is named `aistack-mcp` on PyPI; it installs the `aistack` command. To run the latest code from this repository instead, use `uv tool install git+https://github.com/dchristopoulos/AIStack`.
-
-For a team server, use the container image instead (see [Running a server](#running-a-server)).
-
-## Quickstart
-
-### For yourself
+### For yourself (local mode)
 
 Paste this into Claude Code or Codex:
 
@@ -48,86 +39,11 @@ Paste this into Claude Code or Codex:
 Set up AIStack: run `uvx aistack-mcp setup` and follow what it prints.
 ```
 
-Setup asks where your Library should live, connects your agent, and installs the `sync-aistack` skill:
+Setup asks where your Library lives (this computer, a private GitHub repository, or a PostgreSQL database such as [Neon](https://neon.tech)), installs AIStack with `uv tool install aistack-mcp`, connects your agent and adds the `sync-aistack` skill. On another computer, paste the same sentence and pick the same place. Then say **"open my aistack dashboard"**.
 
-| Where the Library lives | Good for | What it takes |
-|---|---|---|
-| This computer only | Trying it out | Nothing |
-| A private GitHub repository | Your own computers | A GitHub sign-in on each; AIStack creates and maintains the repository |
-| A PostgreSQL database ([Neon](https://neon.tech), Supabase, or your own) | Your own computers | One connection string pasted on each |
-| An AIStack server | Teams | A machine that stays on |
+Nothing else runs: your agent starts AIStack over stdio ([ADR-0020](docs/adr/0020-local-mode-and-where-the-library-lives.md)).
 
-In the first three, your agent starts AIStack itself over stdio and nothing else runs ([ADR-0020](docs/adr/0020-local-mode-and-where-the-library-lives.md)). On another computer, paste the same sentence and pick the same repository or database.
-
-### Joining a team server
-
-Paste this into your agent, with the server's address and an invite code:
-
-```text
-Set up AIStack: fetch https://aistack.example.com/setup and follow it.
-Invite code: <the invite code>. My username is <a short handle like maria>, and my name is <your name>.
-```
-
-The agent creates your account and connects your first computer. Restart it once when it says so.
-
-For another computer, open **Computers → Add a computer** on the dashboard. Copy its command into a terminal on the new computer, for example:
-
-```text
-uvx aistack-mcp join https://aistack.example.com/mcp <computer-code>
-```
-
-Keep the dialog open and approve the request you just started. Its name and operating system describe the request; they do not prove who sent it. The command installs AIStack, configures the agents it finds, installs your Library's skills and runs sync. Restart the agent once. **Options** lets you choose a name, expiry, agent, an empty start, the hook, or explicitly allow connection without approval. Codes last 24 hours by default and work once. Cancel an unfamiliar request and make a new code.
-
-Chat can also make a code with `add_machine(computer_code=true)`. Older callers of `add_machine` still receive permanent-token setup instructions until a future minor release. If you have no connected computer left, ask the server operator for a recovery code.
-
-### Everyday use
-
-| Say | What happens |
-|---|---|
-| "sync aistack" | Backs up what is new, installs and updates what this computer should have, and asks about the rest |
-| "open my aistack dashboard" | Returns a link that opens the dashboard, signed in |
-| "what skills do my teams have?" | Lists your skills, then each team's, with who pushed each |
-| "install code-review from backend" | Takes the team's copy into your Library and installs it here |
-| "share wizard with backend" | Gives the team a copy of your latest revision |
-| "remove wizard from this machine" | Disables it here; it stays in your Library and on other computers |
-
-On a server connection, `aistack sync` does the file work through the existing MCP tools and signed downloads. Setup can install `aistack sync --hook` at session start using the installed command's full path. The hook is silent when nothing needs attention, and only manual sync repeats the plain-HTTP warning; questions about local edits, disabled skills and team offers still reach your agent for you to decide. Installs remain usable while the server is unavailable. A copied connection is refused when the operating system's computer id differs; add that computer separately. Older clients may omit the check, and a full clone may preserve that id ([ADR-0035](docs/adr/0035-the-program-does-the-mechanical-work.md)).
-
-To start a coding agent in a project with only some of its skills, for one session:
-
-```text
-aistack start --agent claude-code --skills code-review,tdd
-```
-
-It runs in the current folder's project, or the one `--project` names by folder or key, says what it will start and waits for Enter. Every other skill the agent would load there is turned off by name for that session only, with flags; your settings, login, rules and MCP servers are unchanged. `--agent codex` checks with `codex debug prompt-input` first that only the chosen skills remain. `--new-terminal` runs it in a new terminal window. It needs Claude Code 2.1.169 or Codex 0.163 or later. Claude Code's plugin skills stay on, and resuming the session later from a plain terminal brings every skill back ([ADR-0038](docs/adr/0038-the-page-asks-the-program-to-act-on-a-computer.md)).
-
-`--project` also takes the key of a project this computer manages; it then runs in the folder this computer last reported for it, and asks for the folder only when none is known.
-
-To add a project from its folder, with its agent files and other Markdown listed on the dashboard:
-
-```text
-aistack project add ~/code/shop
-```
-
-It prints the files it will list, by path and size, and waits for Enter; no file's text is sent then. Each later sync sends the text of the files ticked on the dashboard when it changed. An edit saved there for this computer is written into the working copy at the next `aistack sync`, only while the file still has the text the edit started from; Commit… on the dashboard then has the next sync push a branch holding only that file, with your note as the commit message, and open a pull request with `gh` when it is signed in. Your working tree, index and current branch stay as they are ([ADR-0036](docs/adr/0036-rules-are-the-second-resource.md)).
-
-Setup and `aistack join` register the `aistack://` computer link for the installed program, so a click on the dashboard opens a terminal here: an app bundle in `~/Applications` on macOS, a per-user `HKCU\Software\Classes\aistack` key on Windows, and a `.desktop` handler set with `xdg-mime` on Linux. `aistack check` says whether it is registered. The terminal runs `aistack open <link>`, which accepts only `aistack://start?agent=…&project=…&skills=…`, `aistack://project-add?folder=…` and `aistack://sync`, checks every value, and runs the matching command, which says what it will do and waits for Enter.
-
-### Try the dashboard without an agent
-
-Start a local server from a checkout and fill it with a small demo team:
-
-```bash
-git clone https://github.com/dchristopoulos/AIStack && cd AIStack
-poetry install
-CODE="$(openssl rand -base64 24)"
-AISTACK_HOST=127.0.0.1 AISTACK_INVITE_CODE="$CODE" poetry run aistack serve &
-poetry run python scripts/demo_seed.py http://127.0.0.1:8000 "$CODE"
-```
-
-It prints a one-time sign-in link for each of three demo users. Each works for five minutes; `poetry run python scripts/demo_seed.py --links` prints new ones.
-
-## Running a server
+### For a team (a server)
 
 ```bash
 openssl rand -base64 24 > invite-code.txt && chmod 600 invite-code.txt
@@ -137,135 +53,100 @@ docker run -d --name aistack -p 127.0.0.1:8000:8000 \
   -v aistack-data:/data ghcr.io/dchristopoulos/aistack:0.1
 ```
 
-`invite-code.txt` is the server's invite code, which you join with first; keep it. The port is published on this computer only, for a reverse proxy with TLS or `tailscale serve` in front; [Operating AIStack](docs/OPERATING.md#reaching-it-from-other-machines) says how to reach it from other machines.
+One container, one volume, SQLite inside (set `DATABASE_URL` for PostgreSQL). The port is published on this computer only, for a reverse proxy with TLS or `tailscale serve` in front. Then each person pastes this into their agent:
 
-One container, one volume, one port, with SQLite inside. Set `DATABASE_URL` to use PostgreSQL instead ([ADR-0002](docs/adr/0002-sqlite-default-postgres-optional.md)). The image is built for amd64 and arm64 and published only from commits that passed CI; `0.1` follows the releases of 0.1, and `edge` follows `main`. Upgrading is starting the new image: the server migrates its database at startup in a single transaction ([ADR-0016](docs/adr/0016-alembic-migrations-in-one-transaction.md)).
+```text
+Set up AIStack: fetch https://aistack.example.com/setup and follow it.
+Invite code: <the invite code>. My username is <a short handle like maria>, and my name is <your name>.
+```
 
-[Operating AIStack](docs/OPERATING.md) covers configuration, TLS, backups, upgrades, and administrative tasks such as revoking a machine or rotating the invite code.
+To add another computer, choose **Add a computer** (the + beside Computers) on the dashboard and run its command there, such as `uvx aistack-mcp join https://aistack.example.com/mcp <computer-code>`. [Operating AIStack](docs/OPERATING.md) covers TLS, backups, upgrades and admin tasks.
+
+### Just look at the page
+
+```bash
+git clone https://github.com/dchristopoulos/AIStack && cd AIStack
+poetry install
+CODE="$(openssl rand -base64 24)"
+AISTACK_HOST=127.0.0.1 AISTACK_INVITE_CODE="$CODE" poetry run aistack serve &
+poetry run python scripts/demo_seed.py http://127.0.0.1:8000 "$CODE"
+```
+
+It prints a sign-in link for each of three demo users, valid for five minutes.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    subgraph people["A person"]
-        browser["Browser"]
-        agent["Coding agent<br/>on each machine"]
+    browser["Dashboard<br/>in your browser"]
+    subgraph computer["Each computer"]
+        agent["Claude Code, Codex, ..."]
+        program["aistack program"]
+        files["Skills and rule files<br/>on disk"]
     end
-    subgraph server["AIStack · one process"]
-        dash["Dashboard<br/>/app and /api"]
-        tools["MCP tools<br/>metadata only"]
-        routes["Transfer routes<br/>signed, short-lived URLs"]
-        mine[("Library<br/>private, per user")]
-        teams[("Teams and groups<br/>shared copies")]
-        desired[("Desired state<br/>per machine")]
-    end
+    library[("Your Library<br/>this computer, GitHub,<br/>PostgreSQL or a server")]
+    team[("Teams and groups")]
 
-    browser -- "sign-in link from chat" --> dash
-    agent -- "MCP · machine token" --> tools
-    agent -- "tar + curl" --> routes
-    dash --- mine
-    dash --- teams
-    tools --- mine
-    tools --- desired
-    routes --- mine
-    mine -- "share" --> teams
-    teams -- "take" --> mine
+    agent -- "MCP" --> library
+    program -- "sync" --> library
+    program --> files
+    agent -. reads .-> files
+    browser --> library
+    library -- "share" --> team
+    team -- "take" --> library
 ```
 
-- **Skills are copied to disk and run natively.** After an install, nothing depends on AIStack being up ([ADR-0001](docs/adr/0001-full-sync-over-runtime-proxy.md)).
-- **The server holds desired state per machine.** Each machine has its own token, so a laptop and a desktop can enable different skills and sync reconciles each against its own list ([ADR-0004](docs/adr/0004-server-is-source-of-truth-per-machine.md)).
-- **Metadata travels over MCP; file contents do not.** Tools return a signed, five-minute URL and the agent moves a gzipped tar with `curl` ([ADR-0010](docs/adr/0010-signed-transfer-urls-for-skill-bytes.md)).
-- **A machine installs only from its owner's Library.** Team skills are taken into the Library first, so leaving a team never removes anything from a computer ([ADR-0015](docs/adr/0015-teams-and-groups.md)).
-- **Sync policy is a pure table.** [`reconciliation.py`](src/aistack/services/reconciliation.py) maps what the server wants and what the disk holds to one action, with invariant tests over every row ([ADR-0006](docs/adr/0006-explicit-disable-sync-never-deletes.md), [ADR-0007](docs/adr/0007-skill-specific-tables-generic-model-deferred.md)).
-- **The dashboard is part of the same process.** One HTML file with no build step, served by the Starlette app FastMCP runs on ([ADR-0017](docs/adr/0017-dashboard-in-the-same-process.md)).
-- **A GitHub Library is an event log** that every computer replays ([ADR-0025](docs/adr/0025-a-github-library-is-a-log-each-computer-replays.md)).
+- **Files are copied to disk and read natively.** Once installed, nothing depends on AIStack being up ([ADR-0001](docs/adr/0001-full-sync-over-runtime-proxy.md)).
+- **The program on the computer does the disk work**, and it acts on a click from the page only after you confirm in its terminal ([ADR-0035](docs/adr/0035-the-program-does-the-mechanical-work.md), [ADR-0038](docs/adr/0038-the-page-asks-the-program-to-act-on-a-computer.md)).
+- **File contents never cross MCP.** Tools return a signed, five-minute URL ([ADR-0010](docs/adr/0010-signed-transfer-urls-for-skill-bytes.md)).
+- **A computer installs only from its owner's Library.** A team's skill is taken into the Library first, so leaving a team removes nothing from a computer ([ADR-0015](docs/adr/0015-teams-and-groups.md)).
 
-The code is layered: thin MCP tools, HTTP routes, and dashboard routes call services in `services/`, which own the business logic and run inside one transaction per request. Authorization is a single middleware, so a new tool is covered by default. See [`docs/DESIGN.md`](docs/DESIGN.md) for the full design, and [`docs/adr/`](docs/adr/) for every architecture decision and its reasoning.
+[`docs/DESIGN.md`](docs/DESIGN.md) is the full design, and [`docs/adr/`](docs/adr/) holds every decision with its reasoning.
 
-### Security
+## Commands
 
-- Uploaded archives are read in memory under a decompression ceiling and never extracted; links, devices, and unsafe paths are rejected, and tests include gzip and pax-header bombs.
-- File paths are validated so a skill pushed from Linux installs safely on macOS and Windows (reserved names, case and Unicode-normalization collisions).
-- A team, group, or skill you may not see is answered exactly like one that does not exist.
-- Machine tokens and invite codes are stored only as SHA-256 hashes and are kept out of logs and error messages; CI greps the container's output for every kind of secret.
-- Dashboard sign-in links and session cookies are separate signed tickets, and every state-changing request requires a header a cross-site form cannot send.
+| Command | What it does |
+|---|---|
+| `aistack setup` | Prints the setup steps for a coding agent |
+| `aistack dashboard` | Opens the dashboard on this computer (local mode) |
+| `aistack sync` | Reconciles this computer's skills and rules with its server (in local mode, say "sync aistack") |
+| `aistack start --agent claude-code --skills code-review,tdd` | Starts Claude Code or Codex in this project with only those skills, for one session |
+| `aistack project add ~/code/shop` | Adds a project and lists its agent files and other Markdown |
+| `aistack join <server> <computer-code>` | Adds this computer to a server |
+| `aistack check` | Says whether this computer reaches its Library |
+| `aistack move github` | Moves the Library, with its history (also `postgresql`, `here`) |
+| `aistack export` | Writes every skill in the Library to a folder |
+| `AISTACK_HOST=127.0.0.1 aistack serve` | Runs the server without the container, listening on this computer only |
+| `aistack backup <file>` / `restore <file>` | Copies the server's database |
+| `aistack admin` | Manages a server's users, computers and teams |
 
-Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+`aistack --help` lists every option. In chat, say "sync aistack", "open my aistack dashboard", "install code-review from backend" or "share wizard with backend".
 
-## MCP tools
+## Roadmap
 
-| Area | Tool | Purpose |
-|---|---|---|
-| Connect | `join` | Redeem an invite code and register the first machine |
-| | `add_machine` | Register another computer and return its setup command |
-| Library | `sync` | Compare a skills folder with the Library and report what to do |
-| | `push_skill` | Get a signed URL to back up a skill; a repeated name becomes a new revision |
-| | `get_skill` | Enable a skill on this machine and get a signed URL for its files |
-| | `list_skills` | Your skills, then every team skill you may see |
-| | `disable_skill` | Stop managing a skill on this machine |
-| Teams | `share_skill` | Copy your latest revision into a team or group |
-| | `list_teams` | Your teams, your role, and their size |
-| | `create_team` | Create a team with you as admin |
-| | `invite_to_team` | Create a single-use, seven-day invite |
-| | `join_team` | Join a team with an invite code |
-| Dashboard | `open_dashboard` | Return a link that signs a browser in |
+- Teams sharing rules, as they share skills today.
+- Writing rules for more agents than Claude Code and Codex (their files are already shown).
+- Background sync, instead of syncing when asked or at session start.
+- Server administration, version pinning and revision management on the dashboard.
+- Hooks, agents and MCP server definitions.
 
-Anything that needs many parameters is a dashboard action rather than a tool.
+Current limits: a skill is text files only (at most 100 files, 256 KiB each, 1 MiB in total), and a rule is at most 64 KiB.
 
-## Development
+## Security and privacy
 
-The stack is Python 3.13, FastMCP, Starlette, SQLAlchemy 2, Alembic, PyJWT, and Poetry; SQLite by default and PostgreSQL through `DATABASE_URL`. The dashboard is a single HTML file with no front-end build.
+AIStack collects nothing. A server makes no outbound connections and the page loads nothing from other sites. Machine tokens and invite codes are stored only as hashes and kept out of logs; uploaded archives are read in memory and never extracted; a team, group or skill you may not see answers exactly like one that does not exist. Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
+
+## Contributing
+
+Issues and pull requests are welcome; open an issue before a larger change.
 
 ```bash
 poetry install
 poetry run playwright install chromium   # once, for the dashboard tests
-poetry run pytest -rs   # -rs names every skipped test and why
+poetry run pytest -rs
 ```
 
-PostgreSQL tests skip without a database. To run them:
-
-```bash
-docker compose -f compose.test.yaml up -d
-TEST_DATABASE_URL=postgresql+psycopg://aistack:aistack@localhost:5433/aistack_test poetry run pytest
-```
-
-Tests against real GitHub are opt-in: `AISTACK_E2E_GITHUB_REPO=<owner>/<scratch-repo> poetry run pytest tests/e2e`.
-
-CI runs the suite on SQLite and PostgreSQL, the dashboard tests in Chromium, Firefox, and WebKit, a Windows and a macOS job, and a container job that drives the built image as two users across a restart on both databases.
-
-Where to start reading the code:
-
-1. [`docs/DESIGN.md`](docs/DESIGN.md) and the glossary in [`CONTEXT.md`](CONTEXT.md).
-2. [`mcp/tools/`](src/aistack/mcp/tools/) and [`mcp/auth/`](src/aistack/mcp/auth/): the tools and the one authorization rule.
-3. [`services/visibility.py`](src/aistack/services/visibility.py): who may see what.
-4. [`services/reconciliation.py`](src/aistack/services/reconciliation.py) and [`services/sync_service.py`](src/aistack/services/sync_service.py): sync.
-5. The upload path: [`routes/transfer.py`](src/aistack/mcp/routes/transfer.py), [`skill_archive.py`](src/aistack/services/skill_archive.py), [`skill_validation.py`](src/aistack/services/skill_validation.py).
-6. [`db/migrations/versions/`](src/aistack/db/migrations/versions/): the schema.
-
-## Roadmap
-
-- **Project skills folders:** manage skills inside a repository, not only global folders ([ADR-0026](docs/adr/0026-skills-folders-inside-projects.md)).
-- **Rules** as a second resource type, projected into `CLAUDE.md`, `AGENTS.md`, and `.cursor/rules/`.
-- **Background sync**, instead of syncing when asked.
-- **Dashboard administration:** server administration, version pinning, and revision management.
-- Hooks, agents, and profiles.
-
-Current limits: a skill is text files only (at most 100 files, 256 KiB each, 1 MiB in total), a machine always gets the latest revision of your copy, and restarting a server signs browsers out of the dashboard (machines stay connected). [`docs/DESIGN.md`](docs/DESIGN.md) §4 lists what is deliberately out of scope.
-
-## Privacy
-
-AIStack collects nothing and has no hosted service. A server makes no outbound connections, and the dashboard loads nothing from other sites. In local mode AIStack contacts only PyPI (a daily update check, which installs a newer release of the same minor version; `AISTACK_AUTO_UPDATE=off` in the agent's settings for AIStack turns it off), your own GitHub repository, or your own database.
-
-A server stores each user's username and optional full name; their computers, by name and operating system, with a hash of each machine token; the skills they back up and share, with every revision and who pushed it; which skill is enabled in which folder of which computer; and teams, groups, memberships, and invites (as hashes of their codes). Logs record names and ids, and the address a refused credential came from; never tokens, invite codes, or links. Whoever runs a server is responsible for its users' data, and can remove a user as described in [docs/OPERATING.md](docs/OPERATING.md).
-
-## Contributing
-
-Issues and pull requests are welcome. Before a larger change, open an issue to discuss it.
-
-- Read [`AGENTS.md`](AGENTS.md) for the repository's conventions (layering, transactions, migrations, error handling), [`CONTEXT.md`](CONTEXT.md) for the vocabulary, and the [ADRs](docs/adr/) for decisions already made. Reversing a decision takes a new ADR.
-- A schema change is a new Alembic migration in the same commit as the model change, tested on SQLite and PostgreSQL.
-- Changes to the dashboard need the browser tests, and should follow [`docs/design-system.md`](docs/design-system.md).
-- Keep commits focused, with an imperative subject and a body that explains why.
+Read [`AGENTS.md`](AGENTS.md) for the conventions, [`CONTEXT.md`](CONTEXT.md) for the vocabulary, and [`docs/design-system.md`](docs/design-system.md) before changing the page. The PostgreSQL half of the suite needs `docker compose -f compose.test.yaml up -d` and `TEST_DATABASE_URL=postgresql+psycopg://aistack:aistack@localhost:5433/aistack_test`.
 
 ## License
 
