@@ -154,6 +154,9 @@ def _aistack(home: Path, *arguments: str, environment: dict | None = None):
     import sys
     script = ("import sys; from aistack.bootstrap import self_update; "
               "self_update.installed_as_uv_tool = lambda: True; "
+              # Never register the link with the computer the tests run on.
+              "from aistack.bootstrap import computer_link; "
+              "computer_link.register = lambda *_: 'Link registration is off in tests.'; "
               f"sys.argv = [{str(PROGRAM)!r}, *sys.argv[1:]]; "
               "from aistack.bootstrap.__main__ import run; run()")
     env = {**os.environ, "HOME": str(home), "USERPROFILE": str(home), **(environment or {})}
