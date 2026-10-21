@@ -4,6 +4,7 @@ import base64
 import contextlib
 import os
 import random
+import subprocess
 import tempfile
 import uuid
 from pathlib import Path
@@ -33,6 +34,7 @@ from aistack.db.models.machine_project import MachineProject
 from aistack.db.models.machine_project_skill import MachineProjectSkill
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.db.models.project import Project
+from aistack.db.models.project_file import ProjectFile
 from aistack.db.models.rule import Rule, RuleAgent, RuleRevision
 from aistack.db.models.skill import Skill
 from aistack.db.models.skill_file import SkillFile
@@ -156,6 +158,16 @@ def _snapshot(session) -> dict:
                 MachineProject.path,
             ))
         ),
+        "project_files": sorted(
+            (project_keys[project_id], path, size, ticked, turned_off)
+            for project_id, path, size, ticked, turned_off in session.execute(select(
+                ProjectFile.project_id,
+                ProjectFile.path,
+                ProjectFile.size,
+                ProjectFile.ticked,
+                ProjectFile.turned_off,
+            ))
+        ),
         "project_placements": sorted(
             (*project_folders[folder_id], skill_names[skill_id], enabled, revision or 0)
             for folder_id, skill_id, enabled, revision in session.execute(select(
@@ -197,7 +209,7 @@ async def _dashboard():
         yield browser
 
 
-async def _post(browser, path: str, **body) -> httpx.Response:
+async def _post(browser, path: str, /, **body) -> httpx.Response:
     return await browser.post(path, json=body, headers={REQUEST_HEADER: "1"})
 
 
@@ -207,14 +219,63 @@ async def _random_changes(client, home, seed: int, steps: int = 25) -> None:
         await _random_changes_with(client, browser, home, seed, steps)
 
 
+SHOP = "github.com/maria/shop"
+SHOP_FILES = {"AGENTS.md": "# Shop\n", "CLAUDE.md": "Read AGENTS.md.\n", "README.md": "# Read me\n"}
+
+
+def _shop(home: Path) -> Path:
+    """A clone of the person's shop repository beside this computer's home folder."""
+    top = home.parent / f"{home.name}-shop"
+    if not top.exists():
+        top.mkdir()
+        for path, text in SHOP_FILES.items():
+            (top / path).write_text(text)
+        for arguments in (["init", "-q", "-b", "main"], ["add", "."],
+                          ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit",
+                           "-qm", "init"],
+                          ["remote", "add", "origin", "git@github.com:maria/shop.git"]):
+            subprocess.run(["git", "-C", str(top), *arguments], check=True, capture_output=True)
+    return top
+
+
 async def _random_changes_with(client, browser, home, seed: int, steps: int) -> None:
     chance = random.Random(seed)
     for step in range(steps):
         name = chance.choice(NAMES)
-        action = chance.choice(["push", "push", "get", "disable", "sync", "remove", "place",
-                                "rename", "retire"])
+        rule = {"project": chance.choice([None, SHOP])}
+        rule_name = chance.choice(["style", "tests"])
+        file = chance.choice(sorted(SHOP_FILES))
+        # The project first, so its rules and files have somewhere to be.
+        action = "add project" if step == 0 else chance.choice([
+            "push", "push", "get", "disable", "sync", "remove", "place", "rename", "retire",
+            "add project", "new rule", "edit rule", "rename rule", "rule agents", "remove rule",
+            "tick", "turn off"])
         try:
-            if action == "push":
+            if action == "add project":
+                await _post(browser, "/api/projects/add", folder=str(_shop(home)),
+                            ticked=chance.sample(sorted(SHOP_FILES), 2))
+            elif action == "new rule":
+                await _post(browser, "/api/rules", name=rule_name, text=f"# {step}\n",
+                            agents=chance.sample(["claude_code", "codex"], chance.randrange(3)),
+                            **rule)
+            elif action == "edit rule":
+                await _post(browser, f"/api/rules/{rule_name}/edit", text=f"# {step}\n", **rule)
+            elif action == "rename rule":
+                await _post(browser, f"/api/rules/{rule_name}/rename",
+                            new_name=chance.choice(["style", "tests"]), **rule)
+            elif action == "rule agents":
+                await _post(browser, f"/api/rules/{rule_name}/agents",
+                            agents=chance.sample(["claude_code", "codex"], chance.randrange(3)),
+                            **rule)
+            elif action == "remove rule":
+                await _post(browser, f"/api/rules/{rule_name}/remove", **rule)
+            elif action == "tick":
+                await _post(browser, "/api/projects/files/tick", project=SHOP, path=file,
+                            ticked=chance.random() < 0.5)
+            elif action == "turn off":
+                await _post(browser, "/api/projects/files/turn-off", project=SHOP,
+                            path="CLAUDE.md", turned_off=chance.random() < 0.5)
+            elif action == "push":
                 _write(home, name, f"revision written at step {step}")
                 await _call(client, "push_skill", name=name,
                             harness=chance.choice(["claude_code", "agents"]))
@@ -257,16 +318,28 @@ async def _random_changes_with(client, browser, home, seed: int, steps: int) -> 
             pass
 
 
-# Every POST the localhost dashboard serves, with a body that works: each changes the Library,
-# so each must record an event. A new local action fails the test below until it is here.
+# Every POST the localhost dashboard serves, with a body that works, in an order that works:
+# each changes the Library, so each must record an event. A new local action fails the test
+# below until it is here. `{folder}` is the shop's clone, and `_name` the path's {name}.
 LOCAL_WRITES = {
     "/api/skills/{name}/machines/{machine_id}": {"enabled": True, "harness": "agents"},
     "/api/skills/{name}/remove": {},
+    "/api/projects/add": {"folder": "{folder}", "ticked": ["AGENTS.md"]},
+    "/api/projects/files/tick": {"project": SHOP, "path": "README.md", "ticked": True},
+    "/api/projects/files/turn-off": {"project": SHOP, "path": "CLAUDE.md", "turned_off": True},
+    "/api/rules": {"name": "style", "text": "# Style\n", "agents": ["codex"], "project": SHOP},
+    "/api/rules/{name}/edit": {"_name": "style", "text": "# Style\n- Short.\n",
+                               "project": SHOP},
+    "/api/rules/{name}/agents": {"_name": "style", "agents": ["claude_code"], "project": SHOP},
+    "/api/rules/{name}/rename": {"_name": "style", "new_name": "house-style", "project": SHOP},
+    "/api/rules/{name}/remove": {"_name": "house-style", "project": SHOP},
 }
 # The POSTs that change only this browser's session, not the Library.
 SESSION_ONLY = {"/api/logout", "/app/login/{ticket}"}
-# The POSTs that act on this computer and change nothing in the Library (ADR-0038).
-ON_THIS_COMPUTER = {"/api/start-agent", "/api/projects/look-inside"}
+# The POSTs that act on this computer and change nothing in the Library (ADR-0038): a
+# repository file's edit is written into, and shared from, this computer's working copy.
+ON_THIS_COMPUTER = {"/api/start-agent", "/api/projects/look-inside",
+                    "/api/projects/files/edit", "/api/projects/files/commit"}
 
 
 async def test_every_localhost_dashboard_write_records_its_event(computer):
@@ -278,11 +351,15 @@ async def test_every_localhost_dashboard_write_records_its_event(computer):
         _write(home, "wizard", "first")
         await _call(laptop, "push_skill", name="wizard")
         machine = application_context.get_local_principal().machine_id
+        folder = str(_shop(home))
         async with _dashboard() as browser:
             for path, body in LOCAL_WRITES.items():
                 with application_context.get_session_factory().begin() as session:
                     before = len(_events(session))
-                response = await _post(browser, path.format(name="wizard", machine_id=machine),
+                name = body.get("_name", "wizard")
+                body = {key: folder if value == "{folder}" else value
+                        for key, value in body.items() if key != "_name"}
+                response = await _post(browser, path.format(name=name, machine_id=machine),
                                        **body)
                 assert response.status_code == 200, (path, response.text)
                 with application_context.get_session_factory().begin() as session:
@@ -292,11 +369,12 @@ async def test_every_localhost_dashboard_write_records_its_event(computer):
 @pytest.mark.parametrize("seed", range(6))
 async def test_replaying_a_librarys_log_builds_the_same_library(computer, tmp_path, seed):
     async with computer("laptop") as (laptop, home):
-        await _random_changes(laptop, home, seed)
+        await _random_changes(laptop, home, seed, steps=40)
         with application_context.get_session_factory().begin() as session:
             built, events = _snapshot(session), _events(session)
 
     assert events[0].kind == library_log.MACHINE_ADDED
+    assert library_log.PROJECT_FILES_LISTED in {event.kind for event in events}
     assert _replayed(tmp_path, events) == built
 
 
@@ -761,6 +839,62 @@ def test_rule_replay_refuses_a_hand_edited_value_and_names_its_file(tmp_path, da
     assert f"log/{event.path}" in str(refused.value)
     assert sentence in str(refused.value)
     assert "token" not in str(refused.value)
+
+
+def _listed(second: int, by, path: str = "/work/billing", **data) -> library_log.Event:
+    return _event(second, by, library_log.PROJECT_FILES_LISTED, **{
+        "project": PROJECT_KEY, "project_name": "billing", "path": path,
+        "files": [{"path": "AGENTS.md", "size": 7}, {"path": "README.md", "size": 9}],
+        "ticked": ["AGENTS.md"]} | data)
+
+
+def _file_event(second: int, kind: str, **data) -> library_log.Event:
+    return _event(second, LAPTOP, kind, **{"project": PROJECT_KEY, "path": "README.md"} | data)
+
+
+def test_project_file_events_replay_each_change_a_person_made(tmp_path):
+    replayed = _replayed(tmp_path, [
+        _added(1, LAPTOP, "laptop"), _added(2, DESKTOP, "desktop"),
+        _listed(3, LAPTOP),
+        _file_event(4, library_log.PROJECT_FILE_TICKED, ticked=True),
+        _file_event(5, library_log.PROJECT_FILE_TURNED_OFF, path="AGENTS.md", turned_off=True),
+        # The desktop listed it again without README.md, then the laptop, offline, ticked it.
+        _listed(6, DESKTOP, files=[{"path": "AGENTS.md", "size": 8}], ticked=["AGENTS.md"]),
+        _file_event(7, library_log.PROJECT_FILE_TICKED, ticked=False),
+    ])
+
+    assert replayed["projects"][0][1:] == (PROJECT_KEY, "billing")
+    assert replayed["project_files"] == [(PROJECT_KEY, "AGENTS.md", 8, True, True)]
+
+
+@pytest.mark.parametrize("event, sentence", [
+    (_listed(3, LAPTOP, ticked=["CLAUDE.md"]), "does not list"),
+    (_listed(3, LAPTOP, files=[{"path": "../secrets.md", "size": 1}]), "inside the repository"),
+    (_listed(3, LAPTOP, path="~"), "home folder"),
+    (_file_event(3, library_log.PROJECT_FILE_TICKED, ticked="yes"), "true or false"),
+    (_file_event(3, library_log.PROJECT_FILE_TICKED, ticked=True, project="example.com/a/b"),
+     "no project"),
+    (_file_event(3, library_log.PROJECT_FILE_TURNED_OFF, turned_off=True), "cannot be turned "
+                                                                           "off"),
+], ids=["unlisted-tick", "path", "folder", "flag", "unknown-project", "no-turn-off"])
+def test_project_file_replay_refuses_a_hand_edited_value_and_names_its_file(tmp_path, event,
+                                                                              sentence):
+    baseline = [_added(1, LAPTOP, "laptop"), _listed(2, LAPTOP)]
+    with pytest.raises(AIStackError) as refused:
+        _replayed(tmp_path, [*baseline, event])
+    assert f"log/{event.path}" in str(refused.value)
+    assert sentence in str(refused.value)
+
+
+def test_only_this_computers_listing_says_where_a_project_is_here(session_factory):
+    """Another computer's folder means nothing here: an edit made on this computer's page goes
+    into this computer's working copy or nowhere."""
+    with session_factory.begin() as session:
+        assert library_log.append(session, [
+            _added(1, LAPTOP, "laptop"), _added(2, DESKTOP, "desktop"),
+            _listed(3, DESKTOP, path="/work/on-the-desktop")])
+        assert library_log.listed_from(session, LAPTOP, PROJECT_KEY) is None
+        assert library_log.listed_from(session, DESKTOP, PROJECT_KEY) == "/work/on-the-desktop"
 
 
 def _moves(second: int, by, **place) -> library_log.Event:

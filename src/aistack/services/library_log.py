@@ -31,6 +31,7 @@ from aistack.db.models.machine import MACHINE_NAME_MAX_LENGTH, Machine
 from aistack.db.models.user import User
 from aistack.services import (
     onboarding_service,
+    project_file_service,
     project_service,
     projects,
     rule_service,
@@ -66,18 +67,27 @@ _PROJECT_KINDS = {
 # Where `aistack move` says the Library went (AUTO-05), under the same rule. It names the place
 # and never a secret: the kind, and the repository, or the host and database.
 LIBRARY_MOVED = "library_moved"
-# Rules kept in the Library (ADR-0036), under the same rule. Each names the rule and, for a
-# project's rule, the project's key in `project` (None for a rule for every project). A
-# rule's text travels in the event, as a push's files do: `text` on a creation and an edit.
+# Rules kept in the Library (ADR-0036), recorded in the release that replays them first
+# (ADR-0039). Each names the rule and, for a project's rule, the project's key in `project`
+# (None for a rule for every project). A rule's text travels in the event, as a push's files
+# do: `text` on a creation and an edit.
 RULE_CREATED = "rule_created"  # name, project, text, agents
 RULE_EDITED = "rule_edited"  # name, project, text
 RULE_RENAMED = "rule_renamed"  # name, project, new_name
 RULE_REMOVED = "rule_removed"  # name, project
 RULE_AGENTS_SET = "rule_agents_set"  # name, project, agents
 _RULE_KINDS = {RULE_CREATED, RULE_EDITED, RULE_RENAMED, RULE_REMOVED, RULE_AGENTS_SET}
-_REPLAY_ONLY = {*_PROJECT_KINDS, LIBRARY_MOVED, *_RULE_KINDS}
+# A project's own files (ADR-0036), also recorded in the release that adds them (ADR-0039).
+# `path` is the folder the project was listed from on the computer that recorded it, which
+# only that computer reads back (`listed_from`).
+PROJECT_FILES_LISTED = "project_files_listed"  # project, project_name, path, files, ticked
+PROJECT_FILE_TICKED = "project_file_ticked"  # project, path, ticked
+PROJECT_FILE_TURNED_OFF = "project_file_turned_off"  # project, path, turned_off
+_PROJECT_FILE_KINDS = {PROJECT_FILES_LISTED, PROJECT_FILE_TICKED, PROJECT_FILE_TURNED_OFF}
+_REPLAY_ONLY = {*_PROJECT_KINDS, LIBRARY_MOVED}
 _KINDS = {MACHINE_ADDED, SKILL_PUSHED, SKILL_PLACED, SKILL_REMOVED, FOLDER_SYNCED,
-          MACHINE_REMOVED, MACHINE_RENAMED, LIBRARY_MOVED, *_PROJECT_KINDS, *_RULE_KINDS}
+          MACHINE_REMOVED, MACHINE_RENAMED, LIBRARY_MOVED, *_PROJECT_KINDS, *_RULE_KINDS,
+          *_PROJECT_FILE_KINDS}
 _AT_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 # Clocks disagree, but not by this much. A later time would sort every new event before it,
 # and each would rebuild the copy.
@@ -245,6 +255,8 @@ def apply(session: Session, event: Event,
         return _apply_to_project(session, machine, event, uploaded)
     if event.kind in _RULE_KINDS:
         return _apply_to_rule(session, machine.user_id, event)
+    if event.kind in _PROJECT_FILE_KINDS:
+        return _apply_to_project_files(session, machine.user_id, event)
     raise AssertionError(f"Unhandled event kind '{event.kind}'.")
 
 
@@ -569,6 +581,54 @@ def _apply_to_rule(session: Session, user_id: uuid.UUID, event: Event) -> Any:
     if event.kind == RULE_REMOVED:
         return attempt(rule_service.archive)[1]
     return attempt(rule_service.set_agents, agents=data["agents"])[1]
+
+
+def _apply_to_project_files(session: Session, user_id: uuid.UUID, event: Event) -> Any:
+    """A project's files listed, or one ticked or turned off, through the calls the dashboard
+    makes, with every value checked again: anyone who can write to the repository can forge
+    one. A file another computer's listing dropped meanwhile leaves the Library as it was."""
+    data = event.data
+    key = projects.validated_key(data["project"])
+    if event.kind == PROJECT_FILES_LISTED:
+        name = projects.validated_name(data["project_name"])
+        projects.validated_here(data["path"], None)
+        listing = project_file_service.validated_listing(data["files"])
+        ticked = data["ticked"]
+        if not isinstance(ticked, list) or not set(ticked) <= {path for path, _ in listing}:
+            raise ValidationError("A change in the Library's log ticks a file it does not "
+                                  "list. Remove what was added to the repository by hand.")
+        project = project_service.listed_project(session, user_id, key, name)
+        project_file_service.record_listing(session, project, listing)
+        for path, _ in listing:
+            project_file_service.set_ticked(session, user_id, key, path, path in ticked)
+        return project
+    field = "ticked" if event.kind == PROJECT_FILE_TICKED else "turned_off"
+    if type(data[field]) is not bool:
+        raise ValidationError(f"A change in the Library's log sets {field} to something that "
+                              "is not true or false. Remove what was added to the repository "
+                              "by hand.")
+    change = (project_file_service.set_ticked if event.kind == PROJECT_FILE_TICKED
+              else project_file_service.set_turned_off)
+    try:
+        with session.begin_nested():
+            return change(session, user_id, key, data["path"], data[field])
+    except NotFound:
+        # Projects are never deleted, so one that is not the person's is a forged change.
+        visibility.required_my_project(session, user_id, key)
+        return None
+
+
+def listed_from(session: Session, machine_id: uuid.UUID, key: str) -> str | None:
+    """The folder `machine_id` last listed project `key` from, as its own event recorded it,
+    or None when it never did. Display data: the caller checks the folder on disk."""
+    bodies = session.scalars(select(LibraryEvent.body)
+                             .where(LibraryEvent.kind == PROJECT_FILES_LISTED)
+                             .order_by(LibraryEvent.sort_key.desc()))
+    for body in bodies:
+        event = Event.from_json(body)
+        if event.machine_id == machine_id and event.data.get("project") == key:
+            return event.data.get("path")
+    return None
 
 
 def _target(text: object) -> uuid.UUID:

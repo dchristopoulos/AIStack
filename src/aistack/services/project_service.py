@@ -38,7 +38,7 @@ def register_folder(session: Session, user_id: uuid.UUID, machine_id: uuid.UUID,
     """Create or refresh this computer's folder in a project, adding the project to the
     user's own when it is new. This is what a project folder's sync writes, and all it
     writes."""
-    folder = _managed(session, machine_id, _project(session, user_id, key, name), harness)
+    folder = _managed(session, machine_id, listed_project(session, user_id, key, name), harness)
     now = utc_now()
     # Conditional, so a folder the dashboard added reports its first sync once even when two
     # syncs find it unsynced together: the second waits on the row and then matches nothing.
@@ -70,7 +70,7 @@ def folder_in(session: Session, user_id: uuid.UUID, machine_id: uuid.UUID, key: 
               name: str, harness: Harness) -> MachineProject:
     """This computer's folder in a project, made if it is missing, without counting as a
     sync: where replaying a push into a project places it, whatever replayed before."""
-    return _managed(session, machine_id, _project(session, user_id, key, name), harness)
+    return _managed(session, machine_id, listed_project(session, user_id, key, name), harness)
 
 
 def remove_folder(session: Session, user_id: uuid.UUID, machine_id: uuid.UUID, key: str,
@@ -206,7 +206,8 @@ _NOT_MANAGED = ("This computer does not manage a project '{key}'. Sync from insi
                 "repository first, or add it on the dashboard.")
 
 
-def _project(session: Session, user_id: uuid.UUID, key: str, name: str) -> Project:
+def listed_project(session: Session, user_id: uuid.UUID, key: str, name: str) -> Project:
+    """One of the user's projects, added to their own when it is new."""
     project = visibility.my_project(session, user_id, key)
     if project is None:
         try:

@@ -1214,10 +1214,6 @@ const WORDS = {
     bringBackLabel: 'Bring back {skill}',
     back: '{skill} is back in your library, on no computer yet.',
   },
-  localRules: {
-    summary: 'Your rules ({n})',
-    readOnly: 'Rules are read-only here. Editing them comes in a later release.',
-  },
   onlyHere: {
     label: 'Your Library lives only on this computer',
     strong: 'Your Library lives only on this computer.',
@@ -1404,6 +1400,10 @@ const WORDS = {
     needNote: 'Say what this change is about.',
     openPullSubmit: 'Open a pull request',
     shareSaved: '{computer} pushes a branch and opens the pull request at its next {sync}.',
+    writtenHere: 'Wrote your edit into {path} on this computer. Commit… shares it as a pull request.',
+    openedHere: 'Opened pull request {url}',
+    pushedHere: 'Pushed branch {branch}. Open the pull request at {url}',
+    pushedHereOnly: 'Pushed branch {branch}. Open a pull request from it where the repository is kept.',
     agentsSaved: 'Saved which agents use {name}. Each computer picks it up at its next {sync}.',
     edit: 'Edit',
     editTitle: 'Edit {name}',
@@ -1469,7 +1469,6 @@ const WORDS = {
     noSkills: 'The repository holds no skills.',
     addIt: 'Add {project}',
     added: 'Added {project}. Its ticked files show on its page.',
-    localLater: 'This is what your agents read in this repository. A Library on this computer keeps projects\' files in a later release; manage the project by saying this inside it:',
     noneElsewhere: 'None of your computers manages a project this one does not.',
     unseen: 'A repository AIStack has not seen',
     unseenLead: 'On {computer}, open your coding agent inside the repository and say this. It adds the project and syncs it.',
@@ -2442,7 +2441,7 @@ function placesNav(r) {
   const everyCount = new Set(everyFolders().flatMap(t => placedOn(t))).size + rulesFor(null).length;
   return [
     navRow(link('#/every', r.view === 'every', icon('globe'), el('span', { class: 'label' }, W.nav.every), el('span', { class: 'count' }, String(everyCount))),
-      W.where.every, [skillsItem(W.where.every, everyFolders()), server && ruleItem(null)]),
+      W.where.every, [skillsItem(W.where.every, everyFolders()), ruleItem(null)]),
     el('div', { class: 'nav-heading' }, W.nav.projects,
       plusMenu(W.nav.projects, [
         { label: W.plus.folderHere, icon: 'folder', run: addFolderDialog },
@@ -2454,7 +2453,7 @@ function placesNav(r) {
         el('span', { class: 'label mono', title: p.key }, p.name),
         team && el('span', { class: 'aside' }, team),
         el('span', { class: 'count' }, String(new Set(projectFolders(p.key).flatMap(t => placedOn(t))).size + rulesFor(p.key).length))),
-      p.name, [skillsItem(p.name, projectFolders(p.key)), server && ruleItem(p), server && { label: W.plus.anotherComputer, icon: 'monitor', run: () => addProjectDialog({ key: p.key }) }]);
+      p.name, [skillsItem(p.name, projectFolders(p.key)), ruleItem(p), server && { label: W.plus.anotherComputer, icon: 'monitor', run: () => addProjectDialog({ key: p.key }) }]);
     }),
     el('div', { class: 'nav-heading' }, W.nav.computers,
       btn(null, { class: 'btn ghost icon', fk: 'add-computer', title: W.addComputer.title, 'aria-label': W.addComputer.title, on: { click: addComputerDialog } }, 'plus')),
@@ -2650,6 +2649,7 @@ function projects() {
     if (!by.has(p.key)) by.set(p.key, { key: p.key, name: p.name, on: [] });
     by.get(p.key).on.push({ m, p });
   }
+  for (const f of state.project_files || []) if (!by.has(f.project)) by.set(f.project, { key: f.project, name: f.project_name, on: [] });
   return [...by.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.key < b.key ? -1 : 1));
 }
 const projectBy = key => projects().find(p => p.key === key);
@@ -2739,20 +2739,8 @@ function libraryView() {
         unplaced.length ? stat(W.library.notOnAny, unplaced.length, unplaced.map(s => s.name).join(W.comma)) : null,
         updating.length ? stat(W.library.updates, updating.length, updating.map(s => s.name).join(W.comma), el('span', { class: 'dot accent' })) : null) : null,
       list,
-      removedList(),
-      localRules()),
+      removedList()),
   ];
-}
-
-// Local mode replays rules but cannot record them yet (ADR-0026), so it lists them read-only.
-function localRules() {
-  if (state.server !== false || !(state.rules || []).length) return null;
-  return el('details', { class: 'removed' },
-    el('summary', null, say(W.localRules.summary, { n: state.rules.length })),
-    el('p', { class: 'help' }, W.localRules.readOnly),
-    el('ul', { class: 'revisions' }, state.rules.map(r => el('li', null,
-      el('span', { class: 'name grow' }, r.name),
-      r.project ? el('span', { class: 'mono' }, r.project) : null))));
 }
 
 // Skills removed from the Library, and the way back (PH-11).
@@ -3040,9 +3028,10 @@ function projectView(p) {
       startAgentButton(p),
       folders.length ? btn(W.addSkills.button, { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(p.name, folders) } }, 'plus') : null),
     el('div', { class: 'wrap body' },
-      p.on.length ? [
-        el('h2', { class: 'sec' }, W.project.computers),
-        el('div', { class: 'where-cards' }, p.on.map(({ m, p: here }) => projectCard(m, here))),
+      // Local mode keeps a project's files before any computer manages its folders (ADR-0039).
+      p.on.length || (state.project_files || []).some(f => f.project === p.key) ? [
+        p.on.length ? [el('h2', { class: 'sec' }, W.project.computers),
+          el('div', { class: 'where-cards' }, p.on.map(({ m, p: here }) => projectCard(m, here)))] : null,
         el('h2', { class: 'sec' }, say(W.project.table, { project: p.name })),
         tickTable(say(W.project.table, { project: p.name }), [
           ...ruleGroups(p),
@@ -3340,8 +3329,6 @@ function addFolderDialog() {
         el('div', { class: 'picker-list' }, project.skills.length
           ? project.skills.map(name => el('div', { class: 'picker-opt' }, el('span', { class: 'mono opt-name' }, name), el('span', { class: 't2 opt-note' }, A.skillsNote)))
           : el('p', { class: 't2 picker-group' }, A.noSkills))),
-      local && el('p', null, A.localLater),
-      local && copyField(A.say, A.whatToSay),
     ];
   }
   // A project the command has just listed: one whose files were not there when this opened,
@@ -3378,6 +3365,7 @@ function addFolderDialog() {
         found = await api('/api/projects/look-inside', { folder: typed });
         found.files = found.files.map(f => ({ ...f, ticked: f.agents.length > 0 }));
         out.replaceChildren(...checklist(found).filter(Boolean));
+        face(say(A.addIt, { project: found.name }));
       } catch (e) { err.textContent = e.message; err.hidden = false; }
       return;
     }
@@ -3407,7 +3395,8 @@ function addFolderDialog() {
       out,
     ],
     onSubmit: async () => {
-      if (!found || local) return null;
+      if (!found) return null;
+      if (local) return addFolderHere(folder.value.trim(), out);
       const boxes = [...out.querySelectorAll('input[type=checkbox]')];
       for (const box of boxes) {
         const f = found.files.find(x => x.path === box.value);
@@ -3631,8 +3620,7 @@ const RULE_AGENTS = {
 const RULE_AGENT_OF = { claude_code: 'claude_code', agents: 'codex' };
 // Every agent whose files AIStack shows, for a repository file's "Read by".
 const AGENT_NAMES = { claude_code: 'Claude Code', codex: W.codex.name, gemini_cli: 'Gemini CLI', cursor: 'Cursor', copilot_cli: 'GitHub Copilot CLI', opencode: 'opencode' };
-// Rules are kept on a server for now: the localhost dashboard shows none.
-const rulesShown = () => state.server !== false && Array.isArray(state.rules);
+const rulesShown = () => Array.isArray(state.rules);
 const rulesFor = key => (rulesShown() ? state.rules.filter(r => (r.project || null) === key) : []);
 const ruleUrl = (r, action) => `/api/rules/${enc(r.name)}/${action}`;
 const ruleQuery = r => (r.project ? { project: r.project } : {});
@@ -3768,7 +3756,7 @@ function repoFileSheet(f) {
   });
   const off = sw(f.turned_off, R.turnOff, {
     fk: 'turn-off:' + f.path, label: R.turnOff,
-    disabled: !server || !!f.turn_off_unavailable, why: f.turn_off_unavailable || null,
+    disabled: !!f.turn_off_unavailable, why: f.turn_off_unavailable || null,
     onToggle: (b, on) => run(b, async () => {
       await api('/api/projects/files/turn-off', { project: f.project, path: f.path, turned_off: on });
       return say(on ? R.turnedOff : R.turnedOn, { path: f.path, sync: SYNC });
@@ -3787,10 +3775,10 @@ function repoFileSheet(f) {
       f.agent && el('section', { class: 'sheet-sec', 'aria-label': R.justForYou }, el('h3', { class: 'legend' }, R.justForYou), off,
         !f.turn_off_unavailable && el('p', { class: 't2' }, say(R.turnOffHelp, { sync: SYNC }))),
     ],
-    actions: server ? [
-      e && e.written_on && !e.note && !e.shared_on && btn(R.commit, { on: { click: leave(commitDialog) } }, 'up'),
-      f.text != null && btn(R.edit, { class: 'btn primary', on: { click: leave(repoFileEditor) } }, 'edit'),
-    ].filter(Boolean) : [],
+    actions: [
+      e && e.written_on && !e.note && !e.shared_on && btn(R.commit, { on: { click: leave(server ? commitDialog : shareHereDialog) } }, 'up'),
+      f.text != null && btn(R.edit, { class: 'btn primary', on: { click: leave(server ? repoFileEditor : editHereDialog) } }, 'edit'),
+    ].filter(Boolean),
   });
 }
 
@@ -3821,6 +3809,48 @@ function repoFileEditor(f) {
 // release saved it without that text.
 const editDiff = e => e.diff ? el('section', { class: 'field', 'aria-label': W.rules.editDiff },
   el('h3', { class: 'legend' }, W.rules.editDiff), diffView(e.diff)) : null;
+
+// Local mode (ADR-0039): the page runs on this computer, so Add keeps the ticked files at once,
+// and an edit is written into this working copy and shared from it, with no sync between.
+async function addFolderHere(folder, out) {
+  const ticked = [...out.querySelectorAll('input[type=checkbox]')].filter(b => b.checked).map(b => b.value);
+  const res = await api('/api/projects/add', { folder, ticked });
+  return () => { go(projectHash(res.project)); toast(say(W.addProject.added, { project: res.name })); };
+}
+
+function editHereDialog(f) {
+  const R = W.rules;
+  const area = el('textarea', { class: 'input rule-input', spellcheck: false }, f.text);
+  let check;
+  const dlg = openDialog({
+    title: say(R.editTitle, { name: f.path }),
+    sheet: true,
+    submitLabel: W.save,
+    body: [field(R.body, area)],
+    onSubmit: async () => {
+      const res = await api('/api/projects/files/edit', { project: f.project, path: f.path, text: area.value, base_hash: f.content_hash, confirmed: check.confirmed });
+      check.hold(res);
+      return say(res.unchanged ? R.unchanged : R.writtenHere, { name: f.path, path: f.path });
+    },
+  });
+  check = credentialCheck(dlg, area, W.save);
+}
+
+function shareHereDialog(f) {
+  const R = W.rules;
+  const note = el('textarea', { class: 'input note-input', rows: 3 });
+  openDialog({
+    title: sayWith(R.shareTitle, { path: el('span', { class: 'mono' }, f.path) }),
+    submitLabel: R.openPullSubmit,
+    body: [el('p', { class: 'lead' }, say(R.shareLead, { project: f.project })), field(R.note, note, R.noteHelp)],
+    onSubmit: async () => {
+      if (!note.value.trim()) throw new Error(R.needNote);
+      const res = await api('/api/projects/files/commit', { project: f.project, path: f.path, note: note.value });
+      const said = res.opened ? R.openedHere : res.pull_request_url ? R.pushedHere : R.pushedHereOnly;
+      return say(said, { branch: res.branch, url: res.pull_request_url });
+    },
+  });
+}
 
 // Commit…: the note becomes the commit message on a branch holding only this file.
 function commitDialog(f) {

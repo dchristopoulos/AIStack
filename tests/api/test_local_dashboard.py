@@ -10,7 +10,7 @@ from aistack.api import dashboard as dashboard_routes
 from aistack.bootstrap import start_agent
 from aistack.bootstrap.context import application_context
 from aistack.mcp.mcp import mcp
-from aistack.services import library_log, rule_service, skill_service
+from aistack.services import library_log, repository_work, skill_service
 from tests.local_dashboard import local_dashboard
 
 pytestmark = pytest.mark.anyio
@@ -121,28 +121,177 @@ async def test_a_project_folder_is_not_placed_into_from_the_local_dashboard_yet(
     assert added.status_code == 404
 
 
-async def test_rules_are_shown_and_read_but_not_changed(dashboard):
-    """Local mode replays rule changes and records none yet (ADR-0026)."""
-    base, link = dashboard
-    caller = application_context.get_local_principal()
+def _kinds() -> list[str]:
     with application_context.get_session_factory().begin() as session:
-        rule_service.create(session, caller.user_id, "house-style", "# Style\n",
-                            agents=["claude_code"])
+        return [event.kind for event in library_log.unpublished(session)]
+
+
+async def test_rules_are_changed_here_and_each_change_is_logged(dashboard):
+    """ADR-0039: local mode records rule changes in the release that adds them."""
+    base, link = dashboard
     async with _signed_in(base, link) as client:
+        writes = [await client.post(path, json=body, headers=REQUEST_HEADER) for path, body in (
+            ("/api/rules", {"name": "style", "text": "# Style\n", "agents": ["claude_code"]}),
+            ("/api/rules/style/edit", {"text": "# Style\n- Short.\n"}),
+            ("/api/rules/style/edit", {"text": "# Style\n- Short.\n"}),
+            ("/api/rules/style/rename", {"new_name": "house-style"}),
+            ("/api/rules/house-style/agents", {"agents": ["codex"]}),
+            ("/api/rules", {"name": "other", "text": "b", "agents": []}),
+            ("/api/rules/other/remove", {}),
+        )]
         state = (await client.get("/api/state")).json()
         text = await client.get("/api/rules/house-style/text")
-        writes = [await client.post(path, json=body, headers=REQUEST_HEADER) for path, body in (
-            ("/api/rules", {"name": "other", "text": "a"}),
-            ("/api/rules/house-style/edit", {"text": "b"}),
-            ("/api/rules/house-style/rename", {"new_name": "style"}),
-            ("/api/rules/house-style/agents", {"agents": []}),
-            ("/api/rules/house-style/remove", {}),
-        )]
 
+    assert [write.status_code for write in writes] == [200] * 7, [w.text for w in writes]
+    assert writes[2].json()["unchanged"] is True
     assert [(rule["name"], rule["agents"]) for rule in state["rules"]] == [
-        ("house-style", ["claude_code"])]
-    assert text.json()["text"] == "# Style\n"
-    assert [write.status_code for write in writes] == [404] * 5
+        ("house-style", ["codex"])]
+    assert text.json()["text"] == "# Style\n- Short.\n"
+    # An edit to the same text changes nothing, so it records nothing.
+    assert [kind for kind in _kinds() if kind.startswith("rule_")] == [
+        library_log.RULE_CREATED, library_log.RULE_EDITED, library_log.RULE_RENAMED,
+        library_log.RULE_AGENTS_SET, library_log.RULE_CREATED, library_log.RULE_REMOVED]
+
+
+def _git(top, *arguments):
+    return subprocess.run(["git", "-C", str(top), "-c", "user.name=t",
+                           "-c", "user.email=t@example.com", *arguments], check=True,
+                          capture_output=True, text=True).stdout
+
+
+@pytest.fixture(name="shop")
+def shop_fixture(tmp_path, monkeypatch):
+    """A clone of a repository with a bare remote, and no `gh` on this computer."""
+    for name, value in (("GIT_AUTHOR_NAME", "t"), ("GIT_AUTHOR_EMAIL", "t@example.com"),
+                        ("GIT_COMMITTER_NAME", "t"), ("GIT_COMMITTER_EMAIL", "t@example.com")):
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(repository_work.shutil, "which", lambda name: None)
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+    top = tmp_path / "shop"
+    (top / "docs").mkdir(parents=True)
+    for path, text in {"AGENTS.md": "# Shop\n", "CLAUDE.md": "Read AGENTS.md.\n",
+                       "README.md": "# Read me\n", "docs/guide.md": "A guide.\n"}.items():
+        (top / path).write_bytes(text.encode())
+    _git(top, "init", "-q", "-b", "main")
+    _git(top, "add", ".")
+    _git(top, "commit", "-qm", "init")
+    _git(top, "remote", "add", "origin", str(remote))
+    _git(top, "push", "-qu", "origin", "main")
+    return top
+
+
+async def _add(client, top, ticked=("AGENTS.md", "CLAUDE.md")) -> httpx.Response:
+    return await client.post("/api/projects/add", headers=REQUEST_HEADER,
+                             json={"folder": str(top), "ticked": list(ticked)})
+
+
+def _files(state, key) -> dict:
+    return {file["path"]: file for file in state["project_files"] if file["project"] == key}
+
+
+async def test_a_folder_here_is_added_with_the_files_the_page_ticked(dashboard, shop):
+    base, link = dashboard
+    async with _signed_in(base, link) as client:
+        no_header = await client.post("/api/projects/add", json={"folder": str(shop)})
+        added = await _add(client, shop)
+        key = added.json()["project"]
+        ticked = await client.post("/api/projects/files/tick", headers=REQUEST_HEADER,
+                                   json={"project": key, "path": "README.md", "ticked": True})
+        off = await client.post("/api/projects/files/turn-off", headers=REQUEST_HEADER,
+                                json={"project": key, "path": "CLAUDE.md", "turned_off": True})
+        state = (await client.get("/api/state")).json()
+
+    assert no_header.status_code == 400
+    assert added.status_code == 200 and ticked.status_code == 200 and off.status_code == 200
+    assert added.json()["name"] == "shop"
+    files = _files(state, key)
+    assert {path: file["ticked"] for path, file in files.items()} == {
+        "AGENTS.md": True, "CLAUDE.md": True, "README.md": True, "docs/guide.md": False}
+    assert files["CLAUDE.md"]["turned_off"] and files["AGENTS.md"]["project_name"] == "shop"
+    # The page reads a ticked file's text from this working copy, and nothing else.
+    assert files["README.md"]["text"] == "# Read me\n" and files["README.md"]["edit"] is None
+    assert files["docs/guide.md"]["text"] is None
+    assert _kinds()[-3:] == [library_log.PROJECT_FILES_LISTED, library_log.PROJECT_FILE_TICKED,
+                             library_log.PROJECT_FILE_TURNED_OFF]
+
+
+async def test_an_edit_is_written_here_only_over_the_text_it_started_from(dashboard, shop):
+    base, link = dashboard
+    async with _signed_in(base, link) as client:
+        key = (await _add(client, shop)).json()["project"]
+        agents = _files((await client.get("/api/state")).json(), key)["AGENTS.md"]
+        edit = {"project": key, "path": "AGENTS.md", "base_hash": agents["content_hash"]}
+        no_header = await client.post("/api/projects/files/edit",
+                                      json=edit | {"text": "# Shop\nTests first.\n"})
+        held = await client.post("/api/projects/files/edit", headers=REQUEST_HEADER,
+                                 json=edit | {"text": "key: ghp_" + "a" * 36 + "\n"})
+        written = await client.post("/api/projects/files/edit", headers=REQUEST_HEADER,
+                                    json=edit | {"text": "# Shop\nTests first.\n"})
+        after = _files((await client.get("/api/state")).json(), key)["AGENTS.md"]
+        (shop / "AGENTS.md").write_text("# Shop\nChanged in an editor.\n")
+        stale = await client.post("/api/projects/files/edit", headers=REQUEST_HEADER,
+                                  json=edit | {"text": "# Shop\nOver the editor.\n"})
+        unlisted = await client.post("/api/projects/files/edit", headers=REQUEST_HEADER,
+                                     json=edit | {"path": "../outside.md", "text": "x"})
+
+    assert no_header.status_code == 400
+    assert held.json()["saved"] is False and held.json()["credential_lines"] == [1]
+    assert written.status_code == 200, written.text
+    assert written.json()["saved"] is True and written.json()["unchanged"] is False
+    # Written, and not committed: the page offers Commit… for it.
+    assert after["text"] == "# Shop\nTests first.\n"
+    assert after["edit"]["written_on"] and after["edit"]["note"] is None
+    assert stale.status_code == 409 and "changed" in stale.json()["error"]
+    assert (shop / "AGENTS.md").read_text() == "# Shop\nChanged in an editor.\n"
+    assert unlisted.status_code == 400
+    assert _git(shop, "status", "--porcelain") == " M AGENTS.md\n"
+
+
+async def test_an_edit_is_not_written_into_a_folder_that_is_another_repository_now(dashboard,
+                                                                                    shop):
+    base, link = dashboard
+    async with _signed_in(base, link) as client:
+        key = (await _add(client, shop)).json()["project"]
+        agents = _files((await client.get("/api/state")).json(), key)["AGENTS.md"]
+        _git(shop, "remote", "set-url", "origin", "git@github.com:someone/else.git")
+        refused = await client.post("/api/projects/files/edit", headers=REQUEST_HEADER, json={
+            "project": key, "path": "AGENTS.md", "base_hash": agents["content_hash"],
+            "text": "# Elsewhere\n"})
+        state = (await client.get("/api/state")).json()
+
+    assert refused.status_code == 400 and "no longer" in refused.json()["error"]
+    assert (shop / "AGENTS.md").read_text() == "# Shop\n"
+    assert _files(state, key)["AGENTS.md"]["text"] is None
+
+
+async def test_commit_shares_the_file_on_a_branch_of_its_own(dashboard, shop, tmp_path):
+    base, link = dashboard
+    (shop / "README.md").write_text("Work in progress that is not shared.\n")
+    async with _signed_in(base, link) as client:
+        key = (await _add(client, shop)).json()["project"]
+        agents = _files((await client.get("/api/state")).json(), key)["AGENTS.md"]
+        await client.post("/api/projects/files/edit", headers=REQUEST_HEADER, json={
+            "project": key, "path": "AGENTS.md", "base_hash": agents["content_hash"],
+            "text": "# Shop\nTests first.\n"})
+        no_note = await client.post("/api/projects/files/commit", headers=REQUEST_HEADER,
+                                    json={"project": key, "path": "AGENTS.md", "note": " "})
+        shared = await client.post("/api/projects/files/commit", headers=REQUEST_HEADER,
+                                   json={"project": key, "path": "AGENTS.md",
+                                         "note": "Say tests come first"})
+
+    assert no_note.status_code == 400
+    assert shared.status_code == 200, shared.text
+    branch = shared.json()["branch"]
+    assert branch.startswith("aistack/agents-md-") and shared.json()["opened"] is False
+    remote = tmp_path / "remote.git"
+    assert _git(remote, "show", f"{branch}:AGENTS.md") == "# Shop\nTests first.\n"
+    assert _git(remote, "diff", "--name-only", "main", branch) == "AGENTS.md\n"
+    assert _git(remote, "log", "-1", "--format=%s", branch) == "Say tests come first\n"
+    # This computer's branch, index and other work are as they were.
+    assert _git(shop, "rev-parse", "--abbrev-ref", "HEAD") == "main\n"
+    assert _git(shop, "rev-parse", "HEAD") == _git(remote, "rev-parse", "main")
+    assert _git(shop, "status", "--porcelain") == " M AGENTS.md\n M README.md\n"
 
 
 @pytest.fixture(name="started")

@@ -18,11 +18,12 @@ import re
 import shutil
 import subprocess
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
 
-from aistack.commons.exceptions import AIStackError, ValidationError
+from aistack.commons.exceptions import AIStackError, Conflict, ValidationError
 from aistack.db.models.rule import RULE_TEXT_MAX_BYTES
 from aistack.services import agent_files, projects, rule_files
 from aistack.services.project_file_service import validated_path
@@ -352,3 +353,79 @@ def _git(top: Path, *arguments: str, env: dict | None = None, input: bytes | Non
                                      "not shared. If git asks for your name and email, set "
                                      "them, then sync again.")
     return done.stdout
+
+
+# Local mode: the page runs on this computer, so it reads, writes and shares a repository's
+# files here itself, with the checks and the sharing `aistack sync` uses for an edit made on a
+# server's page (ADR-0039).
+
+def working_copy(folder: str, key: str, machine_id, home: Path) -> Path:
+    """The top level of the working copy at `folder`, while it is still project `key`'s
+    repository. `folder` comes from this computer's own log event, and is checked anyway."""
+    from aistack.services import server_sync
+
+    found = server_sync.current_project(Path(folder), home)
+    if found is not None:
+        top, here = found
+        try:
+            remote = projects.project_key(here["remote"]) if here["remote"] else None
+        except ValidationError:
+            remote = None
+        if (remote or projects.local_project_key(machine_id, str(top))) == key:
+            return top
+    raise ValidationError(f"{folder} is no longer this project's repository on this computer. "
+                          "Add the project again by its folder.")
+
+
+def read_here(files: list[dict], top: Path, machine_id) -> None:
+    """Fill in, for the localhost page, the text of each ticked file as the working copy has
+    it, and, when it differs from the commit checked out, an edit written on this computer and
+    not committed, which Commit… shares. A file that is not UTF-8 text, or is larger than
+    64 KiB, is shown unread."""
+    tracked = _tracked(top)
+    paths = [file["path"] for file in files]
+    changed = set(_git(top, "diff", "--name-only", "-z", "HEAD", "--", *paths, check=False)
+                  .decode("utf-8", "replace").split("\0"))
+    for file in files:
+        try:
+            _, target = _tracked_file(top, file["path"], tracked)
+            content = rule_files.read(target)
+            if content is None or len(content) > RULE_TEXT_MAX_BYTES:
+                continue
+            text = content.decode("utf-8")
+            modified = datetime.fromtimestamp(target.stat().st_mtime, UTC).isoformat()
+        except (OSError, UnicodeDecodeError, AIStackError):
+            continue
+        digest = rule_files.digest(content)
+        file |= {"text": text, "content_hash": digest, "updated_on": modified, "edit": None}
+        if file["path"] in changed:
+            file["edit"] = {"machine": str(machine_id), "text": text, "content_hash": digest,
+                            "saved_on": modified, "written_on": modified, "note": None,
+                            "shared_on": None, "pull_request_url": None}
+
+
+def write_here(top: Path, path: str, text: str, base_hash: str) -> bool:
+    """Write `text` over a file git tracks, only while it still has the text the edit started
+    from. False when it had `text` already."""
+    relative, target = _tracked_file(top, path, _tracked(top))
+    content = text.encode("utf-8")
+    observed = rule_files.read(target)
+    here = None if observed is None else rule_files.digest(observed)
+    if here == rule_files.digest(content):
+        return False
+    if here != base_hash or not rule_files.replace(target, content, observed):
+        raise Conflict(f"{relative} changed in {top} since you opened it, so the edit was not "
+                       "written. Open it again to edit its current text.")
+    return True
+
+
+def share_here(top: Path, path: str, note: str) -> dict:
+    """Share the file as the working copy has it, as `aistack sync` shares an edit committed
+    on a server's page: a branch with only that file changed, and a pull request."""
+    relative, target = _tracked_file(top, path, _tracked(top))
+    content = rule_files.read(target)
+    if content is None:
+        raise ValidationError(f"{relative} is not in {top}, so there is nothing to share.")
+    branch = branch_name(relative, rule_files.digest(content))
+    address, opened = share(top, relative, content, note, branch)
+    return {"branch": branch, "pull_request_url": address, "opened": opened}
