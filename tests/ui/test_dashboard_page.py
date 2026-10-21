@@ -1490,6 +1490,8 @@ async def test_the_pages_before_sign_in_pass_axe_and_follow_the_theme(browser, s
                 await context.clear_cookies()
                 await page.goto(path)
             await expect(page.get_by_role("main")).to_be_visible()
+            # Every sentence to paste has a Copy button: the script ran under the page's policy.
+            await expect(page.get_by_role("button", name="Copy").first).to_be_visible()
             assert await page.evaluate("document.documentElement.lang") == "en"
             problems[(scheme, name)] = await _axe_violations(page)
             backgrounds[(scheme, name)] = await page.evaluate(

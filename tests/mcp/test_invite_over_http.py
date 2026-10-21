@@ -5,6 +5,7 @@ import logging
 import httpx
 import pytest
 
+from aistack.bundled import PLAIN_PAGE_SCRIPT, script_source
 from tests.mcp.conftest import call, join
 
 pytestmark = pytest.mark.anyio
@@ -43,7 +44,11 @@ async def test_the_invite_page_names_the_team_and_what_to_paste(server_url):
     # The code is in the address bar: no other site may learn it from a link on this page.
     assert response.headers["referrer-policy"] == "no-referrer"
     assert response.headers["cache-control"] == "no-store"
-    assert "default-src 'none'" in response.headers["content-security-policy"]
+    policy = response.headers["content-security-policy"]
+    assert "default-src 'none'" in policy and "connect-src" not in policy
+    # The one script is the Copy buttons, allowed by its hash, and it sends nothing anywhere.
+    assert f"script-src {script_source(PLAIN_PAGE_SCRIPT)};" in policy
+    assert "fetch(" not in PLAIN_PAGE_SCRIPT
 
 
 async def test_the_invite_page_gives_someone_with_an_account_a_sentence_of_their_own(server_url):

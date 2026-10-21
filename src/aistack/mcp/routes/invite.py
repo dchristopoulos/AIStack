@@ -17,7 +17,7 @@ from aistack.bootstrap.context.application_context import (
     get_failure_limiter,
     get_read_session_factory,
 )
-from aistack.bundled import plain_page
+from aistack.bundled import PLAIN_PAGE_SCRIPT, plain_page, script_source
 from aistack.commons.exceptions import NotFound
 from aistack.mcp.auth.failure_limiter import client_address, note_failure
 from aistack.mcp.mcp import mcp
@@ -28,9 +28,10 @@ from aistack.services import team_service
 logger = logging.getLogger(__name__)
 
 # The code is in the address bar: nothing on the page may load from elsewhere or send it on.
-# The one image is the inline icon.
+# The one image is the inline icon, and the one script the Copy buttons, allowed by its hash.
 _HEADERS = {
     "Content-Security-Policy": ("default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+                                f"script-src {script_source(PLAIN_PAGE_SCRIPT)}; "
                                 "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"),
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
@@ -50,11 +51,13 @@ async def invite(request: Request) -> Response:
         note_failure(get_failure_limiter(), address, "invite link")
         return _page("Invite not found", 404,
                      "<h1>This invite link does not work</h1>"
-                     "<p>An invite link lets one person in and lasts seven days. This one has "
-                     "been used, cancelled, or has run out.</p>"
-                     "<p>If you used it yourself, you are already in the team: ask your coding "
-                     "agent to <strong>open my aistack dashboard</strong>. Otherwise ask "
-                     "whoever sent it for a new link.</p>")
+                     "<p class=lede>An invite link lets one person in and lasts seven days. "
+                     "This one has been used, cancelled, or has run out.</p>"
+                     "<section><h2>I used it myself</h2>"
+                     "<p>Then you are already in the team. Ask your coding agent:</p>"
+                     "<pre>open my aistack dashboard</pre></section>"
+                     "<section><h2>Someone sent it to me</h2>"
+                     "<p>Ask them for a new link.</p></section>")
 
     server = server_base_url(request)
     sentence = (f"Set up AIStack: fetch {server}/setup and follow it.\n"
@@ -66,13 +69,17 @@ async def invite(request: Request) -> Response:
     return _page(
         f"Join {team}", 200,
         f"<h1>You are invited to <code>{escape(team)}</code></h1>"
+        "<p class=lede>AIStack keeps one private Library of the skills your coding agents "
+        "use, and shares them with your teams.</p>"
+        "<section><h2>I'm new here</h2>"
         "<p>Paste this into Claude Code or Codex, with a short username and your name filled "
         "in. It creates your account, connects this computer, and puts you in the team.</p>"
-        f"<pre>{escape(sentence)}</pre>"
-        "<p>Already have an account? Say this to your coding agent instead:</p>"
+        f"<pre>{escape(sentence)}</pre></section>"
+        "<section><h2>I have AIStack on this computer</h2>"
+        "<p>Say this to your coding agent:</p>"
         f"<pre>{escape(join)}</pre>"
         f"<p>Or <a href=\"{escape(dashboard)}\">join in your dashboard</a>, if this browser "
-        "is signed in to it.</p>")
+        "is signed in to it.</p></section>")
 
 
 def _team_name(code: str) -> str:

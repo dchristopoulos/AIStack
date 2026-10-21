@@ -15,6 +15,7 @@ from sqlalchemy import delete, select
 
 from aistack.api.dashboard import REQUEST_HEADER, SESSION_COOKIE
 from aistack.bootstrap.context import application_context
+from aistack.bundled import PLAIN_PAGE_SCRIPT, script_source
 from aistack.db.models.machine import Machine
 from aistack.db.models.machine_skill import MachineSkill
 from aistack.mcp.mcp import mcp
@@ -174,6 +175,25 @@ async def test_the_servers_address_leads_a_stranger_to_how_to_connect(server_url
     # Someone whose agent is not connected yet gets the sentence that connects it.
     assert f"fetch {_base(server_url)}/setup and follow it" in response.text
     assert 'name=viewport' in response.text
+
+
+async def test_the_signed_out_page_says_what_aistack_is_and_offers_two_ways_in(server_url):
+    async with httpx.AsyncClient(base_url=_base(server_url)) as stranger:
+        response = await stranger.get("/app")
+
+    page = response.text
+    assert response.status_code == 401
+    assert "AIStack keeps one private Library" in page
+    assert page.index("I have AIStack on this computer") < page.index("I'm new here")
+    assert "<pre>open my aistack dashboard</pre>" in page
+    assert "Invite code: &lt;the invite code&gt;" in page
+    # Nothing on it comes from anywhere else, and the one script is the Copy buttons, by hash.
+    assert not re.search(r"""(src|href)=["']?https?:""", page)
+    policy = response.headers["content-security-policy"]
+    assert "default-src 'none'" in policy
+    assert re.search(r"script-src ([^;]*);", policy).group(1) == script_source(PLAIN_PAGE_SCRIPT)
+    assert re.findall(r"<script>(.*?)</script>", page) == [PLAIN_PAGE_SCRIPT]
+    assert INVITE_CODE not in page and "set-cookie" not in response.headers
 
 
 @pytest.mark.parametrize("ticket", ["nonsense", "a.b.c", ""])
