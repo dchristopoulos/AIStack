@@ -101,6 +101,10 @@ aistack start --agent claude-code --skills code-review,tdd
 
 It runs in the current folder's project, or the one `--project` names by folder or key, says what it will start and waits for Enter. Every other skill the agent would load there is turned off by name for that session only, with flags; your settings, login, rules and MCP servers are unchanged. `--agent codex` checks with `codex debug prompt-input` first that only the chosen skills remain. `--new-terminal` runs it in a new terminal window. It needs Claude Code 2.1.169 or Codex 0.163 or later. Claude Code's plugin skills stay on, and resuming the session later from a plain terminal brings every skill back ([ADR-0038](docs/adr/0038-the-page-asks-the-program-to-act-on-a-computer.md)).
 
+`--project` also takes the key of a project this computer manages; it then runs in the folder this computer last reported for it, and asks for the folder only when none is known.
+
+Setup and `aistack join` register the `aistack://` computer link for the installed program, so a click on the dashboard opens a terminal here: an app bundle in `~/Applications` on macOS, a per-user `HKCU\Software\Classes\aistack` key on Windows, and a `.desktop` handler set with `xdg-mime` on Linux. `aistack check` says whether it is registered. The terminal runs `aistack open <link>`, which accepts only `aistack://start?agent=…&project=…&skills=…`, `aistack://project-add?folder=…` and `aistack://sync`, checks every value, and runs the matching command, which says what it will do and waits for Enter.
+
 ### Try the dashboard without an agent
 
 Start a local server from a checkout and fill it with a small demo team:

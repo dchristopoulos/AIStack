@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 import httpx
 from fastmcp.exceptions import ToolError
 
-from aistack.bootstrap import agent_config, self_update, sync_lock
+from aistack.bootstrap import agent_config, computer_link, self_update, sync_lock
 from aistack.commons.exceptions import AIStackError, ValidationError
 from aistack.commons.text import sanitized
 from aistack.db.models.harness import Harness
@@ -283,7 +283,7 @@ def _holds(agent: str, connection: Connection) -> bool:
         return False
 
 
-async def _repair(connection: Connection, url: str, allow_http: bool) -> list[str]:
+async def _repair(connection: Connection, url: str, allow_http: bool) -> tuple[list[str], Path]:
     """Set up again what a finished join set up, from the choices it recorded (ADR-0035)."""
     chosen = _read(Path.home() / ".aistack" / "setup.json")
     if chosen.get("url") != url:
@@ -294,7 +294,7 @@ async def _repair(connection: Connection, url: str, allow_http: bool) -> list[st
     program = await asyncio.to_thread(_program)
     _preflight(agents, hook, connection)
     _configure(agents, connection, hook, program, allow_http)
-    return agents
+    return agents, program
 
 
 async def join_computer(server: str, code: str, *, allow_http: bool = False, say=print) -> dict:
@@ -330,7 +330,8 @@ async def join_computer(server: str, code: str, *, allow_http: bool = False, say
                     raise
                 existing = None
             else:
-                agents = await _repair(existing, url, allow_http)
+                agents, program = await _repair(existing, url, allow_http)
+                say(computer_link.register(program))
                 reports = await server_sync.sync_computer(existing, home, home)
                 say("This computer is already connected to AIStack." + (f" Set up {', '.join(agents)} again." if agents else ""))
                 say(server_sync.output(reports, False))
@@ -390,6 +391,7 @@ async def join_computer(server: str, code: str, *, allow_http: bool = False, say
             binding = await _binding(connection, state["machine_id"])
             await _call(connection, "sync", local={}, identify=True, fingerprint=binding)
             _configure(agents, connection, selected["hook"], program, allow_http)
+            say(computer_link.register(program))
             installed, questions = (0, [])
             if selected["skills"] == "library":
                 installed, questions = await _initial_skills(connection, agents, home)

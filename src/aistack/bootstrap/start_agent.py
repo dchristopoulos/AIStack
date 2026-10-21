@@ -79,7 +79,8 @@ def run(argv: list[str]) -> None:
     recipe = RECIPES[arguments.agent]
     try:
         chosen = chosen_skills(arguments.skills)
-        folder = project_folder(arguments.project, Path.cwd(), Path.home())
+        folder = project_folder(arguments.project, Path.cwd(), Path.home(),
+                                ask=input if sys.stdin.isatty() else None)
         if arguments.new_terminal:
             open_terminal(folder, [str(agent_config.installed_program()), "start",
                                    f"--agent={arguments.agent}", f"--project={folder}",
@@ -172,9 +173,10 @@ def _refuse_batch_file_quoting(command: list[str]) -> None:
 
 # Project ---------------------------------------------------------------------------------
 
-def project_folder(project: str | None, cwd: Path, home: Path) -> Path:
+def project_folder(project: str | None, cwd: Path, home: Path, ask=None) -> Path:
     """The top level of the project's repository on this computer: the current one, a
-    folder, or a key this computer's Library has a folder for, checked on disk."""
+    folder, or a key this computer manages, checked on disk. With `ask`, a key with no
+    known folder here asks the person for it."""
     from aistack.services.server_sync import current_project
 
     if project is None:
@@ -194,14 +196,44 @@ def project_folder(project: str | None, cwd: Path, home: Path) -> Path:
     here = current_project(cwd, home)
     if here is not None and _key_of(here) == key:
         return here[0]
+    found = managed_folder(key, home)
+    if found is not None:
+        return found
+    if ask is None:
+        raise StartRefused(f"AIStack found no folder of project '{loggable(key)}' on this "
+                           "computer. Run this inside its repository, or pass its folder with "
+                           "--project.")
+    try:
+        answer = ask(f"Where is project '{loggable(key)}' on this computer? Its folder: ")
+    except (EOFError, KeyboardInterrupt):
+        raise StartRefused("Nothing was started.") from None
+    folder = Path(answer.strip()).expanduser()
+    here = current_project(folder.resolve(), home) if answer.strip() and folder.is_dir() else None
+    if here is None or (here[1]["remote"] is not None and _key_of(here) != key):
+        raise StartRefused(f"{loggable(answer.strip())} is not a folder of project "
+                           f"'{loggable(key)}'.")
+    return here[0]
+
+
+def managed_folder(key: str, home: Path) -> Path | None:
+    """The folder this computer last reported for a project it manages: local mode's Library
+    record, or what server-mode sync recorded when the server said it manages it. Each is
+    checked on disk, so a stale or forged record leads nowhere else."""
+    from aistack.services.server_sync import current_project, reported_project
+
     machine_id, paths = _library_folders(key)
     for path in paths:
         here = current_project(Path(path), home)
         if here is not None and _key_of(here, machine_id) == key:
             return here[0]
-    raise StartRefused(f"AIStack found no folder of project '{loggable(key)}' on this "
-                       "computer. Run this inside its repository, or pass its folder with "
-                       "--project.")
+    reported = reported_project(home, key)
+    if reported is not None:
+        here = current_project(reported, home)
+        if here is not None and here[0] == reported.resolve() and (
+                _key_of(here) == key
+                or (here[1]["remote"] is None and key.startswith("local/"))):
+            return here[0]
+    return None
 
 
 def _key_of(here: tuple[Path, dict], machine_id=None) -> str | None:

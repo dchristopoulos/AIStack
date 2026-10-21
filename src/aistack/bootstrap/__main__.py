@@ -216,6 +216,9 @@ def check_local() -> None:
         "postgresql": f"in a {library.get('provider')} database at {library.get('host')}",
     }[library["kind"]]
     print(f"AIStack is ready. Your Library lives {where}.")
+    from aistack.bootstrap import computer_link
+
+    print(computer_link.status(agent_config.installed_program()))
 
 
 def write_sync_skill(skills_folder: Path) -> None:
@@ -278,6 +281,9 @@ def connect_agent(agent: str, hook: bool) -> None:
     else:
         agent_config.connect_codex(program, place)
     print(f"Connected {agent} to AIStack at {program}.")
+    from aistack.bootstrap import computer_link
+
+    print(computer_link.register(program))
     if hook:
         added = agent_config.add_session_start_hook(
             agent, agent_config.hook_command(program, agent))
@@ -503,6 +509,12 @@ def run() -> None:
         configure_logging("WARNING")
         start_agent.run(sys.argv[2:])
         return
+    if sys.argv[1:2] == ["open"]:
+        from aistack.bootstrap import computer_link
+
+        configure_logging("WARNING")
+        computer_link.run(sys.argv[2:])
+        return
     parser = argparse.ArgumentParser(
         prog="aistack",
         description="With no command, serve your own Library to the coding agent that started "
@@ -517,7 +529,8 @@ def run() -> None:
                     "'backup' and 'restore' copy its database, and 'admin' manages its "
                     "users, computers and teams; 'join <server> <code>' adds this computer "
                     "with a computer code, and 'sync' reconciles its skills; 'start' starts "
-                    "Claude Code or Codex in a project with only the chosen skills.")
+                    "Claude Code or Codex in a project with only the chosen skills; 'open' acts on "
+                    "an aistack:// link from the dashboard.")
     parser.add_argument("command", nargs="?", choices=["serve", "dashboard", "setup",
                                                        "sync-skill", "check", "export",
                                                        "github", "move", "connect", "backup",

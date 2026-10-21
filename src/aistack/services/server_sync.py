@@ -15,7 +15,7 @@ from aistack.bundled import SYNC_SKILL_NAME, sync_skill_document
 from aistack.commons.exceptions import AIStackError, ValidationError
 from aistack.commons.text import sanitized
 from aistack.db.models.harness import Harness
-from aistack.services import hardware, local_skills
+from aistack.services import hardware, local_skills, projects
 from aistack.services.server_connection import Connection, client
 from aistack.services.skill_archive import read_archive
 from aistack.services.skill_validation import validated_skill, validated_skill_name
@@ -51,6 +51,41 @@ def current_project(cwd: Path, home: Path) -> tuple[Path, dict] | None:
         return top, {"path": str(top), "remote": remote}
     except (OSError, subprocess.SubprocessError, ValidationError, ValueError):
         return None
+
+
+# Where server-mode sync last reported each project it was told this computer manages, so
+# `aistack start --project <key>` finds it offline. Display data, checked on disk before use.
+REPORTED_PROJECTS = Path(".aistack") / "projects.json"
+
+
+def _reported(home: Path) -> dict:
+    try:
+        value = json.loads((home / REPORTED_PROJECTS).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def reported_project(home: Path, key: str) -> Path | None:
+    path = _reported(home).get(key)
+    return Path(path) if isinstance(path, str) and Path(path).is_absolute() else None
+
+
+def remember_project(home: Path, key: str, top: Path | None) -> None:
+    """Record the folder of a project the server manages here, or forget one it does not."""
+    try:
+        key = projects.validated_key(key)
+    except ValidationError:
+        return
+    reported = _reported(home)
+    if top is None:
+        if reported.pop(key, None) is None:
+            return
+    else:
+        reported[key] = str(top)
+    path = home / REPORTED_PROJECTS
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(reported, indent=2) + "\n", encoding="utf-8")
 
 
 def _repository(top: Path, relative: str) -> set[str]:
@@ -121,6 +156,9 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path) -> list[d
                 reports.append(report)
             if project:
                 managed = next((report.get("project") for report in reports if (report.get("project") or {}).get("managed")), None)
+                named = managed or next((report.get("project") for report in reports if isinstance(report.get("project"), dict)), None)
+                if named and isinstance(named.get("key"), str):
+                    remember_project(home, named["key"], project[0] if managed else None)
                 if managed:
                     for harness in harnesses:
                         folder = local_skills.skills_folder(Harness(harness), project[0])

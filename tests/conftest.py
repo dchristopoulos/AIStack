@@ -35,6 +35,19 @@ def pytest_collection_modifyitems(config, items):
     items[:] = kept
 
 
+@pytest.fixture(autouse=True)
+def no_link_registration(monkeypatch):
+    """No test registers the aistack:// link with the computer it runs on: registration
+    tests pass their own fake `run` and registry."""
+    from aistack.bootstrap import computer_link
+
+    def refused(*_, **__):
+        raise OSError("link registration is off in tests")
+
+    monkeypatch.setattr(computer_link, "_run", refused)
+    monkeypatch.setattr(computer_link, "_Registry", refused)
+
+
 @pytest.fixture(name="sqlite_url")
 def sqlite_url_fixture(tmp_path) -> str:
     """A SQLite URL backed by a real file, never ':memory:'.
