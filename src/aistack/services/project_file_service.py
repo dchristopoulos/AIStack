@@ -170,7 +170,8 @@ def work(session: Session, machine_id: uuid.UUID, project: Project) -> Work:
         .join(ProjectFile, ProjectFile.project_file_id == ProjectFileEdit.project_file_id)
         .where(ProjectFile.project_id == project.project_id,
                ProjectFileEdit.machine_id == machine_id,
-               ProjectFileEdit.cancelled_on.is_(None), ProjectFileEdit.shared_on.is_not(None))
+               ProjectFileEdit.cancelled_on.is_(None), ProjectFileEdit.shared_on.is_not(None),
+               ProjectFileEdit.settled_on.is_(None))
         .order_by(bytewise(ProjectFile.path), ProjectFileEdit.created_on)))
     return Work(files, edits, shared)
 
@@ -228,7 +229,7 @@ def record_outcome(session: Session, ticket: ProjectFileEditTicket, outcome: obj
     if kind == "settled":
         if edit.shared_on is None:
             raise Conflict("This edit was not shared, so it cannot be settled.")
-        edit.cancelled_on = now
+        edit.settled_on = now
     elif kind == "written":
         edit.written_on = edit.written_on or now
     elif kind == "shared":
@@ -250,7 +251,7 @@ def _ticketed_edit(session: Session, ticket: ProjectFileEditTicket,
     edit = session.get(ProjectFileEdit, ticket.project_file_edit_id)
     row = None if edit is None else session.get(ProjectFile, edit.project_file_id)
     if (row is None or edit.machine_id != machine.machine_id or edit.cancelled_on is not None
-            or (edit.shared_on is not None and not shared)
+            or edit.settled_on is not None or (edit.shared_on is not None and not shared)
             or not _manages(session, machine, row.project_id)):
         raise NotFound("This edit is no longer waiting for this computer. Run aistack sync "
                        "again.")
@@ -378,7 +379,7 @@ def my_file(session: Session, user_id: uuid.UUID, key: str, path: str) -> Projec
 
 def all_files(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
     """Every listed file of the user's projects, as the page reads them: the ticked ones with
-    their text, and each file's latest edit that is not cancelled."""
+    their text, and each file's latest edit that is neither cancelled nor settled."""
     rows = session.execute(
         select(ProjectFile, Project.key, Project.name)
         .join(Project, Project.project_id == ProjectFile.project_id)
@@ -387,7 +388,8 @@ def all_files(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
     ids = [row.project_file_id for row, _, _ in rows]
     edits: dict[uuid.UUID, ProjectFileEdit] = {}
     for edit in session.scalars(select(ProjectFileEdit).where(
-            ProjectFileEdit.project_file_id.in_(ids), ProjectFileEdit.cancelled_on.is_(None))
+            ProjectFileEdit.project_file_id.in_(ids), ProjectFileEdit.cancelled_on.is_(None),
+            ProjectFileEdit.settled_on.is_(None))
             .order_by(ProjectFileEdit.created_on)):
         edits[edit.project_file_id] = edit
     listed: dict[str, list[str]] = {}
