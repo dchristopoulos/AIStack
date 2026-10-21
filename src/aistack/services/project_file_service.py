@@ -11,6 +11,7 @@ it on a branch of its own as a pull request. Every lookup starts from a project
 
 import difflib
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -142,6 +143,8 @@ class PendingEdit:
 class Work:
     files: tuple[TickedFile, ...]
     edits: tuple[PendingEdit, ...]
+    # Shared, and shown as shared until the working copy's own history has the shared text.
+    shared: tuple[PendingEdit, ...] = ()
 
 
 def work(session: Session, machine_id: uuid.UUID, project: Project) -> Work:
@@ -161,7 +164,15 @@ def work(session: Session, machine_id: uuid.UUID, project: Project) -> Work:
                # Not yet written, or written and committed on the page.
                ProjectFileEdit.written_on.is_(None) | ProjectFileEdit.note.is_not(None))
         .order_by(bytewise(ProjectFile.path), ProjectFileEdit.created_on)))
-    return Work(files, edits)
+    shared = tuple(PendingEdit(*row) for row in session.execute(
+        select(ProjectFileEdit.project_file_edit_id, ProjectFile.path,
+               ProjectFileEdit.base_hash, ProjectFileEdit.content_hash, ProjectFileEdit.note)
+        .join(ProjectFile, ProjectFile.project_file_id == ProjectFileEdit.project_file_id)
+        .where(ProjectFile.project_id == project.project_id,
+               ProjectFileEdit.machine_id == machine_id,
+               ProjectFileEdit.cancelled_on.is_(None), ProjectFileEdit.shared_on.is_not(None))
+        .order_by(bytewise(ProjectFile.path), ProjectFileEdit.created_on)))
+    return Work(files, edits, shared)
 
 
 @dataclass(frozen=True)
@@ -197,11 +208,12 @@ def edit_text(session: Session, ticket: ProjectFileEditTicket) -> tuple[str, str
 
 def record_outcome(session: Session, ticket: ProjectFileEditTicket, outcome: object) -> str:
     """What became of an edit on its computer: `written` into the working copy, `shared`
-    with the pull request's address, or `cancelled` by the person there."""
+    with the pull request's address, `cancelled` by the person there, or, once shared,
+    `settled`: the working copy's commit has the shared text, so the page stops showing it."""
     if not isinstance(outcome, dict) or outcome.get("outcome") not in (
-            "written", "shared", "cancelled"):
-        raise ValidationError("Say what became of the edit: outcome is written, shared or "
-                              "cancelled.")
+            "written", "shared", "cancelled", "settled"):
+        raise ValidationError("Say what became of the edit: outcome is written, shared, "
+                              "cancelled or settled.")
     kind = outcome["outcome"]
     address = outcome.get("pull_request_url")
     # None where the program could not tell where a pull request is opened.
@@ -211,9 +223,13 @@ def record_outcome(session: Session, ticket: ProjectFileEditTicket, outcome: obj
                                 or not address.isprintable() or " " in address):
         raise ValidationError("A shared edit comes with the https address of its pull "
                               "request, or none.")
-    edit, row = _ticketed_edit(session, ticket)
+    edit, row = _ticketed_edit(session, ticket, shared=kind == "settled")
     now = utc_now()
-    if kind == "written":
+    if kind == "settled":
+        if edit.shared_on is None:
+            raise Conflict("This edit was not shared, so it cannot be settled.")
+        edit.cancelled_on = now
+    elif kind == "written":
         edit.written_on = edit.written_on or now
     elif kind == "shared":
         if edit.written_on is None or edit.note is None:
@@ -226,13 +242,16 @@ def record_outcome(session: Session, ticket: ProjectFileEditTicket, outcome: obj
     return kind
 
 
-def _ticketed_edit(session: Session,
-                   ticket: ProjectFileEditTicket) -> tuple[ProjectFileEdit, ProjectFile]:
+def _ticketed_edit(session: Session, ticket: ProjectFileEditTicket,
+                   shared: bool = False) -> tuple[ProjectFileEdit, ProjectFile]:
+    """The edit a URL names, still waiting on its computer; with `shared`, also one shared
+    and not settled."""
     machine = require_registered_machine(session, ticket.machine_id, None, ticket.token_prefix)
     edit = session.get(ProjectFileEdit, ticket.project_file_edit_id)
     row = None if edit is None else session.get(ProjectFile, edit.project_file_id)
     if (row is None or edit.machine_id != machine.machine_id or edit.cancelled_on is not None
-            or edit.shared_on is not None or not _manages(session, machine, row.project_id)):
+            or (edit.shared_on is not None and not shared)
+            or not _manages(session, machine, row.project_id)):
         raise NotFound("This edit is no longer waiting for this computer. Run aistack sync "
                        "again.")
     return edit, row
@@ -396,9 +415,17 @@ def all_files(session: Session, user_id: uuid.UUID) -> list[dict[str, Any]]:
                 "saved_on": as_utc(edit.created_on).isoformat(),
                 "written_on": _when(edit.written_on), "note": edit.note,
                 "shared_on": _when(edit.shared_on), "pull_request_url": edit.pull_request_url,
+                "branch": None if edit.shared_on is None else branch_name(row.path,
+                                                                          edit.content_hash),
             },
         })
     return shown
+
+
+def branch_name(path: str, content_hash: str) -> str:
+    """The branch an edit is shared on: one per file and text."""
+    slug = re.sub(r"[^a-z0-9]+", "-", path.lower()).strip("-")[:40].strip("-") or "file"
+    return f"aistack/{slug}-{content_hash[:8]}"
 
 
 def _diff(before: str | None, after: str) -> str | None:

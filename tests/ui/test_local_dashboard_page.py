@@ -221,6 +221,27 @@ async def test_a_folder_here_is_added_then_a_file_is_edited_and_shared(browser, 
         await share.get_by_role("button", name="Open a pull request").click()
         await expect(page.get_by_text(re.compile("^Pushed branch aistack/agents-md-"))
                      ).to_be_visible()
+
+        # Shared: the page says so, with its branch, until this working copy commits the text.
+        await page.reload()
+        table = page.get_by_role("table", name="What your agents read in shop")
+        await expect(table.get_by_text("Shared as a pull request")).to_be_visible()
+        await table.get_by_role("button", name="Open AGENTS.md").click()
+        panel = page.get_by_role("dialog", name="AGENTS.md")
+        await expect(panel.get_by_text("Shared as a pull request")).to_be_visible()
+        await expect(panel.get_by_text(re.compile("^On branch aistack/agents-md-"))
+                     ).to_be_visible()
+        await expect(panel.get_by_role("button", name="Commit…")).to_have_count(0)
+
+        _git(top, "commit", "-qam", "Say tests come first")
+        await page.reload()
+        table = page.get_by_role("table", name="What your agents read in shop")
+        await expect(table.get_by_role("button", name="Open AGENTS.md")).to_be_visible()
+        await expect(table.get_by_text("Shared as a pull request")).to_have_count(0)
+        await table.get_by_role("button", name="Open AGENTS.md").click()
+        panel = page.get_by_role("dialog", name="AGENTS.md")
+        await expect(panel.get_by_text("Tests first.")).to_be_visible()
+        await expect(panel.get_by_role("button", name="Commit…")).to_have_count(0)
         await context.close()
 
     branches = _git(remote, "branch", "--list", "aistack/*")

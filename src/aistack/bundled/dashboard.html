@@ -1388,6 +1388,7 @@ const WORDS = {
     pendingShare: '{computer} opens the pull request at its next {sync}',
     shared: 'Shared as a pull request',
     openPull: 'Open the pull request',
+    sharedBranch: 'On branch {branch}',
     commit: 'Commit…',
     writeOn: 'Write it on',
     writeOnHelp: 'Its working copy of the repository. Nothing is committed until you press Commit….',
@@ -3636,7 +3637,8 @@ function editStatus(f) {
   const e = f.edit, R = W.rules;
   if (!e) return null;
   const computer = machineName(e.machine);
-  if (e.shared_on) return e.pull_request_url ? null : say(R.shared, {});
+  // Shown until the working copy's own commit has the shared text, then the row is as before.
+  if (e.shared_on) return say(R.shared, {});
   if (e.note) return say(R.pendingShare, { computer, sync: SYNC });
   if (e.written_on) return say(R.pending, { computer });
   return say(R.pendingWrite, { computer, sync: SYNC });
@@ -3769,7 +3771,9 @@ function repoFileSheet(f) {
     sections: [
       status && el('p', { class: 'pending' }, icon('up', 13), status),
       e && !e.shared_on && editDiff(e),
-      e && e.shared_on && e.pull_request_url && el('p', null, el('a', { href: e.pull_request_url, target: '_blank', rel: 'noopener noreferrer' }, R.openPull)),
+      e && e.shared_on && (e.pull_request_url
+        ? el('p', null, el('a', { href: e.pull_request_url, target: '_blank', rel: 'noopener noreferrer' }, R.openPull))
+        : e.branch && el('p', { class: 't2' }, sayWith(R.sharedBranch, { branch: el('span', { class: 'mono' }, e.branch) }))),
       el('section', { class: 'sheet-sec', 'aria-label': R.readBy },
         el('dl', { class: 'facts' }, el('dt', null, R.readBy), el('dd', null, readers.length ? readers.join(W.comma) : R.nobody))),
       f.agent && el('section', { class: 'sheet-sec', 'aria-label': R.justForYou }, el('h3', { class: 'legend' }, R.justForYou), off,

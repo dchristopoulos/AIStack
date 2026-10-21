@@ -621,14 +621,21 @@ def _apply_to_project_files(session: Session, user_id: uuid.UUID, event: Event) 
 def listed_from(session: Session, machine_id: uuid.UUID, key: str) -> str | None:
     """The folder `machine_id` last listed project `key` from, as its own event recorded it,
     or None when it never did. Display data: the caller checks the folder on disk."""
+    return listed_here(session, machine_id).get(key)
+
+
+def listed_here(session: Session, machine_id: uuid.UUID) -> dict[str, str]:
+    """`listed_from` for every project `machine_id` listed, by key."""
+    folders: dict[str, str] = {}
     bodies = session.scalars(select(LibraryEvent.body)
                              .where(LibraryEvent.kind == PROJECT_FILES_LISTED)
                              .order_by(LibraryEvent.sort_key.desc()))
     for body in bodies:
         event = Event.from_json(body)
-        if event.machine_id == machine_id and event.data.get("project") == key:
-            return event.data.get("path")
-    return None
+        key, path = event.data.get("project"), event.data.get("path")
+        if event.machine_id == machine_id and isinstance(key, str) and isinstance(path, str):
+            folders.setdefault(key, path)
+    return folders
 
 
 def _target(text: object) -> uuid.UUID:

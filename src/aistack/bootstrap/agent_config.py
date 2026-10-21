@@ -210,6 +210,17 @@ def _read_toml(path: Path) -> dict:
                            "Nothing was changed.") from error
 
 
+def connected_locally(agent: str | None = None) -> bool:
+    """Whether the agent, or every agent here, starts AIStack in local mode and none connects
+    to a server."""
+    entries = [_read_json(Path.home() / ".claude.json").get("mcpServers", {}).get(SERVER_NAME)
+               if name == "claude-code" else
+               _read_toml(codex_home() / "config.toml").get("mcp_servers", {}).get(SERVER_NAME)
+               for name in (AGENTS if agent is None else (agent,))]
+    entries = [entry for entry in entries if isinstance(entry, dict)]
+    return bool(entries) and all("url" not in entry for entry in entries)
+
+
 def remote_connection(agent: str | None = None):
     """One unambiguous remote connection; credentials never enter diagnostics."""
     from aistack.services.server_connection import Connection

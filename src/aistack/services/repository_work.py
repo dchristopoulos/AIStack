@@ -13,6 +13,7 @@ git and gh run without a shell, with every value an argument of its own. Their o
 never echoed: a push's error can carry a remote's credentials.
 """
 
+import json
 import os
 import re
 import shutil
@@ -26,7 +27,7 @@ import httpx
 from aistack.commons.exceptions import AIStackError, Conflict, ValidationError
 from aistack.db.models.rule import RULE_TEXT_MAX_BYTES
 from aistack.services import agent_files, projects, rule_files
-from aistack.services.project_file_service import validated_path
+from aistack.services.project_file_service import branch_name, validated_path
 
 EDIT_CHOICES = ("write", "cancel")
 _SKILLS_FOLDERS = (".claude/skills/", ".agents/skills/")
@@ -40,9 +41,10 @@ class ShareFailed(AIStackError):
 
 
 async def carry_out(http, top: Path, ticked: list[dict], edits: list[dict],
-                    choices: dict[str, str], report: dict) -> None:
-    """Write and share the edits waiting for this computer, then upload the ticked files
-    that changed, adding what happened to the rules `report`."""
+                    choices: dict[str, str], report: dict, shared: list[dict] = ()) -> None:
+    """Write and share the edits waiting for this computer, settle those `shared` whose text
+    the commit checked out now has, then upload the ticked files that changed, adding what
+    happened to the rules `report`."""
     report.setdefault("edit_questions", [])
     try:
         tracked = _tracked(top)
@@ -64,6 +66,15 @@ async def carry_out(http, top: Path, ticked: list[dict], edits: list[dict],
                                       "retry.")
         except AIStackError as error:
             report["failures"].append(error.message)
+    for edit in shared:
+        try:
+            relative, target = _tracked_file(top, edit.get("path"), tracked)
+            if settled(top, relative, rule_files.read(target), edit["content_hash"]):
+                await _report(http, edit, "settled")
+        except (OSError, httpx.HTTPError, subprocess.SubprocessError, KeyError, TypeError,
+                ValueError, AIStackError):
+            # Shown as shared a while longer: the next sync settles it.
+            continue
     for file in ticked:
         try:
             relative, target = _tracked_file(top, file.get("path"), tracked)
@@ -94,6 +105,14 @@ async def carry_out(http, top: Path, ticked: list[dict], edits: list[dict],
                                       "Sync again to retry.")
         except AIStackError as error:
             report["failures"].append(error.message)
+
+
+def settled(top: Path, relative: str, content: bytes | None, shared_hash: str) -> bool:
+    """Whether a shared edit came back through the person's own history: the file has the
+    shared text and the commit checked out has it too."""
+    if content is None or rule_files.digest(content) != shared_hash:
+        return False
+    return not _git(top, "diff", "--name-only", "-z", "HEAD", "--", relative).strip(b"\0")
 
 
 def markdown_files(top: Path) -> list[dict]:
@@ -236,11 +255,6 @@ async def _share(http, top: Path, relative: str, edit: dict, report: dict) -> No
                                    "pull request from it where the repository is kept.")
 
 
-def branch_name(relative: str, content_hash: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", relative.lower()).strip("-")[:40].strip("-") or "file"
-    return f"aistack/{slug}-{content_hash[:8]}"
-
-
 def share(top: Path, relative: str, content: bytes, note: str,
           branch: str) -> tuple[str | None, bool]:
     """Commit `content` as `relative` on a new branch and push it, then open a pull request.
@@ -377,12 +391,14 @@ def working_copy(folder: str, key: str, machine_id, home: Path) -> Path:
                           "Add the project again by its folder.")
 
 
-def read_here(files: list[dict], top: Path, machine_id) -> None:
+def read_here(files: list[dict], top: Path, machine_id, shares: Path) -> None:
     """Fill in, for the localhost page, the text of each ticked file as the working copy has
     it, and, when it differs from the commit checked out, an edit written on this computer and
-    not committed, which Commit… shares. A file that is not UTF-8 text, or is larger than
-    64 KiB, is shown unread."""
+    not committed, which Commit… shares. One this computer shared with that text, as `shares`
+    recorded, is shown shared. A file that is not UTF-8 text, or is larger than 64 KiB, is
+    shown unread."""
     tracked = _tracked(top)
+    recorded = _shared(shares)
     paths = [file["path"] for file in files]
     changed = set(_git(top, "diff", "--name-only", "-z", "HEAD", "--", *paths, check=False)
                   .decode("utf-8", "replace").split("\0"))
@@ -401,7 +417,11 @@ def read_here(files: list[dict], top: Path, machine_id) -> None:
         if file["path"] in changed:
             file["edit"] = {"machine": str(machine_id), "text": text, "content_hash": digest,
                             "saved_on": modified, "written_on": modified, "note": None,
-                            "shared_on": None, "pull_request_url": None}
+                            "shared_on": None, "pull_request_url": None, "branch": None}
+            share = recorded.get(f"{file['project']}\n{file['path']}")
+            if share is not None and share["content_hash"] == digest:
+                file["edit"] |= {field: share[field] for field in (
+                    "note", "shared_on", "pull_request_url", "branch")}
 
 
 def write_here(top: Path, path: str, text: str, base_hash: str) -> bool:
@@ -419,13 +439,38 @@ def write_here(top: Path, path: str, text: str, base_hash: str) -> bool:
     return True
 
 
-def share_here(top: Path, path: str, note: str) -> dict:
+def share_here(top: Path, key: str, path: str, note: str, shares: Path) -> dict:
     """Share the file as the working copy has it, as `aistack sync` shares an edit committed
-    on a server's page: a branch with only that file changed, and a pull request."""
+    on a server's page: a branch with only that file changed, and a pull request. Recorded in
+    `shares`, on this computer only: an edit here is not a change to the Library (ADR-0039)."""
     relative, target = _tracked_file(top, path, _tracked(top))
     content = rule_files.read(target)
     if content is None:
         raise ValidationError(f"{relative} is not in {top}, so there is nothing to share.")
-    branch = branch_name(relative, rule_files.digest(content))
+    digest = rule_files.digest(content)
+    branch = branch_name(relative, digest)
     address, opened = share(top, relative, content, note, branch)
+    recorded = _shared(shares)
+    recorded[f"{key}\n{relative}"] = {
+        "content_hash": digest, "note": note, "branch": branch, "pull_request_url": address,
+        "shared_on": datetime.now(UTC).isoformat()}
+    shares.parent.mkdir(parents=True, exist_ok=True)
+    shares.write_text(json.dumps(recorded, indent=2) + "\n", encoding="utf-8")
     return {"branch": branch, "pull_request_url": address, "opened": opened}
+
+
+def _shared(shares: Path) -> dict[str, dict]:
+    """What this computer shared, by project key and path. Read back as display data, so
+    anything that is not what `share_here` wrote is left out."""
+    try:
+        recorded = json.loads(shares.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    fields = ("content_hash", "note", "branch", "shared_on")
+    return {where: share for where, share in recorded.items()
+            if isinstance(share, dict) and all(isinstance(share.get(field), str)
+                                               for field in fields)
+            and (share.get("pull_request_url") is None or (
+                isinstance(share["pull_request_url"], str)
+                and share["pull_request_url"].startswith("https://")))} if isinstance(
+        recorded, dict) else {}

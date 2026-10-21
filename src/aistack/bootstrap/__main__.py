@@ -310,7 +310,31 @@ def _nothing_to_sync(agent: str | None) -> bool:
         return False
     configure_logging("ERROR")
     build_local_context(settings)
-    return not sync_would_act()
+    return session_start_is_quiet()
+
+
+def session_start_is_quiet() -> bool:
+    """Write this computer's rules, as `aistack sync --hook` writes them on a server, so a rule
+    edited on the page reaches this session; then whether nothing is left for the agent: no
+    skill for sync to act on, and no rule question or failure."""
+    from aistack.mcp import local_rules
+
+    acts = sync_would_act()
+    return not local_rules.needs_attention(local_rules.sync_rules(Path.home(), {})) and not acts
+
+
+def sync_local(agent: str | None, choices: dict[str, str]) -> list[dict]:
+    """`aistack sync` against a local Library: its rules, as the stdio `sync` tool syncs them.
+    Skills stay with the tool, which the agent calls."""
+    if agent:
+        use_agent_place(agent)
+    settings = LocalSettings().resolved(record=False)
+    build_local_context(settings)
+    from aistack.bootstrap.context.application_context import library_before_read
+    from aistack.mcp import local_rules
+
+    library_before_read(force=True)
+    return local_rules.sync_rules(Path.home(), choices)
 
 
 def sync_would_act() -> bool:
@@ -595,6 +619,16 @@ def run() -> None:
         if any(not key or not value for key, value in choices.items()):
             parser.error("--rule-choice takes the question's key and an answer: KEY=CHOICE")
         try:
+            if agent_config.connected_locally(arguments.agent):
+                reports = sync_local(arguments.agent, choices)
+                if any(report["completed"] or report["failures"] or report["rule_questions"]
+                       for report in reports):
+                    print(server_sync.output(reports, arguments.hook))
+                elif not arguments.hook:
+                    print("AIStack rules are up to date.")
+                if any(report["failures"] for report in reports):
+                    sys.exit(1)
+                return
             connection = agent_config.remote_connection(arguments.agent)
             warning = server_connection.checked_server(connection.url, arguments.allow_http)
             # The person accepted plain HTTP at join; repeating it fills every new chat.
