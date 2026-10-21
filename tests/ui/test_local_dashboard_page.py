@@ -1,11 +1,14 @@
 import re
+import subprocess
 
 import pytest
 from playwright.async_api import expect
 
+from aistack.bootstrap import start_agent
 from aistack.bootstrap.context import application_context
 from aistack.bundled import RUN_COMMAND
-from aistack.services import rule_service
+from aistack.db.models.harness import Harness
+from aistack.services import project_service, rule_service
 from tests.local_dashboard import local_dashboard
 
 pytestmark = pytest.mark.anyio
@@ -80,6 +83,36 @@ async def test_rules_are_listed_with_a_line_that_editing_comes_later(browser, tm
         await expect(page.get_by_text("house-style")).to_be_visible()
         await expect(page.get_by_text("Editing them comes in a later release.")).to_be_visible()
         await context.close()
+
+
+async def test_open_a_terminal_starts_the_agent_on_this_computer(browser, tmp_path, sqlite_url,
+                                                                  monkeypatch):
+    """ADR-0038: local mode opens the terminal itself, through its localhost-only route."""
+    started = []
+    monkeypatch.setattr(start_agent, "_run_from_page", lambda command, **_: (
+        started.append(command[3:]) or subprocess.CompletedProcess(command, 0, "", "")))
+    async with local_dashboard(tmp_path, sqlite_url) as (_, link):
+        caller = application_context.get_local_principal()
+        with application_context.get_session_factory().begin() as session:
+            project_service.register_folder(session, caller.user_id, caller.machine_id,
+                                            "github.com/maria/notes", "notes",
+                                            Harness.CLAUDE_CODE, "/home/maria/notes")
+        context = await browser.new_context()
+        page = await context.new_page()
+        await page.goto(link)
+        await page.get_by_role("navigation", name="Main").get_by_role("link", name="notes").click()
+
+        await page.get_by_role("button", name="Start an agent…").click()
+        dialog = page.get_by_role("dialog", name="Start an agent in notes")
+        await expect(dialog.get_by_role("link", name="Open on this computer")).to_have_count(0)
+        await dialog.get_by_label("More skills, by name").fill("wizard")
+        await dialog.get_by_role("button", name="Open a terminal").click()
+
+        await expect(page.get_by_text("A terminal opened on")).to_be_visible()
+        await context.close()
+
+    assert started == [["start", "--new-terminal", "--agent=claude-code",
+                        "--project=github.com/maria/notes", "--skills=wizard"]]
 
 
 async def test_the_page_says_where_the_library_lives(browser, tmp_path, sqlite_url):

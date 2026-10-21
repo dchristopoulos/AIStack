@@ -19,7 +19,7 @@ import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from aistack.bootstrap import agent_config
 from aistack.commons.exceptions import AIStackError, ValidationError
@@ -99,6 +99,45 @@ def chosen_skills(text: str) -> tuple[str, ...]:
     if not all(names):
         raise ValidationError("--skills has an empty name. Separate names with single commas.")
     return tuple(dict.fromkeys(validated_skill_name(name) for name in names))
+
+
+# What the localhost dashboard runs the command with. Tests replace it, so none opens a window.
+_run_from_page = subprocess.run
+_FROM_PAGE_TIMEOUT_SECONDS = 60
+
+
+def start_from_page(agent: str, project: str, skills: list[str]) -> None:
+    """`aistack start --new-terminal` for the localhost dashboard (ADR-0038): every value
+    checked here, passed as one `--name=value` argument with no shell, and the command in the
+    new window still waits for Enter. A refusal comes back as the command's own sentence."""
+    if agent not in RECIPES:
+        raise ValidationError(f"AIStack starts {', '.join(RECIPES)}, not '{loggable(agent)}'.")
+    if len(skills) > 1000 or not all(isinstance(name, str) and "," not in name
+                                     for name in skills):
+        raise ValidationError("skills must be a list of skill names.")
+    chosen = chosen_skills(",".join(skills))
+    key = projects.validated_key(project)
+    # A key, never a folder: `--project` also takes a path, and the page names projects.
+    if key.startswith(("~", ".")) or Path(key).is_absolute() or PureWindowsPath(key).drive:
+        raise ValidationError("project is not a project key AIStack made. Send the key sync "
+                              "reported under project.")
+    command = [sys.executable, "-m", "aistack.bootstrap", "start", "--new-terminal",
+               f"--agent={agent}", f"--project={key}", f"--skills={','.join(chosen)}"]
+    # An empty folder to run in, so no relative path resolves to a folder, and the command
+    # cannot read the dashboard's own input or ask a question nobody sees.
+    with tempfile.TemporaryDirectory() as nowhere:
+        try:
+            done = _run_from_page(command, cwd=nowhere, stdin=subprocess.DEVNULL,
+                                  capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=_FROM_PAGE_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            raise StartRefused("Opening a terminal took too long. Run the command in a "
+                               "terminal instead.") from None
+    if done.returncode:
+        said = (done.stderr or "").strip().splitlines()
+        raise StartRefused(said[-1] if said else
+                           f"{RECIPES[agent].display_name} was not started. Run the command "
+                           "in a terminal to see why.")
 
 
 def start(recipe: Recipe, folder: Path, chosen: tuple[str, ...], confirm: bool = True,

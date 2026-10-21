@@ -1,10 +1,15 @@
 import contextlib
+import os
+import subprocess
 import uuid
 
 import httpx
 import pytest
 
+from aistack.api import dashboard as dashboard_routes
+from aistack.bootstrap import start_agent
 from aistack.bootstrap.context import application_context
+from aistack.mcp.mcp import mcp
 from aistack.services import library_log, rule_service, skill_service
 from tests.local_dashboard import local_dashboard
 
@@ -138,3 +143,86 @@ async def test_rules_are_shown_and_read_but_not_changed(dashboard):
         ("house-style", ["claude_code"])]
     assert text.json()["text"] == "# Style\n"
     assert [write.status_code for write in writes] == [404] * 5
+
+
+@pytest.fixture(name="started")
+def started_fixture(monkeypatch):
+    """What `aistack start --new-terminal` was run with, instead of opening a window."""
+    runs = []
+
+    def run(command, **options):
+        runs.append((command, options, os.listdir(options["cwd"])))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(start_agent, "_run_from_page", run)
+    return runs
+
+
+def test_the_server_has_no_route_that_starts_a_program():
+    """ADR-0038: only the localhost dashboard opens a terminal on the computer it runs on."""
+    # FastMCP keeps custom routes in a private list; it is pinned, so an upgrade breaks this.
+    server = {route.path for route in mcp._additional_http_routes}
+
+    assert "/api/start-agent" in {route.path for route in dashboard_routes.LOCAL_ROUTES}
+    assert [path for path in server if "start" in path] == []
+
+
+async def test_the_page_opens_a_terminal_running_aistack_start(dashboard, started):
+    base, link = dashboard
+    async with _signed_in(base, link) as client:
+        response = await client.post("/api/start-agent", headers=REQUEST_HEADER, json={
+            "agent": "codex", "project": "github.com/a/b", "skills": ["wizard", "tdd"]})
+
+    assert response.status_code == 200
+    [(command, options, cwd_holds)] = started
+    assert command[1:] == ["-m", "aistack.bootstrap", "start", "--new-terminal",
+                           "--agent=codex", "--project=github.com/a/b", "--skills=wizard,tdd"]
+    # No shell, nothing read from the dashboard's own input, and no folder a key could name.
+    assert "shell" not in options and options["stdin"] == subprocess.DEVNULL
+    assert cwd_holds == []
+
+
+@pytest.mark.parametrize("body", [
+    {"agent": "vim", "project": "github.com/a/b", "skills": ["wizard"]},
+    {"agent": "codex", "project": "github.com/a/b", "skills": []},
+    {"agent": "codex", "project": "github.com/a/b", "skills": ["a,b"]},
+    {"agent": "codex", "project": "github.com/a/b", "skills": ["--yes"]},
+    {"agent": "codex", "project": "github.com/a/b", "skills": "wizard"},
+    {"agent": "codex", "project": "/home/maria/code", "skills": ["wizard"]},
+    {"agent": "codex", "project": "~/code/b", "skills": ["wizard"]},
+    {"agent": "codex", "project": "c:/code/b", "skills": ["wizard"]},
+    {"agent": "codex", "project": "a b/c", "skills": ["wizard"]},
+    {"agent": "codex", "skills": ["wizard"]},
+], ids=["agent", "no-skill", "comma", "flag", "text", "absolute", "home", "drive", "space",
+        "missing"])
+async def test_a_start_with_anything_unchecked_runs_nothing(dashboard, started, body):
+    base, link = dashboard
+    async with _signed_in(base, link) as client:
+        response = await client.post("/api/start-agent", headers=REQUEST_HEADER, json=body)
+
+    assert response.status_code == 400
+    assert started == []
+
+
+async def test_a_start_needs_the_session_and_the_pages_header(dashboard, started):
+    base, link = dashboard
+    body = {"agent": "codex", "project": "github.com/a/b", "skills": ["wizard"]}
+    async with httpx.AsyncClient(base_url=base) as stranger:
+        assert (await stranger.post("/api/start-agent", headers=REQUEST_HEADER,
+                                    json=body)).status_code == 401
+    async with _signed_in(base, link) as client:
+        assert (await client.post("/api/start-agent", json=body)).status_code == 400
+
+    assert started == []
+
+
+async def test_a_refusal_says_the_commands_own_sentence(dashboard, monkeypatch):
+    monkeypatch.setattr(start_agent, "_run_from_page", lambda command, **_: (
+        subprocess.CompletedProcess(command, 1, "", "Codex was not started. No folder.\n")))
+    base, link = dashboard
+    async with _signed_in(base, link) as client:
+        response = await client.post("/api/start-agent", headers=REQUEST_HEADER, json={
+            "agent": "codex", "project": "github.com/a/b", "skills": ["wizard"]})
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "Codex was not started. No folder."
