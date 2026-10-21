@@ -160,3 +160,11 @@ def files_read(agent: CodingAgent, tracked: list[str]) -> list[str]:
 def readers(path: str, tracked: list[str]) -> tuple[CodingAgent, ...]:
     """The agents that read this repository file, given every file git tracks there."""
     return tuple(agent for agent in AGENT_FILES if path in files_read(agent, tracked))
+
+
+def all_readers(tracked: list[str]) -> dict[str, tuple[CodingAgent, ...]]:
+    """`readers` of every file at once, for the files some agent reads."""
+    read = {agent: set(files_read(agent, tracked)) for agent in AGENT_FILES}
+    found = {path: tuple(agent for agent in AGENT_FILES if path in read[agent])
+             for path in tracked}
+    return {path: agents for path, agents in found.items() if agents}

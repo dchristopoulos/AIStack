@@ -139,9 +139,15 @@ def test_a_start_link_hands_the_checked_arguments_to_start(home, shop, monkeypat
     assert started == [["--agent=codex", f"--project={shop}", "--skills=tdd"]]
 
 
-def test_project_add_says_it_is_not_in_this_release(home, tmp_path):
-    with pytest.raises(SystemExit, match="aistack project add"):
-        computer_link.run([f"aistack://project-add?folder={tmp_path}"])
+def test_a_project_add_link_runs_project_add_on_the_folder(home, tmp_path, monkeypatch):
+    from aistack.bootstrap import project_add
+
+    added = []
+    monkeypatch.setattr(project_add, "run", added.append)
+
+    computer_link.run([f"aistack://project-add?folder={tmp_path}"])
+
+    assert added == [["add", "--", str(tmp_path.resolve())]]
 
 
 # Where a project is ------------------------------------------------------------------------

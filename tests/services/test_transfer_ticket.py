@@ -11,6 +11,8 @@ from aistack.services.transfer_ticket import (
     SIGNING_KEY_BYTES,
     DashboardHolder,
     DownloadTicket,
+    ProjectFileEditTicket,
+    ProjectFileUploadTicket,
     RuleDownloadTicket,
     RuleUploadTicket,
     TicketSigner,
@@ -203,6 +205,19 @@ RULE_DOWNLOAD = RuleDownloadTicket(machine_id=uuid.uuid4(), token_prefix=TOKEN_P
                                    rule_revision_id=uuid.uuid4(), agent=CodingAgent.CLAUDE_CODE)
 
 
+FILE_UPLOAD = ProjectFileUploadTicket(machine_id=uuid.uuid4(), token_prefix=TOKEN_PREFIX,
+                                      project_file_id=uuid.uuid4())
+FILE_EDIT = ProjectFileEditTicket(machine_id=uuid.uuid4(), token_prefix=TOKEN_PREFIX,
+                                  project_file_edit_id=uuid.uuid4())
+
+
+def test_project_file_tickets_round_trip(signer):
+    assert signer.verified_project_file_upload(
+        signer.sign_project_file_upload(FILE_UPLOAD)) == FILE_UPLOAD
+    assert signer.verified_project_file_edit(
+        signer.sign_project_file_edit(FILE_EDIT)) == FILE_EDIT
+
+
 def test_rule_tickets_round_trip(signer):
     assert signer.verified_rule_upload(signer.sign_rule_upload(RULE_UPLOAD)) == RULE_UPLOAD
     assert signer.verified_rule_download(
@@ -213,10 +228,14 @@ def test_each_ticket_opens_only_its_own_purpose(signer):
     """The audience is the purpose: no skill ticket reads or writes a rule, nor the reverse."""
     signed = {"upload": signer.sign_upload(UPLOAD), "download": signer.sign_download(DOWNLOAD),
               "rule_upload": signer.sign_rule_upload(RULE_UPLOAD),
-              "rule_download": signer.sign_rule_download(RULE_DOWNLOAD)}
+              "rule_download": signer.sign_rule_download(RULE_DOWNLOAD),
+              "file_upload": signer.sign_project_file_upload(FILE_UPLOAD),
+              "file_edit": signer.sign_project_file_edit(FILE_EDIT)}
     verifiers = {"upload": signer.verified_upload, "download": signer.verified_download,
                  "rule_upload": signer.verified_rule_upload,
-                 "rule_download": signer.verified_rule_download}
+                 "rule_download": signer.verified_rule_download,
+                 "file_upload": signer.verified_project_file_upload,
+                 "file_edit": signer.verified_project_file_edit}
     # Every claim any purpose reads, so only the audience tells them apart.
     every_claim = {}
     for token in signed.values():

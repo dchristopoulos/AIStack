@@ -16,7 +16,14 @@ from aistack.commons.exceptions import AIStackError, ValidationError
 from aistack.commons.text import sanitized
 from aistack.db.models.coding_agent import CodingAgent
 from aistack.db.models.harness import Harness
-from aistack.services import agent_files, hardware, local_skills, projects, rule_files
+from aistack.services import (
+    agent_files,
+    hardware,
+    local_skills,
+    projects,
+    repository_work,
+    rule_files,
+)
 from aistack.services.rule_validation import validated_rule_name
 from aistack.services.server_connection import Connection, client
 from aistack.services.skill_archive import read_archive
@@ -118,11 +125,14 @@ def _ignore_install(top: Path, folder: Path, name: str) -> None:
 
 
 async def sync_computer(connection: Connection, home: Path, cwd: Path,
-                        rule_choices: dict[str, str] | None = None) -> list[dict]:
+                        rule_choices: dict[str, str] | None = None,
+                        add_files: list[dict] | None = None) -> list[dict]:
     """Return reports with automatic results and all unresolved decisions intact.
 
     `rule_choices` carries the person's answers to rule questions, by the key the question
-    was reported under; only an option the server offers is carried out."""
+    was reported under; only an option the server offers is carried out. `add_files` is
+    `aistack project add`: this computer starts managing the project `cwd` is in, whose
+    Markdown files these are, and the server keeps the list (ADR-0036)."""
     async with asyncio.timeout(SYNC_TIMEOUT):
         async with client(connection) as mcp, httpx.AsyncClient(timeout=15, follow_redirects=False) as http:
             async def call(tool, **arguments):
@@ -151,6 +161,16 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path,
                 harnesses.append("agents")
             if not harnesses:
                 raise ValidationError("No coding agent's skills folder was found. Connect Claude Code or Codex first.")
+            done_projects = None
+            if add_files is not None:
+                if project is None:
+                    raise ValidationError(f"{cwd} is not in a git repository AIStack can add as a project.")
+                if "project_files" not in properties:
+                    raise ValidationError("Upgrade the AIStack server to add a project by its folder.")
+                remote = project[1]["remote"]
+                key = (projects.project_key(remote) if remote else None) or projects.local_project_key(
+                    uuid.UUID(identity["machine_id"]), project[1]["path"])
+                done_projects = await _project_folders(call, http, harnesses, project, key, binding, add_files)
             # Rules ride on the first folder's sync, from a server that takes them (ADR-0036).
             rules = None
             if "rules" in tools.get("sync", {}).get("properties", {}):
@@ -166,6 +186,8 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path,
                 if "rules" in arguments:
                     rules.entries = report.pop("rules", [])
                     rules.repository_files = report.pop("repository_files", [])
+                    rules.ticked_files = report.pop("ticked_files", [])
+                    rules.edits = report.pop("edits", [])
                     managed = (report.get("project") or {}).get("managed") is True
                     rules.top = project[0] if project and managed else None
                 if hardware_id is None:
@@ -176,19 +198,35 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path,
                 named = managed or next((report.get("project") for report in reports if isinstance(report.get("project"), dict)), None)
                 if named and isinstance(named.get("key"), str):
                     remember_project(home, named["key"], project[0] if managed else None)
-                if managed:
-                    for harness in harnesses:
-                        folder = local_skills.skills_folder(Harness(harness), project[0])
-                        _project_destination(project[0], folder)
-                        relative = folder.relative_to(project[0]).as_posix()
-                        blocked = _repository(project[0], relative)
-                        arguments = {"harness": harness, "fingerprint": binding, "here": project[1], "project": managed["key"], "repository": sorted(blocked)}
-                        reports.append(await _folder(call, http, folder, arguments, project[0], blocked))
+                if done_projects is not None:
+                    reports.extend(done_projects)
+                elif managed:
+                    reports.extend(await _project_folders(call, http, harnesses, project, managed["key"], binding))
             if rules is not None:
                 done = await _apply_rules(http, rules, rule_choices or {})
-                if done["completed"] or done["failures"] or done["rule_questions"]:
+                if rules.top is not None:
+                    await repository_work.carry_out(http, rules.top, rules.ticked_files, rules.edits,
+                                                    rule_choices or {}, done)
+                if done["completed"] or done["failures"] or done["rule_questions"] or done.get("edit_questions"):
                     reports.append(done)
             return reports
+
+
+async def _project_folders(call, http, harnesses: list[str], project: tuple[Path, dict], key: str,
+                           binding, listing: list[dict] | None = None) -> list[dict]:
+    """Sync each harness's skills folder in a project this computer manages, which is also
+    what starts managing it. A listing from `aistack project add` rides on the first."""
+    top, reports = project[0], []
+    for harness in harnesses:
+        folder = local_skills.skills_folder(Harness(harness), top)
+        _project_destination(top, folder)
+        relative = folder.relative_to(top).as_posix()
+        blocked = _repository(top, relative)
+        arguments = {"harness": harness, "fingerprint": binding, "here": project[1], "project": key, "repository": sorted(blocked)}
+        if listing is not None and not reports:
+            arguments["project_files"] = listing
+        reports.append(await _folder(call, http, folder, arguments, top, blocked))
+    return reports
 
 
 class _Rules:
@@ -205,6 +243,8 @@ class _Rules:
         self.sections: dict[str, str] | None = None
         self.entries: list[dict] = []
         self.repository_files: list[dict] = []
+        self.ticked_files: list[dict] = []
+        self.edits: list[dict] = []
         # The project's top level once the server says this computer manages it.
         self.top: Path | None = None
 
@@ -479,6 +519,9 @@ def output(reports: list[dict], hook: bool = False) -> str:
             if report["rule_questions"]:
                 lines.append("AIStack rule decisions: " + json.dumps(report["rule_questions"], ensure_ascii=True))
                 lines.append("Ask the person before acting, naming the file. To carry out an answer, run aistack sync --rule-choice <key>=<choice>: restore writes the Library's text over the file, push keeps the file's text in the Library, remove deletes the file (or its part of AGENTS.override.md), skip changes nothing. Preserve overwrites_local and loses_local_edits warnings; edited_from below revision means the rule was also edited on the page.")
+            if report.get("edit_questions"):
+                lines.append("AIStack edits from the page waiting: " + json.dumps(report["edit_questions"], ensure_ascii=True))
+                lines.append("Each file changed here since the edit was made on the page. Ask the person, naming the file. To carry out an answer, run aistack sync --rule-choice <key>=<choice>: write replaces the file's text here with the edit, cancel drops the edit and keeps the file.")
             lines.extend(report["failures"])
             continue
         if not hook:
