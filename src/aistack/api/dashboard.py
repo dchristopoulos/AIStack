@@ -20,6 +20,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
+from aistack.bootstrap import start_agent
 from aistack.bootstrap.context.application_context import (
     get_failure_limiter,
     get_local_principal,
@@ -613,6 +614,21 @@ def move_team_skill(session, user_id, path, body):
 @_action("/teams/{team}/skills/{name}/remove", local=False)
 def remove_team_skill(session, user_id, path, body):
     team_service.remove_skill(session, user_id, path["team"], path["name"])
+
+
+@handle_route_errors
+async def start_agent_here(request: Request) -> Response:
+    """Opens a terminal on this computer running `aistack start` (ADR-0038). Registered on
+    the localhost dashboard only: a server never starts a program on anybody's computer."""
+    _signed_in(request)
+    _require_request_header(request)
+    body = await _json_body(request)
+    await asyncio.to_thread(start_agent.start_from_page, _text(body, "agent"),
+                            _text(body, "project"), _texts(body, "skills"))
+    return _json({"ok": True})
+
+
+LOCAL_ROUTES.append(Route(API_PATH + "/start-agent", start_agent_here, methods=["POST"]))
 
 
 def _session_cookie(request: Request) -> str:

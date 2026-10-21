@@ -700,6 +700,12 @@ dialog.dlg::backdrop { background: var(--scrim); }
 }
 .picker-opt:hover, .picker-opt:has(input:checked) { background-color: var(--surface-2); }
 .picker-opt span { overflow-wrap: anywhere; min-width: 0; }
+.picker-group { padding: 6px 8px 2px; }
+.picker-opt .opt-note { margin-left: auto; text-align: right; }
+.dlg-foot .foot-gap { flex: 1; }
+dialog.dlg.start-dlg { width: min(560px, calc(100vw - 32px)); }
+.start-dlg .dlg-foot { flex-wrap: wrap; }
+.picker-opt .opt-name { flex: none; max-width: 60%; }
 .picker-opt svg { color: var(--muted); }
 .check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
 .check input { margin-top: 2px; }
@@ -1292,6 +1298,39 @@ const WORDS = {
     stop: 'Stop managing here…',
     stopLabel: 'Stop managing {project} on {computer}…',
     gone: 'No computer manages this project any more.',
+  },
+  // Start an agent with only chosen skills, for one session (ADR-0038).
+  startAgent: {
+    button: 'Start an agent…',
+    short: 'Start…',
+    buttonForLabel: 'Start {agent} in a project on {computer}…',
+    buttonOnLabel: 'Start an agent in {project} on {computer}…',
+    title: 'Start an agent in {project}',
+    titleOn: 'Start {agent} on {computer}',
+    lead: 'Opens a terminal on {computer} with only the skills you tick. Your rules and the team\'s load as usual.',
+    leadOther: 'Run this in a terminal on {computer}. It starts the agent with only the skills you tick. Your rules and the team\'s load as usual.',
+    agent: 'Agent',
+    project: 'Project',
+    skills: 'Skills',
+    forProject: 'For {project}',
+    forEvery: 'For every project',
+    none: 'No skill of your Library is on {computer} for {agent} yet.',
+    more: 'More skills, by name',
+    moreHelp: 'The repository\'s own skills and any other skill already on {computer}, separated by commas.',
+    remember: 'Remember these for {project}',
+    pickOne: 'Tick at least one skill.',
+    badName: '"{name}" is not a skill name. A skill name is lowercase letters and digits joined by single hyphens, like code-review.',
+    stays: {
+      claude_code: 'Plugin skills stay on unless the plugin is turned off, and resuming the session later from a plain terminal brings every skill back.',
+      agents: 'Resuming the session later from a plain terminal brings every skill back.',
+    },
+    copyCommand: 'Copy the command',
+    command: 'Command to run on {computer}',
+    copied: 'Copied. Paste it into a terminal on {computer}.',
+    openTerminal: 'Open a terminal',
+    openHere: 'Open on this computer',
+    opened: 'A terminal opened on {computer}. Press Enter there to start {agent}.',
+    linkSent: 'Your computer asks before it opens a terminal. If nothing opened, copy the command instead.',
   },
   computerPage: {
     agents: 'Coding agents',
@@ -2949,6 +2988,7 @@ function projectView(p) {
     team && el('a', { class: 'badge', href: teamHash(team) }, icon('users', 12), say(W.project.team, { team })));
   return [
     pageHead('repo', el('h1', { class: 'mono' }, p.name), chips,
+      startAgentButton(p),
       folders.length ? btn(W.addSkills.button, { class: 'btn primary', fk: 'add-skills', on: { click: () => addSkillsDialog(p.name, folders) } }, 'plus') : null),
     el('div', { class: 'wrap body' },
       p.on.length ? [
@@ -2968,6 +3008,12 @@ function projectView(p) {
   ];
 }
 
+// "Start an agent…" on a project's page, for the computer the page is on when it manages it.
+function startAgentButton(p) {
+  const on = p.on.find(x => x.m.id === state.this_computer);
+  return on && startAgentsOn(on.m).length ? btn(W.startAgent.button, { fk: 'start-agent', on: { click: () => startAgentDialog({ m: on.m, key: p.key }) } }, 'terminal') : null;
+}
+
 // Where a project is on one computer: its folder, its agents, and when it last synced there.
 function projectCard(m, here) {
   const paths = [...new Set(here.folders.map(f => f.path).filter(Boolean))];
@@ -2979,6 +3025,8 @@ function projectCard(m, here) {
     paths.map(path => el('code', { class: 'path' }, path)),
     el('p', { class: 't2' }, synced ? sayWith(W.project.synced, { agents, when: when(synced) }) : say(W.project.notSynced, { agents })),
     !synced && el('p', { class: 't2' }, sayWith(W.project.firstSync, { computer: m.name, project: here.name, sync: el('code', null, SYNC) })),
+    m.id !== state.this_computer && startAgentsOn(m).length ? btn(W.startAgent.button, { class: 'btn ghost sm', fk: 'start:' + m.id,
+      'aria-label': say(W.startAgent.buttonOnLabel, { project: here.name, computer: m.name }), on: { click: () => startAgentDialog({ m, key: here.key }) } }, 'terminal') : null,
     state.server !== false && btn(W.project.stop, { class: 'btn ghost sm', fk: 'stop:' + m.id, 'aria-label': say(W.project.stopLabel, { project: here.name, computer: m.name }),
       on: { click: () => stopManagingDialog(m, here) } }, 'x')));
 }
@@ -3003,7 +3051,9 @@ function computerView(m) {
             td('meta', el('code', { class: 'mono t2' }, AGENTS[agent].folder)),
             td('meta', el('a', { class: 'link', href: '#/every' }, plural(n, 'skill')), ruleOnComputer(agent)),
             td('meta', el('span', { class: 't2' }, (m.last_synced || {})[agent] ? when(m.last_synced[agent]) : W.computer.never)),
-            td('row end', picked && !n ? btn(C.unpick, { class: 'btn ghost sm', fk: 'unpick:' + agent, 'aria-label': say(C.unpickLabel, { agent: AGENTS[agent].name }),
+            td('row end', START_AGENTS[agent] && (m.projects || []).length ? btn(W.startAgent.short, { class: 'btn ghost sm', fk: 'start:' + agent,
+              'aria-label': say(W.startAgent.buttonForLabel, { agent: AGENTS[agent].name, computer: m.name }), on: { click: () => startAgentDialog({ m, agent }) } }, 'terminal') : null,
+            picked && !n ? btn(C.unpick, { class: 'btn ghost sm', fk: 'unpick:' + agent, 'aria-label': say(C.unpickLabel, { agent: AGENTS[agent].name }),
               on: { click: () => { unpickAgent(m, agent); render(); } } }, 'x') : null));
         }))
         : el('p', { class: 't2' }, say(W.notSynced, { sync: SYNC })),
@@ -3022,6 +3072,154 @@ function computerView(m) {
         }))
         : el('p', { class: 't2' }, say(C.noProjects, { computer: m.name }))),
   ];
+}
+
+/* ---------- start an agent with only the skills ticked, for one session (ADR-0038) ---------- */
+
+// Each harness's agent, as `aistack start --agent` names it.
+const START_AGENTS = { claude_code: 'claude-code', agents: 'codex' };
+const SKILL_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+// The skills ticked last time, per project: this browser's convenience, never the server's.
+const STARTED_KEY = 'aistack.start-skills.v1';
+function startedSkills() {
+  try {
+    const all = JSON.parse(localStorage.getItem(STARTED_KEY));
+    return all && typeof all === 'object' && !Array.isArray(all) ? all : {};
+  } catch (_) { return {}; }
+}
+function rememberStarted(key, names) {
+  try {
+    const all = startedSkills();
+    all[key] = names;
+    localStorage.setItem(STARTED_KEY, JSON.stringify(all));
+  } catch (_) { /* not remembered: storage is off in this browser */ }
+}
+// The agents found on a computer, globally or in one of its projects.
+const startAgentsOn = m => Object.keys(START_AGENTS).filter(a => agentsShown(m).includes(a) || projectsOf(m, a).length);
+const shellWord = w => (/^[\w@%+=:,./-]+$/.test(w) ? w : `'${w.replace(/'/g, `'\\''`)}'`);
+
+// The page's own computer starts the agent: local mode through its localhost route, a server
+// through the aistack:// link. Any other computer is shown the command to run there.
+function startAgentDialog({ m, key = null, agent = null }) {
+  const S = W.startAgent;
+  const here = m.id === state.this_computer;
+  const local = state.server !== false ? false : here;
+  const agents = agent ? [agent] : startAgentsOn(m);
+  const radio = 'start-agent-' + (++dialogSeq);
+  const agentPicker = el('fieldset', { class: 'picker inline' }, el('legend', null, S.agent),
+    agents.map((a, i) => el('label', { class: 'choice' },
+      el('input', { type: 'radio', name: radio, value: a, checked: i === 0, on: { change: () => draw() } }), AGENTS[a].name)));
+  const projectPick = key ? null : el('select', { class: 'input', on: { change: () => { ticked.clear(); draw(true); } } },
+    (m.projects || []).map(p => el('option', { value: p.key }, p.name)));
+  const projectKey = () => key || projectPick.value;
+  const projectName = () => ((m.projects || []).find(p => p.key === projectKey()) || { name: projectKey() }).name;
+  const chosenAgent = () => agentPicker.querySelector('input:checked').value;
+  const ticked = new Map();
+  const list = el('div', { class: 'picker-list' });
+  const more = el('input', { class: 'input mono', type: 'text', spellcheck: false, autocomplete: 'off', on: { input: () => update() } });
+  const keep = el('input', { type: 'checkbox', checked: true });
+  const keepLabel = el('span');
+  const stays = el('p', { class: 't2' });
+  const command = el('input', { class: 'input mono', type: 'text', readOnly: true, spellcheck: false, autocomplete: 'off' });
+  const said = el('span', { class: 'help', role: 'status' });
+
+  // The names to start with, checked by the rule `aistack start` applies.
+  function picked() {
+    const names = [...list.querySelectorAll('input:checked')].map(b => b.value);
+    for (const name of more.value.split(',').map(n => n.trim()).filter(Boolean)) {
+      if (!SKILL_RE.test(name)) throw new Error(say(S.badName, { name }));
+      if (!names.includes(name)) names.push(name);
+    }
+    if (!names.length) throw new Error(S.pickOne);
+    return names;
+  }
+  const commandFor = names => `aistack start --agent=${START_AGENTS[chosenAgent()]} --project=${shellWord(projectKey())} --skills=${names.join(',')}`;
+  const linkFor = names => `aistack://start?agent=${enc(START_AGENTS[chosenAgent()])}&project=${enc(projectKey())}&skills=${enc(names.join(','))}`;
+  const remember = names => { if (keep.checked) rememberStarted(projectKey(), names); };
+
+  // `fresh` is a new project: its own remembered skills, and nothing typed for another one.
+  function draw(fresh) {
+    const a = chosenAgent();
+    const folder = projectFolder(m, a, projectKey());
+    const own = folder ? placedOn({ m, agent: a, project: folder }) : [];
+    const every = placedOn({ m, agent: a, project: null }).filter(s => !own.includes(s));
+    const last = startedSkills()[projectKey()];
+    const was = Array.isArray(last) ? new Set(last) : null;
+    const opt = (s, byDefault) => el('label', { class: 'picker-opt' },
+      el('input', { type: 'checkbox', value: s.name, checked: ticked.has(s.name) ? ticked.get(s.name) : was ? was.has(s.name) : byDefault,
+        on: { change: ev => { ticked.set(s.name, ev.currentTarget.checked); update(); } } }),
+      el('span', { class: 'mono opt-name' }, s.name), s.description && el('span', { class: 't2 opt-note' }, s.description));
+    const group = text => el('div', { class: 't2 picker-group' }, text);
+    list.replaceChildren(...(own.length || every.length ? [
+      own.length && group(say(S.forProject, { project: projectName() })), ...own.map(s => opt(s, true)),
+      every.length && group(S.forEvery), ...every.map(s => opt(s, false)),
+    ].filter(Boolean) : [el('p', { class: 't2 picker-group' }, say(S.none, { computer: m.name, agent: AGENTS[a].name }))]));
+    if (fresh) {
+      const listed = new Set([...own, ...every].map(s => s.name));
+      more.value = was ? [...was].filter(n => typeof n === 'string' && !listed.has(n)).join(', ') : '';
+    }
+    keepLabel.replaceChildren(...sayWith(S.remember, { project: el('span', { class: 'mono' }, projectName()) }));
+    stays.textContent = S.stays[a];
+    update();
+  }
+  function update() {
+    let names = [];
+    try { names = picked(); } catch (_) { /* said when the person acts */ }
+    command.value = commandFor(names);
+    if (open) open.href = linkFor(names);
+  }
+
+  const copy = btn(S.copyCommand, { class: 'btn ghost', on: { click: async () => {
+    const err = dlg.querySelector('.form-error');
+    try {
+      const names = picked();
+      err.hidden = true;
+      remember(names);
+      try { await navigator.clipboard.writeText(commandFor(names)); }
+      catch (_) { command.select(); document.execCommand('copy'); }
+      said.textContent = say(S.copied, { computer: m.name });
+    } catch (e) { err.textContent = e.message; err.hidden = false; }
+  } } }, 'copy');
+  // A server's one click is a link the computer's own aistack program handles, asking first.
+  const open = here && !local ? el('a', { class: 'btn primary', href: '#', on: { click: ev => {
+    const err = dlg.querySelector('.form-error');
+    try {
+      const names = picked();
+      ev.currentTarget.href = linkFor(names);
+      remember(names);
+      setTimeout(() => { dlg.close(); toast(S.linkSent); });
+    } catch (e) { ev.preventDefault(); err.textContent = e.message; err.hidden = false; }
+  } } }, icon('terminal', 16), el('span', null, S.openHere)) : null;
+
+  draw(true);
+  const dlg = openDialog({
+    title: key ? sayWith(S.title, { project: el('span', { class: 'mono' }, projectName()) }) : say(S.titleOn, { agent: AGENTS[agents[0]].name, computer: m.name }),
+    submitLabel: local ? S.openTerminal : W.done,
+    cancelLabel: here ? W.cancel : null,
+    body: [
+      el('p', { class: 'lead' }, say(here ? S.lead : S.leadOther, { computer: m.name })),
+      projectPick && field(S.project, projectPick),
+      agentPicker,
+      el('fieldset', { class: 'picker' }, el('legend', null, S.skills), list),
+      field(S.more, more, say(S.moreHelp, { computer: m.name })),
+      stays,
+      el('label', { class: 'check' }, keep, keepLabel),
+      !here && el('div', { class: 'field' }, el('div', { class: 'code-box' }, command, copy), said),
+    ],
+    onSubmit: local ? async () => {
+      const names = picked();
+      remember(names);
+      await api('/api/start-agent', { agent: START_AGENTS[chosenAgent()], project: projectKey(), skills: names });
+      return say(S.opened, { computer: m.name, agent: AGENTS[chosenAgent()].name });
+    } : null,
+  });
+  command.setAttribute('aria-label', say(S.command, { computer: m.name }));
+  if (here) {
+    dlg.querySelector('.dlg-foot').prepend(copy, said, el('span', { class: 'foot-gap' }));
+    if (open) dlg.querySelector('.dlg-foot [type=submit]').replaceWith(open);
+  }
+  dlg.classList.add('start-dlg');
+  return dlg;
 }
 
 function stopManagingDialog(m, project) {

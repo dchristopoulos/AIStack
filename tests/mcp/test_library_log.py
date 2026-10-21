@@ -265,12 +265,14 @@ LOCAL_WRITES = {
 }
 # The POSTs that change only this browser's session, not the Library.
 SESSION_ONLY = {"/api/logout", "/app/login/{ticket}"}
+# The POSTs that act on this computer and change nothing in the Library (ADR-0038).
+ON_THIS_COMPUTER = {"/api/start-agent"}
 
 
 async def test_every_localhost_dashboard_write_records_its_event(computer):
     """IMP-03: a route that forgot its event was caught by nothing."""
     posts = {route.path for route in dashboard.LOCAL_ROUTES if "POST" in route.methods}
-    assert posts == set(LOCAL_WRITES) | SESSION_ONLY
+    assert posts == set(LOCAL_WRITES) | SESSION_ONLY | ON_THIS_COMPUTER
 
     async with computer("laptop") as (laptop, home):
         _write(home, "wizard", "first")
