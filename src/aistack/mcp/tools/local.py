@@ -26,11 +26,11 @@ from aistack.bootstrap.context.application_context import (
 from aistack.bundled import SYNC_SKILL_NAME, local_sync_skill_document
 from aistack.commons.exceptions import Conflict, NotFound, ValidationError
 from aistack.commons.text import loggable
-from aistack.mcp import local_dashboard
+from aistack.mcp import local_dashboard, local_rules
 from aistack.mcp.local import local_mcp
 from aistack.mcp.mcp_error_handler import handle_mcp_errors
 from aistack.mcp.tools.skills import ListSkillsResult, RefusedEntry, SkillListing, one_or_many
-from aistack.mcp.tools.sync import SyncResult, sync_result
+from aistack.mcp.tools.sync import OptionEntry, SyncResult, sync_result
 from aistack.services import library_log, local_skills, skill_service, sync_service
 from aistack.services.harnesses import HarnessKey, validated_harness
 from aistack.services.skill_validation import validated_origin, validated_skill_name
@@ -43,12 +43,27 @@ def _folder(harness: HarnessKey) -> Path:
     return local_skills.skills_folder(validated_harness(harness), Path.home())
 
 
+class RuleQuestion(TypedDict):
+    key: str
+    file: str
+    local: str
+    desired: str | None
+    revision: int | None
+    edited_from: int | None
+    pushed_by: str | None
+    options: list[OptionEntry]
+    removed_from_library: bool
+
+
 class LocalSyncResult(SyncResult):
     folders: list[str]
     harness: str
     library_reachable: bool
     library_problem: str | None
     new_computer: bool
+    rule_changes: list[str]
+    rule_failures: list[str]
+    rule_questions: list[RuleQuestion]
 
 
 class LocalListSkillsResult(ListSkillsResult):
@@ -60,8 +75,8 @@ class LocalListSkillsResult(ListSkillsResult):
     description=cleandoc("""Compare one skills folder on this computer with the user's Library.
 
     Use when the user says "sync aistack" or starts work. It reads the folder itself and
-    changes nothing but AIStack's own sync-aistack skill, which it keeps current. Then, per
-    field, passing the same harness to each tool:
+    changes no skill but AIStack's own sync-aistack skill, which it keeps current, and
+    writes the user's rules itself. Then, per field, passing the same harness to each tool:
       - install and update: call get_skill for each, without asking. Then say what
         updated, between which revisions.
       - backup: skills on this computer not yet in the Library. push_skill them all as
@@ -81,15 +96,16 @@ class LocalListSkillsResult(ListSkillsResult):
         computer's copy. Tell the user library_problem first.
       - new_computer: true once, on a home folder restored from another computer.
         See the sync-aistack skill.
-    cannot_back_up and removed_from_library: see the sync-aistack skill. team_updates is
-    always empty and sync_skill_url always null here.
+    cannot_back_up, removed_from_library and rule_*: see the sync-aistack skill.
+    team_updates is always empty and sync_skill_url always null here.
 
     Args:
         harness: claude_code (~/.claude/skills) or agents (~/.agents/skills, read by Codex,
                  Gemini CLI, Cursor and others). Omit for the computer's first folder.
     """))
 @handle_mcp_errors
-def sync(harness: HarnessKey | None = None) -> LocalSyncResult:
+def sync(harness: HarnessKey | None = None,
+         rule_choices: dict[str, str] | None = None) -> LocalSyncResult:
     library_before_read(force=True)
     caller = get_local_principal()
     folders = local_skills.folders_in_use(Path.home())
@@ -121,11 +137,16 @@ def sync(harness: HarnessKey | None = None) -> LocalSyncResult:
                          for name, reason in refused.items()))
     new_computer = restored_here()
     restore_reported()
+    rules = local_rules.sync_rules(Path.home(), rule_choices or {})
     logger.info(f"Sync reported. Local skills: '{len(local)}'.")
     problem = library_problem()
     return LocalSyncResult(**sync_result(report, sync_skill_url=None), folders=folders,
                            harness=harness, library_reachable=problem is None,
-                           library_problem=problem, new_computer=new_computer)
+                           library_problem=problem, new_computer=new_computer,
+                           rule_changes=[line for done in rules for line in done["completed"]],
+                           rule_failures=[line for done in rules for line in done["failures"]],
+                           rule_questions=[question for done in rules
+                                           for question in done["rule_questions"]])
 
 
 @local_mcp.tool(

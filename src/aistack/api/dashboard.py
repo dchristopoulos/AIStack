@@ -25,6 +25,7 @@ from starlette.routing import Route
 from aistack.bootstrap import start_agent
 from aistack.bootstrap.context.application_context import (
     get_failure_limiter,
+    get_local_home,
     get_local_principal,
     get_public_url,
     get_read_session_factory,
@@ -781,7 +782,8 @@ async def share_file_here(request: Request) -> Response:
     body = await _json_body(request)
     note = project_file_service.validated_note(_text(body, "note"))
     top, path = await _working_copy(holder, body)
-    return _json(await asyncio.to_thread(repository_work.share_here, top, path, note)
+    return _json(await asyncio.to_thread(repository_work.share_here, top, _text(body, "project"),
+                                         path, note, get_local_home() / SHARES_FILE)
                  | {"note": note})
 
 
@@ -812,12 +814,16 @@ def _state_here(session: Session, holder: DashboardHolder) -> tuple[dict, dict[s
                    if (folder := library_log.listed_from(session, holder.machine_id, key))}
 
 
+# What this computer shared from the localhost page, kept beside its copy of the Library.
+SHARES_FILE = "shared.json"
+
+
 def _read_working_copies(files: list[dict], folders: dict[str, str], machine_id) -> None:
     for key, folder in folders.items():
         here = [file for file in files if file["project"] == key and file["ticked"]]
         try:
             top = repository_work.working_copy(folder, key, machine_id, Path.home())
-            repository_work.read_here(here, top, machine_id)
+            repository_work.read_here(here, top, machine_id, get_local_home() / SHARES_FILE)
         except (OSError, subprocess.SubprocessError, AIStackError):
             # Moved or gone: the page shows the files unread until it is added again.
             continue

@@ -176,7 +176,7 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path,
             # Rules ride on the first folder's sync, from a server that takes them (ADR-0036).
             rules = None
             if "rules" in tools.get("sync", {}).get("properties", {}):
-                rules = _observed_rules(home, project[0] if project else None)
+                rules = observed_rules(home, project[0] if project else None)
             for harness in harnesses:
                 folder = local_skills.skills_folder(Harness(harness), home)
                 arguments = {"harness": harness, "fingerprint": binding}
@@ -190,6 +190,7 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path,
                     rules.repository_files = report.pop("repository_files", [])
                     rules.ticked_files = report.pop("ticked_files", [])
                     rules.edits = report.pop("edits", [])
+                    rules.shared_edits = report.pop("shared_edits", [])
                     managed = (report.get("project") or {}).get("managed") is True
                     rules.top = project[0] if project and managed else None
                 if hardware_id is None:
@@ -205,10 +206,10 @@ async def sync_computer(connection: Connection, home: Path, cwd: Path,
                 elif managed:
                     reports.extend(await _project_folders(call, http, harnesses, project, managed["key"], binding))
             if rules is not None:
-                done = await _apply_rules(http, rules, rule_choices or {})
+                done = await apply_rules(http, rules, rule_choices or {})
                 if rules.top is not None:
                     await repository_work.carry_out(http, rules.top, rules.ticked_files, rules.edits,
-                                                    rule_choices or {}, done)
+                                                    rule_choices or {}, done, rules.shared_edits)
                 if done["completed"] or done["failures"] or done["rule_questions"] or done.get("edit_questions"):
                     reports.append(done)
             if every_project and "here" in properties:
@@ -243,6 +244,7 @@ async def _project_folders(call, http, harnesses: list[str], project: tuple[Path
             rules.repository_files = report.pop("repository_files", [])
             rules.ticked_files = report.pop("ticked_files", [])
             rules.edits = report.pop("edits", [])
+            rules.shared_edits = report.pop("shared_edits", [])
             rules.top = top
         reports.append(report)
     return reports
@@ -273,15 +275,15 @@ async def _other_projects(call, http, home: Path, harnesses: list[str], binding,
             if named.get("managed") is not True:
                 remember_project(home, key, None)
                 continue
-            rules = _observed_rules(home, found[0]) if with_rules else None
+            rules = observed_rules(home, found[0]) if with_rules else None
             reports.extend(await _project_folders(call, http, harnesses, found, key, binding,
                                                   rules=rules))
             if rules is None:
                 continue
-            answers = _choices_for(choices, key)
-            done = await _apply_rules(http, rules, answers)
+            answers = choices_for(choices, key)
+            done = await apply_rules(http, rules, answers)
             await repository_work.carry_out(http, found[0], rules.ticked_files, rules.edits,
-                                            answers, done)
+                                            answers, done, rules.shared_edits)
             # A question's key names its project: the same rule name can be in two.
             for question in (*done["rule_questions"], *done.get("edit_questions", ())):
                 question["key"] = f"{key}:{question['key']}"
@@ -303,7 +305,7 @@ def _project_note(folder: str, failures=(), diagnostics=()) -> dict:
             "failures": list(failures), "diagnostics": list(diagnostics)}
 
 
-def _choices_for(choices: dict[str, str], key: str) -> dict[str, str]:
+def choices_for(choices: dict[str, str], key: str) -> dict[str, str]:
     """The answers to one other project's questions, given by the key sync reported."""
     prefix = f"{key}:"
     return {choice[len(prefix):]: answer for choice, answer in choices.items()
@@ -326,6 +328,7 @@ class _Rules:
         self.repository_files: list[dict] = []
         self.ticked_files: list[dict] = []
         self.edits: list[dict] = []
+        self.shared_edits: list[dict] = []
         # The project's top level once the server says this computer manages it.
         self.top: Path | None = None
 
@@ -336,7 +339,7 @@ class _Rules:
                                  "digest": None if content is None else rule_files.digest(content)})
 
 
-def _observed_rules(home: Path, top: Path | None) -> _Rules:
+def observed_rules(home: Path, top: Path | None) -> _Rules:
     rules = _Rules(top)
     for agent in agent_files.agents_writing_rules():
         path = rule_files.every_project_file(agent, home)
@@ -366,8 +369,9 @@ def _observed_rules(home: Path, top: Path | None) -> _Rules:
 _ANSWERED = {"restore": "update", "push": "backup", "remove": "remove", "skip": "nothing"}
 
 
-async def _apply_rules(http, rules: _Rules, choices: dict[str, str]) -> dict:
-    """Carry out the server's action for each rule file, and every answer the person gave."""
+async def apply_rules(http, rules: _Rules, choices: dict[str, str]) -> dict:
+    """Carry out the server's action for each rule file, and every answer the person gave. `http`
+    is an httpx client, or local mode's transfers served in-process (`mcp/local_rules.py`)."""
     report = {"folder": "rules", "harness": "rules", "rules": True, "completed": [],
               "failures": [], "diagnostics": [], "rule_questions": []}
     top = rules.top

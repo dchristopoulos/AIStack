@@ -107,6 +107,8 @@ class ProjectFileEdit(Base):
                                                  default=utc_now)
     written_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     shared_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When the page stopped showing it: cancelled, or, once shared, settled when the working
+    # copy's commit had the shared text.
     cancelled_on: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
                                                           nullable=True)
 

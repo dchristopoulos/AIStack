@@ -11,7 +11,7 @@ routes, and is never logged.
 
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -21,15 +21,23 @@ from sqlalchemy.orm import Session
 from aistack.commons.exceptions import NotFound, ValidationError
 from aistack.commons.text import loggable
 from aistack.db.models.coding_agent import CodingAgent
+from aistack.db.models.machine import Machine
 from aistack.db.models.machine_project import MachineProject
 from aistack.db.models.project import Project
 from aistack.db.models.project_file import ProjectFile
 from aistack.db.models.rule import MachineRule, Rule, RuleAgent, RuleRevision
 from aistack.db.models.user import User
 from aistack.db.models.value_set import known
-from aistack.services import agent_files, rule_service, skill_service, visibility
+from aistack.services import agent_files, library_log, rule_service, skill_service, visibility
 from aistack.services.content_hash import text_hash
-from aistack.services.reconciliation import Desired, Observed, Option, Step, reconcile_rule
+from aistack.services.reconciliation import (
+    Choice,
+    Desired,
+    Observed,
+    Option,
+    Step,
+    reconcile_rule,
+)
 from aistack.services.rule_validation import validated_rule_name
 from aistack.services.transfer_ticket import RuleDownloadTicket, RuleUploadTicket
 
@@ -82,6 +90,18 @@ class RuleAction:
     rule_revision_id: uuid.UUID | None
     project_id: uuid.UUID | None
     rule_id: uuid.UUID | None = None
+
+    @property
+    def may_write(self) -> bool:
+        """Whether the Library's text may be written into this file: a download URL."""
+        return self.step in (Step.INSTALL, Step.UPDATE) or Choice.RESTORE in {
+            option.choice for option in self.options}
+
+    @property
+    def may_keep(self) -> bool:
+        """Whether this file's text may be kept in the Library: an upload URL."""
+        return self.step is Step.BACKUP or Choice.PUSH in {option.choice
+                                                            for option in self.options}
 
 
 @dataclass(frozen=True)
@@ -303,9 +323,15 @@ def text_of(session: Session, ticket: RuleDownloadTicket) -> tuple[str, str]:
     computer's file for that agent holds from now on, as `get_skill` records an install."""
     machine = skill_service.require_registered_machine(session, ticket.machine_id, None,
                                                        ticket.token_prefix)
+    return revision_text(session, machine, ticket.rule_revision_id, ticket.agent)
+
+
+def revision_text(session: Session, machine: Machine, rule_revision_id: uuid.UUID,
+                  agent: CodingAgent) -> tuple[str, str]:
+    """`text_of` for a computer already checked: local mode's sync calls it directly."""
     row = session.execute(
         select(RuleRevision.rule_id, RuleRevision.revision, RuleRevision.text)
-        .where(RuleRevision.rule_revision_id == ticket.rule_revision_id)).one_or_none()
+        .where(RuleRevision.rule_revision_id == rule_revision_id)).one_or_none()
     rule = None if row is None else session.scalar(
         visibility.my_rules(machine.user_id).where(Rule.rule_id == row.rule_id))
     # A computer writes only its own person's rules, so a ticket for anything else is not one
@@ -313,7 +339,7 @@ def text_of(session: Session, ticket: RuleDownloadTicket) -> tuple[str, str]:
     if rule is None:
         raise NotFound("The rule revision this transfer URL points at no longer exists. Run "
                        "aistack sync again.")
-    _record(session, machine.machine_id, rule.rule_id, ticket.agent, row.revision)
+    _record(session, machine.machine_id, rule.rule_id, agent, row.revision)
     return rule.name, row.text
 
 
@@ -325,38 +351,53 @@ def store(session: Session, ticket: RuleUploadTicket, text: str) -> rule_service
     """
     machine = skill_service.require_registered_machine(session, ticket.machine_id,
                                                        ticket.user_id, ticket.token_prefix)
-    user_id = machine.user_id
     project = None
     if ticket.project_id is not None:
         project = session.get(Project, ticket.project_id)
         # Checked again here: the URL outlives the sync that minted it.
-        managed = project is not None and project.user_id == user_id and session.scalar(
+        managed = project is not None and project.user_id == machine.user_id and session.scalar(
             select(MachineProject.machine_project_id).where(
                 MachineProject.machine_id == machine.machine_id,
                 MachineProject.project_id == project.project_id).limit(1)) is not None
         if not managed:
             raise NotFound("This project is no longer managed on this computer, so nothing "
                            "was stored.")
+    return keep(session, machine, project, ticket.rule_name, ticket.agent, ticket.backup, text)
+
+
+def keep(session: Session, machine: Machine, project: Project | None, name: str,
+         agent: CodingAgent, backup: bool, text: str,
+         log: Callable[..., None] | None = None) -> rule_service.Saved:
+    """`store` for a computer and project already checked. `log(kind, **data)` hears each
+    change as the Library log event that replays it, for local mode (ADR-0039)."""
+    user_id = machine.user_id
     key = None if project is None else project.key
-    rule = visibility.my_rule(session, user_id, ticket.rule_name, project)
-    if rule is None and project is None and ticket.backup:
+    rule = visibility.my_rule(session, user_id, name, project)
+    if rule is None and project is None and backup:
         # The same text as a rule for every project already in the Library, as when one file
         # links to the other: the rule is used for this agent too, not kept twice.
         rule = _same_text(session, user_id, text)
     if rule is None or rule.archived:
-        saved = rule_service.create(session, user_id, ticket.rule_name, text, project=key,
-                                    agents=[ticket.agent.value])
-        rule = visibility.my_rule(session, user_id, ticket.rule_name, project)
+        saved = rule_service.create(session, user_id, name, text, project=key,
+                                    agents=[agent.value])
+        if saved.saved and log:
+            log(library_log.RULE_CREATED, name=saved.name, project=key, text=text,
+                agents=[agent.value])
+        rule = visibility.my_rule(session, user_id, name, project)
     else:
         saved = rule_service.edit(session, user_id, rule.name, text, project=key)
+        if saved.saved and not saved.unchanged and log:
+            log(library_log.RULE_EDITED, name=rule.name, project=key, text=text)
         agents = set(session.scalars(select(RuleAgent.agent).where(
             RuleAgent.rule_id == rule.rule_id, known(RuleAgent.agent))))
-        if saved.saved and ticket.backup and ticket.agent not in agents:
-            rule_service.set_agents(session, user_id, rule.name,
-                                    [agent.value for agent in agents | {ticket.agent}],
-                                    project=key)
+        if saved.saved and backup and agent not in agents:
+            agents = rule_service.set_agents(session, user_id, rule.name,
+                                             [each.value for each in agents | {agent}],
+                                             project=key)
+            if log:
+                log(library_log.RULE_AGENTS_SET, name=rule.name, project=key, agents=agents)
     if saved.saved:
-        _record(session, machine.machine_id, rule.rule_id, ticket.agent, saved.revision)
+        _record(session, machine.machine_id, rule.rule_id, agent, saved.revision)
     return saved
 
 

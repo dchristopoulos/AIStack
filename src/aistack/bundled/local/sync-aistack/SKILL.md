@@ -41,8 +41,9 @@ Work through the fields in this order, passing the same harness to every tool yo
 4. **`first_sync`**: true only the first time this folder syncs on this computer. Note it for step 4.
 5. **`library_reachable`**: false when the Library's GitHub repository could not be reached, so this compared against this computer's copy. Tell the user `library_problem` as it is, before the rest of the report.
 6. **`new_computer`**: true once, when this home folder was restored here from another computer's backup. Tell the user AIStack now counts this as a computer of its own, and that the computer it came from keeps its skills as they were. Its skills folders are offered like any new computer's.
+7. **Rules**: `sync` also writes the user's rules itself: each agent's file for every project (`~/.claude/CLAUDE.md`, Codex's `AGENTS.md`) and their own rules in each project added on this computer. `rule_changes` says what it wrote or kept in the Library; mention them. `rule_failures`: tell the user each. `rule_questions`: a rule file edited here and on the page, or a rule no longer wanted. Ask the user about each, naming its `file`, and offer exactly its `options`: restore writes the Library's text over the file, push keeps the file's text in the Library, remove deletes the file (or its part of `AGENTS.override.md`), skip changes nothing. Say so when an option has `overwrites_local` or `loses_local_edits`; `edited_from` below `revision` means the rule was also edited on the page. Then call `sync` once more with every answer as `rule_choices`: `{"<key>": "<choice>"}`.
 
-`up_to_date` counts enabled skills that already match and needs no action. `team_updates` is always empty here, because teams live on a server. Sync changes nothing and deletes nothing; only the calls you make afterwards do.
+`up_to_date` counts enabled skills that already match and needs no action. `team_updates` is always empty here, because teams live on a server. Sync changes no skill and deletes nothing unasked; only the calls you make afterwards do.
 
 ## 4. The first sync on this computer
 

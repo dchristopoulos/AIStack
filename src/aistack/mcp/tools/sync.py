@@ -29,7 +29,7 @@ from aistack.services import (
     visibility,
 )
 from aistack.services.harnesses import HarnessKey
-from aistack.services.reconciliation import Choice, Step
+from aistack.services.reconciliation import Step
 from aistack.services.transfer_ticket import (
     ProjectFileEditTicket,
     ProjectFileUploadTicket,
@@ -153,6 +153,8 @@ class SyncResult(TypedDict):
     repository_files: NotRequired[list[RepositoryFileEntry]]
     ticked_files: NotRequired[list[TickedFileEntry]]
     edits: NotRequired[list[EditEntry]]
+    # Shared edits the page shows as shared until this working copy's commit has their text.
+    shared_edits: NotRequired[list[EditEntry]]
     install: list[InstallEntry]
     update: list[UpdateEntry]
     ask: list[AskEntry]
@@ -280,15 +282,18 @@ def sync(local: dict[str, dict[str, str]],
             RepositoryFileEntry(path=file.path, agent=file.agent.value,
                                 turned_off=file.turned_off)
             for file in rule_report.repository_files]
-        result["ticked_files"], result["edits"] = _project_work(caller, work)
+        (result["ticked_files"], result["edits"],
+         result["shared_edits"]) = _project_work(caller, work)
     return result
 
 
-def _project_work(caller, work) -> tuple[list[TickedFileEntry], list[EditEntry]]:
-    """The managed project's ticked files and the edits waiting for this computer, each with
-    the transfer URL it needs. The URLs carry tickets, so they are returned and never logged."""
+def _project_work(caller, work) -> tuple[list[TickedFileEntry], list[EditEntry],
+                                         list[EditEntry]]:
+    """The managed project's ticked files, the edits waiting for this computer, and those it
+    shared, each with the transfer URL it needs. The URLs carry tickets, so they are returned
+    and never logged."""
     if work is None:
-        return [], []
+        return [], [], []
     base, signer = server_base_url(get_http_request()), get_ticket_signer()
     files = [TickedFileEntry(
         path=file.path, content_hash=file.content_hash,
@@ -297,35 +302,43 @@ def _project_work(caller, work) -> tuple[list[TickedFileEntry], list[EditEntry]]
                                     token_prefix=caller.token_prefix,
                                     project_file_id=file.project_file_id)))
         for file in work.files]
-    edits = [EditEntry(
-        path=edit.path, base_hash=edit.base_hash, content_hash=edit.content_hash,
-        note=edit.note,
-        url=f"{base}{PROJECT_FILE_EDIT_PATH}/" + signer.sign_project_file_edit(
-            ProjectFileEditTicket(machine_id=caller.machine_id,
-                                  token_prefix=caller.token_prefix,
-                                  project_file_edit_id=edit.project_file_edit_id)))
-        for edit in work.edits]
-    return files, edits
+    def entries(edits) -> list[EditEntry]:
+        return [EditEntry(
+            path=edit.path, base_hash=edit.base_hash, content_hash=edit.content_hash,
+            note=edit.note,
+            url=f"{base}{PROJECT_FILE_EDIT_PATH}/" + signer.sign_project_file_edit(
+                ProjectFileEditTicket(machine_id=caller.machine_id,
+                                      token_prefix=caller.token_prefix,
+                                      project_file_edit_id=edit.project_file_edit_id)))
+            for edit in edits]
+
+    return files, entries(work.edits), entries(work.shared)
 
 
 def _rule_entry(caller, action: rule_sync.RuleAction) -> RuleEntry:
     """One rule file's action, with the transfer URLs it may need: a download where the
     Library's text may be written, an upload where the file's text may be kept. The URLs
     carry tickets, so they are returned and never logged."""
-    choices = {option.choice for option in action.options}
     base = server_base_url(get_http_request())
     download = upload = None
-    if action.step in (Step.INSTALL, Step.UPDATE) or Choice.RESTORE in choices:
+    if action.may_write:
         ticket = get_ticket_signer().sign_rule_download(RuleDownloadTicket(
             machine_id=caller.machine_id, token_prefix=caller.token_prefix,
             rule_revision_id=action.rule_revision_id, agent=action.agent))
         download = f"{base}{RULE_DOWNLOAD_PATH}/{ticket}"
-    if action.step is Step.BACKUP or Choice.PUSH in choices:
+    if action.may_keep:
         ticket = get_ticket_signer().sign_rule_upload(RuleUploadTicket(
             machine_id=caller.machine_id, user_id=caller.user_id,
             token_prefix=caller.token_prefix, rule_name=action.name, agent=action.agent,
             project_id=action.project_id, backup=action.step is Step.BACKUP))
         upload = f"{base}{RULE_UPLOAD_PATH}/{ticket}"
+    return rule_entry(action, download, upload)
+
+
+def rule_entry(action: rule_sync.RuleAction, download_url: str | None,
+               upload_url: str | None) -> RuleEntry:
+    """A rule file's action as sync returns it; local mode's sync hands the same shape to the
+    program's rule code."""
     return RuleEntry(
         agent=action.agent.value,
         place=action.place,
@@ -342,8 +355,8 @@ def _rule_entry(caller, action: rule_sync.RuleAction) -> RuleEntry:
                              loses_local_edits=option.loses_local_edits)
                  for option in action.options],
         removed_from_library=action.removed_from_library,
-        download_url=download,
-        upload_url=upload,
+        download_url=download_url,
+        upload_url=upload_url,
     )
 
 

@@ -249,7 +249,7 @@ async def _random_changes_with(client, browser, home, seed: int, steps: int) -> 
         action = "add project" if step == 0 else chance.choice([
             "push", "push", "get", "disable", "sync", "remove", "place", "rename", "retire",
             "add project", "new rule", "edit rule", "rename rule", "rule agents", "remove rule",
-            "tick", "turn off"])
+            "tick", "turn off", "edit rule file"])
         try:
             if action == "add project":
                 await _post(browser, "/api/projects/add", folder=str(_shop(home)),
@@ -269,6 +269,12 @@ async def _random_changes_with(client, browser, home, seed: int, steps: int) -> 
                             **rule)
             elif action == "remove rule":
                 await _post(browser, f"/api/rules/{rule_name}/remove", **rule)
+            elif action == "edit rule file":
+                # Edited by hand: the next sync keeps it in the Library, or asks.
+                target = (home / ".claude" / "CLAUDE.md" if rule["project"] is None else
+                          _shop(home) / ".claude" / "rules" / f"aistack-{rule_name}.md")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(f"# By hand at step {step}\n")
             elif action == "tick":
                 await _post(browser, "/api/projects/files/tick", project=SHOP, path=file,
                             ticked=chance.random() < 0.5)

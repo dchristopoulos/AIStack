@@ -243,9 +243,24 @@ async def test_sharing_pushes_a_branch_holding_only_that_file(server_url, home, 
     assert edit.shared_on is not None
     assert edit.pull_request_url == "https://github.com/shop/shop/pull/7"
 
-    # Shared once: the next sync has nothing to share.
+    # Shared once: the next sync has nothing to share, and the page shows it shared.
     _, output = await _sync(server_url, token, home, repository)
     assert "Shared" not in output
+    user_id, _, key = _me(session_factory)
+    with session_factory() as session:
+        [shown] = [file for file in project_file_service.all_files(session, user_id)
+                   if file["path"] == "AGENTS.md"]
+    assert shown["edit"]["branch"] == branch
+    assert _edits(session_factory)[-1].cancelled_on is None
+
+    # Merged and pulled through the person's own git: the row is as it was before the edit.
+    _git(repository, "commit", "-qm", "merged", "--", "AGENTS.md")
+    await _sync(server_url, token, home, repository)
+    assert _edits(session_factory)[-1].cancelled_on is not None
+    with session_factory() as session:
+        [shown] = [file for file in project_file_service.all_files(session, user_id)
+                   if file["path"] == "AGENTS.md"]
+    assert shown["edit"] is None
 
 
 async def test_without_gh_the_branch_is_pushed_and_the_person_told(server_url, home,

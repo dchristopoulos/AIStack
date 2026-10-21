@@ -148,3 +148,24 @@ def test_sync_command_explains_a_copied_connection(tmp_path, monkeypatch):
     monkeypatch.setattr(server_sync, "sync_computer", copied)
     with pytest.raises(SystemExit, match="different computer.*dashboard"):
         command.run()
+
+
+def test_sync_against_a_local_library_syncs_its_rules_here(tmp_path, monkeypatch, capsys):
+    import sys
+
+    from aistack.bootstrap import __main__ as command
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    (tmp_path / ".claude.json").write_text(json.dumps(
+        {"mcpServers": {"aistack": {"command": "/bin/aistack-mcp", "args": []}}}))
+    monkeypatch.setattr(sys, "argv", ["aistack", "sync", "--rule-choice", "a:b=push"])
+    asked = []
+    monkeypatch.setattr(command, "sync_local", lambda agent, choices: asked.append(
+        (agent, choices)) or [{"completed": [], "failures": [], "rule_questions": []}])
+
+    command.run()
+
+    assert asked == [(None, {"a:b": "push"})]
+    assert "AIStack rules are up to date." in capsys.readouterr().out
+    assert agent_config.connected_locally() and not agent_config.connected_locally("codex")

@@ -147,3 +147,17 @@ async def test_an_edit_waits_for_its_computer_then_is_committed_with_a_note(sign
                  ).to_be_visible()
     assert _file(await dimitris.state(), "AGENTS.md")["edit"]["note"].startswith(
         "Refunds go through one module")
+
+    # The MacBook's next sync shares it: shown shared, with its pull request, until settled.
+    with application_context.get_session_factory().begin() as session:
+        shared = session.scalar(select(ProjectFileEdit).where(ProjectFileEdit.note.is_not(None)))
+        shared.shared_on = utc_now()
+        shared.pull_request_url = "https://github.com/demo-team/demo-api/pull/12"
+    await page.reload()
+    await expect(table.get_by_text("Shared as a pull request")).to_be_visible()
+    panel = await _open_file(page, "AGENTS.md")
+    await expect(panel.get_by_role("link", name="Open the pull request")).to_have_attribute(
+        "href", "https://github.com/demo-team/demo-api/pull/12")
+    await expect(panel.get_by_role("button", name="Commit…")).to_have_count(0)
+    assert _file(await dimitris.state(), "AGENTS.md")["edit"]["branch"].startswith(
+        "aistack/agents-md-")
