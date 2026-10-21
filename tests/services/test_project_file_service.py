@@ -170,6 +170,19 @@ def test_only_a_written_edit_is_committed_with_a_note(session_factory, shop):
             project_file_service.validated_note(note)
 
 
+def test_an_edit_shows_what_it_changes_after_the_file_moved_on(session_factory, shop):
+    user_id, laptop = shop
+    _call(session_factory, project_file_service.save_edit, user_id, KEY, "AGENTS.md",
+          "# Shop\nNew line\n", text_hash(TEXT), str(laptop.machine_id))
+    # Once written, the computer uploads the edited text as the file's snapshot.
+    with session_factory.begin() as session:
+        row = session.scalar(select(ProjectFile).where(ProjectFile.path == "AGENTS.md"))
+        row.text = row.content_hash = None
+    files = _call(session_factory, project_file_service.all_files, user_id)
+    edit = next(f for f in files if f["path"] == "AGENTS.md")["edit"]
+    assert edit["diff"] == "@@ -1 +1,2 @@\n # Shop\n+New line\n"
+
+
 def _ticket(session_factory, machine, kind, target_id):
     with session_factory() as session:
         prefix = token_prefix(session.get(type(machine), machine.machine_id).token_hash)
