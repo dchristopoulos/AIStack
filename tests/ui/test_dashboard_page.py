@@ -68,7 +68,7 @@ async def test_a_sign_in_link_opens_the_library_and_the_page_talks_only_to_this_
     maria = await sign_in("maria")
 
     await expect(maria.page.get_by_role("row").filter(has_text="code-review").get_by_role(
-        "link", name="work-laptop / Claude Code")).to_be_visible()
+        "link", name="Work laptop / Claude Code")).to_be_visible()
     await expect(maria.page.get_by_role("navigation", name="Spaces")
                  .get_by_role("link", name="demo-team", exact=True)).to_be_visible()
     assert "/app/login" not in maria.page.url
@@ -84,7 +84,7 @@ async def test_an_update_over_your_own_changes_names_them_before_it_is_taken(sig
     await maria.page.get_by_role("button", name="Take update").click()
     dialog = maria.page.get_by_role("dialog", name="Take the update to code-review?")
     await expect(dialog.get_by_text("replaces your r2")).to_be_visible()
-    await expect(dialog.get_by_text("replaced on work-laptop")).to_be_visible()
+    await expect(dialog.get_by_text("replaced on Work laptop")).to_be_visible()
     assert _skill(await maria.state(), "code-review")["revision"] == 2
 
     await dialog.get_by_role("button", name="Take update").click()
@@ -105,7 +105,7 @@ async def test_a_team_skill_named_like_one_of_yours_replaces_it_only_once_confir
     dialog = alex.page.get_by_role("dialog", name="Replace your release-notes?")
     await expect(dialog.get_by_text("your own release-notes, r1, last pushed by alex")
                  ).to_be_visible()
-    await expect(dialog.get_by_text("replaced on thinkpad")).to_be_visible()
+    await expect(dialog.get_by_text("replaced on ThinkPad X1 Carbon")).to_be_visible()
     assert _skill(await alex.state(), "release-notes")["pushed_by"] == "alex"
 
     await dialog.get_by_role("button", name="Replace yours").click()
@@ -160,16 +160,16 @@ async def test_a_skill_removed_from_the_library_can_be_brought_back(sign_in):
     before = await dimitris.state()
     names = {machine["id"]: machine["name"] for machine in before["machines"]}
     assert {names[placement["machine"]] for placement in
-            _skill(before, "meeting-notes")["placements"]} == {"macbook"}
+            _skill(before, "meeting-notes")["placements"]} == {"MacBook Pro M4 Pro"}
     await page.get_by_role("button", name="Details of meeting-notes").click()
     await page.get_by_role("dialog", name="meeting-notes").get_by_role(
         "button", name="Remove from library…").click()
     confirm = page.get_by_role("dialog", name="Remove meeting-notes from your library?")
     # Only the computer that has it is asked; the desktop never had it.
     await expect(confirm.get_by_text(
-        "macbook asks at the next sync whether to delete its folder. Nothing is deleted from "
+        "MacBook Pro M4 Pro asks at the next sync whether to delete its folder. Nothing is deleted from "
         "a computer until you answer there.")).to_be_visible()
-    await expect(confirm.get_by_text("desktop")).to_have_count(0)
+    await expect(confirm.get_by_text("Work desktop")).to_have_count(0)
     await confirm.get_by_role("button", name="Remove").click()
     removed = page.get_by_text("Removed from your library (1)")
     await expect(removed).to_be_visible()
@@ -215,12 +215,12 @@ async def test_a_skill_is_added_to_another_computer_from_the_library(sign_in):
 
     await row.get_by_role("button", name="Add to computer").click()
     dialog = page.get_by_role("dialog")
-    await expect(dialog.get_by_role("checkbox", name="macbook / Claude Code", exact=True)).to_be_checked()
-    await dialog.get_by_role("checkbox", name="desktop / Claude Code", exact=True).check()
+    await expect(dialog.get_by_role("checkbox", name="MacBook Pro M4 Pro / Claude Code", exact=True)).to_be_checked()
+    await dialog.get_by_role("checkbox", name="Work desktop / Claude Code", exact=True).check()
     await dialog.get_by_role("button", name="Save").click()
 
-    await expect(row.get_by_role("link", name="desktop / Claude Code")).to_be_visible()
-    assert _on(await dimitris.state(), "sql-style") == ["desktop", "macbook"]
+    await expect(row.get_by_role("link", name="Work desktop / Claude Code")).to_be_visible()
+    assert _on(await dimitris.state(), "sql-style") == ["MacBook Pro M4 Pro", "Work desktop"]
     assert dimitris.console_errors == []
 
 
@@ -229,12 +229,12 @@ async def test_a_skill_is_taken_off_a_computer_from_its_details_and_stays_in_the
     page = dimitris.page
     row = page.get_by_role("row").filter(has_text="release-notes")
     # Where a skill is reads as words; nothing in the row removes it by accident.
-    await expect(row.get_by_role("button", name="macbook", exact=False)).to_have_count(0)
+    await expect(row.get_by_role("button", name="MacBook Pro M4 Pro", exact=False)).to_have_count(0)
 
     await row.get_by_role("button", name="Details of release-notes").click()
     details = page.get_by_role("dialog", name="release-notes")
     await expect(details.get_by_text("r1, 2 files")).to_be_visible()
-    await details.get_by_role("checkbox", name="macbook / Claude Code", exact=True).uncheck()
+    await details.get_by_role("checkbox", name="MacBook Pro M4 Pro / Claude Code", exact=True).uncheck()
     await details.get_by_role("button", name="Save").click()
 
     await expect(row.get_by_text("Only in your library")).to_be_visible()
@@ -251,11 +251,11 @@ async def test_ticks_in_a_skills_details_are_kept_when_another_button_leaves_it(
     await page.get_by_role("button", name="Details of release-notes").click()
     details = page.get_by_role("dialog", name="release-notes")
 
-    await details.get_by_role("checkbox", name="desktop / Claude Code", exact=True).check()
+    await details.get_by_role("checkbox", name="Work desktop / Claude Code", exact=True).check()
     await details.get_by_role("button", name="Share with a team…").click()
 
     await expect(page.get_by_role("dialog", name="Share release-notes")).to_be_visible()
-    assert _on(await dimitris.state(), "release-notes") == ["desktop", "macbook"]
+    assert _on(await dimitris.state(), "release-notes") == ["MacBook Pro M4 Pro", "Work desktop"]
     assert dimitris.console_errors == []
 
 async def test_a_skill_on_one_computer_says_so_and_a_tick_puts_it_on_every_one(sign_in):
@@ -264,15 +264,15 @@ async def test_a_skill_on_one_computer_says_so_and_a_tick_puts_it_on_every_one(s
     await _open_every_project(dimitris)
     table = page.get_by_role("table", name="What your agents read in every project")
     row = table.get_by_role("row").filter(has_text="sql-style")
-    await expect(row.get_by_text("Only on macbook")).to_be_visible()
+    await expect(row.get_by_text("Only on MacBook Pro M4 Pro")).to_be_visible()
     tick = row.get_by_role("checkbox", name="sql-style for Claude Code")
     await expect(tick).not_to_be_checked()
 
     await tick.click()
 
-    await expect(row.get_by_text("Only on macbook")).to_have_count(0)
+    await expect(row.get_by_text("Only on MacBook Pro M4 Pro")).to_have_count(0)
     await expect(tick).to_be_checked()
-    assert _on(await dimitris.state(), "sql-style") == ["desktop", "macbook"]
+    assert _on(await dimitris.state(), "sql-style") == ["MacBook Pro M4 Pro", "Work desktop"]
 
     await tick.click()
 
@@ -291,15 +291,15 @@ async def test_skills_are_added_to_a_computer_from_its_plus_menu(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
 
-    await _add_to(page, "desktop", "Skills…")
-    dialog = page.get_by_role("dialog", name="Add skills to desktop")
+    await _add_to(page, "Work desktop", "Skills…")
+    dialog = page.get_by_role("dialog", name="Add skills to Work desktop")
     await dialog.get_by_label("Search your library").fill("notes")
     await expect(dialog.get_by_role("checkbox", name="code-review")).to_be_hidden()
     await dialog.get_by_role("checkbox", name="meeting-notes").check()
     await dialog.get_by_role("button", name="Add", exact=True).click()
 
     await expect(dialog).to_have_count(0)
-    assert _on(await dimitris.state(), "meeting-notes") == ["desktop", "macbook"]
+    assert _on(await dimitris.state(), "meeting-notes") == ["MacBook Pro M4 Pro", "Work desktop"]
     assert dimitris.console_errors == []
 
 
@@ -330,11 +330,11 @@ async def test_a_skill_is_added_to_codex_from_the_library(sign_in):
 
     await row.get_by_role("button", name="Add to computer").click()
     dialog = page.get_by_role("dialog")
-    await expect(dialog.get_by_role("checkbox", name="macbook / Codex")).not_to_be_checked()
-    await dialog.get_by_role("checkbox", name="macbook / Codex").check()
+    await expect(dialog.get_by_role("checkbox", name="MacBook Pro M4 Pro / Codex")).not_to_be_checked()
+    await dialog.get_by_role("checkbox", name="MacBook Pro M4 Pro / Codex").check()
     await dialog.get_by_role("button", name="Save").click()
 
-    await expect(row.get_by_role("link", name="macbook / Codex")).to_be_visible()
+    await expect(row.get_by_role("link", name="MacBook Pro M4 Pro / Codex")).to_be_visible()
     macbook = (await dimitris.state())["machines"][0]["id"]
     assert _placed(_skill(await dimitris.state(), "sql-style")["placements"], macbook, "agents")
 
@@ -402,15 +402,15 @@ async def test_an_agent_is_added_to_a_computer_and_given_a_skill(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
 
-    await _add_to(page, "desktop", "A coding agent…")
-    dialog = page.get_by_role("dialog", name="Add an agent to desktop")
+    await _add_to(page, "Work desktop", "A coding agent…")
+    dialog = page.get_by_role("dialog", name="Add an agent to Work desktop")
     await dialog.get_by_role("radio", name="Codex").check()
     await dialog.get_by_role("button", name="Add", exact=True).click()
-    await expect(page.get_by_role("heading", name="desktop", level=1)).to_be_visible()
+    await expect(page.get_by_role("heading", name="Work desktop", level=1)).to_be_visible()
     await expect(page.get_by_role("table", name="Coding agents").get_by_text("Codex", exact=True)).to_be_visible()
 
-    await _add_to(page, "desktop", "Skills…")
-    dialog = page.get_by_role("dialog", name="Add skills to desktop")
+    await _add_to(page, "Work desktop", "Skills…")
+    dialog = page.get_by_role("dialog", name="Add skills to Work desktop")
     # Each agent there is ticked to start with; one is taken off for this skill.
     await dialog.get_by_role("checkbox", name="Claude Code").uncheck()
     await dialog.get_by_role("checkbox", name="meeting-notes").check()
@@ -418,7 +418,7 @@ async def test_an_agent_is_added_to_a_computer_and_given_a_skill(sign_in):
 
     await expect(dialog).to_have_count(0)
     state = await dimitris.state()
-    desktop = next(m["id"] for m in state["machines"] if m["name"] == "desktop")
+    desktop = next(m["id"] for m in state["machines"] if m["name"] == "Work desktop")
     assert _placed(_skill(state, "meeting-notes")["placements"], desktop, "agents")
     assert not _placed(_skill(state, "meeting-notes")["placements"], desktop, "claude_code")
     assert dimitris.console_errors == []
@@ -428,8 +428,8 @@ async def test_an_agent_picked_by_mistake_is_taken_off_the_list(sign_in):
     """UI-20: an agent added in this browser could not be removed again."""
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    await _add_to(page, "desktop", "A coding agent…")
-    dialog = page.get_by_role("dialog", name="Add an agent to desktop")
+    await _add_to(page, "Work desktop", "A coding agent…")
+    dialog = page.get_by_role("dialog", name="Add an agent to Work desktop")
     await dialog.get_by_role("radio", name="Codex").check()
     await dialog.get_by_role("button", name="Add", exact=True).click()
     agents = page.get_by_role("table", name="Coding agents")
@@ -707,7 +707,7 @@ async def test_a_team_is_created_and_joined_with_its_invite_code(sign_in):
 async def test_a_signed_in_member_joins_from_the_invite_page_in_one_click(sign_in):
     """AUTO-22: the page links to the dashboard with the code where the server never sees it."""
     maria = await sign_in("maria")
-    await _open_team(maria, "friends")
+    await _open_team(maria, "side-projects")
     await maria.page.get_by_role("tab", name="Settings").click()
     await maria.page.get_by_role("button", name="Create invite link").click()
     link = await maria.page.get_by_role("dialog").get_by_label("Invite link").input_value()
@@ -718,8 +718,8 @@ async def test_a_signed_in_member_joins_from_the_invite_page_in_one_click(sign_i
     join = alex.page.get_by_role("dialog", name="Join a team")
     await join.get_by_role("button", name="Join team").click()
 
-    await expect(alex.page.get_by_role("heading", name="friends", level=1)).to_be_visible()
-    assert "friends" in [team["name"] for team in (await alex.state())["teams"]]
+    await expect(alex.page.get_by_role("heading", name="side-projects", level=1)).to_be_visible()
+    assert "side-projects" in [team["name"] for team in (await alex.state())["teams"]]
     assert "aistinv_" not in alex.page.url
     assert alex.console_errors == []
 
@@ -1116,7 +1116,7 @@ async def test_the_phone_menu_opens_and_closes_with_a_control_you_can_see(sign_i
 
     await page.get_by_role("button", name="Open navigation").click()
     await expect(spaces.get_by_role("link", name="demo-team", exact=True)).to_be_visible()
-    await expect(navigation.get_by_role("link", name="desktop")).to_be_visible()
+    await expect(navigation.get_by_role("link", name="Work desktop")).to_be_visible()
     close = page.get_by_label("Navigation").get_by_role("button", name="Close navigation")
     await expect(close).to_be_visible()
     await close.click()
@@ -1180,38 +1180,38 @@ async def test_the_pages_before_sign_in_ask_for_nothing_that_fails(browser, serv
 async def test_a_computer_says_where_it_came_from_and_is_renamed(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    await _open_computer(dimitris, "desktop")
+    await _open_computer(dimitris, "Work desktop")
     await expect(page.get_by_role("columnheader", name="Last synced").first).to_be_visible()
 
     await page.get_by_role("button", name="Computer settings").click()
-    dialog = page.get_by_role("dialog", name="desktop")
-    await expect(dialog.get_by_text("macbook", exact=True)).to_be_visible()
+    dialog = page.get_by_role("dialog", name="Work desktop")
+    await expect(dialog.get_by_text("MacBook Pro M4 Pro", exact=True)).to_be_visible()
     await dialog.get_by_label("Name").fill("old desktop")
     await dialog.get_by_role("button", name="Rename").click()
 
     await expect(dialog).to_have_count(0)
-    await expect(page.get_by_text("Renamed desktop to old desktop.")).to_be_visible()
+    await expect(page.get_by_text("Renamed Work desktop to old desktop.")).to_be_visible()
     names = [machine["name"] for machine in (await dimitris.state())["machines"]]
-    assert names == ["macbook", "old desktop"]
+    assert names == ["MacBook Pro M4 Pro", "old desktop"]
     assert dimitris.console_errors == []
 
 
 async def test_a_lost_computer_is_removed_from_its_page(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
-    await _open_computer(dimitris, "desktop")
+    await _open_computer(dimitris, "Work desktop")
 
     await page.get_by_role("button", name="Computer settings").click()
-    await page.get_by_role("dialog", name="desktop").get_by_role(
+    await page.get_by_role("dialog", name="Work desktop").get_by_role(
         "button", name="Remove this computer…").click()
-    confirm = page.get_by_role("dialog", name="Remove desktop?")
+    confirm = page.get_by_role("dialog", name="Remove Work desktop?")
     await expect(confirm.get_by_text("Its connection to AIStack stops at once")).to_be_visible()
     await confirm.get_by_role("button", name="Remove", exact=True).click()
 
     await expect(page.get_by_role("heading", name="Library", level=1)).to_be_visible()
     await expect(page.get_by_role("navigation", name="Main").get_by_role(
-        "link", name="desktop")).to_have_count(0)
-    assert [machine["name"] for machine in (await dimitris.state())["machines"]] == ["macbook"]
+        "link", name="Work desktop")).to_have_count(0)
+    assert [machine["name"] for machine in (await dimitris.state())["machines"]] == ["MacBook Pro M4 Pro"]
     assert dimitris.console_errors == []
 
 
@@ -1234,7 +1234,7 @@ async def _axe_violations(page) -> list[str]:
 
 async def _macbook(opened) -> str:
     return next(machine["id"] for machine in (await opened.state())["machines"]
-                if machine["name"] == "macbook")
+                if machine["name"] == "MacBook Pro M4 Pro")
 
 
 @_SQLITE_ONLY
@@ -1392,12 +1392,12 @@ async def test_toasts_are_said_after_the_dialog_and_stay_until_dismissed(sign_in
 
     await page.get_by_role("button", name="Add to computer: sql-style").click()
     dialog = page.get_by_role("dialog")
-    await dialog.get_by_role("checkbox", name="desktop / Claude Code", exact=True).check()
+    await dialog.get_by_role("checkbox", name="Work desktop / Claude Code", exact=True).check()
     await dialog.get_by_role("button", name="Save").click()
     toast = page.get_by_role("status").get_by_text("sql-style")
     await expect(toast).to_be_visible()
     assert await page.evaluate("window.toastsSeen") == [False]
-    assert "desktop" in _on(await dimitris.state(), "sql-style")
+    assert "Work desktop" in _on(await dimitris.state(), "sql-style")
 
     await toast.hover()
     await page.clock.fast_forward("00:20")
@@ -1406,7 +1406,7 @@ async def test_toasts_are_said_after_the_dialog_and_stay_until_dismissed(sign_in
     # Later outcomes must not discard one that is still waiting to be read.
     for name in ("code-review", "release-notes", "commit-messages", "pentest-checklist"):
         await page.get_by_role("button", name=f"Add to computer: {name}").click()
-        await page.get_by_role("dialog").get_by_role("checkbox", name="desktop / Claude Code", exact=True).check()
+        await page.get_by_role("dialog").get_by_role("checkbox", name="Work desktop / Claude Code", exact=True).check()
         await page.get_by_role("dialog").get_by_role("button", name="Save").click()
     await expect(page.get_by_role("status").get_by_role("button", name="Dismiss")).to_have_count(5)
     await page.clock.fast_forward("01:00")
@@ -1425,7 +1425,7 @@ async def test_toasts_are_said_after_the_dialog_and_stay_until_dismissed(sign_in
     await page.route("**/api/skills/**", lambda route: route.fulfill(
         status=400, json={"error": "Nothing changed: the server said no."}))
     await page.get_by_role("button", name="Add to computer: sql-style").click()
-    await page.get_by_role("dialog").get_by_role("checkbox", name="desktop / Claude Code", exact=True).uncheck()
+    await page.get_by_role("dialog").get_by_role("checkbox", name="Work desktop / Claude Code", exact=True).uncheck()
     await page.get_by_role("dialog").get_by_role("button", name="Save").click()
     await expect(page.get_by_role("dialog").get_by_text("the server said no")).to_be_visible()
     await page.keyboard.press("Escape")

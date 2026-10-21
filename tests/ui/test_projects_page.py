@@ -46,10 +46,10 @@ async def test_a_project_page_shows_each_computer_and_one_table_of_what_its_agen
 
     await expect(page.get_by_text(KEY, exact=True)).to_be_visible()
     await expect(page.get_by_role("link", name="Team project of demo-team")).to_be_visible()
-    macbook = page.get_by_role("region", name="macbook")
+    macbook = page.get_by_role("region", name="MacBook Pro M4 Pro")
     await expect(macbook.get_by_text("/Users/dimitris/code/demo-api")).to_be_visible()
     await expect(macbook.get_by_text("This one")).to_be_visible()
-    await expect(page.get_by_role("region", name="desktop").get_by_text(
+    await expect(page.get_by_role("region", name="Work desktop").get_by_text(
         "/home/dimitris/code/demo-api")).to_be_visible()
 
     table = page.get_by_role("table", name="What your agents read in demo-api")
@@ -57,7 +57,7 @@ async def test_a_project_page_shows_each_computer_and_one_table_of_what_its_agen
     # Its last row is in the project's own group, under the skills for every project.
     own = table.get_by_role("row").filter(has_text="demo-api-notes").last
     # Something true on one computer only says so on its row.
-    await expect(own.get_by_text("Only on macbook")).to_be_visible()
+    await expect(own.get_by_text("Only on MacBook Pro M4 Pro")).to_be_visible()
     assert dimitris.console_errors == []
 
 
@@ -73,7 +73,7 @@ async def test_skills_are_added_to_a_project_on_every_computer_from_its_page(sig
 
     table = page.get_by_role("table", name="What your agents read in demo-api")
     await expect(table.get_by_role("checkbox", name="sql-style for Claude Code")).to_be_checked()
-    assert _machines_with(await dimitris.state(), "sql-style", KEY) == ["desktop", "macbook"]
+    assert _machines_with(await dimitris.state(), "sql-style", KEY) == ["MacBook Pro M4 Pro", "Work desktop"]
     # It is also in the global folder, which Claude Code uses first.
     await expect(table.get_by_role("row").filter(has_text="sql-style").last.get_by_text(
         "Also for every project; Claude Code uses that copy.")).to_be_visible()
@@ -90,7 +90,7 @@ async def test_a_tick_on_one_computer_only_reaches_every_computer_once_clicked(s
     await tick.click()
 
     await expect(tick).to_be_checked()
-    assert _machines_with(await dimitris.state(), "demo-api-notes", KEY) == ["desktop", "macbook"]
+    assert _machines_with(await dimitris.state(), "demo-api-notes", KEY) == ["MacBook Pro M4 Pro", "Work desktop"]
     assert dimitris.console_errors == []
 
 
@@ -100,9 +100,9 @@ async def test_the_skill_panel_ticks_a_project_folder_by_its_agent_and_project(s
 
     await page.get_by_role("button", name="Details of demo-api-notes").click()
     panel = page.get_by_role("dialog", name="demo-api-notes")
-    await expect(panel.get_by_role("checkbox", name="macbook / Claude Code in demo-api")
+    await expect(panel.get_by_role("checkbox", name="MacBook Pro M4 Pro / Claude Code in demo-api")
                  ).to_be_checked()
-    await panel.get_by_role("checkbox", name="macbook / Claude Code in demo-api").uncheck()
+    await panel.get_by_role("checkbox", name="MacBook Pro M4 Pro / Claude Code in demo-api").uncheck()
     await panel.get_by_role("button", name="Save").click()
 
     await expect(panel).to_have_count(0)
@@ -115,16 +115,16 @@ async def test_stop_managing_takes_the_project_off_one_computer(sign_in):
     page = dimitris.page
     await _open_project(dimitris)
 
-    await page.get_by_role("button", name="Stop managing demo-api on macbook…").click()
-    confirm = page.get_by_role("dialog", name="Stop managing demo-api on macbook?")
+    await page.get_by_role("button", name="Stop managing demo-api on MacBook Pro M4 Pro…").click()
+    confirm = page.get_by_role("dialog", name="Stop managing demo-api on MacBook Pro M4 Pro?")
     await expect(confirm.get_by_text("still hidden from git")).to_be_visible()
     await confirm.get_by_role("button", name="Stop managing").click()
 
-    await expect(page.get_by_text("Stopped managing demo-api on macbook.")).to_be_visible()
-    await expect(page.get_by_role("region", name="macbook")).to_have_count(0)
-    await expect(page.get_by_role("region", name="desktop")).to_be_visible()
+    await expect(page.get_by_text("Stopped managing demo-api on MacBook Pro M4 Pro.")).to_be_visible()
+    await expect(page.get_by_role("region", name="MacBook Pro M4 Pro")).to_have_count(0)
+    await expect(page.get_by_role("region", name="Work desktop")).to_be_visible()
     macbook = next(machine for machine in (await dimitris.state())["machines"]
-                   if machine["name"] == "macbook")
+                   if machine["name"] == "MacBook Pro M4 Pro")
     assert [project["key"] for project in macbook["projects"]] == [WEBSITE]
     assert dimitris.console_errors == []
 
@@ -135,14 +135,14 @@ async def test_a_project_added_to_another_computer_waits_for_its_first_sync(sign
 
     await _add_to(page, "demo-website", "Another computer…")
     dialog = page.get_by_role("dialog", name="Add demo-website to a computer")
-    await dialog.get_by_role("radio", name="desktop, Claude Code").check()
+    await dialog.get_by_role("radio", name="Work desktop, Claude Code").check()
     await dialog.get_by_role("button", name="Add").click()
 
     await expect(page.get_by_role("heading", name="demo-website", level=1)).to_be_visible()
-    desktop_card = page.get_by_role("region", name="desktop")
+    desktop_card = page.get_by_role("region", name="Work desktop")
     await expect(desktop_card.get_by_text("Claude Code. Not synced here yet")).to_be_visible()
     desktop = next(machine for machine in (await dimitris.state())["machines"]
-                   if machine["name"] == "desktop")
+                   if machine["name"] == "Work desktop")
     website = next(project for project in desktop["projects"] if project["key"] == WEBSITE)
     assert website["folders"] == [{"harness": "claude_code", "path": None, "last_synced_on": None}]
     assert dimitris.console_errors == []
@@ -152,8 +152,8 @@ async def test_a_computer_s_plus_offers_a_project_and_a_new_repository(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
 
-    await _add_to(page, "desktop", "A project…")
-    dialog = page.get_by_role("dialog", name="Add a project to desktop")
+    await _add_to(page, "Work desktop", "A project…")
+    dialog = page.get_by_role("dialog", name="Add a project to Work desktop")
     await expect(dialog.get_by_label("What to say inside the repository")).to_have_value(
         "add this project to aistack")
     await dialog.get_by_role("radio", name="demo-website for Claude Code").check()
