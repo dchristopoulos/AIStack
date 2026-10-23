@@ -150,6 +150,20 @@ def test_a_start_link_hands_the_checked_arguments_to_start(home, shop, monkeypat
     assert started == [["--agent=codex", f"--project={shop}", "--skills=tdd"]]
 
 
+def test_a_sync_link_syncs_nothing_without_the_persons_enter(home, monkeypatch):
+    ran = []
+
+    def no_enter(prompt):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", no_enter)
+    monkeypatch.setattr(computer_link.subprocess, "run", lambda *call, **_: ran.append(call))
+    with pytest.raises(SystemExit, match="Nothing was synced"):
+        computer_link.run(["aistack://sync"])
+
+    assert ran == []
+
+
 def test_a_project_add_link_runs_project_add_on_the_folder(home, tmp_path, monkeypatch):
     from aistack.bootstrap import project_add
 

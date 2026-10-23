@@ -130,6 +130,23 @@ def test_claude_code_turns_off_claude_ai_skills_from_the_release_that_reads_them
     assert _settings(command)["syncClaudeAiSkills"] is False
 
 
+def test_nothing_starts_without_the_persons_enter(home, tmp_path, monkeypatch):
+    """A web page can open the link that runs this, so the Enter is the person's consent."""
+    project = _repository(tmp_path / "shop")
+    _skill(home / ".claude" / "skills", "tdd")
+    started = []
+
+    def no_enter(prompt):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", no_enter)
+    with pytest.raises(StartRefused, match="Nothing was started"):
+        start_agent.start(RECIPES["claude-code"], project, ("tdd",), run=_fake_claude(),
+                          execute=lambda *call: started.append(call))
+
+    assert started == []
+
+
 def test_a_skill_not_on_this_computer_is_refused_before_anything_starts(home, tmp_path):
     project = _repository(tmp_path / "shop")
     _skill(home / ".claude" / "skills", "tdd")
