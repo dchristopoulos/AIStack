@@ -1,10 +1,10 @@
 # AIStack design
 
-Scope, architecture, and schema for the MVP, settled 2026-08-21, revised 2026-08-24 after two external design reviews, 2026-10-13 after research into what the client can carry (ADR-0010 to ADR-0012), 2026-10-14 for the personal space, teams, groups, migrations, and the dashboard (ADR-0015 to ADR-0017), 2026-10-16 to match the code after the October audit, and 2026-10-20 for program sync and computer codes (ADR-0035). Vocabulary lives in `CONTEXT.md`. Decisions and their reasoning live in `docs/adr/`. This document is the current plan, so where anything else disagrees with it, this wins.
+Scope, architecture, and schema for the MVP, settled 2026-08-21, revised 2026-08-24 after two external design reviews, 2026-10-13 after research into what the client can carry (ADR-0010 to ADR-0012), 2026-10-14 for the personal space, teams, groups, migrations, and the dashboard (ADR-0015 to ADR-0017), 2026-10-16 to match the code after the October audit, 2026-10-20 for program sync and computer codes (ADR-0035), and 2026-10-21 for rules, the page by project and starting an agent (ADR-0036 to ADR-0039). Vocabulary lives in `CONTEXT.md`. Decisions and their reasoning live in `docs/adr/`. This document is the current plan, so where anything else disagrees with it, this wins.
 
 ## 1. What AIStack is
 
-A self-hosted, open-source control plane for AI development configuration. A team, or a solo developer with several machines, runs one AIStack server. It holds the canonical copies of their skills, and later their rules, agents, hooks, and MCP server definitions. Each person has a private space, the Library, that mirrors their machines and is the only place those machines install from. They share skills with teams, and with groups inside a team, and take what others shared. The web dashboard is where they see and manage all of it; MCP connects their coding agent to their account, so the everyday actions are also a sentence in chat.
+A self-hosted, open-source control plane for AI development configuration. A team, or a solo developer with several machines, runs one AIStack server. It holds the canonical copies of their skills and their rules; later, agents, hooks, and MCP server definitions. Each person has a private space, the Library, that mirrors their machines and is the only place those machines install from. They share skills with teams, and with groups inside a team, and take what others shared. The web dashboard is where they see and manage all of it; MCP connects their coding agent to their account, so the everyday actions are also a sentence in chat.
 
 Core promise:
 
@@ -146,7 +146,7 @@ list_teams, create_team(name), invite_to_team(team), join_team(code)
                               → the teams the caller is in; make one; get its invite
                                 code (admins); join one with a code
 open_dashboard                → a short-lived link that signs a browser in (ADR-0017)
-sync(local: {name: {path: sha256}}, harness?, here?, project?, repository?, fingerprint?, identify?, rules?)
+sync(local: {name: {path: sha256}}, harness?, here?, project?, repository?, fingerprint?, identify?, rules?, project_files?)
                               → reconcile desired vs actual for one harness; see the sync
                                 contract. `here` names the session's repository, and
                                 `project` syncs that project's folder instead (ADR-0026).
@@ -178,7 +178,7 @@ list_skills                   → the skills in the Library, with `library_reach
 get_skill(name, harness?)     → installs the latest revision into that folder, after
                                 checking the files against their stored hash; returns the
                                 skill, its revision, and the `folder`
-push_skill(name, origin?, harness?)
+push_skill(name | names, origin?, harness?)
                               → backs the folder up to the Library and enables it there;
                                 returns `revision`, `created`, `unchanged`, and `shared`
                                 (false when a GitHub Library could not be reached, so the
@@ -875,18 +875,21 @@ The acceptance test the first release was held to, before teams. Push `wizard` a
 3. one real run of each skill behaves identically to a native install;
 4. an installed skill is usable in the same session it was installed in.
 
-## 5. Post-MVP roadmap (decided order of interest, not committed)
+## 5. Roadmap
 
-1. **Second harness**: built 2026-10-14 as the shared agents folder that Codex and others read (ADR-0018, ADR-0021). Moved to the front on 2026-10-13: Claude Code now syncs a user's claude.ai skills on its own and has git-backed plugin marketplaces (§7), so one vault feeding several harnesses is where AIStack is not duplicated. The Agent Skills format is shared, so the adapter is mostly a target directory.
-2. **Dashboard**: built 2026-10-14 without FastAPI (ADR-0017). A person can now remove and rename their own computers there (ADR-0027). What remains of the original plan: server admin management (grant admin, revoke other people's machines, recover locked-out users; the `is_admin` column exists and nothing reads it yet); version pinning; deleting a single revision (preview-confirm, tombstones so sync can say "deleted on purpose"); GitHub-link skill import; display names rendered from skill names.
-3. **Rules**: the second resource type. Canonical rules projected into `CLAUDE.md` / `AGENTS.md` / `.cursor/rules/` by adapters.
-4. **Background sync**: opportunistic (check on any MCP call) vs daemon; compare cost after the MVP.
-5. **Hooks, agents**: same adapter approach; harness support varies.
-6. **MCP gateway**: one AIStack MCP endpoint proxying enabled remote MCPs with central auth/policy.
-7. **Profiles**: named bundles ("Backend Developer") assigning many resources at once.
-8. **Teams and groups**: built 2026-10-14 (ADR-0015): a personal space per user, teams to share into, nested groups. Project-level precedence stays with item 9.
-9. **Project-scoped sync**: per-project desired state once projects become a real concept. ADR-0026 sets out how. Built on a server: project identity, placements, sync, tools, the dashboard and event replay. Local mode's project actions are tracked in [#190](https://github.com/dchristopoulos/AIStack/issues/190).
-10. **Secrets**: never sync plaintext credentials; store references (1Password, Vault, cloud secret stores).
+Built, in order: the second harness (ADR-0018, ADR-0021); the dashboard (ADR-0017, ADR-0037); teams and groups (ADR-0015); project folders (ADR-0026); the program doing the mechanical work and one-use computer codes (ADR-0035); rules, a repository's own files, and starting an agent with chosen skills (ADR-0036, ADR-0038).
+
+Next, in this order:
+
+1. **A first run that takes five minutes on a clean computer.** Local mode with a private GitHub repository, from the sentence in the README to the dashboard, timed on a computer that has never seen AIStack, with every file it changes named before it changes it. The computer link registered by setup is disclosed and optional.
+2. **The team walkthrough.** Two people, two agents: one shares a skill, the other takes it as an offer, edits it, and the first sees the offer back. Written for the README with one short recording, and tried by one real team for two weeks on a server.
+3. **Teams sharing rules** the way they share skills, through a member's Library (ADR-0036 deferred it).
+4. **Rules for more agents.** Writing the files of Gemini CLI, Cursor, GitHub Copilot CLI and opencode, whose files are already shown.
+5. **A project seen as the agent sees it, for every agent.** The project page becomes the first screenshot and the first sentence: what each agent reads, in order, with the size Codex caps at.
+
+Not planned: an MCP gateway (a different product, and crowded); named skill profiles (starting an agent with chosen skills, remembered per project, covers it); importing a skill from a GitHub link (`npx skills add` does it for seventy agents; link to it); a background sync daemon (the session-start hook and a manual sync stay the two moments AIStack touches a disk; a check on any MCP call may come later). Hooks, agents and MCP server definitions wait until a team asks for them. Version pinning and deleting a single revision wait until someone needs them.
+
+Secrets: never synced in plaintext; a line that looks like a credential is pointed out before it is saved, and nothing more is planned.
 
 ## 6. Long-term direction (vision, not design)
 
@@ -922,7 +925,14 @@ src/aistack/
                            #   `setup`, `sync-skill`, `check`, `github`, `export`, `move`,
                            #   `connect` (§4 Local mode), `sync` and `join` (ADR-0035)
     admin_cli.py           #   `aistack admin`: the operator's commands
+    agent_config.py        #   each coding agent's configuration: connections and the hook
+    computer_link.py       #   the aistack:// link and `aistack open`
+    github_setup.py        #   `aistack github`: signing in for a GitHub Library
+    project_add.py         #   `aistack project add`
     self_update.py         #   local mode's daily upgrade, in a background thread
+    server_join.py         #   `aistack join` with a computer code (ADR-0035)
+    start_agent.py         #   `aistack start`: an agent with only chosen skills (ADR-0038)
+    sync_lock.py           #   one sync of a home folder at a time
     configuration/
       settings/            #   env config: DATABASE_URL, invite code, etc.
     context/               #   application context / wiring
@@ -931,14 +941,17 @@ src/aistack/
   db/
     engine + session setup; schema.py applies the migrations (ADR-0016)
     migrations/versions/   # numbered Alembic migrations, shipped in the package
-    models/                # SQLAlchemy models for the nineteen tables
+    models/                # SQLAlchemy models, one module per table or close family
   mcp/                     # FastMCP server + auth
     local.py               # local mode's stdio server, with no auth (ADR-0020)
     local_dashboard.py     # local mode's open_dashboard: the localhost page in this process
     tools/                 # the thirteen MCP tools (onboarding, skills, sync, teams),
                            # and local.py: local mode's six, doing the disk work itself
-    routes/                # plain HTTP beside MCP: the two transfer routes (ADR-0010),
-                           # setup, and health; as thin as the tools
+    routes/                # plain HTTP beside MCP: the transfer routes (ADR-0010) for
+                           # skills (/transfer/upload, /transfer/download), rules
+                           # (/transfer/rule-upload, /transfer/rule-download) and project
+                           # files (/transfer/project-file-upload, /transfer/project-file-edit);
+                           # setup, health and metrics; as thin as the tools
   services/                # business logic: push validation, sync reconciliation,
                            # visibility, team administration, token and ticket issuing;
                            # tools and routes stay thin, logic lives here

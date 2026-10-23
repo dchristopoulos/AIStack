@@ -1,6 +1,6 @@
 ## What this is
 
-AIStack: a self-hosted, open-source control plane for AI dev configuration (skills first; rules, agents, hooks, MCPs later). The web dashboard is the product; MCP is the connector that links a person's coding agent to their account. Each user has a private space, the Library, that mirrors their machines, and shares with teams and groups from there (ADR-0015).
+AIStack: a self-hosted, open-source control plane for AI dev configuration (skills and rules; agents, hooks, MCPs later). The web dashboard is the product; MCP is the connector that links a person's coding agent to their account. Each user has a private space, the Library, that mirrors their machines, and shares with teams and groups from there (ADR-0015).
 
 ## Read before designing or implementing anything
 

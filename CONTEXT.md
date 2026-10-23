@@ -1,8 +1,12 @@
 # AIStack
 
-A self-hosted, open-source control plane for AI development configuration. Each user keeps their skills in a private space that mirrors their machines, and shares them with teams and groups. The dashboard is where people see and manage this; MCP connects a coding agent to their account. Rules, agents, hooks, and MCP server definitions are planned after skills.
+A self-hosted, open-source control plane for AI development configuration. Each user keeps their skills in a private space that mirrors their machines, and shares them with teams and groups. The dashboard is where people see and manage this; MCP connects a coding agent to their account. It keeps their rules too; agents, hooks, and MCP server definitions are planned.
 
 ## Language
+
+**Coding agent**:
+A program that reads skills and rules and works in a person's projects: Claude Code, Codex, Gemini CLI, Cursor, GitHub Copilot CLI and others. The page and the README name agents; the folder an agent reads skills from is its harness.
+_Avoid_: Assistant, bot, harness (in prose for people)
 
 **Harness**:
 A skills folder with a name, which the coding agents that read it load skills from (ADR-0018). Two exist: `claude_code` (`~/.claude/skills`, read by Claude Code) and `agents` (`~/.agents/skills`, read by Codex, Gemini CLI, Kimi Code, opencode, Cursor, GitHub Copilot CLI, and Amp). A skill is placed in a harness on a computer, and sync runs one harness at a time.
@@ -124,9 +128,9 @@ _Avoid_: Device identity, second factor, anti-theft protection
 The web application at `/app` where a user sees their skills, machines, teams, and groups and manages them. Signed into by a short-lived link from `open_dashboard`; there are no passwords (ADR-0017).
 _Avoid_: Admin panel, console, UI (as a term of art)
 
-**Machine**:
-A registered computer belonging to one user, authenticating with its own permanent token. The unit that enabled skills (and later, local resources) are scoped to.
-_Avoid_: Device, host
+**Computer**:
+A registered computer belonging to one user, authenticating with its own permanent token. The unit that enabled skills and rules are scoped to. The page and the README say computer; the code and the database call it a `machine`.
+_Avoid_: Device, host, machine (in prose for people)
 
 **Enabled**:
 Desired state: this one of the user's own skills should exist in this harness on this machine. Set by install ("install X" = enable + materialize), by backing a skill up, or by a toggle on the dashboard; cleared by remove. Sync enforces it. A row with `enabled = false` means explicitly disabled; no row means no decision: the sync contract treats these differently.

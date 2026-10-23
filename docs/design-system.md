@@ -19,8 +19,8 @@ and move one. So:
   Nothing decorative is coloured. Red means something will be removed; green means connected.
 - **Words over symbols.** Every control says what it does: "Add to computer", "Details",
   "Manage", "Move here…". No bare "⋯", no two-letter badges.
-- **Where you are reads like a path.** The top bar shows `dimitris / computers / macbook /
-  Claude Code / ~/.claude/skills`; each part above the last opens that place.
+- **Where you are reads like a path.** The top bar shows `dimitris / projects / demo-api`;
+  each part above the last opens that place.
 
 ## Tokens
 

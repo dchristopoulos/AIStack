@@ -113,7 +113,7 @@ mutmut mutates only code inside functions, so `services/reconciliation.py`, whos
 | services/visibility | 299 | 264 | 0 | 9 | 26 |
 | services/reconciliation (by hand) | 90 | 90 | 0 | 0 | 0 |
 
-A timeout counts as caught. "Message text only" means the mutant changes nothing but the wording or case of a string: those are left alone, because rule 1 says error text is UX, and tests pin what a sentence must contain, not every character. The 341 logic survivors are listed in [survivors-2026-10.txt](survivors-2026-10.txt), less one covered since.
+A timeout counts as caught. "Message text only" means the mutant changes nothing but the wording or case of a string: those are left alone, because rule 1 says error text is UX, and tests pin what a sentence must contain, not every character. The list of the 341 logic survivors was removed from the tree once read; it can be regenerated with the same run.
 
 ### Equivalent mutants
 

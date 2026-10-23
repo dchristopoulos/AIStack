@@ -33,3 +33,20 @@ def test_the_quick_start_server_listens_on_this_computer_only():
 
     assert all("AISTACK_HOST=127.0.0.1" in line
                for line in readme.splitlines() if "aistack serve" in line)
+
+
+def test_the_design_counts_no_tables():
+    """A count goes stale with the next migration, and the design said nineteen at twenty-five."""
+    design = (_ROOT / "docs" / "DESIGN.md").read_text()
+
+    number = r"\d+|(?:twenty|thirty|forty)(?:-\w+)?|\w*teen|ten|eleven|twelve"
+    assert re.findall(rf"\b(?:{number}) tables\b", design) == []
+
+
+def test_the_design_names_every_transfer_route():
+    transfer = (_ROOT / "src" / "aistack" / "mcp" / "routes" / "transfer.py").read_text()
+    design = (_ROOT / "docs" / "DESIGN.md").read_text()
+    paths = re.findall(r'^[A-Z_]+_PATH = "(/transfer/[a-z-]+)"', transfer, re.MULTILINE)
+
+    assert len(paths) == transfer.count("@mcp.custom_route(")
+    assert [path for path in paths if path not in design] == []

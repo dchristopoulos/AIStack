@@ -329,27 +329,6 @@ A server still on an older release keeps working after another process upgraded 
 
 If an upgrade fails, the server does not start and the log says which step failed. Nothing has been changed, so starting the previous image again is safe. A database created before this mechanism existed is recognized and carried forward without a manual step.
 
-### The upgrade that introduces teams
-
-Before it, a server was one vault everybody shared and installed from. The upgrade moves the data so that nothing anyone could see disappears and no computer loses a skill:
-
-- Every existing skill moves into the server's team, `everyone`, and every user is a member. The server's admin is that team's admin.
-- Every user gets a private space of their own, the Library.
-- Every skill that one of a user's machines had enabled or disabled is copied, with its whole history, into that user's own space, and the machine follows the copy. Each copy remembers the `everyone` skill it came from.
-
-The database grows by those copies. Skills are small text files, so this is rarely worth planning for, but it is why the upgrade takes longer than a later one will.
-
-What changes for your users, and is worth telling them before you upgrade:
-
-- A machine installs only from its user's own space. A push lands there and nobody else sees it. Putting a skill in front of others is a separate step: "share <skill> with everyone", or with a team they created.
-- Sync backs up the skills it finds on a computer to that private space without asking.
-- A change someone else makes to a shared skill no longer arrives by itself. Sync reports it as an offer and the user accepts or declines each time.
-- The `sync-aistack` skill on each computer replaces itself with the new server's copy on the first sync after the upgrade.
-
-### The upgrade that retires `everyone` (ADR-0019)
-
-New accounts no longer join a server-wide team. If your server's `everyone` has members or skills, it becomes an ordinary team: you are its admin, everything in it stays where people see it, and anyone may now leave it. If it is empty, it is removed.
-
 There is no downgrade. The way back from an upgrade you regret is the backup you took before it, or the copy the upgrade kept: see [Upgrade rollback](#upgrade-rollback).
 
 ## What is in the logs
