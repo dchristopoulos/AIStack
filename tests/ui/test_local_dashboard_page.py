@@ -63,7 +63,7 @@ async def test_the_local_dashboard_shows_the_library_and_nothing_a_team_needs(br
         await expect(page.get_by_label("Full name")).to_have_count(0)
         await page.goto(f"{link.split('/app/')[0]}/app#/library")
 
-        await page.get_by_role("button", name="Details of wizard").click()
+        await page.get_by_role("button", name="Open wizard").click()
         details = page.get_by_role("dialog", name="wizard")
         await expect(details.get_by_role("button", name="Remove from library…")).to_be_visible()
         await expect(details.get_by_role("button", name="Share with a team…")).to_have_count(0)

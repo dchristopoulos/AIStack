@@ -705,6 +705,7 @@ dialog.dlg::backdrop { background: var(--scrim); }
 .field .help { color: var(--muted); font-size: 12.5px; }
 .form-error { color: var(--danger) !important; background: var(--danger-soft); border-radius: var(--r-sm); padding: 8px 12px; font-size: 13px; font-weight: 500; }
 .picker legend { margin-bottom: 6px; padding: 0; }
+.picker .saved-note { min-height: 1.5em; margin: 0 0 4px; font-size: 13px; }
 .picker-list { border: 1px solid var(--border-strong); border-radius: var(--r-sm); max-height: 220px; overflow-y: auto; padding: 4px; }
 .picker-opt {
   --d: 0;
@@ -1234,10 +1235,7 @@ const WORDS = {
     text: '{only} If it is lost, so are these skills. Move it to a private GitHub repository: about two minutes.',
   },
   row: {
-    addTo: 'Add to computer',
-    addToLabel: 'Add to computer: {skill}',
-    details: 'Details',
-    detailsLabel: 'Details of {skill}',
+    open: 'Open',
   },
   update: {
     available: 'Update available',
@@ -1258,7 +1256,7 @@ const WORDS = {
     computerBefore: '{computer} / ',
     saved: 'Saved where {skill} is. ',
     eachPicksUp: 'Each computer picks up the change the next time it syncs.',
-    addTitle: 'Add {skill} to computers',
+    savedTick: 'Saved. Each computer picks up the change the next time it syncs.',
   },
   sheet: {
     about: 'About',
@@ -2094,7 +2092,7 @@ function successorOf(fk, nextFk) {
 
 // Native <dialog>.showModal() gives the focus trap, Escape, and the inert background.
 // A dialog that asks to confirm opens on Cancel (focus: 'cancel'), so a held Enter cannot confirm it.
-function openDialog({ title, body, submitLabel = W.save, danger, onSubmit, cancelLabel = W.cancel, returnFk, sheet, focus, describe }) {
+function openDialog({ title, body, submitLabel = W.save, danger, onSubmit, cancelLabel = W.cancel, returnFk, sheet, focus, describe, footer = true }) {
   const opener = document.activeElement;
   // Safari does not focus a button on click, so fall back to the last control clicked.
   const fk = returnFk || (opener && opener.dataset && opener.dataset.fk) || lastFk;
@@ -2103,12 +2101,12 @@ function openDialog({ title, body, submitLabel = W.save, danger, onSubmit, cance
   const err = el('p', { class: 'form-error', role: 'alert', hidden: true });
   const submit = btn(submitLabel, { type: 'submit', class: 'btn ' + (danger ? 'danger solid' : 'primary') });
   const cancel = cancelLabel && btn(cancelLabel, { on: { click: () => dlg.close() } });
+  const close = btn(null, { class: 'btn ghost icon', 'aria-label': W.close, title: W.close, on: { click: () => dlg.close() } }, 'x');
+  // A panel whose every control acts at once has nothing to submit, so no footer.
   const form = el('form', { method: 'dialog', novalidate: true },
-    el('div', { class: 'dlg-head' },
-      el('h2', { id }, title),
-      btn(null, { class: 'btn ghost icon', 'aria-label': W.close, title: W.close, on: { click: () => dlg.close() } }, 'x')),
+    el('div', { class: 'dlg-head' }, el('h2', { id }, title), close),
     el('div', { class: 'dlg-body', id: id + '-body' }, body, err),
-    el('div', { class: 'dlg-foot' }, cancel, submit));
+    footer && el('div', { class: 'dlg-foot' }, cancel, submit));
   const dlg = el('dialog', { class: 'dlg' + (sheet ? ' sheet' : ''), 'aria-labelledby': id, 'aria-describedby': describe ? id + '-body' : null }, form);
   // The Enter that opened the dialog, held, repeats: it must not answer the dialog too.
   dlg.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.repeat) ev.preventDefault(); });
@@ -2137,7 +2135,7 @@ function openDialog({ title, body, submitLabel = W.save, danger, onSubmit, cance
   document.body.append(dlg);
   dlg.showModal();
   const first = dlg.querySelector('.dlg-body input:not([type=radio]):not([readonly]), .dlg-body select');
-  (first || (focus === 'cancel' && cancel) || submit).focus();
+  (first || (focus === 'cancel' && cancel) || (footer ? submit : close)).focus();
   return dlg;
 }
 
@@ -2832,8 +2830,7 @@ function libraryRow(s) {
     sourceCell(src),
     td('wide', whereItIs(s)),
     td('row end',
-      btn(W.row.addTo, { class: 'btn sm', fk: 'addto:' + s.name, 'aria-label': say(W.row.addToLabel, { skill: s.name }), on: { click: () => addToDialog(s) } }, 'plus'),
-      btn(W.row.details, { class: 'btn ghost sm', fk: 'details:' + s.name, 'aria-label': say(W.row.detailsLabel, { skill: s.name }), on: { click: () => skillSheet(s) } }))),
+      btn(W.row.open, { class: 'btn sm', fk: 'details:' + s.name, 'aria-label': say(W.open, { name: s.name }), on: { click: () => skillSheet(s) } }))),
     update && el('div', { class: 'tr update-row', role: 'row' }, el('div', { class: 'td update-cell', role: 'cell', 'aria-colspan': '4' },
       el('div', { class: 'update' },
         el('span', { class: 'dot accent' }),
@@ -2857,44 +2854,51 @@ async function placeAll(pairs) {
 // When the other computers get a change: at their next sync, or once GitHub answers again.
 const arrives = (shared, normally) => shared ? normally : W.arrivesLater;
 
-// Every computer, each with the agents it shows, as ticks. Returns the fieldset and a way to save it.
+// Every computer, each with the agents it shows, as ticks. A tick is saved when it changes, and
+// the line under the legend says so, or says why it was not.
 function placementPicker(s, legend = W.placement.legend) {
-  const boxes = targets().map(t => ({ t, box: el('input', { type: 'checkbox', checked: isPlaced(s, t) }) }));
-  const picker = el('fieldset', { class: 'picker' }, el('legend', null, legend),
+  const note = el('p', { class: 'saved-note t2', role: 'status' });
+  let fade;
+  const tell = text => { clearTimeout(fade); note.textContent = text; };
+  const boxes = targets().map(t => {
+    const box = el('input', { type: 'checkbox', checked: isPlaced(s, t) });
+    box.addEventListener('change', () => run(box, async () => {
+      const on = box.checked;
+      try {
+        const res = await place(s, t, on);
+        tell(res.shared === false ? W.arrivesLater : W.placement.savedTick);
+        if (res.shared !== false) fade = setTimeout(() => { note.textContent = ''; }, 2000);
+      } catch (e) {
+        box.checked = !on;
+        throw e;
+      }
+    }, tell));
+    return { t, box };
+  });
+  const picker = el('fieldset', { class: 'picker' }, el('legend', null, legend), note,
     state.machines.map(m => el('div', { class: 'target-group' },
       el('div', { class: 'head', 'aria-hidden': 'true' }, icon(osIcon(m), 14), el('span', null, m.name)),
       boxes.filter(b => b.t.m === m).map(b => el('label', { class: 'picker-opt' }, b.box,
         el('span', null, el('span', { class: 'sr-only' }, say(W.placement.computerBefore, { computer: m.name })), agentIn(b.t)),
         el('span', { class: 't2 mono', style: 'margin-left:auto', 'aria-hidden': 'true' },
           b.t.project ? AGENTS[b.t.agent].inProject : AGENTS[b.t.agent].folder))))));
-  const save = async () => {
-    const changed = boxes.filter(b => b.box.checked !== isPlaced(s, b.t));
-    const shared = await placeAll(changed.map(b => [s, b.t, b.box.checked]));
-    return changed.length ? say(W.placement.saved, { skill: s.name }) + arrives(shared, say(W.placement.eachPicksUp, {})) : null;
-  };
-  return { picker, save };
-}
-
-function addToDialog(s) {
-  const { picker, save } = placementPicker(s);
-  openDialog({ title: say(W.placement.addTitle, { skill: s.name }), submitLabel: W.save, body: picker, onSubmit: save });
+  return picker;
 }
 
 // Everything about one skill, and everything you can do with it, in a panel from the side.
 function skillSheet(s) {
   const src = s.source;
-  const { picker, save } = placementPicker(s, W.col.whereItIs);
+  const picker = placementPicker(s, W.col.whereItIs);
   const fact = (k, ...v) => [el('dt', null, k), el('dd', null, v)];
-  // Ticks made in the panel are saved before its other buttons leave it (UX-19).
-  const after = then => ev => run(ev.currentTarget, async () => {
-    const said = await save();
+  // Each tick is saved as it is made, so another button can leave the panel at once.
+  const after = then => () => {
     document.querySelector('dialog[open]').close();
-    return () => { if (said) toast(said); then(state.skills.find(x => x.name === s.name) || s); };
-  });
+    then(state.skills.find(x => x.name === s.name) || s);
+  };
   openDialog({
     title: s.name,
     sheet: true,
-    submitLabel: W.save,
+    footer: false,
     returnFk: 'open:' + s.name,
     body: [
       s.description && el('p', { class: 'lead' }, s.description),
@@ -2917,7 +2921,6 @@ function skillSheet(s) {
         state.server !== false && btn(W.sheet.history, { on: { click: after(historyDialog) } }, 'layers'),
         btn(W.sheet.remove, { class: 'btn danger', on: { click: after(removeMineDialog) } }, 'trash')),
     ],
-    onSubmit: save,
   });
 }
 
@@ -3001,7 +3004,7 @@ function tickRow(s, cols, g) {
       only && el('span', { class: 't2 row-note' }, icon('info', 13), only),
       also && el('span', { class: 't2 row-note' }, icon('info', 13), also)),
     cols.map(a => tickCell(s, a, g)),
-    td('row end', btn(W.row.details, { class: 'btn ghost sm', fk: `details:${g.key}:${s.name}`, 'aria-label': say(W.row.detailsLabel, { skill: s.name }), on: { click: () => skillSheet(s) } })));
+    td('row end', btn(W.row.open, { class: 'btn ghost sm', fk: `details:${g.key}:${s.name}`, 'aria-label': say(W.open, { name: s.name }), on: { click: () => skillSheet(s) } })));
 }
 
 function tickCell(s, agent, g) {

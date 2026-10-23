@@ -17,7 +17,7 @@ and move one. So:
 - **One accent, for action and place.** The accent fills the primary button, the current item
   in the sidebar, checked boxes, switches, the focus ring, and the "update available" dot.
   Nothing decorative is coloured. Red means something will be removed; green means connected.
-- **Words over symbols.** Every control says what it does: "Add to computer", "Details",
+- **Words over symbols.** Every control says what it does: "Add skills", "Open",
   "Manage", "Move here…". No bare "⋯", no two-letter badges.
 - **Where you are reads like a path.** The top bar shows `dimitris / computers / macbook /
   Claude Code / ~/.claude/skills`; each part above the last opens that place.
@@ -144,7 +144,7 @@ cannot be said with what is there.
 |---|---|---|
 | Button | `btn(label, props, icon)` | default (outlined), `primary` (accent fill, one per view), `ghost` (quiet, in rows), `danger` (removing), `danger solid` (the confirm of a removal), `sm`, `icon` (only with `aria-label`) |
 | Switch | `sw()` | on/off, with a tooltip saying what each state means; its word never changes with its state (`aria-checked` carries that); one that cannot be turned is `disabled` (kept focusable) with its reason as `why`, shown beside it |
-| Dialog | `openDialog()` | centred (a decision or a form), `sheet: true` (a side panel about one thing: a skill's details) |
+| Dialog | `openDialog()` | centred (a decision or a form), `sheet: true` (a side panel about one thing: a skill's details); `footer: false` when every control in it acts at once |
 | Confirm | `confirmDialog()` | for anything that removes; says what stays; opens on Cancel, and its lines are the dialog's description |
 | Copy field | `copyField(value, label)` | any sentence or command a person pastes elsewhere |
 | Menu | `menu(label, fk, items, opts)` | a labelled "Manage" button, never a bare "⋯", for secondary admin actions in a row; the + menu (`plusMenu`) |
@@ -166,7 +166,8 @@ one entry per place the Library can live.
 ## Patterns
 
 - **Clicking a thing opens it.** A skill's name opens its side panel: what it is, where it is
-  (ticks per computer and agent), its revision and files, Share, Remove.
+  (ticks per computer and agent, each saved as it is made, with a short "Saved" line), its
+  revision and files, Share, Remove. A panel whose controls act at once has no Save.
 - **Where something is, is information.** Computers and agents are listed as words with links
   to that computer or project. Removal happens in the panel or with a tick, never by clicking a
   tag.

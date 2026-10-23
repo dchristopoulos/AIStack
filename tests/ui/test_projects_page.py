@@ -1,6 +1,8 @@
 """A project's page (ADR-0026, ADR-0037): one place across computers, found by role and by the
 words a person reads, and confirmed against /api/state."""
 
+import re
+
 import pytest
 
 playwright_api = pytest.importorskip("playwright.async_api")
@@ -98,14 +100,13 @@ async def test_the_skill_panel_ticks_a_project_folder_by_its_agent_and_project(s
     dimitris = await sign_in("dimitris")
     page = dimitris.page
 
-    await page.get_by_role("button", name="Details of demo-api-notes").click()
+    await page.get_by_role("button", name="Open demo-api-notes").click()
     panel = page.get_by_role("dialog", name="demo-api-notes")
     await expect(panel.get_by_role("checkbox", name="MacBook Pro M4 Pro / Claude Code in demo-api")
                  ).to_be_checked()
     await panel.get_by_role("checkbox", name="MacBook Pro M4 Pro / Claude Code in demo-api").uncheck()
-    await panel.get_by_role("button", name="Save").click()
 
-    await expect(panel).to_have_count(0)
+    await expect(panel.get_by_role("status")).to_have_text(re.compile("^Saved"))
     assert ("claude_code", KEY) not in _placements(await dimitris.state(), "demo-api-notes")
     assert dimitris.console_errors == []
 
