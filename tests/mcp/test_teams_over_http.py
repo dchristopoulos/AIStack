@@ -22,7 +22,7 @@ from aistack.db.models.user import User
 from aistack.services import team_service
 from aistack.services.transfer_ticket import DownloadTicket, token_prefix
 from tests.archives import local_digests, skill_document
-from tests.mcp.conftest import call, client_for, join, push
+from tests.mcp.conftest import call, client_for, join, push, sign_in_with
 from tests.mcp.test_tool_authorization import BOOTSTRAP_ONLY_TOOLS
 
 pytestmark = pytest.mark.anyio
@@ -456,7 +456,7 @@ async def _dashboard(server_url, token):
     """A browser signed in with the link `open_dashboard` returned."""
     link = (await call(server_url, token, "open_dashboard"))["url"]
     async with httpx.AsyncClient(base_url=server_url.removesuffix("/mcp")) as browser:
-        assert (await browser.get(link)).status_code == 303
+        await sign_in_with(browser, link)
         yield browser
 
 

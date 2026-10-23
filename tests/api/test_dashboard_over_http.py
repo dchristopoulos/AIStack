@@ -21,7 +21,7 @@ from aistack.db.models.machine_skill import MachineSkill
 from aistack.mcp.mcp import mcp
 from tests.archives import local_digests, skill_archive
 from tests.conftest import INVITE_CODE
-from tests.mcp.conftest import client_for
+from tests.mcp.conftest import client_for, sign_in_with
 
 pytestmark = pytest.mark.anyio
 
@@ -56,8 +56,7 @@ async def _browser(server_url, token):
     """A browser that opened the link `open_dashboard` returned."""
     link = (await _call(server_url, token, "open_dashboard"))["url"]
     async with httpx.AsyncClient(base_url=_base(server_url)) as browser:
-        signed_in = await browser.get(link)
-        assert signed_in.status_code == 303 and signed_in.headers["location"] == "/app"
+        await sign_in_with(browser, link)
         yield browser
 
 
@@ -73,18 +72,26 @@ async def _state(browser) -> dict:
 
 # --- signing in -----------------------------------------------------------------------------
 
-async def test_a_link_from_chat_signs_the_browser_in_and_leaves_the_address_bar(server_url):
+async def test_a_link_from_chat_asks_then_signs_the_browser_in(server_url):
+    """The link leaves the address bar on the first request: the page that asks carries a
+    fresh one, which only its button posts."""
     token = await _join(server_url, "dimitris")
     link = (await _call(server_url, token, "open_dashboard"))["url"]
 
     async with httpx.AsyncClient(base_url=_base(server_url)) as browser:
-        signed_in = await browser.get(link)
+        asked = await browser.get(link)
+        before = await browser.get("/api/state")
+        confirm = re.search(r'"(/app/login/[^"]+)"', asked.text).group(1)
+        signed_in = await browser.post(confirm, headers=HEADERS)
         page = await browser.get("/app")
         state = await _state(browser)
 
     cookie = signed_in.headers["set-cookie"].lower()
     assert link.startswith(f"{_base(server_url)}/app/login/")
-    assert signed_in.status_code == 303 and signed_in.headers["location"] == "/app"
+    assert asked.status_code == 200 and "set-cookie" not in asked.headers
+    assert "<h1>Sign in as dimitris?</h1>" in asked.text and "do not continue" in asked.text
+    assert before.status_code == 401
+    assert signed_in.status_code == 200
     assert "httponly" in cookie and "samesite=lax" in cookie
     assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
     assert state["user"] == {"username": "dimitris", "full_name": None}
@@ -102,7 +109,9 @@ async def test_over_https_the_session_cookie_is_one_only_this_host_can_set(serve
     behind_tls = {"X-Forwarded-Proto": "https"}
 
     async with httpx.AsyncClient(base_url=_base(server_url), headers=behind_tls) as browser:
-        signed_in = await browser.get(link)
+        asked = await browser.get(link)
+        confirm = re.search(r'"(/app/login/[^"]+)"', asked.text).group(1)
+        signed_in = await browser.post(confirm, headers=HEADERS)
         cookie, *attributes = signed_in.headers["set-cookie"].split(";")
         name, value = cookie.split("=", 1)
         state = await browser.get("/api/state", headers={"Cookie": cookie})
@@ -231,7 +240,7 @@ async def test_a_link_signs_a_browser_in_once(server_url):
     async with httpx.AsyncClient(base_url=_base(server_url)) as second:
         again = await second.get(link)
 
-    assert used.status_code == 303 and "set-cookie" in used.headers
+    assert used.status_code == 200 and "Sign in as dimitris" in used.text
     assert again.status_code == 401 and "set-cookie" not in again.headers
     assert "has been used" in again.text and "Not connected yet" not in again.text
 
@@ -241,7 +250,7 @@ async def test_a_link_opened_again_by_the_browser_it_signed_in_leads_to_the_page
     token = await _join(server_url, "dimitris")
     link = httpx.URL((await _call(server_url, token, "open_dashboard"))["url"]).path
     async with httpx.AsyncClient(base_url=_base(server_url)) as browser:
-        await browser.get(link)
+        await sign_in_with(browser, link)
         again = await browser.get(link)
         state = await browser.get("/api/state")
 
@@ -784,7 +793,7 @@ async def test_no_link_session_or_invite_code_reaches_a_log_line(server_url, cap
     token = await _join(server_url, "dimitris")
     link = (await _call(server_url, token, "open_dashboard"))["url"]
     async with httpx.AsyncClient(base_url=_base(server_url)) as browser:
-        await browser.get(link)
+        await sign_in_with(browser, link)
         session = browser.cookies[SESSION_COOKIE]
         await _post(browser, "/teams", name="acme")
         code = (await _post(browser, "/teams/acme/invite")).json()["code"]

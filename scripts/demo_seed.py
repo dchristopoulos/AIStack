@@ -17,6 +17,7 @@ prints a fresh one for each person.
 import asyncio
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -121,7 +122,10 @@ class Person:
         return (await self.tool("open_dashboard"))["url"]
 
     async def sign_in(self) -> None:
-        assert (await self.browser.get(await self.dashboard_link())).status_code == 303
+        """Open a link and press Sign in on the page it answers with, as a person does."""
+        asked = await self.browser.get(await self.dashboard_link())
+        confirm = re.search(r'"(/app/login/[^"]+)"', asked.text).group(1)
+        assert (await self.browser.post(confirm, headers=REQUEST_HEADER)).status_code == 200
 
     async def page(self, route: str, **body) -> dict:
         response = await self.browser.post(f"/api{route}", json=body, headers=REQUEST_HEADER)

@@ -1,6 +1,7 @@
 import importlib.util
 import os
 import pathlib
+import re
 
 import pytest
 
@@ -78,6 +79,13 @@ class Opened:
         return await (await self.page.request.get(f"{self.base_url}/api/state")).json()
 
 
+async def open_sign_in_link(page, link: str) -> None:
+    """What a person does with a dashboard link: open it, then press Sign in."""
+    await page.goto(link)
+    await page.get_by_role("button", name=re.compile("^Sign in as ")).click()
+    await page.wait_for_url(re.compile(r"/app$"))
+
+
 @pytest.fixture(name="sign_in")
 async def sign_in_fixture(browser, server_url, links, request):
     """Open the dashboard as one of the seeded people, each in a browser context of their own.
@@ -95,7 +103,7 @@ async def sign_in_fixture(browser, server_url, links, request):
         page = await context.new_page()
         opened = Opened(page, base_url)
         opened_pages.append(opened)
-        await page.goto(links[username])
+        await open_sign_in_link(page, links[username])
         await page.get_by_role("heading", name="Library", level=1).wait_for()
         return opened
 

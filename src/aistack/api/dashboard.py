@@ -126,9 +126,10 @@ async def sign_in(request: Request) -> Response:
 
     The redirect takes the ticket out of the address bar. A link works once: opened again in
     a browser that it already signed in, it leads to the page; anywhere else, a link that was
-    used, has expired, or comes from a computer no longer connected says so. A browser
-    already signed in as someone else is asked first: a link anyone sends could otherwise
-    sign it in to their account (ADR-0027).
+    used, has expired, or comes from a computer no longer connected says so. On a server, a
+    browser not already signed in as the link's user is asked first: a link anyone sends
+    could otherwise sign it in to their account (ADR-0027). The localhost dashboard has one
+    person, so its links sign in at once.
     """
     try:
         holder = get_ticket_signer().verified_dashboard_link(request.path_params["ticket"])
@@ -142,8 +143,11 @@ async def sign_in(request: Request) -> Response:
         return _link_spent_page()
 
     current = await _current_user(request)
-    if current is not None and current.user_id != holder.user_id:
-        current_name = await asyncio.to_thread(_in_transaction, _username, current)
+    if current is None and is_local_mode():
+        return _start_session(request, holder)
+    if current is None or current.user_id != holder.user_id:
+        current_name = None if current is None else await asyncio.to_thread(
+            _in_transaction, _username, current)
         return _switch_page(holder, joining, current_name)
     return _start_session(request, holder)
 
@@ -200,23 +204,31 @@ async def _current_user(request: Request) -> DashboardHolder | None:
         return None
 
 
-def _switch_page(holder: DashboardHolder, joining: str, current: str) -> Response:
-    """Ask before replacing a session. The link was spent on the way here, so the button
-    carries a fresh one, good for the same few minutes and only once."""
+def _switch_page(holder: DashboardHolder, joining: str, current: str | None) -> Response:
+    """Ask before starting or replacing a session. The link was spent on the way here, so the
+    button carries a fresh one, good for the same few minutes and only once."""
     switch = f"{DASHBOARD_LOGIN_PATH}/{get_ticket_signer().sign_dashboard_link(holder)}"
     script = ("document.getElementById('switch').onclick=async()=>{"
               f"await fetch({json.dumps(switch)},"
               f"{{method:'POST',headers:{{'{REQUEST_HEADER}':'1'}}}});"
               f"location.href={json.dumps(APP_PATH)}}}")
+    if current is None:
+        title = f"Sign in as {escape(joining)}?"
+        body = (f"<p>The link you opened signs this browser in as "
+                f"<strong>{escape(joining)}</strong>.</p>"
+                "<p>If someone else sent you this link, do not continue.</p>"
+                f"<p><button id=switch>Sign in as {escape(joining)}</button> "
+                f"<a href=\"{APP_PATH}\">Do nothing</a></p>")
+    else:
+        title = "Switch account?"
+        body = (f"<p>This browser is signed in as <strong>{escape(current)}</strong>. The link "
+                f"you opened signs it in as <strong>{escape(joining)}</strong>.</p>"
+                "<p>If someone else sent you this link, stay with your own account.</p>"
+                f"<p><button id=switch>Sign in as {escape(joining)}</button> "
+                f"<a href=\"{APP_PATH}\">Stay signed in as {escape(current)}</a></p>")
     return HTMLResponse(plain_page(
-        "Switch account?, AIStack",
-        "<h1>Switch account?</h1>"
-        f"<p>This browser is signed in as <strong>{escape(current)}</strong>. The link you "
-        f"opened signs it in as <strong>{escape(joining)}</strong>.</p>"
-        "<p>If someone else sent you this link, stay with your own account.</p>"
-        f"<p><button id=switch>Sign in as {escape(joining)}</button> "
-        f"<a href=\"{APP_PATH}\">Stay signed in as {escape(current)}</a></p>"
-        f"<script>{script}</script>"),
+        f"{title}, AIStack",
+        f"<h1>{title}</h1>{body}<script>{script}</script>"),
         headers=_page_headers(script, PLAIN_PAGE_SCRIPT),
     )
 

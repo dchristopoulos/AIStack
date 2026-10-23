@@ -11,6 +11,7 @@ from playwright.async_api import expect
 
 from scripts.demo_seed import DEEP_GROUP, LONG_FULL_NAME, LONG_TEAM, LONG_USERNAME
 from tests.mcp.conftest import call, join
+from tests.ui.conftest import open_sign_in_link
 
 pytestmark = pytest.mark.anyio
 
@@ -865,7 +866,7 @@ async def test_someone_new_with_no_team_is_shown_how_to_get_one(browser, server_
     token = await join(server_url, "newbie", "laptop")
     context = await browser.new_context()
     page = await context.new_page()
-    await page.goto((await call(server_url, token, "open_dashboard"))["url"])
+    await open_sign_in_link(page, (await call(server_url, token, "open_dashboard"))["url"])
 
     await expect(page.get_by_role("heading", name="Your library is empty")).to_be_visible()
     await expect(page.get_by_text('choose "Add a team" to create one or join')).to_be_visible()
@@ -879,7 +880,7 @@ async def test_add_skills_with_an_empty_library_offers_nothing_to_add(browser, s
     await call(server_url, token, "sync", local={}, harness="agents")
     context = await browser.new_context()
     page = await context.new_page()
-    await page.goto((await call(server_url, token, "open_dashboard"))["url"])
+    await open_sign_in_link(page, (await call(server_url, token, "open_dashboard"))["url"])
     await page.get_by_role("navigation", name="Main").get_by_role(
         "link", name="Every project").click()
 
@@ -900,7 +901,7 @@ async def test_a_computer_that_never_synced_shows_no_agent_until_it_does(browser
     await call(server_url, token, "add_machine", name="windows-pc", os="WINDOWS")
     context = await browser.new_context()
     page = await context.new_page()
-    await page.goto((await call(server_url, token, "open_dashboard"))["url"])
+    await open_sign_in_link(page, (await call(server_url, token, "open_dashboard"))["url"])
     navigation = page.get_by_role("navigation", name="Main")
 
     await navigation.get_by_role("link", name="Every project").click()

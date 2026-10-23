@@ -14,7 +14,7 @@ from aistack.bootstrap.context.application_context import get_session_factory
 from aistack.db.models.skill import Skill
 from aistack.db.models.team import Team
 from tests.archives import skill_archive
-from tests.mcp.conftest import call, join
+from tests.mcp.conftest import call, join, sign_in_with
 
 pytestmark = pytest.mark.anyio
 
@@ -81,7 +81,7 @@ async def test_the_dashboard_state_loads_while_another_request_writes(server_url
     token = await join(server_url)
     link = (await call(server_url, token, "open_dashboard"))["url"]
     async with httpx.AsyncClient(base_url=server_url.removesuffix("/mcp")) as browser:
-        await browser.get(link)
+        await sign_in_with(browser, link)
         with _a_write_in_progress(database_file):
             started = perf_counter()
             response = await browser.get("/api/state")
@@ -126,7 +126,7 @@ async def test_a_database_conflict_answers_503_and_rolls_back_the_route(
             raise SerializationFailure("could not serialize access")
 
     async with httpx.AsyncClient(base_url=server_url.removesuffix("/mcp")) as browser:
-        await browser.get(link)
+        await sign_in_with(browser, link)
         event.listen(engine, "do_execute", conflict_at_insert)
         try:
             if route == "transfer":

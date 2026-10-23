@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import re
 import shlex
 import socket
 
@@ -82,6 +83,15 @@ async def join(server_url: str, username: str = "dimitris", machine_name: str = 
 async def call(server_url: str, token: str, tool: str, **arguments) -> dict:
     async with client_for(server_url, token) as client:
         return (await client.call_tool(tool, arguments)).structured_content
+
+
+async def sign_in_with(browser: httpx.AsyncClient, link: str) -> None:
+    """What a person does with a dashboard link: open it, then press Sign in on the page it
+    answers with. The button posts a fresh link the page carries."""
+    asked = await browser.get(link)
+    assert asked.status_code == 200 and "set-cookie" not in asked.headers
+    confirm = re.search(r'"(/app/login/[^"]+)"', asked.text).group(1)
+    assert (await browser.post(confirm, headers={"X-AIStack-Request": "1"})).status_code == 200
 
 
 async def second_machine(server_url: str, token: str, name: str = "desktop") -> str:
