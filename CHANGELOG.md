@@ -28,6 +28,7 @@ Works beside 0.1.1: computers and servers on either release can share one databa
 - The `aistack` program on each computer does the mechanical work itself. `aistack join` installs AIStack, configures the agents it finds, installs your Library's skills and runs the first sync, and picks up where it stopped when run again. `aistack sync` on a server connection downloads, installs and backs up skills and rules, and leaves local edits, disabled skills and team offers for your agent to ask about. Setup can run `aistack sync --hook` at session start, which says nothing when nothing needs attention.
 - A computer's connection can carry a fingerprint of its operating system's computer id. A connection copied onto another computer, as when a home folder is restored there, is refused before sync touches a skill folder; that computer gets its own code. Older clients that send no fingerprint are still accepted.
 - Operators: `aistack admin register-machine <username> --computer-code` makes a one-use recovery code, valid for 24 hours and without approval, for someone with no computer left.
+- `aistack --version` prints the release.
 
 ### Changed
 
@@ -37,6 +38,8 @@ Works beside 0.1.1: computers and servers on either release can share one databa
 - `add_machine` with a name and an operating system, and `register-machine` with a computer name and `--os`, still return permanent-token setup for older callers, until a future minor release.
 - Removing the computer that made a code, or rotating its token, cancels the code and its request. Offboarding and forgetting someone cancel their pending codes and requests, recovery codes included.
 - Sign out shows its word beside the icon, the local Move dialogs are shorter, and removing a member says that the invite links they made stop working.
+- The dashboard says when a computer acts as "the next time it syncs", a skill no team has as "Not shared", and a code's expiry as "tomorrow at 04:49". A computer's agents sit on the line under its name, and a success message leaves after eight seconds unless it is pointed at or focused; an error stays until dismissed.
+- Both setup texts say which files setup changes on the computer, and that the `aistack://` link is registered, where, and how to remove it.
 
 ### Fixed
 
@@ -50,13 +53,17 @@ Works beside 0.1.1: computers and servers on either release can share one databa
 - The invite tool told members an admin lets invite that they could not, and the sync skill's manual hook step could add a second hook beside the program's.
 - An install writes its files to disk before it replaces the old folder, so a power cut cannot leave a skill with empty files.
 - A failed self-update in local mode is logged as a warning, without uv's output.
+- `aistack check` on a computer connected to a server said the Library lived on this computer and set one up. It now signs in with the computer's key and names the server, or says why it cannot, and sets up nothing.
+- `aistack project add` in local mode asked for Enter and then failed. It now says first that the dashboard looks inside the folder itself.
+- A sync, a join or a project add that failed on the network said only that it could not finish. It now gives the cause in one line, never an address or a key.
+- Every page title drew a focus ring that looked like a text field, and the sidebar's + menu opened under the list of teams beside it, its heading cut off.
 
 ### Security
 
 - A code and the request it starts each carry a credential of their own, and the new computer's permanent key reaches it only through the program, kept in a protected file until setup finishes. A refused code is throttled like any refused credential.
 - Replaying a Library's log places a skill only on the person's own computers, as it already did for project folders.
 - A refused server address is no longer repeated in the error that refuses it.
-- certifi 2026.10.19 fixes GHSA-6q48-6c7w-9gw2.
+- certifi 2026.10.19 fixes GHSA-6q48-6c7w-9gw2, and opentelemetry-api 1.45.1 fixes CVE-2026-114603.
 
 ## 0.1.1 (2026-10-19)
 
