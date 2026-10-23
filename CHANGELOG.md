@@ -4,7 +4,7 @@ One section per release, written when the release is cut, in the form of [Keep a
 
 The image tag `0.1` follows the releases of 0.1, and the package on PyPI is `aistack-mcp`. The tag pipeline publishes a release only when this file has a section for it, and uses that section as the GitHub Release's notes.
 
-## 0.1.2 (2026-10-21)
+## 0.1.2 (2026-10-23)
 
 Works beside 0.1.1: computers and servers on either release can share one database while they update. This release adds rules beside skills, organises the dashboard by project, and starts a coding agent with only the skills you choose.
 
