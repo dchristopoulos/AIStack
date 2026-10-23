@@ -665,8 +665,11 @@ a.link:hover { text-decoration-color: var(--text); }
 .choices p { margin: 2px 0 0; color: var(--muted); }
 /* A unified diff, as text: what an update would change, line by line. */
 .diff { margin: 0; padding: 10px 12px; max-height: 50vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--head); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.diff .add { color: var(--ok); }
-.diff .del { color: var(--danger); }
+.diff > span { display: block; padding: 0 4px; border-radius: 2px; }
+.diff .add { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.diff .del { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.diff .gap { color: var(--faint); }
+.diff + details { margin-top: 6px; }
 .revisions { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .revisions li { display: flex; align-items: center; gap: 10px; }
 .revisions .grow { flex: 1; }
@@ -1510,6 +1513,7 @@ const WORDS = {
     ],
     done: 'Removed {computer}.',
   },
+  diff: { added: 'Added: ', removed: 'Removed: ', gap: 'Lines left out', asText: 'Show as text' },
   addSkills: {
     title: 'Add skills to {place}',
     agents: 'For',
@@ -2937,9 +2941,19 @@ function changesDialog(s) {
     .catch(e => body.replaceChildren(el('p', { class: 'form-error', role: 'alert' }, e.message)));
 }
 
-// A unified diff as text, its added lines green and its removed lines red.
-const diffView = text => el('pre', { class: 'diff' }, text.replace(/\n$/, '').split('\n').map(line => el('span', {
-  class: /^\+(?!\+\+ )/.test(line) ? 'add' : /^-(?!-- )/.test(line) ? 'del' : null }, line + '\n')));
+// A unified diff as changed lines: added ones green, removed ones red, each said in words to a
+// screen reader, the file headers left out and each hunk's @@ line drawn as a gap. The text as
+// git prints it is behind "Show as text", built only when opened, so no line is on the page twice.
+function diffView(text) {
+  const D = W.diff;
+  const lines = text.replace(/\n$/, '').split('\n').filter(line => !/^(---|\+\+\+) /.test(line));
+  const raw = el('details', { on: { toggle: () => { if (raw.open && !raw.querySelector('pre')) raw.append(el('pre', { class: 'diff' }, text)); } } },
+    el('summary', null, D.asText));
+  return [el('pre', { class: 'diff' }, lines.map(line => line.startsWith('@@')
+    ? el('span', { class: 'gap' }, el('span', { class: 'sr-only' }, D.gap), '⋯')
+    : el('span', { class: line[0] === '+' ? 'add' : line[0] === '-' ? 'del' : null },
+      line[0] === '+' || line[0] === '-' ? el('span', { class: 'sr-only' }, line[0] === '+' ? D.added : D.removed) : null, line))), raw];
+}
 
 // Every revision of one of your skills; restoring one stores it again as the newest (PH-08).
 function historyDialog(s) {
