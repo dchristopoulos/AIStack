@@ -355,19 +355,15 @@ async def test_adding_a_computer_uses_a_code_and_approval(sign_in, server_url):
     await page.get_by_role("button", name="Open navigation").click()
     await page.get_by_role("navigation", name="Main").get_by_role("button", name="Add a computer").click()
     dialog = page.get_by_role("dialog")
+    await dialog.get_by_label("Computer name", exact=True).fill("travel")
+    # Choosing how it sets up makes nothing: the code exists only once it is asked for.
+    assert (await dimitris.state())['computer_codes'] == []
+    await dialog.get_by_role("button", name="Make a code").click()
     command = await dialog.get_by_role("textbox", name="Command for the new computer").input_value()
     code = shlex.split(command)[-1]
-    await dialog.get_by_text("Options", exact=True).click()
-    await dialog.get_by_label("Computer name", exact=True).fill("travel")
-    await dialog.get_by_role("button", name="Save options").click()
-    # The server state, not the rendered dialog, confirms the saved choice.
     await expect(dialog.get_by_text(re.compile("^The code works once and expires "))).to_be_visible()
-    for _ in range(30):
-        state = await dimitris.state()
-        if state['computer_codes'][0]['options']['name'] == 'travel':
-            break
-        await page.wait_for_timeout(100)
-    assert state['computer_codes'][0]['options']['name'] == 'travel'
+    state = await dimitris.state()
+    assert [c['options']['name'] for c in state['computer_codes']] == ['travel']
     request = await call(server_url, code, "join", pairing="reserve", machine_name="hostname", os="LINUX")
     approve = dialog.get_by_role("button", name="Approve this computer")
     await approve.focus()
@@ -396,7 +392,12 @@ async def test_a_code_waits_under_the_computers_until_it_is_cancelled(sign_in):
     page = dimitris.page
     nav = page.get_by_role("navigation", name="Main")
     await nav.get_by_role("button", name="Add a computer").click()
+    await page.get_by_role("dialog").get_by_role("button", name="Cancel").click()
+    await expect(nav.get_by_text("Codes in use")).to_have_count(0)
+    await nav.get_by_role("button", name="Add a computer").click()
+    await page.get_by_role("dialog").get_by_role("button", name="Make a code").click()
     await page.get_by_role("dialog").get_by_role("button", name="Done").click()
+    await expect(nav.get_by_text("Codes in use")).to_be_visible()
     await expect(nav.get_by_role("button", name="New computer", exact=True)).to_be_visible()
     await expect(nav.get_by_text(re.compile("^Code expires in "))).to_be_visible()
     await nav.get_by_role("button", name="Cancel the code for New computer").click()
