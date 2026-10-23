@@ -468,7 +468,7 @@ def share(session: Session, user_id: uuid.UUID, name: str, team: str,
     if created and target_group is not None:
         target.group_id = target_group.group_id
     before = _latest_version(session, target.skill_id)
-    follows = _team_it_follows(session, mine, target)
+    follows = _team_it_follows(session, user_id, mine, target)
     linked = mine.source_skill_id == target.skill_id
     # A copy that follows another team is related to this one when this one's latest came
     # from it: an earlier share of the same copy.
@@ -512,14 +512,17 @@ def _ever_held(session: Session, skill: Skill, content_hash: str) -> bool:
         SkillVersion.content_hash == content_hash).limit(1)) is not None
 
 
-def _team_it_follows(session: Session, mine: Skill, target: Skill) -> str | None:
-    """The other team a copy follows for updates, if it follows one it can still see."""
+def _team_it_follows(session: Session, user_id: uuid.UUID, mine: Skill,
+                     target: Skill) -> str | None:
+    """The other team a copy follows for updates, if the user can still see the skill there:
+    a team they left, or a group they were taken out of, is not named."""
     if mine.source_skill_id is None or mine.source_skill_id == target.skill_id:
         return None
-    source = session.get(Skill, mine.source_skill_id)
-    if source is None or source.team_id == target.team_id:
+    source = session.execute(visibility.team_skills(session, user_id).where(
+        Skill.skill_id == mine.source_skill_id)).first()
+    if source is None or source.Skill.team_id == target.team_id:
         return None
-    return session.scalar(select(Team.name).where(Team.team_id == source.team_id))
+    return source.team
 
 
 def remove_from_my_skills(session: Session, user_id: uuid.UUID, name: str) -> str:

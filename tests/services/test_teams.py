@@ -472,6 +472,19 @@ def test_a_skill_taken_from_one_team_and_shared_with_another_still_follows_the_f
             for update in offered] == [("acme", 2, True)]
 
 
+def test_a_copy_does_not_name_a_team_its_owner_has_left(session_factory, dimitris, maria,
+                                                        acme):
+    with session_factory.begin() as session:
+        make_team(session, "beta", maria.user.user_id)
+    _push(session_factory, dimitris)
+    _share(session_factory, dimitris, acme)
+    _take(session_factory, maria, acme)
+    with session_factory.begin() as session:
+        team_service.leave_team(session, maria.user.user_id, acme)
+
+    assert _share(session_factory, maria, "beta").updates_from is None
+
+
 def test_a_team_you_are_not_in_reads_exactly_like_one_that_does_not_exist(session_factory,
                                                                          dimitris, eve, acme):
     _push(session_factory, dimitris)
