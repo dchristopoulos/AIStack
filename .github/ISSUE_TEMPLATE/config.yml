@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/dchristopoulos/AIStack/security/advisories/new
+    about: Privately, as SECURITY.md describes. Not in a public issue.

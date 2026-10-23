@@ -150,11 +150,11 @@ Issues live in GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md
 
 ### Triage labels
 
-Default five canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+`needs-info`, `ready-for-agent`, `waits-for-release` and `wontfix`, with their meanings in `docs/agents/triage-labels.md`.
 
 ### Shipping a change
 
-Commit, open the PR, gate it, and land it (stacks included) with the `ship-a-change` skill in `.agents/skills/`. Planned work that passes merges without asking the owner, trust-boundary changes included once their extra checks pass. One PR is one squash commit on `main`; nothing is pushed to `main` directly, and no commit or PR carries an AI co-author trailer or footer.
+Commit, open the PR, gate it, and land it (stacks included) with the `ship-a-change` skill in `.agents/skills/`. Planned work that passes merges without asking the owner, trust-boundary changes included once their extra checks pass. One PR is one squash commit on `main`; nothing is pushed to `main` directly. Commit and PR text describe the change: no trailers, no process notes.
 
 ### Domain docs
 

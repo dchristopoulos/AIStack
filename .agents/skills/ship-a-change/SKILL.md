@@ -19,7 +19,7 @@ One step of an issue is one branch and one pull request (`docs/agents/issue-trac
 - Subject: imperative, in product terms, under ~70 characters ("Let a team's invite code create the account").
 - Body: why first, then what changed, wrapped at 72. When an issue exists, the last line names it: `Part of #X.` or `Closes #X.`
 - The body describes the change and nothing else: no plan step numbers, no finding ids, no account of how the work was checked (mutants caught, runs made). The PR holds that.
-- No `Co-Authored-By` trailer, no "Generated with" footer, no mention of the tool that wrote it. Commits and PRs read as the author's own.
+- No trailers or footers; the body describes the change and nothing else.
 - One meaningful change per commit. A fix-up to an unmerged branch is folded into the commit it belongs to. Bookkeeping about the change, such as ticking a plan or a note in a doc, goes in the same commit, never in a commit of its own.
 
 ## 3. Open the PR

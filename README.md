@@ -140,7 +140,7 @@ AIStack collects nothing. A server makes no outbound connections and the page lo
 
 ## Contributing
 
-Issues and pull requests are welcome; open an issue before a larger change.
+Issues and pull requests are welcome; open an issue before a larger change. [`CONTRIBUTING.md`](CONTRIBUTING.md) says how AIStack is built and how a change lands.
 
 ```bash
 poetry install
