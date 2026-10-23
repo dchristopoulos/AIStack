@@ -315,6 +315,25 @@ def test_a_migration_that_fails_leaves_the_database_as_it_was(empty_engine, tmp_
     assert _file_count(empty_engine) == 4
 
 
+def test_a_migration_that_leaves_a_row_without_its_parent_is_refused(empty_engine, tmp_path):
+    """On SQLite enforcement is off while a migration rebuilds tables, so the check before
+    commit is what stops a dangling reference; PostgreSQL refuses the delete itself."""
+    _a_database_the_mvp_wrote(empty_engine, tmp_path)
+    migrate_schema(empty_engine)
+    before = _revision(empty_engine)
+    broken = _with_extra_migration(tmp_path, "    op.execute('DELETE FROM skill')")
+
+    refusal = (RuntimeError if empty_engine.dialect.name == "sqlite"
+               else IntegrityError)
+    with pytest.raises(refusal, match="no longer exist|foreign key"):
+        migrate_schema(empty_engine, script_location=broken)
+
+    assert _revision(empty_engine) == before
+    assert _file_count(empty_engine) == 4
+    with empty_engine.connect() as connection:
+        assert connection.scalar(select(func.count()).select_from(text("skill"))) > 0
+
+
 def test_another_applications_database_is_refused_unchanged(empty_engine):
     """STD-14: a server started inside a project read its .env, and stamped the app's own
     database as AIStack's baseline before failing on a table it did not have."""

@@ -1,3 +1,5 @@
+import hmac
+
 from pydantic import SecretStr
 
 from aistack.services.token_service import (
@@ -36,3 +38,15 @@ def test_invite_code_comparison_accepts_only_the_exact_code():
     assert not matches_invite_code("s3cret-cod", configured)
     assert not matches_invite_code("s3cret-code ", configured)
     assert not matches_invite_code("", configured)
+
+
+def test_the_invite_code_is_compared_in_constant_time(monkeypatch):
+    """A plain == stops at the first differing byte, which times a guess one byte at a time."""
+    compared = []
+    constant_time = hmac.compare_digest
+    monkeypatch.setattr(hmac, "compare_digest",
+                        lambda a, b: compared.append((a, b)) or constant_time(a, b))
+
+    assert not matches_invite_code("a-guess", SecretStr("s3cret-code"))
+
+    assert compared == [(hash_token("a-guess"), hash_token("s3cret-code"))]

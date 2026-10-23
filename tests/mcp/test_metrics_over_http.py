@@ -1,5 +1,7 @@
 """`/metrics`: counts for the operator's monitoring, to its own bearer only (STD-19)."""
 
+import hashlib
+import hmac
 import logging
 import re
 
@@ -39,6 +41,20 @@ async def test_the_operators_bearer_reads_the_counts(server_url, monkeypatch):
     assert response.status_code == 200
     assert 'aistack_tool_calls_total{tool="sync",outcome="ok"}' in response.text
     assert "aistack_info{version=" in response.text
+
+
+async def test_the_bearer_is_compared_in_constant_time(server_url, monkeypatch):
+    monkeypatch.setattr(metrics, "get_metrics_token", lambda: SecretStr(TOKEN))
+    compared = []
+    constant_time = hmac.compare_digest
+    monkeypatch.setattr(hmac, "compare_digest",
+                        lambda a, b: compared.append((a, b)) or constant_time(a, b))
+
+    refused = await _get(server_url, "/metrics", "a-guess")
+
+    assert refused.status_code == 404
+    assert (hashlib.sha256(b"Bearer a-guess").digest(),
+            hashlib.sha256(f"Bearer {TOKEN}".encode()).digest()) in compared
 
 
 @pytest.mark.parametrize("configured, presented", [
