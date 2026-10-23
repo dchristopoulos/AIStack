@@ -1131,6 +1131,7 @@ const WORDS = {
     onlyYou: 'Only you see this',
     main: 'Main',
     computers: 'Computers',
+    codes: 'Codes in use',
     projects: 'Projects',
     every: 'Every project',
     thisOne: 'This one',
@@ -1165,12 +1166,13 @@ const WORDS = {
   },
   computerCode: {
     lead: 'Run this command in a terminal on the new computer. Keep this dialog open to approve its request.',
+    choose: 'A code connects one new computer. Choose how it sets up, then make the code.', make: 'Make a code',
     command: 'Command for the new computer', platform: 'Terminal', posix: 'macOS / Linux', windows: 'Windows PowerShell',
-    expiry: 'The code works once and expires {time}.', options: 'Options', name: 'Computer name', hostname: 'Use its hostname',
+    expiry: 'The code works once and expires {time}.', name: 'Computer name', hostname: 'Use its hostname',
     expires: 'Code expires after', hours1: '1 hour', hours24: '24 hours', days7: '7 days',
     agents: 'Agents', find: 'Find them', claude: 'Claude Code', codex: 'Codex', skills: 'Initial skills',
     library: "Add my Library’s skills", empty: 'Start empty', hook: 'Install the session-start hook', approval: 'Require approval here',
-    save: 'Save options', cancel: 'Cancel code', approve: 'Approve this computer', deny: 'Deny request',
+    cancel: 'Cancel code', approve: 'Approve this computer', deny: 'Deny request',
     warning: 'These are reported details, not proof of identity. Approve only the request you just started.',
     arrived: 'Request from {name} on {os}, arrived {time}.', os: { MACOS: 'macOS', WINDOWS: 'Windows', LINUX: 'Linux' }, pending: 'Waiting for the new computer…',
     waiting: 'Waiting for your approval', approved: 'Approved. Waiting for the new computer…',
@@ -2494,11 +2496,17 @@ function placesNav(r) {
         skillsItem(m.name, everyFolders(m)),
       ]);
     }),
-    (state.computer_codes || []).filter(c => ['pending', 'waiting', 'approved', 'connected'].includes(c.status)).map(codeRow),
+    codesInUse(),
   ];
 }
 
-// A code in use sits under the computers, with its expiry and Cancel, until it connects one (ADR-0035).
+// A code in use is listed under its own heading, with its expiry and Cancel, until it connects
+// a computer (ADR-0035): it is not a computer yet.
+function codesInUse() {
+  const codes = (state.computer_codes || []).filter(c => ['pending', 'waiting', 'approved', 'connected'].includes(c.status));
+  return codes.length ? [el('div', { class: 'nav-heading' }, W.nav.codes), codes.map(codeRow)] : null;
+}
+
 function codeRow(c) {
   const C = W.computerCode, name = c.request ? c.request.name : C.newComputer;
   const cancel = c.status !== 'connected' && btn(C.cancel, {
@@ -2564,11 +2572,35 @@ const ADD_COMPUTER = {
   ],
 };
 
-async function computerCodeDialog(existing) {
+// Step one: how the new computer sets up. Nothing is made until "Make a code".
+function newComputerCodeDialog() {
+  const C = W.computerCode, d = COMPUTER_DEFAULTS;
+  const select = (values, current) => el('select', { class: 'input' }, values.map(([value, label]) => el('option', { value, selected: value === current }, label)));
+  const name = el('input', { class: 'input', placeholder: C.hostname, maxLength: 64 });
+  const expires = select([[1, C.hours1], [24, C.hours24], [168, C.days7]], d.expires_hours);
+  const agents = select([['find', C.find], ['claude-code', C.claude], ['codex', C.codex]], d.agents);
+  const skills = select([['library', C.library], ['empty', C.empty]], d.skills);
+  const hook = el('input', { type: 'checkbox', checked: d.hook });
+  const approval = el('input', { type: 'checkbox', checked: d.approval });
+  openDialog({
+    title: W.addComputer.title,
+    submitLabel: C.make,
+    body: [el('p', null, C.choose), field(C.name, name), field(C.expires, expires), field(C.agents, agents), field(C.skills, skills),
+      el('div', null, el('label', { class: 'choice' }, hook, C.hook)), el('div', null, el('label', { class: 'choice' }, approval, C.approval))],
+    onSubmit: async () => {
+      const record = await api('/api/computer-codes', { name: name.value.trim() || null, expires_hours: Number(expires.value),
+        agents: agents.value, skills: skills.value, hook: hook.checked, approval: approval.checked });
+      return () => computerCodeDialog(record);
+    },
+  });
+}
+
+// What a new code starts with; the server holds the same defaults.
+const COMPUTER_DEFAULTS = { expires_hours: 24, agents: 'find', skills: 'library', hook: true, approval: true };
+
+// Step two: the code made, its command, and the new computer's request as it arrives.
+function computerCodeDialog(record) {
   const C = W.computerCode;
-  let record;
-  try { record = existing || await api('/api/computer-codes', {}); }
-  catch (error) { toast(error.message, 'error'); return; }
   const container = el('div'), error = el('p', { class: 'form-error', role: 'alert', hidden: true });
   const status = el('p', { role: 'status' }), request = el('div'), controls = el('div', { class: 'actions' });
   const expiry = el('p', { class: 'help' });
@@ -2596,33 +2628,15 @@ async function computerCodeDialog(existing) {
     }
     if (['pending', 'waiting', 'approved'].includes(record.status)) controls.append(btn(C.cancel, { on: { click: () => action('cancel') } }));
     if (record.status === 'connected') request.append(el('p', { class: 'help' }, C.recover));
-    if (optionsBox) optionsBox.hidden = record.status !== 'pending';
     // An answered request takes its buttons away: focus moves on inside the dialog, never to the page.
     if (focused) (controls.querySelector('button') || container.closest('form').querySelector('[type=submit]')).focus();
   }
-  let optionsBox;
   if (record.command) {
     const command = copyField(record.command, C.command);
     const terminal = el('select', { class: 'input', on: { change: () => { command.querySelector('input').value = terminal.value === 'windows' ? record.powershell_command : record.command; } } },
       el('option', { value: 'posix' }, C.posix), el('option', { value: 'windows' }, C.windows));
-    const opts = record.options;
-    const name = el('input', { class: 'input', value: opts.name || '', placeholder: C.hostname, maxLength: 64 });
-    const select = (values, current) => el('select', { class: 'input' }, values.map(([value, label]) => el('option', { value, selected: String(value) === String(current) }, label)));
-    const expires = select([[1, C.hours1], [24, C.hours24], [168, C.days7]], opts.expires_hours);
-    const agents = select([['find', C.find], ['claude-code', C.claude], ['codex', C.codex]], opts.agents);
-    const skills = select([['library', C.library], ['empty', C.empty]], opts.skills);
-    const hook = el('input', { type: 'checkbox', checked: opts.hook });
-    const approval = el('input', { type: 'checkbox', checked: opts.approval });
-    optionsBox = el('details', null, el('summary', null, C.options), field(C.name, name), field(C.expires, expires),
-      field(C.agents, agents), field(C.skills, skills), el('div', null, el('label', { class: 'choice' }, hook, C.hook)), el('div', null, el('label', { class: 'choice' }, approval, C.approval)),
-      btn(C.save, { on: { click: async () => {
-        try {
-          const updated = await api('/api/computer-codes/' + record.id, { name: name.value.trim() || null, expires_hours: Number(expires.value), agents: agents.value, skills: skills.value, hook: hook.checked, approval: approval.checked });
-          record = { ...record, ...updated }; error.hidden = true; draw();
-        } catch (failure) { error.textContent = failure.message; error.hidden = false; }
-      } } }));
     container.append(el('p', null, C.lead), field(C.platform, terminal), command,
-      el('details', null, el('summary', null, C.help), el('p', { class: 'help' }, C.helpText), copyField(say(C.sentence, { command: record.command }), C.fallback)), optionsBox);
+      el('details', null, el('summary', null, C.help), el('p', { class: 'help' }, C.helpText), copyField(say(C.sentence, { command: record.command }), C.fallback)));
   }
   container.append(expiry, status, request, controls, error);
   const dlg = openDialog({ title: W.addComputer.title, body: container, submitLabel: W.done, cancelLabel: null });
@@ -2643,7 +2657,7 @@ async function computerCodeDialog(existing) {
 
 function addComputerDialog() {
   const lib = library();
-  if (lib.kind === 'server') return computerCodeDialog();
+  if (lib.kind === 'server') return newComputerCodeDialog();
   openDialog({ title: W.addComputer.title, submitLabel: W.done, cancelLabel: null, body: ADD_COMPUTER[lib.kind](lib) });
 }
 
