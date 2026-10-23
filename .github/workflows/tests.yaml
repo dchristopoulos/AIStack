@@ -147,7 +147,9 @@ jobs:
   browser-tests:
     name: browser tests (${{ matrix.browser }} ${{ matrix.shard }})
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # About six minutes, but installing the browsers' system packages has taken eight on its
+    # own when GitHub's Ubuntu mirror is slow.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
