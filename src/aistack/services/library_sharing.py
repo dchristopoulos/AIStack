@@ -14,6 +14,7 @@ from pathlib import Path
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from aistack.commons.text import loggable
 from aistack.db.engine import build_engine, build_session_factory
 from aistack.db.schema import migrate_schema
 from aistack.db.swap import swap_in
@@ -131,8 +132,11 @@ class LibrarySharing:
 
     def _unreachable(self, error: RepoUnavailable) -> None:
         self.problem = unreachable_reason(self.repo.remote)
-        logger.warning(f"The Library's repository could not be reached, so this computer "
-                       f"works from its copy for now. {error}")
+        logger.warning(
+            "The Library's repository could not be reached, so this computer "
+            "works from its copy for now. %s",
+            loggable(error),
+        )
 
 
 def unreachable_reason(remote: str) -> str:

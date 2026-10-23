@@ -13,6 +13,7 @@ from aistack.db.models.skill_version import SkillVersion
 from aistack.db.models.user import User
 from aistack.db.schema import migrate_schema
 from aistack.services import library_log, skill_archive, skill_service
+from aistack.services.library_repo import RepoUnavailable
 from aistack.services.library_sharing import LibrarySharing
 
 PUSHES = 200
@@ -218,3 +219,23 @@ def _library(session_factory) -> dict:
             "log": session.execute(select(LibraryEvent.kind, LibraryEvent.published)
                                    .order_by(LibraryEvent.sort_key)).all()[-3:],
         }
+
+
+def test_unreachable_error_cannot_forge_a_log_line(tmp_path, caplog):
+    engine, session_factory = _copy(tmp_path / "desktop.db")
+
+    class Repo:
+        remote = "file:///library.git"
+
+    sharing = LibrarySharing(Repo(), engine, session_factory)
+    caplog.set_level(30, logger="aistack.services.library_sharing")
+
+    try:
+        sharing._unreachable(RepoUnavailable("git failed\nforged warning"))
+    finally:
+        engine.dispose()
+
+    assert len(caplog.records) == 1
+    message = caplog.records[0].getMessage()
+    assert "\n" not in message
+    assert r"git failed\nforged warning" in message
