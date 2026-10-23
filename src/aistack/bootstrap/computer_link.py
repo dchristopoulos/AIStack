@@ -101,8 +101,10 @@ def parse(link: str) -> tuple[str, dict[str, str]]:
         pairs = None
     names = [name for name, _ in pairs] if pairs is not None else []
     if pairs is None or len(names) != len(set(names)) or set(names) != set(ACTIONS[action]):
-        wanted = ", ".join(ACTIONS[action]) or "no parameters"
-        raise LinkRefused(f"An {action} link takes {wanted}, each once, and nothing else.")
+        if not ACTIONS[action]:
+            raise LinkRefused(f"A {action} link takes no parameters.")
+        raise LinkRefused(f"A {action} link takes {', '.join(ACTIONS[action])}, each once, and "
+                          "nothing else.")
     for name, value in pairs:
         if len(value) > VALUE_MAX_LENGTH or not value.isprintable():
             raise LinkRefused(f"Its {name} is longer than {VALUE_MAX_LENGTH} characters or has "

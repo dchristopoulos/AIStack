@@ -178,3 +178,21 @@ async def test_a_project_page_fits_a_phone(sign_in):
                  ).to_be_visible()
 
     assert await page.evaluate("document.documentElement.scrollWidth - window.innerWidth") <= 0
+
+
+@pytest.mark.parametrize("viewport", [(1280, 900), (390, 844)])
+async def test_a_sidebar_plus_menu_opens_inside_the_sidebar(sign_in, viewport):
+    dimitris = await sign_in("dimitris", viewport=viewport)
+    page = dimitris.page
+    if viewport[0] < 760:
+        await page.get_by_role("button", name="Open navigation").click()
+
+    # The sidebar scrolls and clips what runs past it, so the whole menu must sit inside it.
+    for place in ("Projects", "Work desktop"):
+        await _nav(page).get_by_role("button", name=f"Add to {place}").click()
+        menu = page.get_by_role("menu", name=f"Add to {place}")
+        await expect(menu).to_be_visible()
+        box, sidebar = await menu.bounding_box(), await _nav(page).bounding_box()
+        assert sidebar["x"] <= box["x"] and box["x"] + box["width"] <= sidebar["x"] + sidebar["width"]
+        await page.keyboard.press("Escape")
+    assert dimitris.console_errors == []

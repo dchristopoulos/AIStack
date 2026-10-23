@@ -145,6 +145,8 @@ button, input, select { font: inherit; color: inherit; }
 a { color: inherit; text-decoration: none; }
 svg.ico { flex: none; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+/* A new view moves focus to its title for a screen reader; a title is not a control, so no ring. */
+h1[tabindex="-1"]:focus-visible, main[tabindex="-1"]:focus-visible { outline: none; }
 ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
 /* The first stop for a keyboard: unseen until focused. */
 .skip-link { position: fixed; left: 12px; top: -48px; z-index: 200; padding: 8px 14px; border-radius: var(--r-sm); background: var(--text); color: var(--inverse); font-weight: 500; }
@@ -244,6 +246,8 @@ a.place-pill:hover { color: var(--text); border-color: var(--border-strong); }
 /* A line of text, not a row of boxes: a long computer name wraps, and its agents follow it. */
 .where-line svg { display: inline-block; margin-right: 6px; vertical-align: -2px; color: var(--faint); }
 .where-line .on { margin-right: 6px; color: var(--muted); }
+/* The computer, then its agents on a line of their own, so the two never run together. */
+.where-line .on + span { display: block; }
 .where-line a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
 .where-line a:hover { text-decoration-color: var(--accent); color: var(--accent-text); }
 .not-placed { color: var(--faint); font-size: 13px; }
@@ -273,6 +277,14 @@ h1 .mono { font-size: inherit; letter-spacing: -.03em; }
   .nav-row > .nav-item .count { display: none; }
 }
 .nav-heading .menu-wrap { margin-left: auto; margin-right: -4px; }
+/* The sidebar scrolls, so it clips what runs past it: a + menu spans its row instead of opening
+   leftward from the +, and its items wrap. */
+.nav-heading { position: relative; }
+.nav-heading .menu-wrap, .nav-row > .menu-wrap { position: static; }
+.nav-row > .menu-wrap > .btn.plus { position: absolute; right: 4px; top: calc(50% - 12px); }
+.nav-row .menu, .nav-heading .menu { left: 0; right: 0; min-width: 0; }
+.nav-row .menu-item, .nav-heading .menu-item { white-space: normal; height: auto; min-height: 32px; }
+.nav-row .menu-head, .nav-heading .menu-head { white-space: normal; }
 .nav-item .aside { display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 400; color: var(--faint); }
 .nav-item[aria-current="page"] .aside { color: var(--muted); }
 .menu-head { padding: 6px 8px 4px; font-size: 12px; color: var(--faint); white-space: nowrap; }
@@ -464,7 +476,7 @@ h3.legend { font-size: inherit; font-weight: 500; margin: 0 0 6px; }
 }
 .badge.mono { font: 500 11.5px/1 var(--mono); }
 /* A badge that holds a name or a path wraps rather than spill over the next column. */
-.chips .badge { height: auto; min-height: 22px; padding-top: 4px; padding-bottom: 4px; line-height: 1.2; white-space: normal; overflow-wrap: anywhere; }
+.chips .badge { height: auto; min-height: 22px; padding-top: 4px; padding-bottom: 4px; line-height: 1.2; white-space: normal; overflow-wrap: break-word; }
 .badge.solid { background: var(--text); border-color: var(--text); color: var(--inverse); }
 .badge.info { background: var(--accent-soft); border-color: transparent; color: var(--accent-text); }
 .badge.private { background: var(--purple-soft); border-color: transparent; color: var(--purple); }
@@ -1028,6 +1040,7 @@ const WORDS = {
   comma: ', ',
   andMore: ' and {n} more',
   justNow: 'just now',
+  at: { today: 'today at {time}', tomorrow: 'tomorrow at {time}', yesterday: 'yesterday at {time}', on: 'on {date} at {time}' },
   nameRule: 'Use lowercase letters and digits, joined by single ".", "-" or "_" (for example "backend" or "data-eng").',
   names: {
     team: {
@@ -1055,6 +1068,7 @@ const WORDS = {
   open: 'Open {name}',
   name: 'Name',
   none: 'None',
+  notShared: 'Not shared',
   actions: 'Actions',
   private: 'Private',
   privateAfter: '(private)',
@@ -1243,7 +1257,7 @@ const WORDS = {
     legend: 'Computers and coding agents',
     computerBefore: '{computer} / ',
     saved: 'Saved where {skill} is. ',
-    eachPicksUp: 'Each computer picks up the change at its next {sync}.',
+    eachPicksUp: 'Each computer picks up the change the next time it syncs.',
     addTitle: 'Add {skill} to computers',
   },
   sheet: {
@@ -1274,7 +1288,7 @@ const WORDS = {
     restore: 'Restore',
     restoreLabel: 'Restore r{revision}',
     unchanged: 'r{revision} is the same as the newest; nothing changed.',
-    restored: 'Restored r{revision} of {skill} as r{as}. Each computer installs it at its next {sync}.',
+    restored: 'Restored r{revision} of {skill} as r{as}. Each computer installs it the next time it syncs.',
     newest: 'Newest',
   },
   every: {
@@ -1303,7 +1317,7 @@ const WORDS = {
   // Start an agent with only chosen skills, for one session (ADR-0038).
   startAgent: {
     button: 'Start an agent…',
-    short: 'Start…',
+    short: 'Start an agent…',
     buttonForLabel: 'Start {agent} in a project on {computer}…',
     buttonOnLabel: 'Start an agent in {project} on {computer}…',
     title: 'Start an agent in {project}',
@@ -1379,13 +1393,13 @@ const WORDS = {
     nobody: 'No coding agent',
     justForYou: 'Just for you',
     turnOff: 'Turn this file off for me',
-    turnOffHelp: 'Claude Code and Codex skip it for you only, at each computer\'s next {sync}. Everyone else still gets it.',
-    turnedOff: 'Turned {path} off for you. Each computer skips it from its next {sync}.',
+    turnOffHelp: '{agent} skips it for you only, the next time each computer syncs. Everyone else still gets it.',
+    turnedOff: 'Turned {path} off for you. Each computer skips it the next time it syncs.',
     turnedOn: 'Turned {path} on again for you.',
-    pendingWrite: 'Waiting for {computer} to write your edit at its next {sync}',
+    pendingWrite: 'Waiting for {computer} to write your edit the next time it syncs: run "aistack sync" there, or wait for its next session.',
     pending: 'Changed on {computer}, not committed yet',
     editDiff: 'What your edit changes',
-    pendingShare: '{computer} opens the pull request at its next {sync}',
+    pendingShare: '{computer} opens the pull request the next time it syncs',
     shared: 'Shared as a pull request',
     openPull: 'Open the pull request',
     sharedBranch: 'On branch {branch}',
@@ -1393,24 +1407,24 @@ const WORDS = {
     writeOn: 'Write it on',
     writeOnHelp: 'Its working copy of the repository. Nothing is committed until you press Commit….',
     noComputer: 'No computer of yours has this project yet, so an edit has nowhere to go.',
-    editSaved: 'Saved. {computer} writes it into its working copy at its next {sync}.',
+    editSaved: 'Saved. {computer} writes it into its working copy the next time it syncs.',
     shareTitle: 'Share your change to {path}',
     shareLead: 'Opens a pull request on {project} with only this file. Nothing else you changed goes with it.',
     note: 'What is this change about?',
     noteHelp: 'Your team reads this on the pull request. The first line is its title.',
     needNote: 'Say what this change is about.',
     openPullSubmit: 'Open a pull request',
-    shareSaved: '{computer} pushes a branch and opens the pull request at its next {sync}.',
+    shareSaved: '{computer} pushes a branch and opens the pull request the next time it syncs.',
     writtenHere: 'Wrote your edit into {path} on this computer. Commit… shares it as a pull request.',
     openedHere: 'Opened pull request {url}',
     pushedHere: 'Pushed branch {branch}. Open the pull request at {url}',
     pushedHereOnly: 'Pushed branch {branch}. Open a pull request from it where the repository is kept.',
-    agentsSaved: 'Saved which agents use {name}. Each computer picks it up at its next {sync}.',
+    agentsSaved: 'Saved which agents use {name}. Each computer picks it up the next time it syncs.',
     edit: 'Edit',
     editTitle: 'Edit {name}',
     preview: 'Preview',
     previewEmpty: 'Nothing to preview yet.',
-    saved: 'Saved {name} as r{revision}. Each computer writes it at its next {sync}.',
+    saved: 'Saved {name} as r{revision}. Each computer writes it the next time it syncs.',
     unchanged: '{name} already has this text; nothing changed.',
     credentials: {
       one: 'Line {lines} looks like it holds a credential, such as a token or a key. Rules reach every computer you have. Save anyway?',
@@ -1428,7 +1442,7 @@ const WORDS = {
     nameHelp: 'Lowercase letters and digits joined by single hyphens, like house-style.',
     body: 'Text',
     add: 'Add rule',
-    added: 'Added {name}. Each computer writes it at its next {sync}.',
+    added: 'Added {name}. Each computer writes it the next time it syncs.',
     onComputer: '{rule} in {file}',
     noRule: 'No rule in {file}',
   },
@@ -1507,7 +1521,7 @@ const WORDS = {
     allHere: 'Every skill in your library is here already.',
     button: 'Add skills',
     added: 'Added {skills} to {place}. ',
-    arrive: 'They arrive at its next {sync}.',
+    arrive: 'They arrive the next time it syncs.',
   },
   take: {
     applies: 'Applies on {computers} at the next sync.',
@@ -1937,6 +1951,15 @@ function when(iso) {
   }
   return el('time', { datetime: iso, title: d.toLocaleString(LANG) }, text);
 }
+// A moment as people say it: "today at 16:49", "tomorrow at 04:49", else its date and time.
+const clock = new Intl.DateTimeFormat(LANG, { hour: '2-digit', minute: '2-digit' });
+const dayMonth = new Intl.DateTimeFormat(LANG, { day: 'numeric', month: 'short' });
+function at(iso) {
+  const d = new Date(iso), midnight = x => new Date(x).setHours(0, 0, 0, 0);
+  const days = Math.round((midnight(d) - midnight(Date.now())) / 86400000), time = clock.format(d);
+  const word = { 0: W.at.today, 1: W.at.tomorrow, '-1': W.at.yesterday }[days];
+  return word ? say(word, { time }) : say(W.at.on, { date: dayMonth.format(d), time });
+}
 
 // A switch that cannot be turned stays focusable (aria-disabled) and says why beside it, in words.
 function sw(on, text, { fk, label, tip, disabled, why, onToggle }) {
@@ -1956,7 +1979,8 @@ function empty(ic, title, ...body) {
 
 /* ================= toasts ================= */
 
-// Outcomes stay until dismissed, so there is time to read or hear them.
+// An error stays until dismissed, so there is time to read or hear it. A success leaves after
+// eight seconds, but not while it is pointed at or has focus.
 function toast(text, kind = 'ok') {
   const t = el('div', { class: 'toast ' + kind, role: kind === 'error' ? 'alert' : null },
     el('span', { class: 'dot' }),
@@ -1967,6 +1991,8 @@ function toast(text, kind = 'ok') {
       if (next) next.querySelector('button').focus(); else focusHeading();
     } } }, 'x'));
   $toasts.append(t);
+  const leave = () => { if (t.isConnected) t.matches(':hover') || t.contains(document.activeElement) ? setTimeout(leave, 2000) : t.remove(); };
+  if (kind === 'ok') setTimeout(leave, 8000);
 }
 
 /* ================= API ================= */
@@ -2559,12 +2585,12 @@ async function computerCodeDialog(existing) {
     if (key === drawn) return;
     drawn = key;
     const focused = controls.contains(document.activeElement);
-    expiry.textContent = say(C.expiry, { time: new Date(record.expires_on).toLocaleString() });
+    expiry.textContent = say(C.expiry, { time: at(record.expires_on) });
     const setup = record.request && record.request.setup;
     status.textContent = setup ? say(C.complete, { agents: setup.agents.map(a => a === 'codex' ? C.codex : C.claude).join(', '), skills: setup.skills }) : C[record.status] || C.pending;
     request.replaceChildren(); controls.replaceChildren();
     if (record.request) {
-      request.append(el('p', null, say(C.arrived, { name: record.request.name, os: C.os[record.request.os] || record.request.os, time: new Date(record.requested_on).toLocaleString() })));
+      request.append(el('p', null, say(C.arrived, { name: record.request.name, os: C.os[record.request.os] || record.request.os, time: at(record.requested_on) })));
     }
     if (record.status === 'waiting' && record.options.approval) {
       request.append(el('p', { class: 'help' }, C.warning));
@@ -2590,7 +2616,7 @@ async function computerCodeDialog(existing) {
     const hook = el('input', { type: 'checkbox', checked: opts.hook });
     const approval = el('input', { type: 'checkbox', checked: opts.approval });
     optionsBox = el('details', null, el('summary', null, C.options), field(C.name, name), field(C.expires, expires),
-      field(C.agents, agents), field(C.skills, skills), el('label', { class: 'choice' }, hook, C.hook), el('label', { class: 'choice' }, approval, C.approval),
+      field(C.agents, agents), field(C.skills, skills), el('div', null, el('label', { class: 'choice' }, hook, C.hook)), el('div', null, el('label', { class: 'choice' }, approval, C.approval)),
       btn(C.save, { on: { click: async () => {
         try {
           const updated = await api('/api/computer-codes/' + record.id, { name: name.value.trim() || null, expires_hours: Number(expires.value), agents: agents.value, skills: skills.value, hook: hook.checked, approval: approval.checked });
@@ -2782,7 +2808,7 @@ function onlyHereNotice() {
 const sourceCell = src => td(src ? 'meta src' : 'meta',
   src ? [el('a', { class: 't1 mono link', href: teamHash(src.team), title: say(W.open, { name: src.team }) }, src.team),
          el('span', { class: 't2' + (src.group ? ' mono' : '') }, src.group || W.teamLevel)]
-    : el('span', { class: 't2' }, W.none));
+    : el('span', { class: 't2' }, W.notShared));
 
 // Where a skill is, as words: a line per computer, naming its agents. Each agent opens that folder.
 function whereItIs(s) {
@@ -2844,7 +2870,7 @@ function placementPicker(s, legend = W.placement.legend) {
   const save = async () => {
     const changed = boxes.filter(b => b.box.checked !== isPlaced(s, b.t));
     const shared = await placeAll(changed.map(b => [s, b.t, b.box.checked]));
-    return changed.length ? say(W.placement.saved, { skill: s.name }) + arrives(shared, say(W.placement.eachPicksUp, { sync: SYNC })) : null;
+    return changed.length ? say(W.placement.saved, { skill: s.name }) + arrives(shared, say(W.placement.eachPicksUp, {})) : null;
   };
   return { picker, save };
 }
@@ -2880,7 +2906,7 @@ function skillSheet(s) {
         btn(W.update.review, { class: 'btn sm', on: { click: after(changesDialog) } })),
       el('section', { class: 'sheet-sec', 'aria-label': W.sheet.about },
         el('dl', { class: 'facts' },
-          fact(W.col.linkedTeam, src ? el('a', { class: 'mono link', href: teamHash(src.team) }, teamLabel(src.team, src.group)) : W.none),
+          fact(W.col.linkedTeam, src ? el('a', { class: 'mono link', href: teamHash(src.team) }, teamLabel(src.team, src.group)) : W.notShared),
           fact(W.col.revision, say(W.sheet.revision, { revision: s.revision, files: plural(s.files, 'file') })),
           fact(W.sheet.lastPushedBy, s.pushed_by),
           fact(W.sheet.lastChanged, when(s.updated_on)))),
@@ -2928,7 +2954,7 @@ function historyDialog(s) {
         const res = await api(`/api/skills/${enc(s.name)}/restore`, { revision: r.revision });
         document.querySelector('dialog[open]').close();
         return res.unchanged ? say(W.history.unchanged, { revision: r.revision })
-          : say(W.history.restored, { revision: r.revision, skill: s.name, as: res.revision, sync: SYNC });
+          : say(W.history.restored, { revision: r.revision, skill: s.name, as: res.revision });
       }) } }) : el('span', { class: 'badge' }, W.history.newest))))))
     .catch(e => list.replaceChildren(el('p', { class: 'form-error', role: 'alert' }, e.message)));
 }
@@ -2992,7 +3018,7 @@ function tickCell(s, agent, g) {
     on: { change: ev => run(ev.currentTarget, async () => {
       // Partly on is turned on everywhere; the skill's details choose one computer at a time.
       const shared = await placeAll(ts.filter(t => isPlaced(s, t) !== turnOn).map(t => [s, t, turnOn]));
-      return say(W.placement.saved, { skill: s.name }) + arrives(shared, say(W.placement.eachPicksUp, { sync: SYNC }));
+      return say(W.placement.saved, { skill: s.name }) + arrives(shared, say(W.placement.eachPicksUp, {}));
     }, m => { toast(m, 'error'); render(); }) } });
   box.indeterminate = on.length > 0 && turnOn;
   return td('tick', el('label', { class: 'tick' }, box, tag));
@@ -3000,7 +3026,7 @@ function tickCell(s, agent, g) {
 
 // A tick in a group that is changed elsewhere: a mark, with what it means in words.
 const staticTick = (on, words, tag) => td('tick', el('span', { class: 'tick' + (on ? ' on' : ''), title: words },
-  on ? icon('check', 16) : el('span', { class: 'dash', 'aria-hidden': 'true' }, '–'), el('span', { class: 'sr-only' }, words), tag));
+  on ? icon('check', 16) : null, el('span', { class: 'sr-only' }, words), tag));
 
 const everySkills = () => state.skills.filter(s => everyFolders().some(t => isPlaced(s, t)));
 
@@ -3479,7 +3505,7 @@ function addSkillsDialog(placeName, folders) {
       const picked = rows.filter(r => r.box.checked);
       const chosen = new Set(boxes.filter(b => b.box.checked).map(b => b.agent));
       const shared = await placeAll(picked.flatMap(r => folders.filter(t => chosen.has(t.agent) && !isPlaced(r.s, t)).map(t => [r.s, t, true])));
-      return picked.length ? say(W.addSkills.added, { skills: plural(picked.length, 'skill'), place: placeName }) + arrives(shared, say(W.addSkills.arrive, { sync: SYNC })) : null;
+      return picked.length ? say(W.addSkills.added, { skills: plural(picked.length, 'skill'), place: placeName }) + arrives(shared, say(W.addSkills.arrive, {})) : null;
     } : null,
   });
 }
@@ -3639,9 +3665,9 @@ function editStatus(f) {
   const computer = machineName(e.machine);
   // Shown until the working copy's own commit has the shared text, then the row is as before.
   if (e.shared_on) return say(R.shared, {});
-  if (e.note) return say(R.pendingShare, { computer, sync: SYNC });
+  if (e.note) return say(R.pendingShare, { computer });
   if (e.written_on) return say(R.pending, { computer });
-  return say(R.pendingWrite, { computer, sync: SYNC });
+  return say(R.pendingWrite, { computer });
 }
 
 // The rule groups above the skills in a place's tick table, in the order agents read them:
@@ -3696,7 +3722,7 @@ function repoFileRow(f, cols, g) {
 
 async function setRuleAgents(r, agents) {
   await api(ruleUrl(r, 'agents'), { agents, ...ruleQuery(r) });
-  return say(W.rules.agentsSaved, { name: r.name, sync: SYNC });
+  return say(W.rules.agentsSaved, { name: r.name });
 }
 
 // One file in the side panel: its text as its agents read it, the lines that look like a
@@ -3761,7 +3787,7 @@ function repoFileSheet(f) {
     disabled: !!f.turn_off_unavailable, why: f.turn_off_unavailable || null,
     onToggle: (b, on) => run(b, async () => {
       await api('/api/projects/files/turn-off', { project: f.project, path: f.path, turned_off: on });
-      return say(on ? R.turnedOff : R.turnedOn, { path: f.path, sync: SYNC });
+      return say(on ? R.turnedOff : R.turnedOn, { path: f.path });
     }),
   });
   filePanel({
@@ -3777,7 +3803,7 @@ function repoFileSheet(f) {
       el('section', { class: 'sheet-sec', 'aria-label': R.readBy },
         el('dl', { class: 'facts' }, el('dt', null, R.readBy), el('dd', null, readers.length ? readers.join(W.comma) : R.nobody))),
       f.agent && el('section', { class: 'sheet-sec', 'aria-label': R.justForYou }, el('h3', { class: 'legend' }, R.justForYou), off,
-        !f.turn_off_unavailable && el('p', { class: 't2' }, say(R.turnOffHelp, { sync: SYNC }))),
+        !f.turn_off_unavailable && el('p', { class: 't2' }, say(R.turnOffHelp, { agent: AGENT_NAMES[f.agent] || f.agent }))),
     ],
     actions: [
       e && e.written_on && !e.note && !e.shared_on && btn(R.commit, { on: { click: leave(server ? commitDialog : shareHereDialog) } }, 'up'),
@@ -3803,7 +3829,7 @@ function repoFileEditor(f) {
       const res = await api('/api/projects/files/edit', { project: f.project, path: f.path, text: area.value, base_hash: f.content_hash,
         machine: where.value, confirmed: check.confirmed });
       check.hold(res);
-      return say(res.unchanged ? R.unchanged : R.editSaved, { name: f.path, computer: machineName(where.value), sync: SYNC });
+      return say(res.unchanged ? R.unchanged : R.editSaved, { name: f.path, computer: machineName(where.value) });
     },
   });
   check = credentialCheck(dlg, area, W.save);
@@ -3867,7 +3893,7 @@ function commitDialog(f) {
     onSubmit: async () => {
       if (!note.value.trim()) throw new Error(R.needNote);
       await api('/api/projects/files/commit', { project: f.project, path: f.path, note: note.value });
-      return say(R.shareSaved, { computer: machineName(f.edit.machine), sync: SYNC });
+      return say(R.shareSaved, { computer: machineName(f.edit.machine) });
     },
   });
 }
@@ -3910,7 +3936,7 @@ function ruleEditor(r) {
     onSubmit: async () => {
       const res = await api(ruleUrl(r, 'edit'), { text: area.value, ...ruleQuery(r), confirmed: check.confirmed });
       check.hold(res);
-      return say(res.unchanged ? R.unchanged : R.saved, { name: r.name, revision: res.revision, sync: SYNC });
+      return say(res.unchanged ? R.unchanged : R.saved, { name: r.name, revision: res.revision });
     },
   });
   check = credentialCheck(dlg, area, W.save);
@@ -3954,7 +3980,7 @@ function newRuleDialog(p) {
       const res = await api('/api/rules', { name: name.value.trim(), text: area.value, agents: boxes.filter(b => b.checked).map(b => b.value),
         ...(p ? { project: p.key } : {}), confirmed: check.confirmed });
       check.hold(res);
-      return say(R.added, { name: res.name, sync: SYNC });
+      return say(R.added, { name: res.name });
     },
   });
   check = credentialCheck(dlg, area, R.add);
@@ -4190,7 +4216,7 @@ function membersTab(team, admin) {
     return done;
   });
   const removable = admin;
-  const cols = 'minmax(180px, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) auto auto' + (removable ? ' auto' : '');
+  const cols = 'minmax(140px, 1fr) minmax(0, 1fr) minmax(120px, 1.2fr) auto auto' + (removable ? ' auto' : '');
   return el('div', { class: 'tbl', role: 'table', 'aria-label': W.tabs.members, style: 'grid-template-columns:' + cols },
     el('div', { class: 'tr th-row', role: 'row' }, th(W.members.member), th(W.tabs.groups),
       el('div', { class: 'th extra', role: 'columnheader', title: W.members.pushedTip }, W.members.pushed),

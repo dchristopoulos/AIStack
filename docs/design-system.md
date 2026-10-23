@@ -154,7 +154,7 @@ cannot be said with what is there.
 | Rule editor | `ruleEditor(rule)` | a plain text area with a Preview toggle; Save makes a revision, and a held save names the lines that look like a credential and turns into "Save anyway" (`credentialCheck`) |
 | Table | `.tbl` + `.tr` + `td()` | `library`, `plain` (a computer's agents and projects), `ticks`, `tree` (indent guides), member and group grids |
 | Empty state | `empty(icon, title, …body)` | says what to do next, with the button that does it |
-| Toast | `toast(text, kind)` | `ok`, `warn`, `error`; the sentence names what happened; outcomes stay until dismissed |
+| Toast | `toast(text, kind)` | `ok`, `warn`, `error`; the sentence names what happened; errors stay until dismissed; a success leaves after eight seconds, but not while pointed at or focused |
 | Card | `.card` + `.card-body` + `.card-foot` | `danger`, `choice-card` (an option with its own button) |
 | Facts | `dl.facts` | label on the left, value on the right |
 | Picker | `fieldset.picker` | checkboxes or radios, grouped by computer (`target-group`) |

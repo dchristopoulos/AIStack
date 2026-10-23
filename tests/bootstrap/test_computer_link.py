@@ -85,6 +85,16 @@ def test_a_link_of_any_other_shape_is_refused(link, home):
         computer_link.link_command(link, home)
 
 
+@pytest.mark.parametrize("link, refusal", [
+    ("aistack://sync?now=1", "A sync link takes no parameters."),
+    ("aistack://start?agent=codex", "A start link takes agent, project, skills, each once, and nothing else."),
+])
+def test_a_refused_link_says_what_it_takes(link, refusal, home):
+    with pytest.raises(LinkRefused) as refused:
+        computer_link.link_command(link, home)
+    assert str(refused.value) == refusal
+
+
 @pytest.mark.parametrize("query, refusal", [
     ("agent=bash&project=github.com/maria/shop&skills=tdd", "AIStack starts"),
     ("agent=--help&project=github.com/maria/shop&skills=tdd", "AIStack starts"),

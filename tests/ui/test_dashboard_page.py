@@ -278,8 +278,8 @@ async def test_a_skill_on_one_computer_says_so_and_a_tick_puts_it_on_every_one(s
 
     # Sync asks there before it deletes anything, and the Library keeps it.
     await expect(page.get_by_role("status").get_by_text(
-        "Saved where sql-style is. Each computer picks up the change at its next sync "
-        "aistack.")).to_be_visible()
+        "Saved where sql-style is. Each computer picks up the change the next time it "
+        "syncs.")).to_be_visible()
     await expect(table.get_by_text("sql-style", exact=True)).to_have_count(0)
     state = await dimitris.state()
     assert _on(state, "sql-style") == []
@@ -1380,7 +1380,7 @@ async def test_the_phone_drawer_keeps_focus_inside_until_it_is_closed(sign_in):
 
 @pytest.mark.console_errors_expected
 @_SQLITE_ONLY
-async def test_toasts_are_said_after_the_dialog_and_stay_until_dismissed(sign_in):
+async def test_toasts_are_said_after_the_dialog_and_a_success_leaves_on_its_own(sign_in):
     dimitris = await sign_in("dimitris")
     page = dimitris.page
     await page.evaluate("""() => {
@@ -1390,34 +1390,35 @@ async def test_toasts_are_said_after_the_dialog_and_stay_until_dismissed(sign_in
     }""")
     await page.clock.install()
 
-    await page.get_by_role("button", name="Add to computer: sql-style").click()
-    dialog = page.get_by_role("dialog")
-    await dialog.get_by_role("checkbox", name="Work desktop / Claude Code", exact=True).check()
-    await dialog.get_by_role("button", name="Save").click()
+    async def add_to_work_desktop(name):
+        await page.get_by_role("button", name=f"Add to computer: {name}").click()
+        await page.get_by_role("dialog").get_by_role("checkbox", name="Work desktop / Claude Code", exact=True).check()
+        await page.get_by_role("dialog").get_by_role("button", name="Save").click()
+
+    await add_to_work_desktop("sql-style")
     toast = page.get_by_role("status").get_by_text("sql-style")
     await expect(toast).to_be_visible()
     assert await page.evaluate("window.toastsSeen") == [False]
     assert "Work desktop" in _on(await dimitris.state(), "sql-style")
 
+    # Not while it is being read: pointed at, it stays.
     await toast.hover()
     await page.clock.fast_forward("00:20")
     await expect(toast).to_be_visible()
     await page.mouse.move(0, 0)
-    # Later outcomes must not discard one that is still waiting to be read.
-    for name in ("code-review", "release-notes", "commit-messages", "pentest-checklist"):
-        await page.get_by_role("button", name=f"Add to computer: {name}").click()
-        await page.get_by_role("dialog").get_by_role("checkbox", name="Work desktop / Claude Code", exact=True).check()
-        await page.get_by_role("dialog").get_by_role("button", name="Save").click()
-    await expect(page.get_by_role("status").get_by_role("button", name="Dismiss")).to_have_count(5)
-    await page.clock.fast_forward("01:00")
-    await expect(toast).to_be_visible()
+    await page.clock.fast_forward("00:09")
+    await expect(toast).to_have_count(0)
+
+    # Dismissed from the keyboard, focus moves to the next one, then to the heading.
+    for name in ("code-review", "release-notes"):
+        await add_to_work_desktop(name)
     dismiss = page.get_by_role("status").get_by_role("button", name="Dismiss")
+    await expect(dismiss).to_have_count(2)
     await dismiss.first.focus()
     await dismiss.first.click()
-    await expect(toast).to_have_count(0)
+    await expect(dismiss).to_have_count(1)
     await expect(dismiss.first).to_be_focused()
-    for _ in range(4):
-        await page.keyboard.press("Enter")
+    await page.keyboard.press("Enter")
     await expect(dismiss).to_have_count(0)
     await expect(page.get_by_role("heading", name="Library", level=1)).to_be_focused()
 
