@@ -39,6 +39,19 @@ def test_publishing_waits_for_every_merge_gate_test_job():
     assert jobs[RELEASE_NOTES]["needs"] == ["pypi"]
 
 
+@pytest.mark.parametrize("job", sorted(PUBLISHING))
+def test_a_tag_publishes_only_a_commit_on_main_that_may_be_released(job):
+    """The image and the package each check the tag themselves: either reaches every user."""
+    steps = _workflow()["jobs"][job]["steps"]
+    checks = "\n".join(step.get("run", "") for step in steps
+                       if step.get("if", "startsWith(github.ref, 'refs/tags/v')")
+                       == "startsWith(github.ref, 'refs/tags/v')")
+    assert steps[0]["with"]["fetch-depth"] == 0
+    assert 'test "$GITHUB_REF_NAME" = "v$(poetry version -s)"' in checks
+    assert 'git merge-base --is-ancestor "$GITHUB_SHA" origin/main' in checks
+    assert 'python scripts/check_release.py check "$(poetry version -s)"' in checks
+
+
 def test_every_action_is_pinned_by_commit():
     """A tag or a branch can be moved to other code by whoever controls it, and the jobs that
     publish hold the credentials to ship that code to every user."""
