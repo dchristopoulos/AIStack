@@ -7,6 +7,7 @@ import signal
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import fastmcp
 import uvicorn
@@ -32,7 +33,7 @@ from aistack.bundled import local_setup_instructions, local_sync_skill_document
 from aistack.commons import request_id
 from aistack.commons.exceptions import AIStackError
 from aistack.commons.release import release
-from aistack.commons.text import loggable
+from aistack.commons.text import loggable, sanitized
 from aistack.db import backup
 from aistack.db.engine import build_engine
 from aistack.db.schema import ForeignDatabase, NewerSchema
@@ -218,6 +219,47 @@ def check_local() -> None:
     print(f"AIStack is ready. Your Library lives {where}.")
     from aistack.bootstrap import computer_link
 
+    print(computer_link.status(agent_config.installed_program()))
+
+
+def check(agent: str | None, allow_http: bool) -> None:
+    """`aistack check`: on a computer connected to a server, whether the server takes this
+    computer's key, with nothing set up here; otherwise the Library on this computer."""
+    from aistack.bootstrap import computer_link, server_join
+    from aistack.bootstrap.start_agent import RECIPES
+    from aistack.services import server_connection
+
+    def holds(name: str) -> bool:
+        try:
+            return agent_config.remote_connection(name) == connection
+        except agent_config.NotConnected:
+            return False
+
+    try:
+        connection = agent_config.remote_connection(agent)
+    except agent_config.NoRemoteConnection:
+        check_local()
+        return
+    except agent_config.NotConnected as refusal:
+        sys.exit(f"AIStack is not ready. {refusal}")
+    address = urlsplit(connection.url)._replace(path="").geturl()
+    try:
+        warning = server_connection.checked_server(connection.url, allow_http)
+    except AIStackError as refusal:
+        sys.exit(f"AIStack is not ready. {refusal}")
+    if warning:
+        print(warning, flush=True)
+    try:
+        asyncio.run(server_join.check_connection(connection))
+    except (AIStackError, ToolError) as refusal:
+        sys.exit(f"AIStack is not ready. {address} refused this computer: {sanitized(str(refusal))}")
+    except Exception as error:
+        sys.exit(f"AIStack is not ready. It could not sign in to {address}: "
+                 f"{server_connection.failure_cause(error)}. If the server no longer knows "
+                 "this computer, add it again from Add a computer on the dashboard.")
+    agents = [RECIPES[name].display_name for name in agent_config.AGENTS
+              if agent in (None, name) and holds(name)]
+    print(f"AIStack is connected to {address} for {' and '.join(agents)}.")
     print(computer_link.status(agent_config.installed_program()))
 
 
@@ -583,14 +625,16 @@ def run() -> None:
     parser.add_argument("repository", nargs="?",
                         help="For 'move github': the private repository, as owner/name. "
                              "Without it, your own aistack-library, made if needed")
+    parser.add_argument("--version", action="version", version=f"aistack {release()}")
     parser.add_argument("--agent", choices=agent_config.AGENTS,
-                        help="For 'check' and 'export': use the Library this agent is "
-                             "connected to, without showing its settings")
+                        help="Use the Library or server this agent is connected to, without "
+                             "showing its settings: for 'check', 'export', 'sync', 'status', "
+                             "'dashboard' and 'connect'")
     parser.add_argument("--hook", action="store_true",
                         help="For 'connect': also remind the agent to sync at session start. "
                              "'status --hook' is that reminder: printed only when sync has "
                              "something to do")
-    parser.add_argument("--allow-http", action="store_true", help="Allow public plain HTTP, which exposes this computer’s key")
+    parser.add_argument("--allow-http", action="store_true", help="For 'sync' and 'check': allow a public server over plain HTTP, which exposes this computer’s key")
     parser.add_argument("--rule-choice", action="append", default=[], metavar="KEY=CHOICE",
                         help="For 'sync': the person's answer to a rule question sync "
                              "reported, by its key, such as project:claude_code:house-style=push")
@@ -650,9 +694,11 @@ def run() -> None:
                 sys.exit(1)
         except (agent_config.NotConnected, AIStackError, ToolError) as error:
             sys.exit(f"AIStack: {error}")
-        except Exception:
-            # Network/SDK exceptions can contain bearers and signed transfer URLs.
-            sys.exit("AIStack sync could not finish. Check the server connection and try again; installed skills remain usable.")
+        except Exception as error:
+            # Network/SDK exceptions can contain bearers and signed transfer URLs, so only
+            # their one-line cause is shown.
+            sys.exit(f"AIStack sync could not finish: {server_connection.failure_cause(error)}. "
+                     "Check the server connection and try again; installed skills remain usable.")
         return
 
     if command == "status":
@@ -673,7 +719,7 @@ def run() -> None:
         elif command == "dashboard":
             asyncio.run(serve_dashboard())
         elif command == "check":
-            check_local()
+            check(arguments.agent, arguments.allow_http)
         elif command == "export":
             export_library(folder or Path("aistack-library"))
         elif command == "move":

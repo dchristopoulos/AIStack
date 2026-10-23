@@ -6,6 +6,10 @@ The steps are written for Claude Code and for Codex; where the two differ, each 
 
 For Codex, use `CODEX_HOME` when set everywhere these steps show `~/.codex`; the shared skills folder remains `~/.agents/skills`.
 
+## What setup changes on this computer
+
+Before the first step that writes, tell the user in one line what setup changes, so nothing surprises them: AIStack's entry in the agent's own settings (`~/.claude.json` for Claude Code, `~/.codex/config.toml` for Codex), the `sync-aistack` skill in its skills folder, the session-start hook in `~/.claude/settings.json` or `~/.codex/hooks.json` if they want it, and AIStack's own files in `~/.aistack/`. The join command also registers the `aistack://` link, so the dashboard can open a terminal here: on macOS an app named AIStack Link in `~/Applications`, on Linux a desktop entry, on Windows a key under `HKEY_CURRENT_USER\Software\Classes\aistack`. `aistack link remove` takes it off again.
+
 ## If they have a computer code
 
 A code from **Computers → Add a computer**, or a recovery code from the server operator, connects this computer to an existing account. Run the copied command in a terminal on this computer:

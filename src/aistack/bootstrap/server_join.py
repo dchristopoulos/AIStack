@@ -206,6 +206,12 @@ async def _binding(connection: Connection, machine: str | None = None) -> str | 
     return None if computer is None else hardware.fingerprint(uuid.UUID(machine), computer)
 
 
+async def check_connection(connection: Connection) -> None:
+    """Sign in with this computer's key and pass the copied-computer check, as join does
+    before it says this computer is already connected."""
+    await _call(connection, "sync", local={}, identify=True, fingerprint=await _binding(connection))
+
+
 def _existing(url: str) -> Connection | None:
     connections = []
     for agent in agent_config.AGENTS:
@@ -436,7 +442,8 @@ def run(arguments: list[str]) -> None:
         parser.exit(1, sanitized(str(error)) + "\n")
     except agent_config.NotConnected:
         parser.exit(1, "Repair the agent configuration and run join again.\n")
-    except (Exception, KeyboardInterrupt):
+    except (Exception, KeyboardInterrupt) as error:
         parser.exit(
-            1, "AIStack setup did not finish. Run the same command to resume. " + RECOVERY + "\n"
+            1, f"AIStack setup did not finish: {server_connection.failure_cause(error)}. Run the "
+               "same command to resume. " + RECOVERY + "\n"
         )

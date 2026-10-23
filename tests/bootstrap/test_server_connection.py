@@ -2,11 +2,13 @@ import json
 import socket
 from pathlib import Path
 
+import httpx
 import pytest
 
 from aistack.bootstrap import agent_config
 from aistack.bootstrap.sync_lock import locked
 from aistack.commons.exceptions import Busy, ValidationError
+from aistack.services import server_connection
 from aistack.services.server_connection import Connection, checked_server, http_client
 
 
@@ -169,3 +171,15 @@ def test_sync_against_a_local_library_syncs_its_rules_here(tmp_path, monkeypatch
     assert asked == [(None, {"a:b": "push"})]
     assert "AIStack rules are up to date." in capsys.readouterr().out
     assert agent_config.connected_locally() and not agent_config.connected_locally("codex")
+
+
+def test_a_failure_cause_is_one_line_with_no_address_in_it():
+    request = httpx.Request("GET", "https://aistack.example/transfer/archive/eyJ.ticket")
+    refused = httpx.HTTPStatusError("Client error '404 Not Found' for url "
+                                    "'https://aistack.example/transfer/archive/eyJ.ticket'",
+                                    request=request, response=httpx.Response(404, request=request))
+    assert server_connection.failure_cause(refused) == "the server answered 404"
+    grouped = ExceptionGroup("unhandled errors in a TaskGroup", [
+        httpx.ConnectError("Cannot reach https://aistack.example/mcp\nnow")])
+    assert server_connection.failure_cause(grouped) == "Cannot reach an address\\nnow"
+    assert server_connection.failure_cause(KeyboardInterrupt()) == "KeyboardInterrupt"

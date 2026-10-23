@@ -25,6 +25,10 @@ Put these four choices to the user, each with its line. Recommend the second whe
 3. **A free PostgreSQL database, shared by all their computers.** For someone who already has one: they create the account and paste its address on each computer. Neon is recommended: free, and it wakes by itself after a quiet spell. Supabase works too, but pauses after about a week unused. Each computer keeps the database's address, so if a laptop is lost they reset the database password and paste the new address on the others.
 4. **A computer that stays on, running the AIStack server.** Free on a computer they own, if it stays switched on. It is the only choice that works for a team. If they pick this, stop here: they need the server's address and an invite code, and then "Set up AIStack: fetch <server address>/setup and follow it."
 
+## What setup changes on this computer
+
+Before step 3, tell the user in one line what setup writes, so nothing surprises them: AIStack's entry in the agent's own settings (`~/.claude.json` for Claude Code, `~/.codex/config.toml` for Codex), the `sync-aistack` skill in its skills folder, the session-start reminder in `~/.claude/settings.json` or `~/.codex/hooks.json` if they want it, and AIStack's own files in `~/.aistack/`. `connect` also registers the `aistack://` link, so the dashboard can open a terminal here: on macOS an app named AIStack Link in `~/Applications`, on Linux a desktop entry, on Windows a key under `HKEY_CURRENT_USER\Software\Classes\aistack`. `<aistack-mcp> link remove` takes it off again.
+
 ## 3. Install AIStack
 
 AIStack is installed once with uv, so your agent starts it directly: it starts at once, works offline, and updates itself in the background once a day, to newer releases of the same minor version (`AISTACK_AUTO_UPDATE=off` in its environment turns that off). If `uv --version` fails, ask the user before installing uv, then follow https://docs.astral.sh/uv/getting-started/installation/ (on macOS and Linux, `curl -LsSf https://astral.sh/uv/install.sh | sh`). Then:

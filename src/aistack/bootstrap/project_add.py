@@ -29,6 +29,16 @@ def run(argv: list[str], home: Path | None = None, confirm=input) -> None:
     parser.add_argument("action", choices=["add"])
     parser.add_argument("folder")
     arguments = parser.parse_args(argv)
+    # Before anything is listed or asked: without a server there is nothing to send it to.
+    if agent_config.connected_locally():
+        sys.exit("This computer's Library is local, so the page looks inside the folder itself: "
+                 "open the dashboard and choose \"A folder on this computer…\" from the + "
+                 "beside Projects.")
+    try:
+        connection = agent_config.remote_connection()
+        warning = server_connection.checked_server(connection.url, False)
+    except (agent_config.NotConnected, AIStackError) as error:
+        sys.exit(f"AIStack: {error}")
     home = home or Path.home()
     folder = Path(arguments.folder).expanduser()
     found = server_sync.current_project(folder, home) if folder.is_dir() else None
@@ -54,19 +64,18 @@ def run(argv: list[str], home: Path | None = None, confirm=input) -> None:
         confirm("Press Enter to send it, or Ctrl-C to stop. ")
     except (EOFError, KeyboardInterrupt):
         sys.exit("Nothing was sent.")
+    if warning:
+        print(warning)
     try:
-        connection = agent_config.remote_connection()
-        warning = server_connection.checked_server(connection.url, False)
-        if warning:
-            print(warning)
         with locked(home):
             reports = asyncio.run(server_sync.sync_computer(connection, home, top,
                                                             add_files=listed))
-    except (agent_config.NotConnected, AIStackError, ToolError) as error:
+    except (AIStackError, ToolError) as error:
         sys.exit(f"AIStack: {error}")
-    except Exception:
+    except Exception as error:
         # Network and SDK exceptions can carry bearers and signed transfer URLs.
-        sys.exit("AIStack could not reach your server. Check the connection and try again.")
+        sys.exit(f"AIStack could not reach your server: {server_connection.failure_cause(error)}. "
+                 "Check the connection and try again.")
     print(f"Added {top}. Tick the files the dashboard shows on the project's page.")
     rendered = server_sync.output(reports)
     if rendered:

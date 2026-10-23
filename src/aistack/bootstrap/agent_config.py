@@ -39,6 +39,10 @@ class NotConnected(Exception):
     """A sentence for the person: what is missing, and what to do."""
 
 
+class NoRemoteConnection(NotConnected):
+    """No agent here connects to a server: the Library, if any, is on this computer."""
+
+
 def skills_folder(agent: str) -> Path:
     return Path.home() / (".claude" if agent == "claude-code" else ".agents") / "skills"
 
@@ -252,7 +256,7 @@ def remote_connection(agent: str | None = None):
     if (local and connections) or any(each != connections[0] for each in connections[1:]):
         raise NotConnected("AIStack connections disagree. Choose one with --agent claude-code or --agent codex, or repair the connections.")
     if not connections:
-        raise NotConnected("No remote AIStack connection was found. Keep using the local sync tool for a local Library, or connect this computer to a server first.")
+        raise NoRemoteConnection("No remote AIStack connection was found. Keep using the local sync tool for a local Library, or connect this computer to a server first.")
     return connections[0]
 
 

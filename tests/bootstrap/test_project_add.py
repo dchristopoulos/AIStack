@@ -31,6 +31,7 @@ def sent(monkeypatch):
     monkeypatch.setattr(server_sync, "sync_computer", sync_computer)
     monkeypatch.setattr(agent_config, "remote_connection",
                         lambda agent=None: Connection("https://aistack.example/mcp", "t"))
+    monkeypatch.setattr(agent_config, "connected_locally", lambda agent=None: False)
     return calls
 
 
@@ -51,6 +52,18 @@ def test_nothing_is_sent_without_enter(shop, tmp_path, sent):
     with pytest.raises(SystemExit, match="Nothing was sent"):
         project_add.run(["add", str(shop)], home=tmp_path / "home", confirm=stop)
     assert sent == []
+
+
+def test_a_local_library_is_sent_to_the_page_before_anything_is_asked(shop, tmp_path, sent,
+                                                                       monkeypatch, capsys):
+    monkeypatch.setattr(agent_config, "connected_locally", lambda agent=None: True)
+
+    def asked(_):
+        raise AssertionError("asked for Enter")
+
+    with pytest.raises(SystemExit, match="A folder on this computer"):
+        project_add.run(["add", str(shop)], home=tmp_path / "home", confirm=asked)
+    assert sent == [] and capsys.readouterr().out == ""
 
 
 def test_a_folder_outside_git_is_not_a_project(tmp_path, sent):
