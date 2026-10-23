@@ -26,7 +26,7 @@ from aistack.services.skill_archive import (
     is_filesystem_noise,
     read_archive,
 )
-from aistack.services.skill_validation import validated_skill
+from aistack.services.skill_validation import validated_skill, validated_skill_name
 
 # The same staging folder the server mode install steps use: a dot-folder, so neither a
 # harness nor sync takes it for a skill, and on the target's filesystem, so a rename is atomic.
@@ -132,8 +132,9 @@ def install(folder: Path, name: str, packed: bytes, content_hash: str) -> None:
     """Install one validated revision whole, flushing its files before replacement.
 
     `packed` came out of the shared database, so it is validated and re-hashed exactly as an
-    upload is before a byte of it is written.
+    upload is before a byte of it is written. The name is checked first: it becomes a folder.
     """
+    name = validated_skill_name(name)
     skill = validated_skill(name, read_archive(packed))
     if skill.content_hash != content_hash:
         raise ValidationError(
@@ -221,7 +222,7 @@ def remove(folder: Path, name: str) -> bool:
 
     A folder that is a link loses the link, never what it points to.
     """
-    target = folder / name
+    target = folder / validated_skill_name(name)
     if not (target.is_symlink() or target.exists()):
         return False
     removed = folder / STAGING_FOLDER / f"{name}.{uuid.uuid4().hex}.removed"

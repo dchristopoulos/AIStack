@@ -148,6 +148,25 @@ def test_sync_is_shown_skill_folders_only(tmp_path):
     }
 
 
+def test_a_name_that_leaves_the_skills_folder_is_neither_installed_nor_removed(tmp_path):
+    """The name comes out of a database other computers write too, and becomes a folder."""
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    (tmp_path / "outside").mkdir()
+    (tmp_path / "outside/keep.md").write_bytes(b"x")
+    packed = skill_archive("../outside")
+    content_hash = validated_skill("../outside", read_archive(packed)).content_hash
+
+    with pytest.raises(ValidationError, match="lowercase letters"):
+        local_skills.install(skills, "../outside", packed, content_hash)
+    with pytest.raises(ValidationError, match="lowercase letters"):
+        local_skills.remove(skills, "../outside")
+
+    assert (tmp_path / "outside/keep.md").read_bytes() == b"x"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["outside", "skills"]
+    assert list(skills.iterdir()) == []
+
+
 def test_removing_a_skill_that_is_not_there_says_so_and_touches_nothing(tmp_path):
     assert local_skills.remove(tmp_path, "wizard") is False
     assert list(tmp_path.iterdir()) == []
