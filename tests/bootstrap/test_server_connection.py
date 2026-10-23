@@ -169,7 +169,7 @@ def test_sync_against_a_local_library_syncs_its_rules_here(tmp_path, monkeypatch
     command.run()
 
     assert asked == [(None, {"a:b": "push"})]
-    assert "AIStack rules are up to date." in capsys.readouterr().out
+    assert "AIStack skills are up to date." in capsys.readouterr().out
     assert agent_config.connected_locally() and not agent_config.connected_locally("codex")
 
 

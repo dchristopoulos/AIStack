@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import json
 import os
@@ -17,7 +18,7 @@ from fastmcp.exceptions import ToolError
 from sqlalchemy import select, text, update
 
 from aistack.bootstrap import agent_config
-from aistack.bootstrap.__main__ import sync_would_act
+from aistack.bootstrap.__main__ import _sync_folder_here, sync_would_act
 from aistack.bootstrap.configuration.settings.settings_config import LocalSettings
 from aistack.bootstrap.context import application_context
 from aistack.bundled import local_sync_skill_document
@@ -28,7 +29,7 @@ from aistack.db.models.user import User
 from aistack.mcp import local_dashboard
 from aistack.mcp.local import local_mcp
 from aistack.mcp.tools import local as local_tools
-from aistack.services import onboarding_service, skill_service
+from aistack.services import onboarding_service, server_sync, skill_service
 from aistack.services.skill_archive import ArchivedFile
 from aistack.services.skill_validation import validated_skill
 
@@ -216,6 +217,52 @@ async def test_sync_says_which_skill_no_push_would_take_and_why(computer):
     assert report["backup"] == ["wizard"]
     assert [entry["name"] for entry in report["cannot_back_up"]] == ["logo-maker"]
     assert "logo.png" in report["cannot_back_up"][0]["reason"]
+
+
+async def test_the_terminal_sync_installs_and_backs_up_what_needs_no_answer(computer):
+    async with computer("laptop") as (laptop, home):
+        _write_skill(home)
+        await _call(laptop, "sync")
+        await _call(laptop, "push_skill", name="wizard")
+        shutil.rmtree(home / ".claude" / "skills" / "wizard")
+        notes = _write_skill(home, "notes")
+        (notes / "SKILL.md").write_text("---\nname: notes\ndescription: Notes.\n---\n")
+        logo = _write_skill(home, "logo-maker")
+        (logo / "SKILL.md").write_text("---\nname: logo-maker\ndescription: Logos.\n---\n")
+        (logo / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff")
+
+        report = await asyncio.to_thread(_sync_folder_here, "claude_code")
+
+        assert (home / ".claude" / "skills" / "wizard" / "SKILL.md").read_bytes() == SKILL_MD
+    assert [(done["action"], done["name"], done["revision"]) for done in report["completed"]] == [
+        ("installed", "wizard", 1), ("backed up", "notes", 1)]
+    assert len(report["failures"]) == 1 and "logo.png" in report["failures"][0]
+    assert "Installed wizard revision 1, pushed by maria" in server_sync.output([report])
+
+
+async def test_the_terminal_leaves_an_edited_skill_to_the_persons_answer(computer):
+    async with computer("laptop") as (laptop, home):
+        _write_skill(home)
+        await _call(laptop, "sync")
+        await _call(laptop, "push_skill", name="wizard")
+        edited = home / ".claude" / "skills" / "wizard" / "SKILL.md"
+        edited.write_bytes(SKILL_MD + b"Edited here.\n")
+
+        report = await asyncio.to_thread(_sync_folder_here, "claude_code")
+
+        assert edited.read_bytes() == SKILL_MD + b"Edited here.\n"
+    assert report["completed"] == [] and "wizard" in report["diagnostics"][0]
+
+
+async def test_the_terminal_leaves_a_folders_first_sync_to_the_agent(computer):
+    """Its first sync offers the skills of the person's other computers, which takes asking."""
+    async with computer("laptop") as (laptop, home):
+        _write_skill(home)
+
+        report = await asyncio.to_thread(_sync_folder_here, "claude_code")
+
+        assert report["completed"] == [] and "sync aistack" in report["diagnostics"][0]
+        assert (await _call(laptop, "sync"))["first_sync"]
 
 
 async def test_a_whole_backup_list_is_one_call_and_one_push_to_the_library(computer,

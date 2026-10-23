@@ -49,7 +49,7 @@ A full local copy of a canonical skill, materialized into a harness's skill dire
 _Avoid_: Clone, stub, proxy
 
 **Sync**:
-Reconciling a machine's actual local state (what's on disk) with its desired state on the server (which of its user's own skills are enabled for that machine). Installs the missing, updates the stale, backs up what the Library does not have yet, offers team updates, and asks the user about everything else. Never deletes local files, never flips enabled silently, never applies a teammate's change, and is not discovery (that's `list_skills`). The server-mode `aistack sync` program does the file work through the existing MCP tools and signed transfer URLs; the agent brings questions to the person. Its session-start hook is silent when nothing needs attention. See ADR-0004, ADR-0006, ADR-0015, ADR-0035.
+Reconciling a machine's actual local state (what's on disk) with its desired state on the server (which of its user's own skills are enabled for that machine). Installs the missing, updates the stale, backs up what the Library does not have yet, offers team updates, and asks the user about everything else. Never deletes local files, never flips enabled silently, never applies a teammate's change, and is not discovery (that's `list_skills`). The `aistack sync` program does the file work, on a server through the existing MCP tools and signed transfer URLs, in local mode through the same calls as the local tools; the agent brings questions to the person. Its session-start hook is silent when nothing needs attention. See ADR-0004, ADR-0006, ADR-0015, ADR-0035.
 _Avoid_: Pull, update-all
 
 **Name**:

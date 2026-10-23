@@ -107,11 +107,28 @@ class LocalListSkillsResult(ListSkillsResult):
 def sync(harness: HarnessKey | None = None,
          rule_choices: dict[str, str] | None = None) -> LocalSyncResult:
     library_before_read(force=True)
-    caller = get_local_principal()
     folders = local_skills.folders_in_use(Path.home())
     # No harness: the first folder this computer has, so a computer with only Codex does not
     # get a Claude Code folder recorded on it.
     harness = harness or (folders[0] if folders else "claude_code")
+    report = synced_folder(harness)
+    new_computer = restored_here()
+    restore_reported()
+    rules = local_rules.sync_rules(Path.home(), rule_choices or {})
+    problem = library_problem()
+    return LocalSyncResult(**sync_result(report, sync_skill_url=None), folders=folders,
+                           harness=harness, library_reachable=problem is None,
+                           library_problem=problem, new_computer=new_computer,
+                           rule_changes=[line for done in rules for line in done["completed"]],
+                           rule_failures=[line for done in rules for line in done["failures"]],
+                           rule_questions=[question for done in rules
+                                           for question in done["rule_questions"]])
+
+
+def synced_folder(harness: HarnessKey) -> sync_service.SyncReport:
+    """The skill half of `sync` for one folder, which `aistack sync` also runs: the report,
+    with any skill push validation would refuse moved from backup to cannot_back_up."""
+    caller = get_local_principal()
     folder = _folder(harness)
     local = local_skills.observed(folder)
     # AIStack's own skill, where setup put it, is kept at this release's copy: the server
@@ -131,22 +148,11 @@ def sync(harness: HarnessKey | None = None,
     # Read after the transaction: packing a folder is slow, and the server can check only
     # what a listing shows. Here every rule push applies is checked before any push.
     refused = local_skills.push_refusals(folder, report.backup)
-    report = replace(report, backup=tuple(name for name in report.backup if name not in refused),
-                     cannot_back_up=report.cannot_back_up + tuple(
-                         sync_service.CannotBackUp(name, reason)
-                         for name, reason in refused.items()))
-    new_computer = restored_here()
-    restore_reported()
-    rules = local_rules.sync_rules(Path.home(), rule_choices or {})
     logger.info(f"Sync reported. Local skills: '{len(local)}'.")
-    problem = library_problem()
-    return LocalSyncResult(**sync_result(report, sync_skill_url=None), folders=folders,
-                           harness=harness, library_reachable=problem is None,
-                           library_problem=problem, new_computer=new_computer,
-                           rule_changes=[line for done in rules for line in done["completed"]],
-                           rule_failures=[line for done in rules for line in done["failures"]],
-                           rule_questions=[question for done in rules
-                                           for question in done["rule_questions"]])
+    return replace(report, backup=tuple(name for name in report.backup if name not in refused),
+                   cannot_back_up=report.cannot_back_up + tuple(
+                       sync_service.CannotBackUp(name, reason)
+                       for name, reason in refused.items()))
 
 
 @local_mcp.tool(

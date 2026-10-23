@@ -366,44 +366,103 @@ def session_start_is_quiet() -> bool:
 
 
 def sync_local(agent: str | None, choices: dict[str, str]) -> list[dict]:
-    """`aistack sync` against a local Library: its rules, as the stdio `sync` tool syncs them.
-    Skills stay with the tool, which the agent calls."""
+    """`aistack sync` against a local Library: each skills folder as the sync-aistack skill
+    has the agent sync it, installing and backing up without asking, then the rules. What
+    needs the person's answer is left for the agent, and so is a folder's first sync, which
+    offers the skills of their other computers."""
     if agent:
         use_agent_place(agent)
     settings = LocalSettings().resolved(record=False)
     build_local_context(settings)
-    from aistack.bootstrap.context.application_context import library_before_read
+    from aistack.bootstrap.context.application_context import library_before_read, library_problem
     from aistack.mcp import local_rules
+    from aistack.services import local_skills
 
     library_before_read(force=True)
-    return local_rules.sync_rules(Path.home(), choices)
+    reports = [_sync_folder_here(harness) for harness in local_skills.folders_in_use(Path.home())]
+    if reports and library_problem() is not None:
+        reports[0]["diagnostics"].insert(0, library_problem())
+    return reports + local_rules.sync_rules(Path.home(), choices)
+
+
+def _sync_folder_here(harness: str) -> dict:
+    from aistack.db.models.harness import Harness
+    from aistack.mcp.tools import local as tools
+    from aistack.services import local_skills
+
+    folder = local_skills.skills_folder(Harness(harness), Path.home())
+    report = {"folder": str(folder), "harness": harness, "completed": [], "failures": [],
+              "diagnostics": []}
+    say_sync = 'Say "sync aistack" in your coding agent'
+    if _probed_sync(harness).first_sync:
+        report["diagnostics"].append(f"{folder} has not synced on this computer yet. {say_sync} "
+                                     "for its first sync, which can offer skills from your other "
+                                     "computers.")
+        return report
+    synced = tools.synced_folder(harness)
+    for entry in (*synced.install, *synced.update):
+        try:
+            installed = tools.get_skill(entry.name, harness)
+        except (ToolError, OSError) as error:
+            report["failures"].append(f"Could not install '{entry.name}': {error}")
+            continue
+        report["completed"].append({
+            "action": "installed" if entry in synced.install else "updated",
+            "name": installed["name"], "revision": installed["revision"],
+            "pushed_by": installed["pushed_by"]})
+    if synced.backup:
+        try:
+            pushed = tools.push_skill(names=list(synced.backup), harness=harness)
+        except (ToolError, OSError) as error:
+            report["failures"].append(f"Could not back up {', '.join(synced.backup)}: {error}")
+        else:
+            report["completed"].extend({"action": "backed up", "name": done["name"],
+                                        "revision": done["revision"]}
+                                       for done in pushed["pushed"])
+            report["failures"].extend(f"Could not back up '{refused['name']}': "
+                                      f"{refused['reason']}" for refused in pushed["refused"])
+    report["failures"].extend(f"Could not back up '{entry.name}': {entry.reason}"
+                              for entry in synced.cannot_back_up)
+    if synced.ask:
+        names = ", ".join(question.name for question in synced.ask)
+        report["diagnostics"].append(f"Waiting for your answer in {folder}: {names}. "
+                                     f"{say_sync} to settle them.")
+    return report
+
+
+def _probed_sync(harness: str):
+    """The sync a session would run on one folder, rolled back: a real one records that the
+    folder synced."""
+    from aistack.bootstrap.context.application_context import (
+        get_local_principal,
+        get_session_factory,
+    )
+    from aistack.db.models.harness import Harness
+    from aistack.services import local_skills, sync_service
+
+    caller = get_local_principal()
+    local = local_skills.observed(local_skills.skills_folder(Harness(harness), Path.home()))
+    with get_session_factory()() as session:
+        try:
+            return sync_service.sync(session, caller.machine_id, caller.user_id, local, harness)
+        finally:
+            session.rollback()
 
 
 def sync_would_act() -> bool:
     """Whether a sync of every skills folder this computer has would report something to do,
     against the Library the running context opened."""
     from aistack.bootstrap.context.application_context import (
-        get_local_principal,
-        get_session_factory,
         library_before_read,
         library_problem,
     )
-    from aistack.db.models.harness import Harness
-    from aistack.services import local_skills, sync_service
+    from aistack.services import local_skills
 
     library_before_read(force=True)
     if library_problem() is not None:
         return True
-    caller = get_local_principal()
     for harness in local_skills.folders_in_use(Path.home()):
-        local = local_skills.observed(local_skills.skills_folder(Harness(harness), Path.home()))
-        # The sync a session would run, rolled back: it records that the folder synced.
-        with get_session_factory()() as session:
-            try:
-                report = sync_service.sync(session, caller.machine_id, caller.user_id, local,
-                                           harness)
-            finally:
-                session.rollback()
+        report = _probed_sync(harness)
         if (report.install or report.update or report.ask or report.backup
                 or report.team_updates or report.first_sync):
             return True
@@ -665,28 +724,21 @@ def run() -> None:
         try:
             if agent_config.connected_locally(arguments.agent):
                 reports = sync_local(arguments.agent, choices)
-                if any(report["completed"] or report["failures"] or report["rule_questions"]
-                       for report in reports):
-                    print(server_sync.output(reports, arguments.hook))
-                elif not arguments.hook:
-                    print("AIStack rules are up to date.")
-                if any(report["failures"] for report in reports):
-                    sys.exit(1)
-                return
-            connection = agent_config.remote_connection(arguments.agent)
-            warning = server_connection.checked_server(connection.url, arguments.allow_http)
-            # The person accepted plain HTTP at join; repeating it fills every new chat.
-            if warning and not arguments.hook:
-                print(warning)
-            with locked(Path.home()):
-                # The session-start hook stays fast: the agents' folders and this project.
-                reports = asyncio.run(server_sync.sync_computer(
-                    connection,
-                    Path.home(),
-                    Path.cwd(),
-                    choices,
-                    every_project=not arguments.hook,
-                ))
+            else:
+                connection = agent_config.remote_connection(arguments.agent)
+                warning = server_connection.checked_server(connection.url, arguments.allow_http)
+                # The person accepted plain HTTP at join; repeating it fills every new chat.
+                if warning and not arguments.hook:
+                    print(warning)
+                with locked(Path.home()):
+                    # The session-start hook stays fast: the agents' folders and this project.
+                    reports = asyncio.run(server_sync.sync_computer(
+                        connection,
+                        Path.home(),
+                        Path.cwd(),
+                        choices,
+                        every_project=not arguments.hook,
+                    ))
             rendered = server_sync.output(reports, arguments.hook)
             if rendered:
                 print(rendered)
